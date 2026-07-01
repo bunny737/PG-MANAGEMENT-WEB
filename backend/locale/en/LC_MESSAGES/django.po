@@ -1,0 +1,8 @@
+# English translation file — MVP active language.
+# All server-side strings must use gettext/gettext_lazy.
+# Additional languages added in V2 (Hindi, Telugu) and V3 (Tamil, Malayalam).
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"

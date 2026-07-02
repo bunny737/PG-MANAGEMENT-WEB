@@ -43,7 +43,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # TODO (Module 01): add TenantMiddleware here
+    # Clears the Postgres tenant GUCs after each request (set by
+    # apps.core.authentication.TenantJWTAuthentication during DRF auth).
+    'apps.core.middleware.TenantContextMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -93,7 +95,8 @@ TEMPLATES = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Enforces tenant suspension + sets the RLS tenant context per request.
+        'apps.core.authentication.TenantJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -102,7 +105,55 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Adds a machine-readable `code` field the frontend switches on.
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.api_exception_handler',
+    # Rate limiting on auth endpoints (PRD Module 1 security requirement).
+    'DEFAULT_THROTTLE_RATES': {
+        'signup': '10/hour',
+        'login': '10/min',
+        'verify_email': '10/min',
+        'resend_verification': '5/min',
+        'otp_request': '3/min',
+        'otp_verify': '10/min',
+        'password_reset': '5/min',
+    },
 }
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'PG/Hostel Management API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # users.language_code and tenants.default_language share one choice set.
+    'ENUM_NAME_OVERRIDES': {'LanguageEnum': LANGUAGES},
+}
+
+# PRD §11: bcrypt password hashing.
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# Auth flow settings (technical tuning — plan limits live in PlatformConfig).
+FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:3000')
+EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60 * 72  # 3 days
+OTP_TTL_SECONDS = 300
+OTP_MAX_ATTEMPTS = 5
+
+# Email
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@localhost')
 
 from datetime import timedelta
 SIMPLE_JWT = {

@@ -8,6 +8,7 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     # App routes — each app's urls.py starts as a stub and grows module by module
     path('api/v1/auth/',   include('apps.accounts.urls')),
+    path('api/v1/',        include('apps.accounts.staff_urls')),
     path('api/v1/',        include('apps.properties.urls')),
     path('api/v1/',        include('apps.residents.urls')),
     path('api/v1/',        include('apps.billing.urls')),

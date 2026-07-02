@@ -7,7 +7,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 
 | # | Module | Spec file | Phase | Depends on | Status |
 |---|--------|-----------|-------|------------|--------|
-| 01 | Tenancy, Auth & Roles | 01-auth-tenancy.md | 1 | none | ⬜ |
+| 01 | Tenancy, Auth & Roles | 01-auth-tenancy.md | 1 | none | ✅ |
 | 02 | Property → Floor → Room → Bed | 02-property-hierarchy.md | 1 | 01 | ⬜ |
 | 03 | Property Settings | 03-property-settings.md | 1 | 02 | ⬜ |
 | 04 | Residents | 04-residents.md | 1 | 02 | ⬜ |
@@ -31,3 +31,9 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 - Decimal money (no floats)
 - Audit logging on critical mutations
 - Configurable limits (no hardcoded caps or durations)
+
+## Frontend
+Next.js + PWA frontend confirmed 2026-07-02. Plan, route map, invariants, and the
+FE status board live in [../frontend-plan.md](../frontend-plan.md). Each FE task
+starts only after its backend module above is ✅ (FE-00 foundation may start
+immediately against OpenAPI mocks).

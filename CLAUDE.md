@@ -12,9 +12,11 @@ residents, billing, and operations through a single system.
 - Queue: Celery + Redis
 - Storage: AWS S3
 - Payments: Razorpay — platform subscription billing ONLY, never resident rent
-- Mobile: Native Android — Kotlin + Jetpack Compose (Retrofit + OkHttp)
-  ⚠ PRD currently says Next.js — that is outdated. Android is the correct choice.
-  Do NOT scaffold any frontend. Backend only.
+- Web Frontend: Next.js 15 (App Router) + TypeScript + Tailwind CSS, installable PWA
+  Confirmed by owner 2026-07-02. All frontend work follows docs/frontend-plan.md
+  (route map, invariants F1–F8, FE build order, PWA strategy).
+- Mobile: Native Android — Kotlin + Jetpack Compose (Retrofit + OkHttp) — later
+  phase; the PWA covers the mobile resident experience until then.
 
 ## 10 Non-negotiable invariants
 
@@ -67,4 +69,5 @@ residents, billing, and operations through a single system.
 ## When to stop and ask (do not guess)
 - PRD is silent or ambiguous on a money rule or status transition
 - Task requires a new dependency or cross-module schema change
-- Anything touches the frontend stack (still being confirmed)
+- Frontend work that deviates from docs/frontend-plan.md (stack, auth model,
+  offline/PWA write behaviour, or the FE build order)

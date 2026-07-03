@@ -1,2 +1,9 @@
 from django.contrib import admin
-# Register models here as they are built.
+
+from .models import Bed, Floor, Property, PropertyStaffAssignment, Room
+
+admin.site.register(Property)
+admin.site.register(Floor)
+admin.site.register(Room)
+admin.site.register(Bed)
+admin.site.register(PropertyStaffAssignment)

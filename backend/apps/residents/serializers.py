@@ -1,9 +1,10 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
-from .models import Resident
+from .models import Admission, Resident
 
 
 class ResidentSerializer(serializers.ModelSerializer):
@@ -44,3 +45,50 @@ class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
                 code='invalid_status_transition',
             )
         return value
+
+
+class AdmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Admission
+        fields = [
+            'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
+            'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
+            'advance_amount', 'first_month_billing_amount', 'first_month_billing_note',
+            'recorded_by', 'created_at', 'updated_at',
+        ]
+        # contracted_* fields are snapshotted server-side in the view
+        # (invariant 2/3) — never accepted as client input.
+        read_only_fields = [
+            'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
+            'recorded_by', 'created_at', 'updated_at',
+        ]
+
+    def validate(self, attrs):
+        resident = attrs['resident']
+        bed = attrs['bed']
+
+        if not resident.can_transition_to(Resident.Status.ACTIVE):
+            raise serializers.ValidationError(
+                {'resident': _(
+                    'This resident is not ready for check-in — they must be Reserved first.'
+                )},
+                code='resident_not_ready_for_checkin',
+            )
+        if bed.room.floor.property_id != resident.property_id:
+            raise serializers.ValidationError(
+                {'bed': _('This bed is not in the same property as the resident.')},
+                code='bed_property_mismatch',
+            )
+        if bed.status != Bed.Status.AVAILABLE:
+            raise serializers.ValidationError(
+                {'bed': _('This bed is not available.')},
+                code='bed_not_available',
+            )
+
+        request = self.context['request']
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                {'resident': _('You are not assigned to this property.')},
+                code='property_not_assigned',
+            )
+        return attrs

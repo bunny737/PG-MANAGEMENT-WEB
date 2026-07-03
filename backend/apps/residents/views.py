@@ -5,10 +5,11 @@ from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
+from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 
-from .models import Resident
-from .serializers import ResidentSerializer, ResidentStatusUpdateSerializer
+from .models import Admission, Resident
+from .serializers import AdmissionSerializer, ResidentSerializer, ResidentStatusUpdateSerializer
 
 
 class ResidentViewSet(viewsets.ModelViewSet):
@@ -58,3 +59,55 @@ class ResidentViewSet(viewsets.ModelViewSet):
             request=request,
         )
         return Response(ResidentSerializer(instance).data)
+
+
+class AdmissionViewSet(viewsets.ModelViewSet):
+    """Admission = Check-In (PRD Module 6): create-and-read only, no update/
+    delete — contracted terms are snapshotted once and never change.
+    `manage_admissions` excludes Receptionist (front-desk has no billing/
+    allocation access)."""
+
+    serializer_class = AdmissionSerializer
+    permission_classes = [IsAuthenticated, require_permission('manage_admissions')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident', 'bed']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Admission.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return Admission.objects.filter(
+            bed__room__floor__property_id__in=ids
+        ).select_related('resident', 'bed')
+
+    def perform_create(self, serializer):
+        bed = serializer.validated_data['bed']
+        resident = serializer.validated_data['resident']
+        with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        instance = serializer.save(
+            tenant_id=self.request.user.tenant_id,
+            contracted_sharing_type=bed.room.sharing_type,
+            contracted_room_category=bed.room.category,
+            contracted_rent=bed.rack_rate(with_food=with_food),
+            recorded_by=self.request.user,
+        )
+
+        bed.status = Bed.Status.OCCUPIED
+        bed.save()  # also syncs the room's status (Module 02)
+
+        before_status = resident.status
+        resident.status = Resident.Status.ACTIVE
+        resident.save(update_fields=['status', 'updated_at'])
+
+        audit_log.record(
+            action='admission.created', actor=self.request.user, obj=instance,
+            after={'resident': str(resident.id), 'bed': str(bed.id),
+                   'contracted_rent': str(instance.contracted_rent)},
+            request=self.request,
+        )
+        audit_log.record(
+            action='resident.status_changed', actor=self.request.user, obj=resident,
+            before={'status': before_status}, after={'status': resident.status},
+            request=self.request,
+        )

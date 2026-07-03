@@ -11,7 +11,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 02 | Property → Floor → Room → Bed | 02-property-hierarchy.md | 1 | 01 | ✅ |
 | 03 | Property Settings | 03-property-settings.md | 1 | 02 | ✅ |
 | 04 | Residents | 04-residents.md | 1 | 02 | ✅ |
-| 05 | Admissions | 05-admissions.md | 1 | 04 | ⬜ |
+| 05 | Admissions | 05-admissions.md | 1 | 04 | ✅ |
 | 06 | Allocations & Transfers | 06-allocations.md | 1 | 05 | ⬜ |
 | 07 | Discounts | 07-discounts.md | 2 | 06 | ⬜ |
 | 08 | Invoices / Billing | 08-billing.md | 2 | 06, 07 | ⬜ |

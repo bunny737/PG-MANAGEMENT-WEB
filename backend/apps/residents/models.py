@@ -1,10 +1,12 @@
 import uuid
+from decimal import Decimal
 
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
-from apps.properties.models import Property
+from apps.properties.models import Bed, Property, Room
 
 
 def resident_document_path(instance, filename):
@@ -89,3 +91,55 @@ class Resident(TenantModelMixin):
 
     def can_transition_to(self, new_status):
         return new_status in self.TRANSITIONS.get(self.status, set())
+
+
+class Admission(TenantModelMixin):
+    """The admission event (PRD Module 6): captures the deal terms agreed
+    at joining and performs Check-In (bed occupied, resident -> Active).
+    One row per resident — re-admission after Vacated/Blacklisted is a new
+    Resident record, not a second Admission. Immutable once created: no
+    update/delete endpoint, matching invariant 2 (contracted terms are
+    snapshotted, never recomputed from the room/bed)."""
+
+    class BillingMode(models.TextChoices):
+        MONTHLY = 'monthly', _('Monthly')
+        WEEKLY = 'weekly', _('Weekly')
+        DAILY = 'daily', _('Daily')
+
+    class FoodPreference(models.TextChoices):
+        WITH_FOOD = 'with_food', _('With Food')
+        WITHOUT_FOOD = 'without_food', _('Without Food')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='admission')
+    bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='admissions')
+
+    joining_date = models.DateField()
+    billing_mode = models.CharField(max_length=10, choices=BillingMode.choices)
+    expected_stay_duration = models.CharField(max_length=50, blank=True)  # free text, e.g. "6 months"
+
+    # Snapshotted from bed/room at admission time — invariant 2/3: never
+    # recomputed later even if the room's rack rates or category change.
+    contracted_sharing_type = models.PositiveSmallIntegerField(choices=Room.SharingType.choices)
+    contracted_room_category = models.CharField(max_length=10, choices=Room.Category.choices)
+    food_preference = models.CharField(max_length=15, choices=FoodPreference.choices)
+    contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
+
+    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # Partial first-month adjustment set manually by management (PRD: "amount
+    # set manually") — null means bill the first month at the normal
+    # contracted_rent; Module 08 (Billing) is what actually reads this.
+    first_month_billing_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    first_month_billing_note = models.TextField(blank=True)
+
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='admissions_recorded'
+    )
+
+    class Meta:
+        db_table = 'admissions'
+
+    def __str__(self):
+        return f'Admission: {self.resident}'

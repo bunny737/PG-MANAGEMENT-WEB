@@ -106,6 +106,17 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
         self.assertEqual(self.client.get(reverse('room-list')).status_code, 403)
         self.assertEqual(self.client.get(reverse('bed-list')).status_code, 403)
 
+    def test_manager_can_add_floor_to_assigned_property(self):
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+        self.authenticate(manager)
+
+        response = self.client.post(
+            reverse('floor-list'), {'property': str(self.property.id), 'name': 'Ground Floor', 'order': 0}
+        )
+
+        self.assertEqual(response.status_code, 201)
+
     def test_manager_cannot_add_floor_to_unassigned_property(self):
         other_property = self.create_property(self.tenant, name='Other Property')
         manager = self.create_manager(self.tenant)

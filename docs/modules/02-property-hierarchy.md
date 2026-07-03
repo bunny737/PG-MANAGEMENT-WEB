@@ -167,6 +167,21 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   moving flagged residents" (temporary allocation) is explicitly V2 —
   irrelevant until Module 06.
 
+## Bugs found and fixed
+- **2026-07-03 (during Module 04):** `services.can_view_property()` chained
+  `.filter(pk=property_id)` onto the `visible_property_ids()` values_list
+  queryset. That queryset's underlying model differs by branch — `Property`
+  for Owner/Super Admin, `PropertyStaffAssignment` for Manager/Receptionist
+  — so `pk` silently resolved against the *assignment's* id for Manager/
+  Receptionist, not the property's. It always returned `False` for that
+  branch, which happened to look correct in every Module 02 test because
+  none of them asserted a Manager *succeeding* at a property they WERE
+  assigned to (only the unassigned/rejected case was tested). Fixed to
+  re-query `Property.objects.filter(id__in=..., pk=property_id)` so `pk`
+  always resolves against `Property`. Added the missing positive-case test
+  (`test_manager_can_add_floor_to_assigned_property`) here, since this is
+  where the bug lived.
+
 ## Changelog
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: Property/Floor/Room/Bed/PropertyStaffAssignment models
@@ -174,3 +189,5 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   bed-capacity and room-status-sync business rules, staff-property
   assignment endpoints, 26 tests (isolation + business rules + permission
   scoping). Spec rewritten to as-built.
+- 2026-07-03  Fixed `can_view_property()` bug found while building Module 04
+  (see "Bugs found and fixed"); added regression test. 27 tests.

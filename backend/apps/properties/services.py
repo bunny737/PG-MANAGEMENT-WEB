@@ -18,4 +18,9 @@ def visible_property_ids(user):
 
 
 def can_view_property(user, property_id):
-    return visible_property_ids(user).filter(pk=property_id).exists()
+    # visible_property_ids() is a values_list queryset whose underlying model
+    # differs by branch (Property for Owner/Super Admin, PropertyStaffAssignment
+    # for Manager/Receptionist) — chaining .filter(pk=...) onto it would resolve
+    # `pk` against whichever model that branch used, not Property. Re-querying
+    # Property directly keeps this correct regardless of branch.
+    return Property.objects.filter(id__in=visible_property_ids(user), pk=property_id).exists()

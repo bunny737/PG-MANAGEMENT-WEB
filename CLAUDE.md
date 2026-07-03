@@ -62,9 +62,15 @@ residents, billing, and operations through a single system.
 2. Check all dependencies are ✅ in docs/modules/README.md
 3. Implement: model → migration → serializer → view/permission → test
 4. Write tests for every business rule + one tenant-isolation test
-5. Update the module spec to match what was actually built (same commit)
-6. Update docs/modules/README.md status
-7. Record every judgement call in the module spec under "Decisions"
+5. Any model or DB schema change (new/changed model, field, FK, RLS policy):
+   a. `docker compose run --rm backend python manage.py makemigrations`
+   b. `docker compose run --rm backend python manage.py migrate` — confirm it applies cleanly
+   c. Regenerate the ERD and commit it in the same commit (see docs/dev-setup.md):
+      `docker compose exec backend python manage.py graph_models -a -o erd.png`
+      then move the file to `docs/erd.png`
+6. Update the module spec to match what was actually built (same commit)
+7. Update docs/modules/README.md status
+8. Record every judgement call in the module spec under "Decisions"
 
 ## When to stop and ask (do not guess)
 - PRD is silent or ambiguous on a money rule or status transition

@@ -5,3 +5,5 @@ factory-boy==3.*
 faker==26.*
 ipython
 django-debug-toolbar
+django-extensions==3.*
+pydot==3.*

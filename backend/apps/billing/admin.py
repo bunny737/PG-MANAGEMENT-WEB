@@ -1,2 +1,5 @@
 from django.contrib import admin
-# Register models here as they are built.
+
+from .models import Discount
+
+admin.site.register(Discount)

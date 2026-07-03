@@ -1,9 +1,10 @@
 from datetime import date
 
 from apps.core.tenancy import tenant_context
+from apps.properties.models import Bed
 from apps.properties.tests.base import PropertyAPITestCase
 
-from apps.residents.models import Admission, Resident
+from apps.residents.models import Admission, Allocation, Resident
 
 
 class ResidentAPITestCase(PropertyAPITestCase):
@@ -25,4 +26,23 @@ class ResidentAPITestCase(PropertyAPITestCase):
         with tenant_context(resident.tenant_id):
             return Admission.objects.create(
                 tenant_id=resident.tenant_id, resident=resident, bed=bed, **kwargs
+            )
+
+    @classmethod
+    def check_in(cls, resident, bed, **admission_kwargs):
+        """Fully check a resident in outside the API: admission + occupied bed
+        + Active status + initial Allocation. Returns the Allocation."""
+        admission = cls.create_admission(resident, bed, **admission_kwargs)
+        with tenant_context(resident.tenant_id):
+            bed.status = Bed.Status.OCCUPIED
+            bed.save()
+            resident.status = Resident.Status.ACTIVE
+            resident.save(update_fields=['status', 'updated_at'])
+            return Allocation.objects.create(
+                tenant_id=resident.tenant_id,
+                resident=resident,
+                allocated_bed=bed,
+                contracted_sharing_type=admission.contracted_sharing_type,
+                contracted_room_category=admission.contracted_room_category,
+                contracted_rent=admission.contracted_rent,
             )

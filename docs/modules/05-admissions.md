@@ -63,7 +63,8 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
    `contracted_rent` from the bed/room (rent via `Bed.rack_rate()`, which
    already honours per-bed overrides from Module 02), (e) flips the bed to
    `Occupied` (this also syncs the room's status per Module 02), (f)
-   flips the resident to `Active`.
+   flips the resident to `Active`, and (g) creates the resident's initial
+   `Allocation` (added by Module 06 — `services.create_initial_allocation`).
 2. `contracted_rent` is set once at creation and never recomputed — later
    changes to the room's rack rates don't touch existing admissions
    (invariant 2/3, directly tested).
@@ -142,3 +143,6 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   resident activated), permission scoping reusing Module 02's property-
   assignment service, audit logging, 15 tests (happy path + invariants +
   scoping + isolation). Spec written to as-built.
+- 2026-07-03  Module 06 extended check-in: `perform_create` now also
+  creates the resident's initial `Allocation` (step g above) inside the
+  same transaction. No behaviour change to the admission record itself.

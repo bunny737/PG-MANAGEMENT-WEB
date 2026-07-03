@@ -1,4 +1,5 @@
-from rest_framework import viewsets
+from django.db import transaction
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,8 +9,16 @@ from apps.core.permissions import require_permission
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 
-from .models import Admission, Resident
-from .serializers import AdmissionSerializer, ResidentSerializer, ResidentStatusUpdateSerializer
+from . import services
+from .models import Admission, Allocation, Resident, Transfer
+from .serializers import (
+    AdmissionSerializer,
+    AllocationSerializer,
+    ResidentSerializer,
+    ResidentStatusUpdateSerializer,
+    TransferCreateSerializer,
+    TransferSerializer,
+)
 
 
 class ResidentViewSet(viewsets.ModelViewSet):
@@ -80,6 +89,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             bed__room__floor__property_id__in=ids
         ).select_related('resident', 'bed')
 
+    @transaction.atomic
     def perform_create(self, serializer):
         bed = serializer.validated_data['bed']
         resident = serializer.validated_data['resident']
@@ -100,6 +110,9 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         resident.status = Resident.Status.ACTIVE
         resident.save(update_fields=['status', 'updated_at'])
 
+        # Check-in creates the resident's initial Allocation (Module 06).
+        services.create_initial_allocation(instance)
+
         audit_log.record(
             action='admission.created', actor=self.request.user, obj=instance,
             after={'resident': str(resident.id), 'bed': str(bed.id),
@@ -111,3 +124,61 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             before={'status': before_status}, after={'status': resident.status},
             request=self.request,
         )
+
+
+class AllocationViewSet(viewsets.ReadOnlyModelViewSet):
+    """Current bed placements (PRD Module 7). Read-only — allocations are
+    mutated only through admission (check-in) and transfers, never edited
+    directly. Filter `?is_temporary=true` for the temporary-allocation
+    dashboard list."""
+
+    serializer_class = AllocationSerializer
+    permission_classes = [IsAuthenticated, require_permission('manage_allocations')]
+    filterset_fields = ['resident', 'is_temporary']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Allocation.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return Allocation.objects.filter(
+            allocated_bed__room__floor__property_id__in=ids
+        ).select_related('resident', 'allocated_bed__room')
+
+
+class TransferViewSet(viewsets.ModelViewSet):
+    """Transfer history + performing a transfer (PRD Module 7). Creating a
+    transfer moves the resident's Allocation to the new bed and records the
+    before/after here. No update/delete — the history is append-only."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_allocations')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident', 'is_temporary']
+
+    def get_serializer_class(self):
+        return TransferCreateSerializer if self.action == 'create' else TransferSerializer
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Transfer.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return Transfer.objects.filter(
+            new_bed__room__floor__property_id__in=ids
+        ).select_related('resident', 'previous_bed', 'new_bed')
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        transfer = services.perform_transfer(
+            allocation=data['allocation'],
+            new_bed=data['new_bed'],
+            transfer_date=data['transfer_date'],
+            is_temporary=data['is_temporary'],
+            reason=data['reason'],
+            new_rent=data['new_rent'],
+            expected_move_date=data['expected_move_date'],
+            temporary_note=data['temporary_note'],
+            actor=request.user,
+            request=request,
+        )
+        return Response(TransferSerializer(transfer).data, status=status.HTTP_201_CREATED)

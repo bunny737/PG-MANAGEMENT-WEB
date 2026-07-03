@@ -143,3 +143,77 @@ class Admission(TenantModelMixin):
 
     def __str__(self):
         return f'Admission: {self.resident}'
+
+
+class Allocation(TenantModelMixin):
+    """The resident's CURRENT physical bed placement (PRD Module 7). Created
+    at check-in (Module 05) mirroring the admitted bed, then mutated by
+    transfers. Distinct from Admission (the immutable original deal): this
+    row tracks where the resident physically is *right now* and whether that
+    placement is temporary.
+
+    Invariant 2/3: `contracted_rent` is always the billing baseline —
+    unchanged by a temporary allocation (resident stays billed at their
+    contracted rent regardless of the physical room), updated only by a
+    permanent transfer. `actual_*` (the physical room's type/category) is
+    derived from the bed, never stored, so it can't drift."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='allocation')
+    allocated_bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='allocations')
+
+    # The contracted deal — copied from Admission at check-in, changed only
+    # by a permanent transfer. Never auto-recomputed from the room.
+    contracted_sharing_type = models.PositiveSmallIntegerField(choices=Room.SharingType.choices)
+    contracted_room_category = models.CharField(max_length=10, choices=Room.Category.choices)
+    contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
+
+    is_temporary = models.BooleanField(default=False)
+    temporary_since = models.DateField(null=True, blank=True)
+    expected_move_date = models.DateField(null=True, blank=True)
+    temporary_note = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'allocations'
+
+    def __str__(self):
+        return f'Allocation: {self.resident} -> {self.allocated_bed}'
+
+    @property
+    def actual_sharing_type(self):
+        return self.allocated_bed.room.sharing_type
+
+    @property
+    def actual_room_category(self):
+        return self.allocated_bed.room.category
+
+
+class Transfer(TenantModelMixin):
+    """Append-only history of a resident moving beds/rooms (PRD Module 7
+    'Transfer Management'). Each transfer mutates the resident's Allocation
+    and freezes the before/after here, including the `rent_effective_date`
+    computed from the property's Module 2B 'Room Transfer Rent Timing'
+    setting."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.ForeignKey(Resident, on_delete=models.PROTECT, related_name='transfers')
+    previous_bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='transfers_from')
+    new_bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='transfers_to')
+    # True = temporary placement (contracted_rent unchanged); False = permanent
+    # move that becomes the resident's new contracted arrangement.
+    is_temporary = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)
+    transfer_date = models.DateField()
+    previous_rent = models.DecimalField(max_digits=12, decimal_places=2)
+    new_rent = models.DecimalField(max_digits=12, decimal_places=2)
+    rent_effective_date = models.DateField()
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='transfers_recorded'
+    )
+
+    class Meta:
+        db_table = 'transfers'
+        ordering = ['-transfer_date', '-created_at']
+
+    def __str__(self):
+        return f'Transfer: {self.resident} ({self.previous_bed} -> {self.new_bed})'

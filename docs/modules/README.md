@@ -9,7 +9,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 |---|--------|-----------|-------|------------|--------|
 | 01 | Tenancy, Auth & Roles | 01-auth-tenancy.md | 1 | none | ✅ |
 | 02 | Property → Floor → Room → Bed | 02-property-hierarchy.md | 1 | 01 | ✅ |
-| 03 | Property Settings | 03-property-settings.md | 1 | 02 | ⬜ |
+| 03 | Property Settings | 03-property-settings.md | 1 | 02 | ✅ |
 | 04 | Residents | 04-residents.md | 1 | 02 | ⬜ |
 | 05 | Admissions | 05-admissions.md | 1 | 04 | ⬜ |
 | 06 | Allocations & Transfers | 06-allocations.md | 1 | 05 | ⬜ |

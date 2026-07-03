@@ -136,9 +136,16 @@ serialized on `/auth/me/` as `permissions: [...]`.
   (same error code); data-retention handling is Module 13's concern.
 - [DECISION 2026-07-02] In tests, authenticate with real JWTs (see
   `tests/base.py:authenticate`) — `force_authenticate` skips the RLS context.
+- [DECISION 2026-07-03] `manage_property_settings` widened from Owner-only to
+  Owner+Manager. The PRD §6 matrix table said Owner-only, but Module 2B's
+  prose and its own settings summary table both say "Configurable By: Owner,
+  Manager" — confirmed with the product owner that Module 2B is correct.
+  `PERMISSION_MATRIX` in `apps/core/roles.py` updated accordingly (Module 03).
 
 ## Changelog
 - 2026-06-xx  Created stub.
 - 2026-07-02  Built: tenancy/RLS infra, Tenant/User/OtpCode/PlatformConfig/
   AuditLog models, full auth API, staff management, permission matrix,
   49 tests (RLS proof included). Spec rewritten to as-built.
+- 2026-07-03  `manage_property_settings` widened to include Manager (see
+  Decisions) while building Module 03.

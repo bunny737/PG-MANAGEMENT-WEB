@@ -5,7 +5,7 @@ from apps.accounts.models import User
 from apps.core.roles import STAFF_ROLES
 
 from . import services
-from .models import Bed, Floor, Property, PropertyStaffAssignment, Room
+from .models import Bed, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
 
 
 class PropertySerializer(serializers.ModelSerializer):
@@ -137,3 +137,37 @@ class PropertyStaffAssignmentSerializer(serializers.ModelSerializer):
 
     def get_staff_name(self, obj) -> str:
         return f'{obj.staff.first_name} {obj.staff.last_name}'.strip()
+
+
+class PropertySettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PropertySettings
+        fields = [
+            'id', 'room_transfer_rent_timing', 'late_payment_penalty_type',
+            'penalty_value', 'penalty_grace_days', 'penalty_applies_to',
+            'penalty_compounding', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        penalty_type = attrs.get(
+            'late_payment_penalty_type',
+            getattr(self.instance, 'late_payment_penalty_type', PropertySettings.PenaltyType.NONE),
+        )
+        if penalty_type == PropertySettings.PenaltyType.NONE:
+            # No penalty configured — any stray value is meaningless, drop it.
+            attrs['penalty_value'] = None
+            return attrs
+
+        penalty_value = attrs.get('penalty_value', getattr(self.instance, 'penalty_value', None))
+        if not penalty_value:
+            raise serializers.ValidationError(
+                {'penalty_value': _('A penalty value is required when a penalty type is set.')},
+                code='penalty_value_required',
+            )
+        if penalty_type == PropertySettings.PenaltyType.PERCENTAGE and not (0 < penalty_value <= 100):
+            raise serializers.ValidationError(
+                {'penalty_value': _('A percentage penalty must be between 0 and 100.')},
+                code='invalid_percentage',
+            )
+        return attrs

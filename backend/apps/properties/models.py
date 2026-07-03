@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -185,3 +186,55 @@ class PropertyStaffAssignment(TenantModelMixin):
 
     def __str__(self):
         return f'{self.staff.email} -> {self.property.name}'
+
+
+class PropertySettings(TenantModelMixin):
+    """Per-property billing/transfer behaviour (PRD Module 2B). Exactly one
+    row per property, lazily created with PRD defaults on first access
+    (see PropertyViewSet.settings). 'Shared Invoices' (PRD Setting 2) has no
+    field here — it's a fixed rule (always one invoice per resident),
+    enforced by Module 08's design rather than a toggle."""
+
+    class RentChangeTiming(models.TextChoices):
+        IMMEDIATE = 'immediate', _('Immediately')
+        NEXT_BILLING_CYCLE = 'next_billing_cycle', _('Next Billing Cycle')
+
+    class PenaltyType(models.TextChoices):
+        NONE = 'none', _('No Penalty')
+        FIXED = 'fixed', _('Fixed Amount')
+        PERCENTAGE = 'percentage', _('Percentage')
+
+    class PenaltyAppliesTo(models.TextChoices):
+        FULL_INVOICE = 'full_invoice', _('Full Invoice Amount')
+        OUTSTANDING_BALANCE = 'outstanding_balance', _('Outstanding Balance Only')
+
+    class PenaltyCompounding(models.TextChoices):
+        ONE_TIME = 'one_time', _('One-time')
+        MONTHLY = 'monthly', _('Monthly')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.OneToOneField(Property, on_delete=models.CASCADE, related_name='settings')
+    room_transfer_rent_timing = models.CharField(
+        max_length=20, choices=RentChangeTiming.choices, default=RentChangeTiming.NEXT_BILLING_CYCLE
+    )
+    late_payment_penalty_type = models.CharField(
+        max_length=10, choices=PenaltyType.choices, default=PenaltyType.NONE
+    )
+    # Fixed ₹ amount or % value depending on late_payment_penalty_type; null
+    # when penalty type is NONE.
+    penalty_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    penalty_grace_days = models.PositiveSmallIntegerField(
+        default=5, validators=[MaxValueValidator(30)]
+    )
+    penalty_applies_to = models.CharField(
+        max_length=20, choices=PenaltyAppliesTo.choices, default=PenaltyAppliesTo.FULL_INVOICE
+    )
+    penalty_compounding = models.CharField(
+        max_length=10, choices=PenaltyCompounding.choices, default=PenaltyCompounding.ONE_TIME
+    )
+
+    class Meta:
+        db_table = 'property_settings'
+
+    def __str__(self):
+        return f'Settings for {self.property.name}'

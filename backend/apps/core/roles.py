@@ -24,7 +24,10 @@ PERMISSION_MATRIX = {
     'manage_tenants': (Role.SUPER_ADMIN,),
     'manage_subscription': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_properties': (Role.SUPER_ADMIN, Role.OWNER),
-    'manage_property_settings': (Role.SUPER_ADMIN, Role.OWNER),
+    # PRD §6's matrix table lists Owner-only, but PRD Module 2B's prose and its
+    # own settings summary table both say "Configurable By: Owner, Manager" —
+    # confirmed with the product owner 2026-07-03 that Module 2B is correct.
+    'manage_property_settings': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER),
     'manage_staff_accounts': (Role.SUPER_ADMIN, Role.OWNER),
     'assign_staff_to_properties': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_rooms_beds': _OPS,

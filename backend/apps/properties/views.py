@@ -1,18 +1,21 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.core.roles import Role
 
 from . import services
-from .models import Bed, Floor, Property, PropertyStaffAssignment, Room
+from .models import Bed, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
 from .serializers import (
     BedSerializer,
     FloorSerializer,
     PropertySerializer,
+    PropertySettingsSerializer,
     PropertyStaffAssignmentSerializer,
     RoomSerializer,
 )
@@ -44,6 +47,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update'):
             return [IsAuthenticated(), require_permission('manage_properties')()]
+        if self.action == 'property_settings':
+            return [IsAuthenticated(), require_permission('manage_property_settings')()]
         return [CanViewProperties()]
 
     def get_queryset(self):
@@ -69,6 +74,33 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 action='property.updated', actor=self.request.user, obj=instance,
                 before=before, after=after, request=self.request,
             )
+
+    # Named property_settings, not "settings" — a method called `settings`
+    # shadows APIView.settings (the api_settings instance DRF relies on
+    # internally), which breaks exception handling for the whole viewset.
+    @action(detail=True, methods=['get', 'patch'], url_path='settings', url_name='settings')
+    def property_settings(self, request, pk=None):
+        """PRD Module 2B — per-property billing/transfer settings. Lazily
+        created with PRD defaults on first access; there's exactly one row
+        per property so there's no separate create endpoint."""
+        prop = self.get_object()
+        instance, _created = PropertySettings.objects.get_or_create(
+            property=prop, defaults={'tenant_id': prop.tenant_id}
+        )
+        if request.method == 'GET':
+            return Response(PropertySettingsSerializer(instance).data)
+
+        before = PropertySettingsSerializer(instance).data
+        serializer = PropertySettingsSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        after = PropertySettingsSerializer(instance).data
+        if before != after:
+            audit_log.record(
+                action='property_settings.updated', actor=request.user, obj=instance,
+                before=before, after=after, request=request,
+            )
+        return Response(after)
 
 
 class FloorViewSet(viewsets.ModelViewSet):

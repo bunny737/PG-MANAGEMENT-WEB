@@ -40,6 +40,7 @@ Table: admissions                               (RLS enforced, app: apps.residen
   advance_amount              decimal(12,2), default 0
   first_month_billing_amount  decimal(12,2), null   (manual partial-month override)
   first_month_billing_note    text, blank
+  addons                      jsonb, default []     (reserved; added by Module 08)
 
   recorded_by           FK -> users, null (SET_NULL)
   created_at / updated_at
@@ -146,3 +147,6 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
 - 2026-07-03  Module 06 extended check-in: `perform_create` now also
   creates the resident's initial `Allocation` (step g above) inside the
   same transaction. No behaviour change to the admission record itself.
+- 2026-07-03  Module 08 added the reserved `addons` JSONField (default `[]`)
+  to Admission per invariant 6 / PRD "Future-Proofing" — empty in MVP, so
+  future add-on services land without a schema migration.

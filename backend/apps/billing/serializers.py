@@ -1,9 +1,14 @@
+from datetime import date
+
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.properties.models import Property
 from apps.properties.services import can_view_property
+from apps.residents.models import Resident
 
-from .models import Discount
+from . import services
+from .models import Discount, Invoice, InvoiceLineItem
 
 
 def _windows_overlap(from1, until1, from2, until2):
@@ -75,3 +80,111 @@ class DiscountSerializer(serializers.ModelSerializer):
                     code='overlapping_discount',
                 )
         return attrs
+
+
+class InvoiceLineItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvoiceLineItem
+        fields = ['id', 'line_type', 'label', 'amount', 'order']
+        read_only_fields = ['id']
+
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    line_items = InvoiceLineItemSerializer(many=True, read_only=True)
+    total = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Invoice
+        fields = [
+            'id', 'resident', 'period_start', 'period_end', 'billing_mode',
+            'issue_date', 'due_date', 'status', 'notes', 'created_by',
+            'line_items', 'total', 'is_overdue', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_total(self, obj) -> str:
+        return str(obj.total)
+
+    def get_is_overdue(self, obj) -> bool:
+        return obj.is_overdue(date.today())
+
+
+class InvoiceUpdateSerializer(serializers.ModelSerializer):
+    """Only due_date / notes are editable directly (while draft); everything
+    else changes through generation, line-item edits, or the issue action."""
+
+    class Meta:
+        model = Invoice
+        fields = ['due_date', 'notes']
+
+
+class InvoiceGenerateSerializer(serializers.Serializer):
+    resident = serializers.PrimaryKeyRelatedField(queryset=Resident.objects.all())
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    due_date = serializers.DateField()
+    billing_mode = serializers.ChoiceField(
+        choices=Invoice._meta.get_field('billing_mode').choices, required=False, default=None,
+    )
+
+    def validate(self, attrs):
+        request = self.context['request']
+        resident = attrs['resident']
+
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                {'resident': _('You are not assigned to this property.')},
+                code='property_not_assigned',
+            )
+        if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+            raise serializers.ValidationError(
+                {'resident': _('Only active residents can be invoiced.')},
+                code='resident_not_billable',
+            )
+        if not Resident.objects.filter(pk=resident.pk, allocation__isnull=False).exists():
+            raise serializers.ValidationError(
+                {'resident': _('This resident is not allocated to a bed.')},
+                code='resident_not_allocated',
+            )
+        if attrs['period_end'] < attrs['period_start']:
+            raise serializers.ValidationError(
+                {'period_end': _('period_end cannot be before period_start.')},
+                code='invalid_period',
+            )
+        if services.resident_has_invoice_for_period(resident, attrs['period_start']):
+            raise serializers.ValidationError(
+                {'period_start': _('This resident already has an invoice for this period.')},
+                code='duplicate_invoice',
+            )
+        return attrs
+
+
+class InvoiceBulkGenerateSerializer(serializers.Serializer):
+    property = serializers.PrimaryKeyRelatedField(queryset=Property.objects.all())
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    due_date = serializers.DateField()
+
+    def validate(self, attrs):
+        request = self.context['request']
+        if not can_view_property(request.user, attrs['property'].pk):
+            raise serializers.ValidationError(
+                {'property': _('You are not assigned to this property.')},
+                code='property_not_assigned',
+            )
+        if attrs['period_end'] < attrs['period_start']:
+            raise serializers.ValidationError(
+                {'period_end': _('period_end cannot be before period_start.')},
+                code='invalid_period',
+            )
+        return attrs
+
+
+class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
+    """Add/edit an ad-hoc line on a draft invoice (electricity, penalty, ...)."""
+
+    class Meta:
+        model = InvoiceLineItem
+        fields = ['id', 'line_type', 'label', 'amount', 'order']
+        read_only_fields = ['id']

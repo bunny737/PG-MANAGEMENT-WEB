@@ -134,6 +134,13 @@ class Admission(TenantModelMixin):
     )
     first_month_billing_note = models.TextField(blank=True)
 
+    # Reserved for future per-resident add-on services (diet food, gym, etc.).
+    # Mandated empty ([]) in MVP by invariant 6 / PRD Module 9 "Future-Proofing"
+    # so add-ons can be populated later without a schema migration; the Module
+    # 08 invoice engine already iterates a line-item list, so a future add-on
+    # simply becomes another line item.
+    addons = models.JSONField(default=list, blank=True)
+
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='admissions_recorded'
     )

@@ -1,6 +1,9 @@
 from django.db import transaction
+from django.db.models import Q
+from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -10,14 +13,22 @@ from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 
 from . import services
-from .models import Admission, Allocation, Resident, Transfer
+from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
 from .serializers import (
+    AbscondedRecordCreateSerializer,
+    AbscondedRecordSerializer,
     AdmissionSerializer,
     AllocationSerializer,
+    BlacklistConfirmSerializer,
+    BlacklistEntrySerializer,
+    DuesWriteOffSerializer,
     ResidentSerializer,
     ResidentStatusUpdateSerializer,
     TransferCreateSerializer,
     TransferSerializer,
+    VacateFinalizeSerializer,
+    VacateGiveNoticeSerializer,
+    VacateSerializer,
 )
 
 
@@ -182,3 +193,132 @@ class TransferViewSet(viewsets.ModelViewSet):
             request=request,
         )
         return Response(TransferSerializer(transfer).data, status=status.HTTP_201_CREATED)
+
+
+class VacateViewSet(viewsets.ModelViewSet):
+    """Notice-to-vacate + move-out settlement (PRD Module 11 'Vacating
+    Workflow'). `create` = give notice (Active -> Notice Period); `finalize`
+    = the move-out settlement (Notice Period -> Vacated, bed freed, refund
+    computed). `manage_deposits` excludes Receptionist."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_deposits')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Vacate.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return Vacate.objects.filter(resident__property_id__in=ids).select_related('resident', 'settled_by')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return VacateGiveNoticeSerializer
+        return VacateSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        vacate = services.give_notice(actor=request.user, request=request, **serializer.validated_data)
+        return Response(VacateSerializer(vacate).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def finalize(self, request, pk=None):
+        vacate = self.get_object()
+        if vacate.is_settled:
+            raise ValidationError(
+                {'detail': _('This vacate has already been settled.')}, code='already_settled'
+            )
+        serializer = VacateFinalizeSerializer(data=request.data, context={'vacate': vacate})
+        serializer.is_valid(raise_exception=True)
+        vacate = services.finalize_vacate(
+            vacate=vacate, actor=request.user, request=request, **serializer.validated_data
+        )
+        return Response(VacateSerializer(vacate).data)
+
+
+class AbscondedRecordViewSet(viewsets.ModelViewSet):
+    """Marking a resident absconded + dues write-off (PRD Module 11
+    'Absconded Resident Workflow'). `manage_deposits` excludes Receptionist."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_deposits')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident', 'dues_recovery_status']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return AbscondedRecord.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return AbscondedRecord.objects.filter(
+            resident__property_id__in=ids
+        ).select_related('resident', 'marked_by', 'dues_written_off_by')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return AbscondedRecordCreateSerializer
+        return AbscondedRecordSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        record = services.mark_absconded(actor=request.user, request=request, **serializer.validated_data)
+        return Response(AbscondedRecordSerializer(record).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='write-off')
+    def write_off(self, request, pk=None):
+        record = self.get_object()
+        if record.dues_recovery_status == AbscondedRecord.DuesRecoveryStatus.WRITTEN_OFF:
+            raise ValidationError(
+                {'detail': _('Dues have already been written off.')}, code='already_written_off'
+            )
+        serializer = DuesWriteOffSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = services.write_off_dues(
+            absconded_record=record, note=serializer.validated_data['note'],
+            actor=request.user, request=request,
+        )
+        return Response(AbscondedRecordSerializer(record).data)
+
+
+class BlacklistEntryViewSet(viewsets.ModelViewSet):
+    """Tenant-wide blacklist (PRD Module 11 'Blacklisting') — deliberately NOT
+    property-scoped: visible across every property under the tenant so a
+    Manager elsewhere in the tenant is warned. `create` = confirm blacklist
+    (never automatic). `manage_deposits` excludes Receptionist."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_deposits')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident', 'phone']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return BlacklistEntry.objects.none()
+        return BlacklistEntry.objects.select_related('resident', 'confirmed_by')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return BlacklistConfirmSerializer
+        return BlacklistEntrySerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        entry = services.confirm_blacklist(actor=request.user, request=request, **serializer.validated_data)
+        return Response(BlacklistEntrySerializer(entry).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def check(self, request):
+        """Tenant-wide lookup used before registering a new resident (PRD:
+        'system shows a warning' — informational, does not block creation)."""
+        phone = request.query_params.get('phone', '').strip()
+        aadhaar_number = request.query_params.get('aadhaar_number', '').strip()
+        if not phone and not aadhaar_number:
+            return Response([])
+
+        query = Q()
+        if phone:
+            query |= Q(phone=phone)
+        if aadhaar_number:
+            query |= Q(aadhaar_number=aadhaar_number)
+        entries = self.get_queryset().filter(query)
+        return Response(BlacklistEntrySerializer(entries, many=True).data)

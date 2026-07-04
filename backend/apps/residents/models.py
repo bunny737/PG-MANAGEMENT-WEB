@@ -110,6 +110,11 @@ class Admission(TenantModelMixin):
         WITH_FOOD = 'with_food', _('With Food')
         WITHOUT_FOOD = 'without_food', _('Without Food')
 
+    class AdvanceMode(models.TextChoices):
+        UPI = 'upi', _('UPI')
+        CASH = 'cash', _('Cash')
+        BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='admission')
     bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='admissions')
@@ -126,6 +131,11 @@ class Admission(TenantModelMixin):
     contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
 
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # Added by Module 10 (Security Deposit & Advance Management) — advance_amount
+    # already existed (snapshotted at admission); these two siblings complete the
+    # PRD's `advance_amount`/`advance_collected_date`/`advance_mode` trio.
+    advance_collected_date = models.DateField(null=True, blank=True)
+    advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
     # Partial first-month adjustment set manually by management (PRD: "amount
     # set manually") — null means bill the first month at the normal
     # contracted_rent; Module 08 (Billing) is what actually reads this.
@@ -224,3 +234,122 @@ class Transfer(TenantModelMixin):
 
     def __str__(self):
         return f'Transfer: {self.resident} ({self.previous_bed} -> {self.new_bed})'
+
+
+class Vacate(TenantModelMixin):
+    """Notice-to-vacate + move-out settlement (PRD Module 11 'Vacating
+    Workflow'). One row per resident: created when notice is given
+    (Active -> Notice Period), then completed at move-out
+    (Notice Period -> Vacated) with the maintenance deduction and advance
+    refund. `refund_amount` is computed from the admission's advance_amount,
+    never stored, so it can't drift if the deduction is corrected before
+    settlement."""
+
+    class RefundMode(models.TextChoices):
+        UPI = 'upi', _('UPI')
+        CASH = 'cash', _('Cash')
+        BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='vacate')
+
+    notice_given_date = models.DateField()
+    # notice_given_date + 1 month (PRD 'Standard notice period: 1 month').
+    expected_vacate_date = models.DateField()
+    actual_vacate_date = models.DateField(null=True, blank=True)  # set when settlement is finalized
+
+    maintenance_deduction = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    maintenance_deduction_note = models.TextField(blank=True)
+
+    refund_date = models.DateField(null=True, blank=True)
+    refund_mode = models.CharField(max_length=15, choices=RefundMode.choices, blank=True)
+    refund_note = models.TextField(blank=True)
+
+    settled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='vacates_settled'
+    )
+
+    class Meta:
+        db_table = 'vacates'
+
+    def __str__(self):
+        return f'Vacate: {self.resident}'
+
+    @property
+    def is_settled(self):
+        return self.actual_vacate_date is not None
+
+    @property
+    def refund_amount(self):
+        if self.maintenance_deduction is None:
+            return None
+        return self.resident.admission.advance_amount - self.maintenance_deduction
+
+
+class AbscondedRecord(TenantModelMixin):
+    """A resident who left without notice, without settling dues, and without
+    returning access (PRD Module 11 'Absconded Resident Workflow') — distinct
+    from a normal vacate. The bed is freed immediately on marking (not on a
+    future vacate date), and the advance is forfeited and applied against
+    outstanding dues rather than refunded. `advance_applied_to_dues` and
+    `remaining_dues` are snapshotted at marking time — a settled financial
+    event, not recomputed later even if the resident's invoices change."""
+
+    class DuesRecoveryStatus(models.TextChoices):
+        OUTSTANDING = 'outstanding', _('Outstanding')
+        PARTIALLY_RECOVERED = 'partially_recovered', _('Partially Recovered')
+        WRITTEN_OFF = 'written_off', _('Written Off')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='absconded_record')
+
+    absconded_date = models.DateField()
+    last_seen_date = models.DateField(null=True, blank=True)
+    absconded_note = models.TextField(blank=True)
+
+    # The advance is always forfeited per the PRD workflow (no partial-forfeit
+    # option is described) — the field is kept for parity with the PRD's
+    # explicit field list and to make the outcome an explicit, queryable fact.
+    advance_forfeited = models.BooleanField(default=True)
+    advance_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
+    remaining_dues = models.DecimalField(max_digits=12, decimal_places=2)
+
+    dues_recovery_status = models.CharField(
+        max_length=20, choices=DuesRecoveryStatus.choices, default=DuesRecoveryStatus.OUTSTANDING
+    )
+    dues_written_off_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='dues_written_off'
+    )
+    dues_written_off_note = models.TextField(blank=True)
+    marked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='absconded_records_marked'
+    )
+
+    class Meta:
+        db_table = 'absconded_records'
+
+    def __str__(self):
+        return f'Absconded: {self.resident}'
+
+
+class BlacklistEntry(TenantModelMixin):
+    """Tenant-wide blacklist (PRD Module 11 'Blacklisting') — visible across
+    every property under the tenant, not just the property the resident lived
+    in, so a Manager registering a new resident anywhere in the tenant is
+    warned. Phone/Aadhaar are snapshotted at blacklisting time so the check
+    still works even if the resident's profile is edited later."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='blacklist_entry')
+    phone = models.CharField(max_length=15)
+    aadhaar_number = models.CharField(max_length=20, blank=True)
+    reason = models.TextField(blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='blacklist_entries_confirmed'
+    )
+
+    class Meta:
+        db_table = 'blacklist_entries'
+
+    def __str__(self):
+        return f'Blacklisted: {self.phone}'

@@ -38,6 +38,8 @@ Table: admissions                               (RLS enforced, app: apps.residen
   contracted_rent            decimal(12,2)
 
   advance_amount              decimal(12,2), default 0
+  advance_collected_date      date, null            (added by Module 10)
+  advance_mode                upi | cash | bank_transfer, blank   (added by Module 10)
   first_month_billing_amount  decimal(12,2), null   (manual partial-month override)
   first_month_billing_note    text, blank
   addons                      jsonb, default []     (reserved; added by Module 08)
@@ -150,3 +152,6 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
 - 2026-07-03  Module 08 added the reserved `addons` JSONField (default `[]`)
   to Admission per invariant 6 / PRD "Future-Proofing" — empty in MVP, so
   future add-on services land without a schema migration.
+- 2026-07-04  Module 10 added `advance_collected_date`/`advance_mode` to
+  Admission, completing the PRD's advance trio alongside the existing
+  `advance_amount`. No behaviour change to Check-In itself.

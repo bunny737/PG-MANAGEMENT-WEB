@@ -4,7 +4,7 @@ from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed
 from apps.properties.tests.base import PropertyAPITestCase
 
-from apps.residents.models import Admission, Allocation, Resident
+from apps.residents.models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Vacate
 
 
 class ResidentAPITestCase(PropertyAPITestCase):
@@ -45,4 +45,35 @@ class ResidentAPITestCase(PropertyAPITestCase):
                 contracted_sharing_type=admission.contracted_sharing_type,
                 contracted_room_category=admission.contracted_room_category,
                 contracted_rent=admission.contracted_rent,
+            )
+
+    @staticmethod
+    def create_vacate(resident, notice_given_date=None, expected_vacate_date=None, **kwargs):
+        if notice_given_date is None:
+            notice_given_date = date(2026, 7, 1)
+        if expected_vacate_date is None:
+            expected_vacate_date = date(2026, 8, 1)
+        with tenant_context(resident.tenant_id):
+            return Vacate.objects.create(
+                tenant_id=resident.tenant_id, resident=resident,
+                notice_given_date=notice_given_date, expected_vacate_date=expected_vacate_date, **kwargs
+            )
+
+    @staticmethod
+    def create_absconded_record(resident, absconded_date=None, **kwargs):
+        if absconded_date is None:
+            absconded_date = date(2026, 7, 1)
+        kwargs.setdefault('advance_applied_to_dues', 0)
+        kwargs.setdefault('remaining_dues', 0)
+        with tenant_context(resident.tenant_id):
+            return AbscondedRecord.objects.create(
+                tenant_id=resident.tenant_id, resident=resident, absconded_date=absconded_date, **kwargs
+            )
+
+    @staticmethod
+    def create_blacklist_entry(resident, **kwargs):
+        with tenant_context(resident.tenant_id):
+            return BlacklistEntry.objects.create(
+                tenant_id=resident.tenant_id, resident=resident,
+                phone=resident.phone, aadhaar_number=resident.aadhaar_number, **kwargs
             )

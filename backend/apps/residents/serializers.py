@@ -1,10 +1,20 @@
+from decimal import Decimal
+
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
-from .models import Admission, Allocation, Resident, Transfer
+from .models import (
+    AbscondedRecord,
+    Admission,
+    Allocation,
+    BlacklistEntry,
+    Resident,
+    Transfer,
+    Vacate,
+)
 
 
 class ResidentSerializer(serializers.ModelSerializer):
@@ -53,7 +63,8 @@ class AdmissionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
-            'advance_amount', 'first_month_billing_amount', 'first_month_billing_note',
+            'advance_amount', 'advance_collected_date', 'advance_mode',
+            'first_month_billing_amount', 'first_month_billing_note',
             'recorded_by', 'created_at', 'updated_at',
         ]
         # contracted_* fields are snapshotted server-side in the view
@@ -177,4 +188,160 @@ class TransferCreateSerializer(serializers.Serializer):
             )
 
         attrs['allocation'] = allocation
+        return attrs
+
+
+class VacateSerializer(serializers.ModelSerializer):
+    refund_amount = serializers.SerializerMethodField()
+    is_settled = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Vacate
+        fields = [
+            'id', 'resident', 'notice_given_date', 'expected_vacate_date', 'actual_vacate_date',
+            'maintenance_deduction', 'maintenance_deduction_note',
+            'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
+            'settled_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_refund_amount(self, obj) -> str | None:
+        amount = obj.refund_amount
+        return str(amount) if amount is not None else None
+
+
+class VacateGiveNoticeSerializer(serializers.Serializer):
+    """Step 1 of the vacating workflow (PRD Module 11): resident gives notice."""
+
+    resident = serializers.PrimaryKeyRelatedField(queryset=Resident.objects.all())
+    notice_given_date = serializers.DateField()
+
+    def validate(self, attrs):
+        request = self.context['request']
+        resident = attrs['resident']
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                {'resident': _('You are not assigned to this property.')}, code='property_not_assigned',
+            )
+        if not resident.can_transition_to(Resident.Status.NOTICE_PERIOD):
+            raise serializers.ValidationError(
+                {'resident': _('Only an active resident can give notice to vacate.')},
+                code='resident_not_active',
+            )
+        if Vacate.objects.filter(resident=resident).exists():
+            raise serializers.ValidationError(
+                {'resident': _('This resident already has a vacate record.')},
+                code='vacate_already_exists',
+            )
+        return attrs
+
+
+class VacateFinalizeSerializer(serializers.Serializer):
+    """Step 2 of the vacating workflow (PRD Module 11): the move-out
+    settlement — maintenance deduction and advance refund."""
+
+    actual_vacate_date = serializers.DateField()
+    maintenance_deduction = serializers.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00')
+    )
+    maintenance_deduction_note = serializers.CharField(required=False, allow_blank=True, default='')
+    refund_date = serializers.DateField(required=False, allow_null=True, default=None)
+    refund_mode = serializers.ChoiceField(
+        choices=Vacate.RefundMode.choices, required=False, allow_blank=True, default=''
+    )
+    refund_note = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate_maintenance_deduction(self, value):
+        if value < 0:
+            raise serializers.ValidationError(_('Deduction cannot be negative.'), code='invalid_deduction')
+        return value
+
+    def validate(self, attrs):
+        vacate = self.context['vacate']
+        advance = vacate.resident.admission.advance_amount
+        if attrs['maintenance_deduction'] > advance:
+            raise serializers.ValidationError(
+                {'maintenance_deduction': _(
+                    'Deduction cannot exceed the advance amount of %(advance)s.'
+                ) % {'advance': advance}},
+                code='deduction_exceeds_advance',
+            )
+        return attrs
+
+
+class AbscondedRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AbscondedRecord
+        fields = [
+            'id', 'resident', 'absconded_date', 'last_seen_date', 'absconded_note',
+            'advance_forfeited', 'advance_applied_to_dues', 'remaining_dues',
+            'dues_recovery_status', 'dues_written_off_by', 'dues_written_off_note',
+            'marked_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class AbscondedRecordCreateSerializer(serializers.Serializer):
+    """Marks a resident absconded (PRD Module 11 'Absconded Resident
+    Workflow'). Advance forfeiture and outstanding-dues calc happen
+    server-side in the service, not here."""
+
+    resident = serializers.PrimaryKeyRelatedField(queryset=Resident.objects.all())
+    absconded_date = serializers.DateField()
+    last_seen_date = serializers.DateField(required=False, allow_null=True, default=None)
+    absconded_note = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        request = self.context['request']
+        resident = attrs['resident']
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                {'resident': _('You are not assigned to this property.')}, code='property_not_assigned',
+            )
+        if not resident.can_transition_to(Resident.Status.ABSCONDED):
+            raise serializers.ValidationError(
+                {'resident': _('Only an active resident can be marked absconded.')},
+                code='resident_not_active',
+            )
+        return attrs
+
+
+class DuesWriteOffSerializer(serializers.Serializer):
+    """Write off remaining absconded dues as irrecoverable — mandatory note
+    (PRD: 'owner can write off with mandatory note')."""
+
+    note = serializers.CharField()
+
+    def validate_note(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(_('A note is required to write off dues.'), code='note_required')
+        return value
+
+
+class BlacklistEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlacklistEntry
+        fields = ['id', 'resident', 'phone', 'aadhaar_number', 'reason', 'confirmed_by', 'created_at']
+        read_only_fields = fields
+
+
+class BlacklistConfirmSerializer(serializers.Serializer):
+    """Owner/Manager confirms blacklisting (PRD: flagged automatically after
+    Absconded, but blacklisting itself is never automatic)."""
+
+    resident = serializers.PrimaryKeyRelatedField(queryset=Resident.objects.all())
+    reason = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        request = self.context['request']
+        resident = attrs['resident']
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                {'resident': _('You are not assigned to this property.')}, code='property_not_assigned',
+            )
+        if not resident.can_transition_to(Resident.Status.BLACKLISTED):
+            raise serializers.ValidationError(
+                {'resident': _('This resident cannot be blacklisted from their current status.')},
+                code='invalid_status_transition',
+            )
         return attrs

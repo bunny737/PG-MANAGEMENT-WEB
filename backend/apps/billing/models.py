@@ -105,10 +105,42 @@ class Invoice(TenantModelMixin):
     def total(self):
         return sum((item.amount for item in self.line_items.all()), Decimal('0.00'))
 
+    @property
+    def amount_paid(self):
+        """Sum of payments recorded against this invoice (Module 09). Computed
+        from the payment rows, never stored — same discipline as `total`."""
+        return sum((payment.amount for payment in self.payments.all()), Decimal('0.00'))
+
+    @property
+    def balance_due(self):
+        return self.total - self.amount_paid
+
     def is_overdue(self, on_date):
-        # No payments in Module 08, so an issued invoice past its due date is
-        # overdue; Module 09 will factor in amount paid.
-        return self.status == self.Status.ISSUED and self.due_date < on_date
+        # An issued invoice with an outstanding balance past its due date is
+        # overdue. A partially-paid invoice past due is overdue too; once fully
+        # paid the status is `paid` and it is never overdue.
+        return (
+            self.status in (self.Status.ISSUED, self.Status.PARTIALLY_PAID)
+            and self.due_date < on_date
+        )
+
+    def recompute_status(self, *, save=True):
+        """Sync `status` to payments received (PRD Module 10). A draft (unissued)
+        invoice is never touched — it is not yet a financial obligation. Called
+        after a payment is recorded or deleted."""
+        if self.status == self.Status.DRAFT:
+            return
+        paid = self.amount_paid
+        if paid <= 0:
+            new_status = self.Status.ISSUED
+        elif paid >= self.total:
+            new_status = self.Status.PAID
+        else:
+            new_status = self.Status.PARTIALLY_PAID
+        if new_status != self.status:
+            self.status = new_status
+            if save:
+                self.save(update_fields=['status', 'updated_at'])
 
 
 class InvoiceLineItem(TenantModelMixin):
@@ -141,3 +173,35 @@ class InvoiceLineItem(TenantModelMixin):
 
     def __str__(self):
         return f'{self.label}: {self.amount}'
+
+
+class Payment(TenantModelMixin):
+    """A manually-recorded payment against an invoice (PRD Module 10). Razorpay
+    is never used for resident payments — owners collect via UPI/cash/bank/etc.
+    and record the payment here. Multiple partial payments may be recorded
+    against one invoice; the invoice status is recomputed from the sum received
+    (Invoice.recompute_status)."""
+
+    class Mode(models.TextChoices):
+        UPI = 'upi', _('UPI')
+        CASH = 'cash', _('Cash')
+        BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
+        CARD = 'card', _('Card')
+        CHEQUE = 'cheque', _('Cheque')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)  # always positive
+    payment_date = models.DateField()
+    payment_mode = models.CharField(max_length=15, choices=Mode.choices)
+    reference = models.CharField(max_length=255, blank=True)  # txn ref / note (optional)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='payments_recorded'
+    )
+
+    class Meta:
+        db_table = 'payments'
+        ordering = ['-payment_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.amount} via {self.get_payment_mode_display()} on {self.payment_date}'

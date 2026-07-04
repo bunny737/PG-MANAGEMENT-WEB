@@ -12,7 +12,7 @@ from django.db import transaction
 from apps.audit import log as audit_log
 from apps.residents.models import Admission
 
-from .models import Invoice, InvoiceLineItem
+from .models import Invoice, InvoiceLineItem, Payment
 
 
 def active_discount(resident, on_date):
@@ -88,3 +88,39 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
 
 def resident_has_invoice_for_period(resident, period_start):
     return resident.invoices.filter(period_start=period_start).exists()
+
+
+@transaction.atomic
+def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
+                   actor, request=None):
+    """Record a manual payment (PRD Module 10) and recompute the invoice status
+    (issued -> partially_paid -> paid). Validation (draft/overpayment) is the
+    serializer's job."""
+    payment = Payment.objects.create(
+        tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
+        payment_date=payment_date, payment_mode=payment_mode,
+        reference=reference, recorded_by=actor,
+    )
+    invoice.recompute_status()
+    audit_log.record(
+        action='payment.recorded', actor=actor, obj=payment,
+        after={'invoice': str(invoice.id), 'amount': str(amount),
+               'mode': payment_mode, 'invoice_status': invoice.status},
+        request=request,
+    )
+    return payment
+
+
+@transaction.atomic
+def delete_payment(*, payment, actor, request=None):
+    """Delete a payment (a correction) and recompute the invoice status back
+    down (paid -> partially_paid -> issued)."""
+    invoice = payment.invoice
+    audit_log.record(
+        action='payment.deleted', actor=actor, obj=payment,
+        before={'invoice': str(invoice.id), 'amount': str(payment.amount),
+                'mode': payment.payment_mode},
+        request=request,
+    )
+    payment.delete()
+    invoice.recompute_status()

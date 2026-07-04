@@ -8,7 +8,7 @@ from apps.properties.services import can_view_property
 from apps.residents.models import Resident
 
 from . import services
-from .models import Discount, Invoice, InvoiceLineItem
+from .models import Discount, Invoice, InvoiceLineItem, Payment
 
 
 def _windows_overlap(from1, until1, from2, until2):
@@ -92,6 +92,8 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     line_items = InvoiceLineItemSerializer(many=True, read_only=True)
     total = serializers.SerializerMethodField()
+    amount_paid = serializers.SerializerMethodField()
+    balance_due = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
 
     class Meta:
@@ -99,12 +101,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'resident', 'period_start', 'period_end', 'billing_mode',
             'issue_date', 'due_date', 'status', 'notes', 'created_by',
-            'line_items', 'total', 'is_overdue', 'created_at', 'updated_at',
+            'line_items', 'total', 'amount_paid', 'balance_due', 'is_overdue',
+            'created_at', 'updated_at',
         ]
         read_only_fields = fields
 
     def get_total(self, obj) -> str:
         return str(obj.total)
+
+    def get_amount_paid(self, obj) -> str:
+        return str(obj.amount_paid)
+
+    def get_balance_due(self, obj) -> str:
+        return str(obj.balance_due)
 
     def get_is_overdue(self, obj) -> bool:
         return obj.is_overdue(date.today())
@@ -188,3 +197,63 @@ class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
         model = InvoiceLineItem
         fields = ['id', 'line_type', 'label', 'amount', 'order']
         read_only_fields = ['id']
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = [
+            'id', 'invoice', 'amount', 'payment_date', 'payment_mode',
+            'reference', 'recorded_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class PaymentWriteSerializer(serializers.ModelSerializer):
+    """Record a manual payment against an invoice (PRD Module 10). recorded_by
+    is stamped from the request user server-side."""
+
+    class Meta:
+        model = Payment
+        fields = ['id', 'invoice', 'amount', 'payment_date', 'payment_mode', 'reference']
+        read_only_fields = ['id']
+
+    def validate_invoice(self, invoice):
+        request = self.context['request']
+        if not can_view_property(request.user, invoice.resident.property_id):
+            raise serializers.ValidationError(
+                _('You are not assigned to this property.'), code='property_not_assigned'
+            )
+        return invoice
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                _('Payment amount must be greater than zero.'), code='invalid_amount'
+            )
+        return value
+
+    def validate(self, attrs):
+        invoice = attrs['invoice']
+        # Draft invoices are not yet a financial obligation — issue first.
+        if invoice.status == Invoice.Status.DRAFT:
+            raise serializers.ValidationError(
+                {'invoice': _('Payments can only be recorded against an issued invoice.')},
+                code='invoice_not_issued',
+            )
+        balance = invoice.balance_due
+        if balance <= 0:
+            raise serializers.ValidationError(
+                {'invoice': _('This invoice is already fully paid.')},
+                code='invoice_fully_paid',
+            )
+        # Reject overpayment: a payment never exceeds the outstanding balance, so
+        # balance_due stays >= 0. Advances/deposits are Module 10's concern, not
+        # an overpaid invoice.
+        if attrs['amount'] > balance:
+            raise serializers.ValidationError(
+                {'amount': _('Payment exceeds the outstanding balance of %(balance)s.')
+                 % {'balance': balance}},
+                code='overpayment',
+            )
+        return attrs

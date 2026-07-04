@@ -13,7 +13,7 @@ from apps.properties.services import visible_property_ids
 from apps.residents.models import Resident
 
 from . import services
-from .models import Discount, Invoice, InvoiceLineItem
+from .models import Discount, Invoice, InvoiceLineItem, Payment
 from .serializers import (
     DiscountSerializer,
     InvoiceBulkGenerateSerializer,
@@ -21,6 +21,8 @@ from .serializers import (
     InvoiceLineItemWriteSerializer,
     InvoiceSerializer,
     InvoiceUpdateSerializer,
+    PaymentSerializer,
+    PaymentWriteSerializer,
 )
 
 
@@ -88,7 +90,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         ids = visible_property_ids(self.request.user)
         return (
             Invoice.objects.filter(resident__property_id__in=ids)
-            .select_related('resident').prefetch_related('line_items')
+            .select_related('resident').prefetch_related('line_items', 'payments')
         )
 
     def get_serializer_class(self):
@@ -148,6 +150,18 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             request=request,
         )
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=False, methods=['get'])
+    def outstanding(self, request):
+        """Invoices with money still owed (PRD Module 10 "Outstanding dues view
+        across all residents"). Fully-paid invoices are `paid` and drop out;
+        drafts are excluded (not yet owed)."""
+        invoices = self.get_queryset().filter(
+            status__in=(Invoice.Status.ISSUED, Invoice.Status.PARTIALLY_PAID)
+        )
+        # balance_due is computed, so filter in Python (prefetched line_items/payments).
+        owed = [inv for inv in invoices if inv.balance_due > 0]
+        return Response(InvoiceSerializer(owed, many=True).data)
 
     @action(detail=False, methods=['post'], url_path='bulk-generate')
     def bulk_generate(self, request):
@@ -214,3 +228,60 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             after=serializer.data, request=request,
         )
         return self._fresh_response(invoice)
+
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    """Manually-recorded payments against invoices (PRD Module 10). Razorpay is
+    never used here — resident payments are always recorded by hand. A payment
+    is a financial record: correct a mistake by deleting and re-recording,
+    there is no edit (`patch`)."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_payments')]
+    http_method_names = ['get', 'post', 'delete']
+    filterset_fields = ['invoice', 'invoice__resident', 'payment_mode']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Payment.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return (
+            Payment.objects.filter(invoice__resident__property_id__in=ids)
+            .select_related('invoice', 'invoice__resident', 'recorded_by')
+        )
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return PaymentWriteSerializer
+        return PaymentSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        payment = services.record_payment(actor=request.user, request=request, **serializer.validated_data)
+        return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        services.delete_payment(payment=instance, actor=self.request.user, request=self.request)
+
+    @action(detail=True, methods=['get'])
+    def receipt(self, request, pk=None):
+        """Auto-generated receipt after payment recording (PRD Module 10). JSON
+        for now; PDF rendering is Module 17 (export)'s concern."""
+        payment = self.get_object()
+        invoice = payment.invoice
+        resident = invoice.resident
+        return Response({
+            'receipt_for': str(payment.id),
+            'resident': str(resident),
+            'invoice': str(invoice.id),
+            'period_start': invoice.period_start,
+            'period_end': invoice.period_end,
+            'amount': str(payment.amount),
+            'payment_date': payment.payment_date,
+            'payment_mode': payment.payment_mode,
+            'reference': payment.reference,
+            'recorded_by': str(payment.recorded_by) if payment.recorded_by else None,
+            'invoice_total': str(invoice.total),
+            'invoice_balance_due': str(invoice.balance_due),
+            'invoice_status': invoice.status,
+        })

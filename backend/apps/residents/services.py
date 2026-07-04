@@ -11,8 +11,11 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from apps.audit import log as audit_log
+from apps.audit.models import AuditLog
 from apps.properties.models import Bed, PropertySettings
 
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
@@ -289,3 +292,120 @@ def confirm_blacklist(*, resident, reason, actor, request=None):
         request=request,
     )
     return entry
+
+
+def build_activity_timeline(resident):
+    """Aggregates a resident's lifecycle into one chronological feed (PRD
+    Module 22). Computed entirely from records already built by Modules
+    04-12 — no new table. Reverse relations (resident.invoices,
+    resident.complaints, ...) are used instead of importing those apps'
+    models directly, so this stays a leaf function with no risk of the
+    circular-import issues other cross-app service functions in this file
+    work around (e.g. outstanding_dues_for's deferred Invoice import).
+
+    Same-day events are ordered by a fixed per-kind weight (the `add()` calls
+    below, in narrative order), not insertion order, so a day with several
+    events (e.g. Absconded + Advance Forfeited) always reads sensibly."""
+    events = []
+
+    def add(event_date, weight, label, detail=''):
+        if event_date is None:
+            return
+        events.append({'date': event_date, '_weight': weight, 'event': label, 'detail': detail})
+
+    add(timezone.localtime(resident.created_at).date(), 0, _('Inquiry Received'))
+
+    reserved_log = AuditLog.objects.filter(
+        object_type='Resident', object_id=str(resident.id),
+        action='resident.status_changed', after__status=Resident.Status.RESERVED,
+    ).order_by('created_at').first()
+    if reserved_log:
+        add(timezone.localtime(reserved_log.created_at).date(), 1, _('Room Reserved'))
+
+    admission = getattr(resident, 'admission', None)
+    if admission is not None:
+        # One atomic action in this system (Module 05: admission == check-in)
+        # — represented as one entry, not the PRD example's two separate lines.
+        add(
+            admission.joining_date, 2, _('Admission Completed — Checked In'),
+            _('Room %(room)s (%(bed)s)') % {
+                'room': admission.bed.room.room_number, 'bed': admission.bed.bed_number,
+            },
+        )
+
+    for invoice in resident.invoices.all().prefetch_related('payments'):
+        if invoice.issue_date:
+            add(invoice.issue_date, 3, _('Invoice Generated'), _('Total ₹%(total)s') % {'total': invoice.total})
+        if invoice.status != invoice.Status.PAID and invoice.is_overdue(date.today()):
+            add(
+                invoice.due_date, 5, _('Invoice Overdue'),
+                _('Balance due ₹%(balance)s') % {'balance': invoice.balance_due},
+            )
+
+        payments = sorted(invoice.payments.all(), key=lambda p: (p.payment_date, p.created_at))
+        running_total = Decimal('0.00')
+        for index, payment in enumerate(payments):
+            running_total += payment.amount
+            if running_total < invoice.total:
+                label = _('Partial Payment')
+            elif index == 0:
+                label = _('Payment Received')
+            else:
+                label = _('Remaining Paid')
+            add(
+                payment.payment_date, 4, label,
+                _('₹%(amount)s via %(mode)s')
+                % {'amount': payment.amount, 'mode': payment.get_payment_mode_display()},
+            )
+
+    for transfer in resident.transfers.select_related('new_bed__room'):
+        add(
+            transfer.transfer_date, 6, _('Transferred'),
+            _('Room %(room)s (%(bed)s)')
+            % {'room': transfer.new_bed.room.room_number, 'bed': transfer.new_bed.bed_number},
+        )
+
+    for complaint in resident.complaints.all():
+        add(timezone.localtime(complaint.created_at).date(), 7, _('Complaint Raised'), complaint.get_category_display())
+
+    vacate = getattr(resident, 'vacate', None)
+    if vacate is not None:
+        add(
+            vacate.notice_given_date, 8, _('Notice Given'),
+            _('Expected vacate %(date)s') % {'date': vacate.expected_vacate_date.isoformat()},
+        )
+        if vacate.is_settled:
+            detail = (
+                _('Refund ₹%(amount)s') % {'amount': vacate.refund_amount}
+                if vacate.refund_amount is not None else ''
+            )
+            add(vacate.actual_vacate_date, 9, _('Vacated'), detail)
+
+    absconded = getattr(resident, 'absconded_record', None)
+    if absconded is not None:
+        note = absconded.absconded_note
+        if absconded.last_seen_date:
+            seen = _('Last seen %(date)s') % {'date': absconded.last_seen_date.isoformat()}
+            note = f'{seen} — {note}' if note else seen
+        add(absconded.absconded_date, 10, _('Marked Absconded'), note)
+        if absconded.advance_applied_to_dues > 0:
+            add(
+                absconded.absconded_date, 11, _('Advance Forfeited'),
+                _('₹%(amount)s applied against dues') % {'amount': absconded.advance_applied_to_dues},
+            )
+        if absconded.dues_recovery_status == AbscondedRecord.DuesRecoveryStatus.WRITTEN_OFF:
+            add(
+                timezone.localtime(absconded.updated_at).date(), 12, _('Dues Written Off'),
+                _('₹%(amount)s — %(note)s')
+                % {'amount': absconded.remaining_dues, 'note': absconded.dues_written_off_note},
+            )
+
+    blacklist_entry = getattr(resident, 'blacklist_entry', None)
+    if blacklist_entry is not None:
+        add(timezone.localtime(blacklist_entry.created_at).date(), 13, _('Blacklisted'), blacklist_entry.reason)
+
+    events.sort(key=lambda e: (e['date'], e['_weight']))
+    for event in events:
+        del event['_weight']
+        event['date'] = event['date'].isoformat()
+    return events

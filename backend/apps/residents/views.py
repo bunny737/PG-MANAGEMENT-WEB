@@ -47,6 +47,8 @@ class ResidentViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'change_status'):
             return [IsAuthenticated(), require_permission('manage_residents')()]
+        if self.action == 'timeline':
+            return [IsAuthenticated(), require_permission('view_activity_timeline')()]
         return [IsAuthenticated(), require_permission('view_resident_profile')()]
 
     def get_queryset(self):
@@ -87,6 +89,15 @@ class ResidentViewSet(viewsets.ModelViewSet):
             request=request,
         )
         return Response(ResidentSerializer(instance).data)
+
+    @action(detail=True, methods=['get'])
+    def timeline(self, request, pk=None):
+        """Chronological lifecycle feed (PRD Module 22) — computed from
+        existing records, not a stored resource. Gated separately from the
+        rest of this viewset's read access since it surfaces invoice/payment
+        amounts Receptionist can't see anywhere else."""
+        resident = self.get_object()
+        return Response(services.build_activity_timeline(resident))
 
 
 class AdmissionViewSet(viewsets.ModelViewSet):

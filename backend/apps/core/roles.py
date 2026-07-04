@@ -47,6 +47,11 @@ PERMISSION_MATRIX = {
     # tenant-wide. Matches the other Owner-only rows above (manage_subscription
     # etc.), not the Manager-inclusive _OPS group.
     'view_audit_logs': (Role.SUPER_ADMIN, Role.OWNER),
+    # _OPS (not Receptionist) — the resident timeline surfaces invoice/payment
+    # amounts, which Receptionist can't see anywhere else (manage_invoices/
+    # manage_payments are both _OPS-only), so it can't be reached via the
+    # Receptionist-inclusive view_resident_profile.
+    'view_activity_timeline': _OPS,
     'view_own_profile': (Role.RESIDENT,),
     'view_own_invoices': (Role.RESIDENT,),
     'raise_complaint': (Role.RESIDENT,),

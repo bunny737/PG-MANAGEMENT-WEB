@@ -91,6 +91,10 @@ lifecycle (`vacated`/`blacklisted`) instead.
 ## Permissions
 - `view_resident_profile` (Super Admin, Owner, Manager, Receptionist): list/retrieve.
 - `manage_residents` (Super Admin, Owner, Manager): create, profile update, status change.
+- `view_activity_timeline` (Super Admin, Owner, Manager — added by Module 16):
+  the `GET /residents/{id}/timeline/` action only. Deliberately excludes
+  Receptionist even though they have `view_resident_profile`, since the feed
+  surfaces invoice/payment figures they can't see anywhere else.
 - Resident (self-service) role: no access here — PRD's "view own profile"
   is a future self-service endpoint, not this admin-facing one.
 
@@ -149,3 +153,6 @@ lifecycle (`vacated`/`blacklisted`) instead.
   module's "Bugs found and fixed"). Spec rewritten to as-built.
 - 2026-07-04  Module 13 added a plan-limit check to `change_status` (see
   Decisions) — no other change to the status-transition endpoint.
+- 2026-07-04  Module 16 added a `timeline` action + `view_activity_timeline`
+  permission to `ResidentViewSet` (see Permissions) — no other change to
+  this viewset.

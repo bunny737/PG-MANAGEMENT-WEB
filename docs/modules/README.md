@@ -17,7 +17,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 08 | Invoices / Billing | 08-billing.md | 2 | 06, 07 | ✅ |
 | 09 | Payments | 09-payments.md | 2 | 08 | ✅ |
 | 10 | Deposits / Advance / Vacating / Absconded | 10-deposits-exit.md | 2 | 08 | ✅ |
-| 11 | Complaints | 11-complaints.md | 3 | 04 | ⬜ |
+| 11 | Complaints | 11-complaints.md | 3 | 04 | ✅ |
 | 12 | Visitors | 12-visitors.md | 3 | 04 | ⬜ |
 | 13 | Subscription + Razorpay + Plan Limits | 13-subscription.md | 3 | 01, 02 | ⬜ |
 | 14 | Notifications | 14-notifications.md | 3 | 08, 09 | ⬜ |

@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -5,7 +6,7 @@ from apps.accounts.models import User
 from apps.core.roles import permissions_for
 from apps.properties.services import can_view_property
 
-from .models import Complaint, ComplaintComment
+from .models import Complaint, ComplaintComment, Visitor
 
 
 class ComplaintCommentSerializer(serializers.ModelSerializer):
@@ -91,3 +92,49 @@ class ComplaintAssignSerializer(serializers.Serializer):
                 _('This user is not assigned to the resident\'s property.'), code='assignee_not_assigned'
             )
         return value
+
+
+class VisitorSerializer(serializers.ModelSerializer):
+    is_checked_in = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Visitor
+        fields = [
+            'id', 'resident', 'visitor_name', 'mobile_number', 'purpose',
+            'entry_time', 'exit_time', 'is_checked_in',
+            'logged_by', 'checked_out_by', 'approved_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'exit_time', 'is_checked_in', 'logged_by', 'checked_out_by',
+            'approved_by', 'created_at', 'updated_at',
+        ]
+        extra_kwargs = {'entry_time': {'required': False}}
+
+    def validate_resident(self, value):
+        request = self.context['request']
+        if not can_view_property(request.user, value.property_id):
+            raise serializers.ValidationError(
+                _('You are not assigned to this property.'), code='property_not_assigned'
+            )
+        return value
+
+    def validate(self, attrs):
+        attrs.setdefault('entry_time', timezone.now())
+        return attrs
+
+
+class VisitorCheckOutSerializer(serializers.Serializer):
+    """Log the visitor's exit (PRD 'Log visitor entry and exit'). `exit_time`
+    defaults to now if not given, so front desk can just tap "check out"."""
+
+    exit_time = serializers.DateTimeField(required=False)
+
+    def validate(self, attrs):
+        visitor = self.context['visitor']
+        exit_time = attrs.get('exit_time') or timezone.now()
+        if exit_time < visitor.entry_time:
+            raise serializers.ValidationError(
+                {'exit_time': _('Exit time cannot be before entry time.')}, code='exit_before_entry'
+            )
+        attrs['exit_time'] = exit_time
+        return attrs

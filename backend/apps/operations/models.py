@@ -96,3 +96,42 @@ class ComplaintComment(TenantModelMixin):
 
     def __str__(self):
         return f'Comment on {self.complaint_id} by {self.author}'
+
+
+class Visitor(TenantModelMixin):
+    """A logged visitor entry/exit against a resident (PRD Module 13). Front
+    desk (Receptionist) logs entry and exit directly — `manage_visitors` is
+    the one permission in the whole matrix that includes Receptionist, since
+    this is their primary job. `approved_by` is an optional Owner/Manager
+    confirmation stamp layered on top (PRD: 'with Owner/Manager confirmation
+    if required') — see Decisions for why it doesn't gate entry."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.ForeignKey(Resident, on_delete=models.PROTECT, related_name='visitors')
+    visitor_name = models.CharField(max_length=200)
+    mobile_number = models.CharField(max_length=15)
+    purpose = models.CharField(max_length=255)
+    entry_time = models.DateTimeField()
+    exit_time = models.DateTimeField(null=True, blank=True)
+    logged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='visitors_logged'
+    )
+    checked_out_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='visitors_checked_out',
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='visitors_approved',
+    )
+
+    class Meta:
+        db_table = 'visitors'
+        ordering = ['-entry_time']
+
+    def __str__(self):
+        return f'{self.visitor_name} visiting {self.resident}'
+
+    @property
+    def is_checked_in(self):
+        return self.exit_time is None

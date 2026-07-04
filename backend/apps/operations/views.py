@@ -9,7 +9,7 @@ from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.properties.services import visible_property_ids
 
-from .models import Complaint, ComplaintComment
+from .models import Complaint, ComplaintComment, Visitor
 from .serializers import (
     ComplaintAssignSerializer,
     ComplaintCommentSerializer,
@@ -17,6 +17,8 @@ from .serializers import (
     ComplaintSerializer,
     ComplaintStatusUpdateSerializer,
     ComplaintUpdateSerializer,
+    VisitorCheckOutSerializer,
+    VisitorSerializer,
 )
 
 
@@ -134,3 +136,74 @@ class ComplaintViewSet(viewsets.ModelViewSet):
             after={'body': comment.body}, request=request,
         )
         return Response(ComplaintCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+
+
+class VisitorViewSet(viewsets.ModelViewSet):
+    """Visitor entry/exit log (PRD Module 13). `manage_visitors` is the one
+    permission in the whole matrix that includes Receptionist — front desk
+    logging visitor entry/exit is their primary job. No PATCH/DELETE — a
+    logged entry is corrected via the dedicated `check-out`/`confirm`
+    actions, not raw edits."""
+
+    serializer_class = VisitorSerializer
+    permission_classes = [IsAuthenticated, require_permission('manage_visitors')]
+    http_method_names = ['get', 'post']
+    filterset_fields = ['resident', 'mobile_number']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Visitor.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return (
+            Visitor.objects.filter(resident__property_id__in=ids)
+            .select_related('resident', 'logged_by', 'checked_out_by', 'approved_by')
+        )
+
+    def perform_create(self, serializer):
+        instance = serializer.save(tenant_id=self.request.user.tenant_id, logged_by=self.request.user)
+        audit_log.record(
+            action='visitor.logged', actor=self.request.user, obj=instance,
+            after={'resident': str(instance.resident_id), 'visitor_name': instance.visitor_name,
+                   'entry_time': instance.entry_time.isoformat()},
+            request=self.request,
+        )
+
+    @action(detail=True, methods=['post'], url_path='check-out', url_name='check-out')
+    def check_out(self, request, pk=None):
+        visitor = self.get_object()
+        if not visitor.is_checked_in:
+            raise ValidationError(
+                {'detail': _('This visitor has already checked out.')}, code='already_checked_out'
+            )
+        serializer = VisitorCheckOutSerializer(data=request.data, context={'visitor': visitor})
+        serializer.is_valid(raise_exception=True)
+
+        visitor.exit_time = serializer.validated_data['exit_time']
+        visitor.checked_out_by = request.user
+        visitor.save(update_fields=['exit_time', 'checked_out_by', 'updated_at'])
+
+        audit_log.record(
+            action='visitor.checked_out', actor=request.user, obj=visitor,
+            after={'exit_time': visitor.exit_time.isoformat()}, request=request,
+        )
+        return Response(VisitorSerializer(visitor).data)
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        """Optional Owner/Manager confirmation layered on top of the front
+        desk's own entry (PRD: 'with Owner/Manager confirmation if
+        required') — see the Module 12 spec's Decisions for why this is an
+        advisory stamp, not a hard gate blocking entry."""
+        visitor = self.get_object()
+        if visitor.approved_by_id is not None:
+            raise ValidationError(
+                {'detail': _('This visitor has already been confirmed.')}, code='already_confirmed'
+            )
+        visitor.approved_by = request.user
+        visitor.save(update_fields=['approved_by', 'updated_at'])
+
+        audit_log.record(
+            action='visitor.confirmed', actor=request.user, obj=visitor,
+            after={'approved_by': str(request.user.id)}, request=request,
+        )
+        return Response(VisitorSerializer(visitor).data)

@@ -42,6 +42,11 @@ PERMISSION_MATRIX = {
     'manage_visitors': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_resident_profile': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_reports': _OPS,
+    # Owner-only (not Manager) — the audit trail covers staff role changes,
+    # discount approvals, and other actions a property Manager shouldn't see
+    # tenant-wide. Matches the other Owner-only rows above (manage_subscription
+    # etc.), not the Manager-inclusive _OPS group.
+    'view_audit_logs': (Role.SUPER_ADMIN, Role.OWNER),
     'view_own_profile': (Role.RESIDENT,),
     'view_own_invoices': (Role.RESIDENT,),
     'raise_complaint': (Role.RESIDENT,),

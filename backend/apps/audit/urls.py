@@ -1,2 +1,8 @@
-from django.urls import path
-urlpatterns = []   # populated module by module
+from rest_framework.routers import SimpleRouter
+
+from .views import AuditLogViewSet
+
+router = SimpleRouter()
+router.register('audit-logs', AuditLogViewSet, basename='audit-log')
+
+urlpatterns = router.urls

@@ -160,3 +160,7 @@ serialized on `/auth/me/` as `permissions: [...]`.
   notification) deferred with `transaction.on_commit`, instead of a direct
   synchronous call. Added two `PlatformConfig` fields (trial-reminder
   offsets). See Module 14's spec for the full notification design.
+- 2026-07-04  Module 15 added the `view_audit_logs` permission (Owner +
+  Super Admin) to `PERMISSION_MATRIX` and built the read-only query API over
+  `AuditLog` (this module's model + write path are unchanged). See Module
+  15's spec.

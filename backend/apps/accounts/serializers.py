@@ -22,9 +22,9 @@ from . import otp as otp_service
 from .emails import (
     send_password_reset_email,
     send_staff_invite_email,
-    send_verification_email,
 )
 from .models import Tenant, User
+from .tasks import send_welcome_email_task
 from .tokens import (
     check_password_reset_token,
     read_email_verification_token,
@@ -100,7 +100,10 @@ class SignupSerializer(serializers.Serializer):
             after={'name': tenant.name, 'trial_ends_at': tenant.trial_ends_at.isoformat()},
             request=self.context.get('request'),
         )
-        send_verification_email(user)
+        # Module 14: dispatched after commit so the Celery worker (which may
+        # run before this transaction's row is visible otherwise) always
+        # finds the User it's looking for.
+        transaction.on_commit(lambda: send_welcome_email_task.delay(str(user.id)))
         return user
 
 

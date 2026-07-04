@@ -20,7 +20,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 11 | Complaints | 11-complaints.md | 3 | 04 | ✅ |
 | 12 | Visitors | 12-visitors.md | 3 | 04 | ✅ |
 | 13 | Subscription + Razorpay + Plan Limits | 13-subscription.md | 3 | 01, 02 | ✅ |
-| 14 | Notifications | 14-notifications.md | 3 | 08, 09 | ⬜ |
+| 14 | Notifications | 14-notifications.md | 3 | 08, 09 | ✅ |
 | 15 | Audit Logs | 15-audit-logs.md | 3 | 01 | ⬜ |
 | 16 | Activity Timeline | 16-activity-timeline.md | 3 | 04 | ⬜ |
 | 17 | Data Export | 17-export.md | 3 | 04, 08, 09 | ⬜ |

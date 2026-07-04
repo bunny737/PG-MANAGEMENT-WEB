@@ -1,5 +1,10 @@
-"""Transactional auth emails. Module 14 will move these onto Celery with
-per-language templates; the strings already go through gettext (invariant 7)."""
+"""Transactional auth emails. The strings already go through gettext
+(invariant 7). Module 14 moved the signup dispatch (send_verification_email,
+which doubles as the "welcome" notification) onto a Celery task — see
+apps.accounts.tasks.send_welcome_email_task. Password-reset and staff-invite
+stay synchronous; they're outside Module 14's literal MVP scope (email-only
+welcome/trial/invoice/receipt notifications) — revisit together later if
+useful."""
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import translation

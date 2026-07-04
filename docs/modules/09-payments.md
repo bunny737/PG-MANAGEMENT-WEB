@@ -113,6 +113,11 @@ Module 08.
   covered by `GET /payments/?invoice__resident=<id>` (filterable) — no
   dedicated resident-scoped endpoint yet; revisit if the frontend needs one
   shaped differently.
+- [DECISION 2026-07-04] Build-order Module 14 (Notifications) added the PRD's
+  "Payment receipt to resident" email (distinct from this module's own JSON
+  receipt action above) — fires from `services.record_payment`, after the
+  payment row and audit log are written, deferred via `transaction.on_commit`
+  + Celery.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -124,3 +129,5 @@ Module 08.
   action. Draft-invoice and overpayment guards. Audit logged. 20 new tests
   (recording, deletion/reversion, outstanding dues, receipt, scoping, RLS
   isolation); full suite (216) green. Spec written to as-built.
+- 2026-07-04  Build-order Module 14 added an email-receipt dispatch to
+  `services.record_payment` — no other change to payment recording itself.

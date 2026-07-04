@@ -48,6 +48,8 @@ Table: audit_logs                   (RLS ENFORCED — first RLS table)
 
 Table: platform_config              (singleton, id=1)
   trial_days (default 60) · payment_grace_days (default 5) · updated_at
+  trial_reminder_first_days_before (default 15)   -- added by Module 14
+  trial_reminder_second_days_before (default 5)   -- added by Module 14
 ```
 
 ### RLS infrastructure (apps/core/)
@@ -152,3 +154,9 @@ serialized on `/auth/me/` as `permissions: [...]`.
 - 2026-07-04  Module 13 added one line to `SignupSerializer.create`: every
   new tenant also gets a blank `Subscription` row (no plan yet). No other
   change to the signup flow itself.
+- 2026-07-04  Module 14 changed `SignupSerializer.create`'s email dispatch:
+  `send_verification_email` now runs via a Celery task
+  (`apps.accounts.tasks.send_welcome_email_task`, doubling as the "welcome"
+  notification) deferred with `transaction.on_commit`, instead of a direct
+  synchronous call. Added two `PlatformConfig` fields (trial-reminder
+  offsets). See Module 14's spec for the full notification design.

@@ -10,6 +10,7 @@ draft.
 from django.db import transaction
 
 from apps.audit import log as audit_log
+from apps.notifications.tasks import send_payment_receipt_email_task
 from apps.residents.models import Admission
 
 from .models import Invoice, InvoiceLineItem, Payment
@@ -108,6 +109,8 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
                'mode': payment_mode, 'invoice_status': invoice.status},
         request=request,
     )
+    # Module 14: "Payment receipt to resident" (PRD).
+    transaction.on_commit(lambda: send_payment_receipt_email_task.delay(str(payment.id)))
     return payment
 
 

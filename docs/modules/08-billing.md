@@ -152,6 +152,9 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - [OPEN] Weekly/daily invoice-on-checkout automation (PRD) isn't built; the
   billing_mode field and manual generation support it, but the check-out
   trigger is Module 10's concern.
+- [DECISION 2026-07-04] Module 14 hooked the "Invoice generated notification
+  to resident" (PRD Module 18) onto the `issue` action, not `create` — a
+  draft has no obligation for the resident to be told about.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -160,3 +163,6 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
   action, draft-only line-item add/edit/remove, derived overdue, audit logging;
   added reserved `admissions.addons` field. 25 invoice tests (+ discount tests
   from Module 07). Spec written to as-built.
+- 2026-07-04  Module 14 added an email-notification dispatch (via
+  `transaction.on_commit` + Celery) to the `issue` action — no other change
+  to invoice issuance itself.

@@ -46,7 +46,10 @@ class SignupTests(AuthAPITestCase):
         self.assertLess(abs(tenant.trial_ends_at - expected_end), timedelta(minutes=5))
 
     def test_signup_sends_verification_email_and_writes_audit_log(self):
-        response = self.client.post(reverse('auth-signup'), signup_payload())
+        # Module 14: the welcome-email dispatch is deferred to transaction.on_commit
+        # and runs via Celery — captureOnCommitCallbacks runs it inline for the test.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('auth-signup'), signup_payload())
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
@@ -67,7 +70,8 @@ class SignupTests(AuthAPITestCase):
         self.assertEqual(Tenant.objects.count(), 1)
 
     def test_email_verification_flow_enables_login(self):
-        self.client.post(reverse('auth-signup'), signup_payload())
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('auth-signup'), signup_payload())
         token = self.extract_query_param(mail.outbox[0].body, 'token')
 
         blocked = self.client.post(

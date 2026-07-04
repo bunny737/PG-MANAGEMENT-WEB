@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
+from apps.notifications.tasks import send_invoice_issued_email_task
 from apps.properties.services import visible_property_ids
 from apps.residents.models import Resident
 
@@ -149,6 +151,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             after={'status': invoice.status, 'issue_date': invoice.issue_date.isoformat()},
             request=request,
         )
+        # Module 14: "Invoice generated notification to resident" (PRD).
+        # Issuing (not the draft) is when it becomes a real obligation the
+        # resident should be told about — see the Module 14 spec's Decisions.
+        transaction.on_commit(lambda: send_invoice_issued_email_task.delay(str(invoice.id)))
         return Response(InvoiceSerializer(invoice).data)
 
     @action(detail=False, methods=['get'])

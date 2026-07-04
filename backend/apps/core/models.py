@@ -39,6 +39,12 @@ class PlatformConfig(models.Model):
 
     trial_days = models.PositiveIntegerField(default=60)
     payment_grace_days = models.PositiveIntegerField(default=5)
+    # Module 14: how many days before trial_ends_at to send each reminder
+    # (PRD example: Day 45/55 of a 60-day trial == 15/5 days before expiry).
+    # Expressed as an offset from expiry (not an absolute day number) so the
+    # reminder schedule keeps working if a Super Admin edits trial_days.
+    trial_reminder_first_days_before = models.PositiveIntegerField(default=15)
+    trial_reminder_second_days_before = models.PositiveIntegerField(default=5)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

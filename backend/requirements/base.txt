@@ -10,6 +10,9 @@ Pillow==11.*
 boto3==1.35.*
 django-storages[s3]==1.14.*
 razorpay==1.4.*
+# razorpay 1.4.x still imports the legacy pkg_resources API, which setuptools
+# >=81 dropped entirely (import breaks without this pin) — see Module 13 spec.
+setuptools<81
 WeasyPrint==62.*
 django-filter==24.*
 drf-spectacular==0.28.*

@@ -160,6 +160,9 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
 - [DECISION 2026-07-03] Plan limits on property count (invariant 10) are
   **not** enforced in this module — the Plan/cap config lives in Module 13
   (Subscription), which doesn't exist yet. Revisit when Module 13 lands.
+  **Fulfilled 2026-07-04:** Module 13 added a `check_property_limit()` call
+  to `PropertyViewSet.perform_create` (fail-open when no plan is configured
+  — see that module's spec).
 - [DECISION 2026-07-03] Property Settings (Module 2B in the PRD — room
   transfer rent timing, late payment penalty config) are out of scope here;
   they're Module 03 per the build-order doc.
@@ -191,3 +194,6 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   scoping). Spec rewritten to as-built.
 - 2026-07-03  Fixed `can_view_property()` bug found while building Module 04
   (see "Bugs found and fixed"); added regression test. 27 tests.
+- 2026-07-04  Module 13 added a plan-limit check (`check_property_limit`) to
+  `PropertyViewSet.perform_create` — see that module's spec for the full
+  enforcement design.

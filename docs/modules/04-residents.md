@@ -129,6 +129,14 @@ lifecycle (`vacated`/`blacklisted`) instead.
 - [OPEN] No endpoint yet for the PRD's resident self-service views ("view
   own profile", "view own invoices") — that needs the login-account
   question above resolved first, likely in Module 05 or a dedicated step.
+- [DECISION 2026-07-04] Module 13 added a plan-limit check
+  (`check_resident_limit`) to `change_status` — but only when the target
+  status newly counts toward the plan limit (`Reserved → Active`,
+  `Vacated`-adjacent edge cases) and the resident wasn't already counted;
+  `Active ↔ Notice Period` never re-checks since both already count. This
+  closes the "bare status flip bypasses Admission's own check" gap called
+  out below, specifically for the plan-limit case (judged consequential
+  enough to guard, unlike other workflow gaps left as accepted debt).
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -139,3 +147,5 @@ lifecycle (`vacated`/`blacklisted`) instead.
   + permission scoping + document upload). Found and fixed a property-
   visibility bug in Module 02's `services.py` along the way (see that
   module's "Bugs found and fixed"). Spec rewritten to as-built.
+- 2026-07-04  Module 13 added a plan-limit check to `change_status` (see
+  Decisions) — no other change to the status-transition endpoint.

@@ -167,6 +167,14 @@ CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 
+# Razorpay (locked stack — platform subscription billing ONLY, never resident
+# rent). Blank in dev/test falls back to a local stub client (see
+# apps.subscriptions.razorpay_client) so this environment doesn't need real
+# Razorpay credentials; fill in .env to activate real billing.
+RAZORPAY_KEY_ID = env('RAZORPAY_KEY_ID', default='')
+RAZORPAY_KEY_SECRET = env('RAZORPAY_KEY_SECRET', default='')
+RAZORPAY_WEBHOOK_SECRET = env('RAZORPAY_WEBHOOK_SECRET', default='')
+
 # Storage
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_URL = '/static/'

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.core.roles import Role
+from apps.subscriptions.services import check_property_limit
 
 from . import services
 from .models import Bed, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
@@ -58,6 +59,9 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return Property.objects.filter(id__in=ids).order_by('name')
 
     def perform_create(self, serializer):
+        # Plan limit (PRD §4: "Hard block when either limit is reached") —
+        # Module 13's concern; fail-open when no plan is configured.
+        check_property_limit(self.request.user.tenant_id)
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
         audit_log.record(
             action='property.created', actor=self.request.user, obj=instance,

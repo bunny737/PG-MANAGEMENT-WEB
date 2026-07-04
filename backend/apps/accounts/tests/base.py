@@ -34,6 +34,10 @@ class AuthAPITestCase(APITestCase):
     def create_owner(cls, tenant, email='owner@example.com', **kwargs):
         return cls.create_user(tenant, Role.OWNER, email, **kwargs)
 
+    @classmethod
+    def create_super_admin(cls, email='admin@platform.example.com', **kwargs):
+        return cls.create_user(None, Role.SUPER_ADMIN, email, **kwargs)
+
     def authenticate(self, user):
         """Real JWT credentials so TenantJWTAuthentication (suspension check +
         RLS context) runs exactly as in production. Do not use force_authenticate

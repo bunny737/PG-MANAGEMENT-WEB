@@ -138,6 +138,10 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   document-completeness validation out of scope, and this module doesn't
   add it either. Revisit if the product owner wants Aadhaar/PAN required
   before Check-In.
+- [DECISION 2026-07-04] Module 13 added a plan-limit check
+  (`check_resident_limit`, checked per property per PRD §4) to
+  `perform_create`, before any bed/resident mutation — a blocked check-in
+  leaves the bed/resident untouched. Fail-open when no plan is configured.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -155,3 +159,5 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
 - 2026-07-04  Module 10 added `advance_collected_date`/`advance_mode` to
   Admission, completing the PRD's advance trio alongside the existing
   `advance_amount`. No behaviour change to Check-In itself.
+- 2026-07-04  Module 13 added a per-property plan-limit check to Check-In
+  (see Decisions).

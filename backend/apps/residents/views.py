@@ -11,6 +11,7 @@ from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
+from apps.subscriptions.services import check_resident_limit
 
 from . import services
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
@@ -72,6 +73,13 @@ class ResidentViewSet(viewsets.ModelViewSet):
         before_status = resident.status
         serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        new_status = serializer.validated_data['status']
+        # Plan limit (Module 13) — only re-check when this transition is what
+        # would newly count the resident (e.g. Reserved -> Active bypassing
+        # Admission's own check); Active <-> Notice Period never changes the count.
+        if (new_status in Resident.COUNTS_TOWARD_PLAN_LIMIT
+                and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
+            check_resident_limit(resident.property)
         instance = serializer.save()
         audit_log.record(
             action='resident.status_changed', actor=request.user, obj=instance,
@@ -105,6 +113,11 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         bed = serializer.validated_data['bed']
         resident = serializer.validated_data['resident']
         with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        # Plan limit (PRD §4: checked per property) — Module 13's concern;
+        # fail-open when no plan is configured. Checked before any side
+        # effect so a blocked check-in leaves the bed/resident untouched.
+        check_resident_limit(bed.room.floor.property)
 
         instance = serializer.save(
             tenant_id=self.request.user.tenant_id,

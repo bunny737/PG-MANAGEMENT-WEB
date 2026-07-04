@@ -149,3 +149,6 @@ serialized on `/auth/me/` as `permissions: [...]`.
   49 tests (RLS proof included). Spec rewritten to as-built.
 - 2026-07-03  `manage_property_settings` widened to include Manager (see
   Decisions) while building Module 03.
+- 2026-07-04  Module 13 added one line to `SignupSerializer.create`: every
+  new tenant also gets a blank `Subscription` row (no plan yet). No other
+  change to the signup flow itself.

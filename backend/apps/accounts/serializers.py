@@ -16,6 +16,7 @@ from apps.audit import log as audit_log
 from apps.core.authentication import BLOCKED_TENANT_STATUSES
 from apps.core.models import PlatformConfig
 from apps.core.roles import Role, STAFF_ROLES, permissions_for
+from apps.subscriptions.models import Subscription
 
 from . import otp as otp_service
 from .emails import (
@@ -79,6 +80,9 @@ class SignupSerializer(serializers.Serializer):
             default_language=validated_data['language_code'],
             trial_ends_at=timezone.now() + timedelta(days=config.trial_days),
         )
+        # Module 13: every tenant gets a blank Subscription (no plan yet —
+        # trial limits, if any, come from the Super-Admin-flagged trial plan).
+        Subscription.objects.create(tenant=tenant)
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],

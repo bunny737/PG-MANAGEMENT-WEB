@@ -12,10 +12,10 @@ export const mockDashboardSummary: DashboardSummary = {
     vacantPercent: 18.4,
   },
   financials: {
-    monthlyRevenue: "$42,500",
+    monthlyRevenue: "₹42,500",
     revenueDelta: { direction: "up", label: "+5.2% vs last month" },
-    outstandingDues: "$3,200",
-    securityDeposits: "$18,000",
+    outstandingDues: "₹3,200",
+    securityDeposits: "₹18,000",
   },
   issues: [
     { id: "1", unit: "104A", issue: "AC not cooling", status: "open" },
@@ -33,7 +33,7 @@ export const mockDashboardSummary: DashboardSummary = {
     {
       id: "2",
       tone: "good",
-      text: "Rent payment received for Unit 201A ($450).",
+      text: "Rent payment received for Unit 201A (₹450).",
       timestamp: "09:12 AM",
     },
     {

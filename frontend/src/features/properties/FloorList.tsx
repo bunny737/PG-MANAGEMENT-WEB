@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Plus, Trash2, Edit, Building2 } from "lucide-react";
+import { ChevronRight, Plus, Trash2, Edit, Building2, Settings } from "lucide-react";
 import { mockProperties } from "./mock-properties";
 
 export function FloorList({ propertyId }: { propertyId: string }) {
@@ -51,13 +51,22 @@ export function FloorList({ propertyId }: { propertyId: string }) {
           <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">Floor Management</h1>
         </div>
 
-        <Link
-          href={`/properties/${property.id}/floors/add`}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="size-4.5" />
-          Add Floor
-        </Link>
+        <div className="flex gap-2.5 self-start sm:self-auto">
+          <Link
+            href={`/properties/${property.id}/settings`}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <Settings className="size-4" />
+            Billing Settings
+          </Link>
+          <Link
+            href={`/properties/${property.id}/floors/add`}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <Plus className="size-4.5" />
+            Add Floor
+          </Link>
+        </div>
       </div>
 
       {/* Metrics Row */}

@@ -20,7 +20,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         name: "101-A",
         sharingType: "single" as const,
         category: "ac" as const,
-        rent: "$850.00",
+        rent: "₹850.00",
         occupiedBeds: 0,
         totalBeds: 1,
         amenities: ["Wi-Fi", "Cleaning", "Laundry"],
@@ -29,8 +29,8 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             id: "A",
             name: "Bed A",
             status: "available" as const,
-            rackRate: "$850.00",
-            deposit: "$400.00",
+            rackRate: "₹850.00",
+            deposit: "₹400.00",
             history: []
           }
         ]
@@ -40,7 +40,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         name: "204-B",
         sharingType: "double" as const,
         category: "non-ac" as const,
-        rent: "$650.00",
+        rent: "₹650.00",
         occupiedBeds: 1,
         totalBeds: 2,
         amenities: ["Wi-Fi", "Cleaning"],
@@ -50,16 +50,16 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             name: "Bed A",
             status: "occupied" as const,
             currentOccupant: "Rohan Sharma",
-            rackRate: "$650.00",
-            deposit: "$300.00",
+            rackRate: "₹650.00",
+            deposit: "₹300.00",
             history: []
           },
           {
             id: "B",
             name: "Bed B",
             status: "available" as const,
-            rackRate: "$650.00",
-            deposit: "$300.00",
+            rackRate: "₹650.00",
+            deposit: "₹300.00",
             history: []
           }
         ]
@@ -69,14 +69,14 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         name: "310-C",
         sharingType: "triple" as const,
         category: "ac" as const,
-        rent: "$600.00",
+        rent: "₹600.00",
         occupiedBeds: 3,
         totalBeds: 3,
         amenities: ["Wi-Fi", "Cleaning", "Laundry"],
         beds: [
-          { id: "A", name: "Bed A", status: "occupied" as const, currentOccupant: "Priya Patel", rackRate: "$600.00", deposit: "$300.00", history: [] },
-          { id: "B", name: "Bed B", status: "occupied" as const, currentOccupant: "Nikhil K.", rackRate: "$600.00", deposit: "$300.00", history: [] },
-          { id: "C", name: "Bed C", status: "occupied" as const, currentOccupant: "Karan S.", rackRate: "$600.00", deposit: "$300.00", history: [] }
+          { id: "A", name: "Bed A", status: "occupied" as const, currentOccupant: "Priya Patel", rackRate: "₹600.00", deposit: "₹300.00", history: [] },
+          { id: "B", name: "Bed B", status: "occupied" as const, currentOccupant: "Nikhil K.", rackRate: "₹600.00", deposit: "₹300.00", history: [] },
+          { id: "C", name: "Bed C", status: "occupied" as const, currentOccupant: "Karan S.", rackRate: "₹600.00", deposit: "₹300.00", history: [] }
         ]
       },
       {
@@ -84,7 +84,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         name: "402-B",
         sharingType: "double" as const,
         category: "ac" as const,
-        rent: "$850.00",
+        rent: "₹850.00",
         occupiedBeds: 1,
         totalBeds: 2,
         amenities: ["Wi-Fi", "Cleaning", "Laundry"],
@@ -94,16 +94,16 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             name: "Bed A",
             status: "occupied" as const,
             currentOccupant: "Alex Smith",
-            rackRate: "$850.00",
-            deposit: "$400.00",
+            rackRate: "₹850.00",
+            deposit: "₹400.00",
             history: []
           },
           {
             id: "B",
             name: "Bed B",
             status: "maintenance" as const,
-            rackRate: "$850.00",
-            deposit: "$400.00",
+            rackRate: "₹850.00",
+            deposit: "₹400.00",
             maintenanceIssue: {
               id: "WO-4921",
               issue: "Reported broken bed frame slat. Scheduled for repair by internal team on 10/24/2023.",

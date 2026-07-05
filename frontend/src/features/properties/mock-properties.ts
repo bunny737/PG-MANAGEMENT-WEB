@@ -87,7 +87,7 @@ export const mockProperties: Property[] = [
             name: "1201-A",
             sharingType: "single",
             category: "ac",
-            rent: "$1200.00",
+            rent: "₹1200.00",
             occupiedBeds: 1,
             totalBeds: 1,
             amenities: ["Wi-Fi", "Cleaning", "Laundry"],
@@ -97,10 +97,10 @@ export const mockProperties: Property[] = [
                 name: "Bed A",
                 status: "occupied",
                 currentOccupant: "Alex Johnson",
-                rackRate: "$1200.00",
-                deposit: "$600.00",
+                rackRate: "₹1200.00",
+                deposit: "₹600.00",
                 history: [
-                  { resident: "Alex Johnson", term: "Yearly '24", moveIn: "01/15/24", moveOut: "--", rate: "$1200", initials: "AJ" }
+                  { resident: "Alex Johnson", term: "Yearly '24", moveIn: "01/15/24", moveOut: "--", rate: "₹1200", initials: "AJ" }
                 ]
               }
             ]
@@ -143,7 +143,7 @@ export const mockProperties: Property[] = [
             name: "402",
             sharingType: "double",
             category: "ac",
-            rent: "$850.00",
+            rent: "₹850.00",
             occupiedBeds: 1,
             totalBeds: 2,
             amenities: ["Wi-Fi", "Cleaning", "Laundry"],
@@ -153,18 +153,18 @@ export const mockProperties: Property[] = [
                 name: "Bed A",
                 status: "occupied",
                 currentOccupant: "Alex Smith",
-                rackRate: "$850.00",
-                deposit: "$400.00",
+                rackRate: "₹850.00",
+                deposit: "₹400.00",
                 history: [
-                  { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "--", rate: "$850", initials: "AS" }
+                  { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "--", rate: "₹850", initials: "AS" }
                 ]
               },
               {
                 id: "B",
                 name: "Bed B",
                 status: "maintenance",
-                rackRate: "$850.00",
-                deposit: "$400.00",
+                rackRate: "₹850.00",
+                deposit: "₹400.00",
                 maintenanceIssue: {
                   id: "WO-4921",
                   issue: "Reported broken bed frame slat. Scheduled for repair by internal team on 10/24/2023.",
@@ -172,9 +172,9 @@ export const mockProperties: Property[] = [
                   reporter: "Staff (J. Doe)"
                 },
                 history: [
-                  { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "10/20/23 (Early)", rate: "$850", initials: "AS" },
-                  { resident: "Maria Johnson", term: "Spring Semester '23", moveIn: "01/10/23", moveOut: "05/30/23", rate: "$825", initials: "MJ" },
-                  { resident: "David Torres", term: "Fall Semester '22", moveIn: "08/12/22", moveOut: "12/15/22", rate: "$800", initials: "DT" }
+                  { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "10/20/23 (Early)", rate: "₹850", initials: "AS" },
+                  { resident: "Maria Johnson", term: "Spring Semester '23", moveIn: "01/10/23", moveOut: "05/30/23", rate: "₹825", initials: "MJ" },
+                  { resident: "David Torres", term: "Fall Semester '22", moveIn: "08/12/22", moveOut: "12/15/22", rate: "₹800", initials: "DT" }
                 ]
               }
             ]

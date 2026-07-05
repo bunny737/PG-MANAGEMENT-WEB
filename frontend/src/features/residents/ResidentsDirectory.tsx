@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown } from "lucide-react";
+import { getInitials } from "@/lib/utils";
 import { mockResidents } from "./mock-residents";
 
 export function ResidentsDirectory() {
@@ -11,20 +12,9 @@ export function ResidentsDirectory() {
   const [selectedBlock, setSelectedBlock] = useState("");
   const [selectedFloor, setSelectedFloor] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [showAddMock, setShowAddMock] = useState(false);
 
   // Sorting
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-
-  // Get initials for Avatar
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   // Avatar Background Color Helper
   const getAvatarBg = (name: string) => {
@@ -89,28 +79,14 @@ export function ResidentsDirectory() {
             Manage, filter, and contact all occupants in active leases.
           </p>
         </div>
-        <button
-          onClick={() => {
-            setShowAddMock(true);
-            setTimeout(() => setShowAddMock(false), 3000);
-          }}
+        <Link
+          href="/admissions"
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
         >
           <UserPlus className="size-4.5" />
           Add Resident
-        </button>
+        </Link>
       </div>
-
-      {/* Mock Add Alert Toast */}
-      {showAddMock && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800 shadow-xl animate-bounce">
-          <UserPlus className="size-5 text-emerald-600" />
-          <div className="text-sm">
-            <span className="font-semibold">Admission Form triggered!</span>
-            <p className="text-xs text-emerald-700">Connecting Admissions pipeline flow (FE-05) soon.</p>
-          </div>
-        </div>
-      )}
 
       {/* Search and Filters panel */}
       <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-4">

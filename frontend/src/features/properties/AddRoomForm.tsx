@@ -181,11 +181,11 @@ export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floor
         {/* Monthly Rent */}
         <div className="space-y-1.5">
           <label htmlFor="rent" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
-            Monthly Rent (USD/INR equivalent)
+            Monthly Rent (₹)
           </label>
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-sm font-bold text-ink-muted select-none">
-              $
+              ₹
             </span>
             <input
               id="rent"

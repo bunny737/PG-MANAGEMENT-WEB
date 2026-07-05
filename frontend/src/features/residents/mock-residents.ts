@@ -8,6 +8,7 @@ export interface Resident {
   moveInDate: string;
   phone: string;
   email: string;
+  avatarUrl?: string;
 }
 
 export const mockResidents: Resident[] = [
@@ -21,6 +22,8 @@ export const mockResidents: Resident[] = [
     moveInDate: "Jan 2024",
     phone: "+1 (555) 019-2834",
     email: "eleanor.s@example.com",
+    avatarUrl:
+      "https://lh3.googleusercontent.com/aida/AP1WRLvmoOE-ZU12UH3hRSPHQnkw6viTKlATfvaxrcRAIBp1Bd5iLRfdQdik_-8zcuuGqQC_p_x-wuBc1zIKRhVKS0FIcU6QUiLwFAhdM826VG9jwL5iWkgiiIZzN9FOlP3f9ay5H0ZIlfGKdas1RYvYQkj_hWXJsbYd28eFLiwro3NRONx4PaCgS29ce4WZSjADA5N8sruQJA_sts90GQeM44IQrPxM0Yr2zbc64nYcWueLXL_PGf1dZxhj62U",
   },
   {
     id: "1",

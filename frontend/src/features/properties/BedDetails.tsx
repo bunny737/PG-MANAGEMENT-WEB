@@ -25,8 +25,8 @@ export function BedDetails({
     id: bedId,
     name: `Bed ${bedId}`,
     status: "maintenance" as const,
-    rackRate: "$850.00",
-    deposit: "$400.00",
+    rackRate: "₹850.00",
+    deposit: "₹400.00",
     maintenanceIssue: {
       id: "WO-4921",
       issue: "Reported broken bed frame slat. Scheduled for repair by internal team on 10/24/2023.",
@@ -34,9 +34,9 @@ export function BedDetails({
       reporter: "Staff (J. Doe)"
     },
     history: [
-      { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "10/20/23 (Early)", rate: "$850", initials: "AS" },
-      { resident: "Maria Johnson", term: "Spring Semester '23", moveIn: "01/10/23", moveOut: "05/30/23", rate: "$825", initials: "MJ" },
-      { resident: "David Torres", term: "Fall Semester '22", moveIn: "08/12/22", moveOut: "12/15/22", rate: "$800", initials: "DT" }
+      { resident: "Alex Smith", term: "Fall Semester '23", moveIn: "08/15/23", moveOut: "10/20/23 (Early)", rate: "₹850", initials: "AS" },
+      { resident: "Maria Johnson", term: "Spring Semester '23", moveIn: "01/10/23", moveOut: "05/30/23", rate: "₹825", initials: "MJ" },
+      { resident: "David Torres", term: "Fall Semester '22", moveIn: "08/12/22", moveOut: "12/15/22", rate: "₹800", initials: "DT" }
     ]
   };
   const bed = room.beds?.find((b) => b.id === bedId) || defaultBed;
@@ -185,7 +185,7 @@ export function BedDetails({
             <div className="pt-2.5 flex justify-between items-center font-bold">
               <span className="text-ink">Projected Rev</span>
               <span className={`font-mono ${bedStatus === "occupied" ? "text-emerald-600" : "text-status-critical"}`}>
-                {bedStatus === "occupied" ? bed.rackRate : "$0.00"} / mo
+                {bedStatus === "occupied" ? bed.rackRate : "₹0.00"} / mo
               </span>
             </div>
           </div>

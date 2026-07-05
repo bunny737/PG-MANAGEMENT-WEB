@@ -20,21 +20,12 @@ import {
   Download,
   AlertCircle
 } from "lucide-react";
+import { getInitials } from "@/lib/utils";
 import type { Resident } from "./mock-residents";
 
 export function ResidentProfile({ resident }: { resident: Resident }) {
   const [activeTab, setActiveTab] = useState<"overview" | "financials" | "documents" | "maintenance">("overview");
   const [actionAlert, setActionAlert] = useState<{ type: string; message: string } | null>(null);
-
-  // Get initials for Avatar
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   const handleAction = (type: "transfer" | "vacate" | "edit") => {
     let msg = "";
@@ -125,12 +116,12 @@ export function ResidentProfile({ resident }: { resident: Resident }) {
         <div className="lg:col-span-4 space-y-6">
           {/* Identity Card */}
           <div className="rounded-2xl border border-border bg-surface-card p-6 shadow-sm flex flex-col items-center text-center">
-            {resident.id === "8492" ? (
+            {resident.avatarUrl ? (
               <div className="size-24 rounded-full overflow-hidden border border-border mb-4 shadow-sm bg-surface-page">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   alt={resident.name}
-                  src="https://lh3.googleusercontent.com/aida/AP1WRLvmoOE-ZU12UH3hRSPHQnkw6viTKlATfvaxrcRAIBp1Bd5iLRfdQdik_-8zcuuGqQC_p_x-wuBc1zIKRhVKS0FIcU6QUiLwFAhdM826VG9jwL5iWkgiiIZzN9FOlP3f9ay5H0ZIlfGKdas1RYvYQkj_hWXJsbYd28eFLiwro3NRONx4PaCgS29ce4WZSjADA5N8sruQJA_sts90GQeM44IQrPxM0Yr2zbc64nYcWueLXL_PGf1dZxhj62U"
+                  src={resident.avatarUrl}
                   className="size-full object-cover"
                 />
               </div>
@@ -233,7 +224,7 @@ export function ResidentProfile({ resident }: { resident: Resident }) {
                 {/* Metric 1 */}
                 <div className="rounded-xl border border-border bg-surface-card p-4.5 shadow-sm flex flex-col justify-between">
                   <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Current Balance</span>
-                  <span className="text-2xl font-extrabold tracking-tight text-ink mt-2">$0.00</span>
+                  <span className="text-2xl font-extrabold tracking-tight text-ink mt-2">₹0.00</span>
                   <span className="text-xs font-semibold text-emerald-600 mt-2 flex items-center gap-1">
                     <CheckCircle className="size-3.5" /> Paid in full
                   </span>
@@ -274,7 +265,7 @@ export function ResidentProfile({ resident }: { resident: Resident }) {
                     </span>
                     <div className="flex flex-col">
                       <span className="text-sm font-semibold text-ink">Rent Payment Received</span>
-                      <span className="text-xs text-ink-muted mt-0.5">Invoice #INV-2024-08 for $850.00</span>
+                      <span className="text-xs text-ink-muted mt-0.5">Invoice #INV-2024-08 for ₹850.00</span>
                       <span className="flex items-center gap-1 text-[10px] text-ink-faint font-mono mt-1">
                         <Clock className="size-3" /> Aug 1, 2024 · 09:15 AM
                       </span>
@@ -332,7 +323,7 @@ export function ResidentProfile({ resident }: { resident: Resident }) {
                     <tr className="hover:bg-surface-page/35">
                       <td className="px-4 py-3 font-mono">#INV-2024-08</td>
                       <td className="px-4 py-3">Aug 1, 2024</td>
-                      <td className="px-4 py-3 font-semibold">$850.00</td>
+                      <td className="px-4 py-3 font-semibold">₹850.00</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-100">Paid</span>
                       </td>
@@ -343,7 +334,7 @@ export function ResidentProfile({ resident }: { resident: Resident }) {
                     <tr className="hover:bg-surface-page/35">
                       <td className="px-4 py-3 font-mono">#INV-2024-07</td>
                       <td className="px-4 py-3">Jul 1, 2024</td>
-                      <td className="px-4 py-3 font-semibold">$850.00</td>
+                      <td className="px-4 py-3 font-semibold">₹850.00</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-100">Paid</span>
                       </td>

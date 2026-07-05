@@ -14,5 +14,10 @@ razorpay==1.4.*
 # >=81 dropped entirely (import breaks without this pin) — see Module 13 spec.
 setuptools<81
 WeasyPrint==62.*
+# pydyf>=0.12 removed Stream.transform(), which WeasyPrint 62.x's PDF backend
+# still calls via super() — write_pdf() crashes with AttributeError without
+# this pin. See Module 17 spec.
+pydyf==0.11.*
 django-filter==24.*
 drf-spectacular==0.28.*
+openpyxl==3.*

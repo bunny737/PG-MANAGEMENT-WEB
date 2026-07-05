@@ -110,6 +110,10 @@ class Room(TenantModelMixin):
         TWO = 2, _('2-sharing')
         THREE = 3, _('3-sharing')
         FOUR = 4, _('4-sharing')
+        FIVE = 5, _('5-sharing')
+        SIX = 6, _('6-sharing')
+        SEVEN = 7, _('7-sharing')
+        EIGHT = 8, _('8-sharing')
 
     class Category(models.TextChoices):
         AC = 'ac', _('AC')

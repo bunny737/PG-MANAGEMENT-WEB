@@ -265,3 +265,112 @@ export function deleteFloor(floorId: string) {
     method: "DELETE",
   });
 }
+
+export function getFloor(floorId: string) {
+  return apiFetch<Floor>(`/api/v1/floors/${floorId}/`);
+}
+
+export interface Room {
+  id: string;
+  floor: string;
+  room_number: string;
+  sharing_type: number;
+  category: "ac" | "non_ac";
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+  status: "available" | "occupied" | "reserved" | "maintenance";
+  current_occupancy: number;
+  bed_capacity: number;
+  beds?: Bed[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bed {
+  id: string;
+  room: string;
+  bed_number: string;
+  rack_rate_with_food_override: string | null;
+  rack_rate_without_food_override: string | null;
+  effective_rate_with_food: string;
+  effective_rate_without_food: string;
+  status: "available" | "occupied" | "reserved" | "maintenance";
+  current_occupant?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
+    email: string;
+    phone: string;
+    status: string;
+    joining_date: string | null;
+    rent: string;
+    initials: string;
+  } | null;
+  history?: Array<{
+    resident: string;
+    term: string;
+    moveIn: string;
+    moveOut: string;
+    rate: string;
+    initials: string;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listRooms(floorId: string) {
+  return apiFetch<Room[] | { results: Room[] }>(`/api/v1/rooms/?floor=${floorId}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getRoom(roomId: string) {
+  return apiFetch<Room>(`/api/v1/rooms/${roomId}/`);
+}
+
+export interface CreateRoomPayload {
+  floor: string;
+  room_number: string;
+  sharing_type: number;
+  category: "ac" | "non_ac";
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+}
+
+export function createRoom(payload: CreateRoomPayload) {
+  return apiFetch<Room>("/api/v1/rooms/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteRoom(roomId: string) {
+  return apiFetch<void>(`/api/v1/rooms/${roomId}/`, {
+    method: "DELETE",
+  });
+}
+
+export function listBeds(roomId: string) {
+  return apiFetch<Bed[] | { results: Bed[] }>(`/api/v1/beds/?room=${roomId}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function createBed(payload: { room: string; bed_number: string }) {
+  return apiFetch<Bed>("/api/v1/beds/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getBed(bedId: string) {
+  return apiFetch<Bed>(`/api/v1/beds/${bedId}/`);
+}
+
+export function updateBed(bedId: string, payload: Partial<Bed>) {
+  return apiFetch<Bed>(`/api/v1/beds/${bedId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}

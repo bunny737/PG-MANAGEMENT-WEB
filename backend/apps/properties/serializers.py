@@ -176,37 +176,11 @@ class FloorSerializer(serializers.ModelSerializer):
         return int((occupied_beds / total_beds) * 100)
 
 
-class RoomSerializer(serializers.ModelSerializer):
-    current_occupancy = serializers.SerializerMethodField()
-    bed_capacity = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Room
-        fields = [
-            'id', 'floor', 'room_number', 'sharing_type', 'category',
-            'rack_rate_with_food', 'rack_rate_without_food', 'status',
-            'current_occupancy', 'bed_capacity', 'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-    def get_current_occupancy(self, obj) -> int:
-        return obj.beds.filter(status=Bed.Status.OCCUPIED).count()
-
-    def get_bed_capacity(self, obj) -> int:
-        return obj.sharing_type
-
-    def validate_floor(self, value):
-        request = self.context['request']
-        if not services.can_view_property(request.user, value.building.property_id):
-            raise serializers.ValidationError(
-                _('You are not assigned to this property.'), code='property_not_assigned'
-            )
-        return value
-
-
 class BedSerializer(serializers.ModelSerializer):
     effective_rate_with_food = serializers.SerializerMethodField()
     effective_rate_without_food = serializers.SerializerMethodField()
+    current_occupant = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
 
     class Meta:
         model = Bed
@@ -214,7 +188,7 @@ class BedSerializer(serializers.ModelSerializer):
             'id', 'room', 'bed_number',
             'rack_rate_with_food_override', 'rack_rate_without_food_override',
             'effective_rate_with_food', 'effective_rate_without_food',
-            'status', 'created_at', 'updated_at',
+            'status', 'current_occupant', 'history', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -223,6 +197,60 @@ class BedSerializer(serializers.ModelSerializer):
 
     def get_effective_rate_without_food(self, obj) -> str:
         return str(obj.rack_rate(with_food=False))
+
+    def get_current_occupant(self, obj):
+        from apps.residents.models import Allocation, Resident
+        allocation = obj.allocations.select_related('resident__admission').filter(
+            resident__status__in=[Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD]
+        ).first()
+        if allocation and allocation.resident:
+            res = allocation.resident
+            return {
+                'id': str(res.id),
+                'first_name': res.first_name,
+                'last_name': res.last_name,
+                'full_name': f"{res.first_name} {res.last_name}".strip(),
+                'email': res.email,
+                'phone': res.phone,
+                'status': res.status,
+                'joining_date': res.admission.joining_date.strftime('%Y-%m-%d') if hasattr(res, 'admission') else None,
+                'rent': str(allocation.contracted_rent),
+                'initials': f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper(),
+            }
+        return None
+
+    def get_history(self, obj):
+        from apps.residents.models import Admission
+        admissions = obj.admissions.select_related('resident__vacate').order_by('-joining_date')
+        history_list = []
+        for adm in admissions:
+            res = adm.resident
+            initials = f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper()
+            
+            # Resolve moveOut date/status
+            move_out = 'Active'
+            if res.status == 'vacated':
+                if hasattr(res, 'vacate') and res.vacate.actual_vacate_date:
+                    move_out = res.vacate.actual_vacate_date.strftime('%m/%d/%y')
+                else:
+                    move_out = 'Vacated'
+            elif res.status == 'notice_period':
+                if hasattr(res, 'vacate'):
+                    move_out = f"Notice (Exp: {res.vacate.expected_vacate_date.strftime('%m/%d/%y')})"
+                else:
+                    move_out = 'Notice Period'
+            elif res.status != 'active':
+                move_out = res.status.title()
+
+            history_list.append({
+                'resident': f"{res.first_name} {res.last_name}".strip(),
+                'term': f"Admission - {adm.billing_mode.replace('_', ' ').title()}",
+                'moveIn': adm.joining_date.strftime('%m/%d/%y'),
+                'moveOut': move_out,
+                'rate': f"₹{int(adm.contracted_rent)}",
+                'initials': initials,
+            })
+        return history_list
 
     def validate_room(self, value):
         request = self.context['request']
@@ -242,6 +270,35 @@ class BedSerializer(serializers.ModelSerializer):
                     code='bed_capacity_exceeded',
                 )
         return attrs
+
+
+class RoomSerializer(serializers.ModelSerializer):
+    current_occupancy = serializers.SerializerMethodField()
+    bed_capacity = serializers.SerializerMethodField()
+    beds = BedSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Room
+        fields = [
+            'id', 'floor', 'room_number', 'sharing_type', 'category',
+            'rack_rate_with_food', 'rack_rate_without_food', 'status',
+            'current_occupancy', 'bed_capacity', 'beds', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_current_occupancy(self, obj) -> int:
+        return obj.beds.filter(status=Bed.Status.OCCUPIED).count()
+
+    def get_bed_capacity(self, obj) -> int:
+        return obj.sharing_type
+
+    def validate_floor(self, value):
+        request = self.context['request']
+        if not services.can_view_property(request.user, value.building.property_id):
+            raise serializers.ValidationError(
+                _('You are not assigned to this property.'), code='property_not_assigned'
+            )
+        return value
 
 
 class PropertyStaffAssignmentSerializer(serializers.ModelSerializer):

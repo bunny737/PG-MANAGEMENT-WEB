@@ -1,143 +1,99 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { ChevronRight, Plus, Search, FilterX, User, Wrench, ShieldAlert } from "lucide-react";
-import { mockProperties } from "./mock-properties";
+import { ChevronRight, Plus, Search, FilterX, User, Wrench, ShieldAlert, LoaderCircle, AlertTriangle } from "lucide-react";
+import { getProperty, getFloor, listRooms, type Property, type Room, ApiError } from "@/lib/api";
 
 export function RoomList({ propertyId, floorId }: { propertyId: string; floorId: string }) {
-  const property = mockProperties.find((p) => p.id === propertyId) || mockProperties[0];
-  const floor = property.floors.find((f) => f.id === floorId) || property.floors[0] || { id: floorId, level: floorId, name: `Floor ${floorId}`, rooms: [] };
-
-  // If the floor has no rooms, let's load some default mock rooms based on the design
-  const defaultRooms = useMemo(() => {
-    if (floor.rooms && floor.rooms.length > 0) return floor.rooms;
-
-    // Load mock rooms matching the HTML mockup design
-    return [
-      {
-        id: "101",
-        name: "101-A",
-        sharingType: "single" as const,
-        category: "ac" as const,
-        rent: "₹850.00",
-        occupiedBeds: 0,
-        totalBeds: 1,
-        amenities: ["Wi-Fi", "Cleaning", "Laundry"],
-        beds: [
-          {
-            id: "A",
-            name: "Bed A",
-            status: "available" as const,
-            rackRate: "₹850.00",
-            deposit: "₹400.00",
-            history: []
-          }
-        ]
-      },
-      {
-        id: "204",
-        name: "204-B",
-        sharingType: "double" as const,
-        category: "non-ac" as const,
-        rent: "₹650.00",
-        occupiedBeds: 1,
-        totalBeds: 2,
-        amenities: ["Wi-Fi", "Cleaning"],
-        beds: [
-          {
-            id: "A",
-            name: "Bed A",
-            status: "occupied" as const,
-            currentOccupant: "Rohan Sharma",
-            rackRate: "₹650.00",
-            deposit: "₹300.00",
-            history: []
-          },
-          {
-            id: "B",
-            name: "Bed B",
-            status: "available" as const,
-            rackRate: "₹650.00",
-            deposit: "₹300.00",
-            history: []
-          }
-        ]
-      },
-      {
-        id: "310",
-        name: "310-C",
-        sharingType: "triple" as const,
-        category: "ac" as const,
-        rent: "₹600.00",
-        occupiedBeds: 3,
-        totalBeds: 3,
-        amenities: ["Wi-Fi", "Cleaning", "Laundry"],
-        beds: [
-          { id: "A", name: "Bed A", status: "occupied" as const, currentOccupant: "Priya Patel", rackRate: "₹600.00", deposit: "₹300.00", history: [] },
-          { id: "B", name: "Bed B", status: "occupied" as const, currentOccupant: "Nikhil K.", rackRate: "₹600.00", deposit: "₹300.00", history: [] },
-          { id: "C", name: "Bed C", status: "occupied" as const, currentOccupant: "Karan S.", rackRate: "₹600.00", deposit: "₹300.00", history: [] }
-        ]
-      },
-      {
-        id: "402",
-        name: "402-B",
-        sharingType: "double" as const,
-        category: "ac" as const,
-        rent: "₹850.00",
-        occupiedBeds: 1,
-        totalBeds: 2,
-        amenities: ["Wi-Fi", "Cleaning", "Laundry"],
-        beds: [
-          {
-            id: "A",
-            name: "Bed A",
-            status: "occupied" as const,
-            currentOccupant: "Alex Smith",
-            rackRate: "₹850.00",
-            deposit: "₹400.00",
-            history: []
-          },
-          {
-            id: "B",
-            name: "Bed B",
-            status: "maintenance" as const,
-            rackRate: "₹850.00",
-            deposit: "₹400.00",
-            maintenanceIssue: {
-              id: "WO-4921",
-              issue: "Reported broken bed frame slat. Scheduled for repair by internal team on 10/24/2023.",
-              date: "10/21/2023",
-              reporter: "Staff (J. Doe)"
-            },
-            history: []
-          }
-        ]
-      }
-    ];
-  }, [floor.rooms]);
+  const [property, setProperty] = useState<Property | null>(null);
+  const [floorName, setFloorName] = useState("");
+  const [rooms, setRooms] = useState<Room[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // Track propertyId / floorId changes to reset loading state (React render-time adjustment pattern)
+  const [prevIds, setPrevIds] = useState({ propertyId, floorId });
+  if (propertyId !== prevIds.propertyId || floorId !== prevIds.floorId) {
+    setPrevIds({ propertyId, floorId });
+    setIsLoading(true);
+    setError("");
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([getProperty(propertyId), getFloor(floorId), listRooms(floorId)])
+      .then(([propData, floorData, roomsData]) => {
+        if (cancelled) return;
+        setProperty(propData);
+        setFloorName(floorData.name);
+        setRooms(roomsData);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+        setError(err instanceof ApiError ? err.message : "Failed to load room details. Please try again.");
+        setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, floorId]);
+
   const filteredRooms = useMemo(() => {
-    return defaultRooms.filter((room) => {
-      // Search filter (room name)
-      const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!rooms) return [];
+    return rooms.filter((room) => {
+      // Search filter (room_number)
+      const matchesSearch = room.room_number.toLowerCase().includes(searchTerm.toLowerCase());
 
       // Status filter
       let matchesStatus = true;
       if (statusFilter === "available") {
-        matchesStatus = room.beds.some((b) => b.status === "available");
+        matchesStatus = room.beds?.some((b) => b.status === "available") || room.status === "available";
       } else if (statusFilter === "occupied") {
-        matchesStatus = room.occupiedBeds === room.totalBeds;
+        matchesStatus = room.current_occupancy === room.bed_capacity || room.status === "occupied";
       } else if (statusFilter === "maintenance") {
-        matchesStatus = room.beds.some((b) => b.status === "maintenance");
+        matchesStatus = room.beds?.some((b) => b.status === "maintenance") || room.status === "maintenance";
       }
 
       return matchesSearch && matchesStatus;
     });
-  }, [defaultRooms, searchTerm, statusFilter]);
+  }, [rooms, searchTerm, statusFilter]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
+        <LoaderCircle className="size-8 animate-spin text-accent" />
+        <p className="font-semibold mt-2">Loading rooms list...</p>
+      </div>
+    );
+  }
+
+  if (error || !property || !rooms) {
+    return (
+      <div className="space-y-4 max-w-md mx-auto py-16 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
+          <AlertTriangle className="size-6" />
+        </div>
+        <h3 className="text-lg font-bold text-ink">Failed to Load Rooms</h3>
+        <p className="text-xs text-ink-muted leading-relaxed">
+          {error || "Could not retrieve rooms data."}
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -154,13 +110,13 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
               </li>
               <li className="flex items-center">
                 <ChevronRight className="size-3 text-ink-faint mx-1" />
-                <Link href={`/properties/${property.id}/buildings`} className="hover:text-accent font-medium transition-colors">
+                <Link href={`/properties/${property.id}/floors`} className="hover:text-accent font-medium transition-colors">
                   {property.name}
                 </Link>
               </li>
               <li className="flex items-center">
                 <ChevronRight className="size-3 text-ink-faint mx-1" />
-                <span className="text-ink font-semibold">{floor.name}</span>
+                <span className="text-ink font-semibold">{floorName}</span>
               </li>
             </ol>
           </nav>
@@ -168,7 +124,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         </div>
 
         <Link
-          href={`/properties/${property.id}/floors/${floor.id}/rooms/add`}
+          href={`/properties/${property.id}/floors/${floorId}/rooms/add`}
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
         >
           <Plus className="size-4.5" />
@@ -236,10 +192,34 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
       {filteredRooms.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredRooms.map((room) => {
-            const isFull = room.occupiedBeds === room.totalBeds;
-            const hasMaintenance = room.beds.some((b) => b.status === "maintenance");
-            // Let's find the first bed ID that matches status or go to Bed B if it is in maintenance
-            const targetBed = room.beds.find((b) => b.status === "maintenance") || room.beds[0] || { id: "A" };
+            const isFull = room.current_occupancy === room.bed_capacity;
+            const hasMaintenance = room.beds?.some((b) => b.status === "maintenance") || room.status === "maintenance";
+            
+            // Find target bed for link
+            const targetBed = room.beds?.find((b) => b.status === "maintenance") || room.beds?.[0];
+            const targetBedId = targetBed?.id;
+            
+            const viewDetailsUrl = targetBedId 
+              ? `/properties/${property.id}/floors/${floorId}/rooms/${room.id}/beds/${targetBedId}`
+              : `/properties/${property.id}/floors/${floorId}/rooms/${room.id}`;
+
+            const sharingTypeLabel = room.sharing_type === 1 
+              ? "Single" 
+              : room.sharing_type === 2 
+              ? "Double" 
+              : room.sharing_type === 3 
+              ? "Triple" 
+              : room.sharing_type === 4 
+              ? "Four" 
+              : room.sharing_type === 5
+              ? "Five"
+              : room.sharing_type === 6
+              ? "Six"
+              : room.sharing_type === 7
+              ? "Seven"
+              : room.sharing_type === 8
+              ? "Eight"
+              : `${room.sharing_type}-sharing`;
 
             return (
               <div
@@ -249,26 +229,26 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <Link
-                      href={`/properties/${property.id}/floors/${floor.id}/rooms/${room.id}/beds/${targetBed.id}`}
+                      href={viewDetailsUrl}
                       className="text-lg font-bold text-ink hover:text-accent transition-colors tracking-tight"
                     >
-                      {room.name}
+                      {room.room_number}
                     </Link>
                     <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1">
                       <User className="size-3.5" />
-                      {room.sharingType.charAt(0).toUpperCase() + room.sharingType.slice(1)} sharing
+                      {sharingTypeLabel} sharing
                     </p>
                   </div>
 
                   <span
-                    className={`p-1.5 rounded-lg text-xs font-semibold ${
+                    className={`p-1.5 rounded-lg text-xs font-semibold uppercase ${
                       room.category === "ac" 
                         ? "bg-blue-50 text-blue-600 border border-blue-100" 
                         : "bg-amber-50 text-amber-600 border border-amber-100"
                     }`}
                     title={room.category === "ac" ? "AC Room" : "Non-AC Room"}
                   >
-                    {room.category.toUpperCase()}
+                    {room.category}
                   </span>
                 </div>
 
@@ -276,7 +256,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                   <div className="flex justify-between items-baseline text-xs">
                     <span className="text-ink-muted">Beds Occupancy</span>
                     <span className="font-semibold text-ink">
-                      {room.occupiedBeds}/{room.totalBeds} occupied
+                      {room.current_occupancy}/{room.bed_capacity} occupied
                     </span>
                   </div>
                   {/* Occupancy bar */}
@@ -285,7 +265,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                       className={`h-full rounded-full ${
                         hasMaintenance ? "bg-status-critical" : isFull ? "bg-slate-700" : "bg-accent"
                       }`}
-                      style={{ width: `${(room.occupiedBeds / room.totalBeds) * 100}%` }}
+                      style={{ width: `${(room.current_occupancy / room.bed_capacity) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -308,7 +288,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                   )}
 
                   <Link
-                    href={`/properties/${property.id}/floors/${floor.id}/rooms/${room.id}/beds/${targetBed.id}`}
+                    href={viewDetailsUrl}
                     className="text-xs font-bold text-ink-muted hover:text-accent transition-colors"
                   >
                     View Details ›

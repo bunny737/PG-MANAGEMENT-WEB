@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Phone, KeyRound, Eye, EyeOff, CheckCircle2, ArrowLeft, Loader2, Building2 } from "lucide-react";
+import { ApiError, login } from "@/lib/api";
 
 type LoginTab = "password" | "otp";
 type FlowState = "login" | "forgot_password";
@@ -84,18 +85,21 @@ export function LoginForm() {
     setErrors({});
     setIsLoading(true);
 
-    // Simulate API Call
-    setTimeout(() => {
+    try {
+      await login(email, password);
       setIsLoading(false);
       setIsSuccess(true);
-      // Store local authentication state
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userRole", "owner");
-      localStorage.setItem("userName", "Vikram Malhotra");
       setTimeout(() => {
         router.push("/dashboard");
       }, 800);
-    }, 1500);
+    } catch (err) {
+      setIsLoading(false);
+      const message =
+        err instanceof ApiError
+          ? err.fieldError("detail") ?? "Invalid email or password"
+          : "Could not reach the server. Please try again.";
+      setErrors({ password: message });
+    }
   };
 
   const handleSendOtp = () => {
@@ -537,12 +541,10 @@ export function LoginForm() {
         <div className="rounded-xl border border-border bg-surface-card p-4 text-xs space-y-1">
           <p className="font-semibold text-ink">Demo Credentials:</p>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 text-ink-muted">
-            <span className="font-medium text-ink-faint">Email:</span>
-            <span>admin@propmanager.com</span>
-            <span className="font-medium text-ink-faint">Password:</span>
-            <span>admin123</span>
+            <span className="font-medium text-ink-faint">Password tab:</span>
+            <span>Real backend account (use your own signup/owner credentials)</span>
             <span className="font-medium text-ink-faint">Phone:</span>
-            <span>9876543210 (any 6-digit OTP works)</span>
+            <span>9876543210 (any 6-digit OTP works — OTP login is still a mock)</span>
           </div>
         </div>
 

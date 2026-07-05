@@ -32,6 +32,17 @@ Table: properties                   (RLS enforced)
   -- floors_count / rooms_count / beds_count are computed in the
   -- serializer (child counts), never stored — avoids drift.
 
+Table: property_images              (RLS enforced)
+  id                uuid PK
+  tenant_id         uuid            (RLS)
+  property          FK -> properties (related_name='images')
+  image             ImageField      (local MEDIA_ROOT in dev, S3 when
+                                     AWS_STORAGE_BUCKET_NAME is set — same
+                                     storage abstraction as resident documents)
+  order             positive smallint  (default 0, set to current count on
+                                     upload — display order)
+  created_at / updated_at
+
 Table: floors                       (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
@@ -76,6 +87,8 @@ Table: property_staff_assignments   (RLS enforced)
 ```
 GET|POST    /api/v1/properties/                          list/create        manage_properties (write) / owner+manager+receptionist (read, scoped)
 GET|PATCH   /api/v1/properties/{id}/                      detail/update      same (no DELETE — deactivate via status)
+POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
+DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
 GET|POST    /api/v1/floors/                               list (filter ?property=)/create   manage_rooms_beds
 GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
 GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
@@ -169,6 +182,41 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
 - [OPEN] PRD's "when a matching room becomes available, system suggests
   moving flagged residents" (temporary allocation) is explicitly V2 —
   irrelevant until Module 06.
+- [DECISION 2026-07-05] Property photos (PRD Module 2 "list a new property
+  asset") are a separate `PropertyImage` model (one row per photo, `order`
+  for display sequence), not a single field on `Property` — the frontend's
+  Add Property form needs to show/reorder/remove multiple photos.
+  Uploaded via plain multipart POST straight to Django (`ModelViewSet`
+  action + `ImageField`), matching the precedent already set by
+  `Resident.aadhaar_document`/`pan_document` and `Complaint.attachment`
+  — not the S3-presigned-direct-upload flow `docs/frontend-plan.md`
+  aspirationally lists as a Module 04 prerequisite (that flow was never
+  actually built; this module follows what's actually in the codebase).
+  Storage is the existing project-wide abstraction (local `MEDIA_ROOT` in
+  dev, S3 when `AWS_STORAGE_BUCKET_NAME` is set) — no new S3 code.
+- [DECISION 2026-07-05] `PropertyViewSet.http_method_names` now includes
+  `'delete'` (previously excluded it as the mechanism blocking hard
+  delete) so the nested `images/{id}/` DELETE route can dispatch. The "no
+  hard delete on Property" guarantee (invariant/decision above) is now
+  enforced explicitly instead: `destroy()` is overridden to raise
+  `MethodNotAllowed`. Existing test `test_property_has_no_delete_endpoint`
+  still asserts 405 and passes unchanged.
+- [DECISION 2026-07-05] Dev-only Django media serving was missing
+  entirely (`config/urls.py` had no `static()` mapping for `MEDIA_URL`) —
+  uploaded files 404'd in local dev regardless of app (this predates this
+  module's changes and also affected resident documents). Added the
+  standard `if settings.DEBUG: urlpatterns += static(...)` — no effect in
+  prod, where S3 serves media directly.
+- [DECISION 2026-07-05] The frontend `AddPropertyForm` calls Django
+  directly from the browser with a JWT in `localStorage`
+  (`frontend/src/lib/api.ts`), not the httpOnly-cookie BFF proxy
+  `docs/frontend-plan.md` §3.1 specifies — that proxy doesn't exist yet
+  anywhere in the app (no route exercises real auth before this change).
+  CORS is enabled for `http://localhost:3000` in `dev.py` only. This is an
+  explicit, owner-approved stopgap to unblock this form; the BFF proxy
+  still needs to be built (FE-01) and this client swapped out before the
+  app is exposed beyond a developer's machine. Tracked in
+  `docs/frontend-plan.md` Decisions as well.
 
 ## Bugs found and fixed
 - **2026-07-03 (during Module 04):** `services.can_view_property()` chained
@@ -197,3 +245,13 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
 - 2026-07-04  Module 13 added a plan-limit check (`check_property_limit`) to
   `PropertyViewSet.perform_create` — see that module's spec for the full
   enforcement design.
+- 2026-07-05  Added `PropertyImage` model + `images` upload/delete actions
+  (migration `0003_propertyimage`, RLS-enforced) so the Add Property form
+  can attach photos — 6 new tests (43 total in this app). Wired the
+  frontend Add Property form to the real API (name/type/address/city/
+  state/contact_number/contact_email, matching the actual serializer —
+  the mock form previously had a `pincode` field with no backend
+  counterpart and no `contact_number`/`contact_email` fields at all, and
+  its `property_type` options didn't match the backend enum). Added
+  dev-only CORS and Django media serving (see Decisions). Regenerated
+  `docs/erd.png`.

@@ -5,20 +5,28 @@ from apps.accounts.models import User
 from apps.core.roles import STAFF_ROLES
 
 from . import services
-from .models import Bed, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
+from .models import Bed, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+
+
+class PropertyImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PropertyImage
+        fields = ['id', 'image', 'order', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 
 class PropertySerializer(serializers.ModelSerializer):
     floors_count = serializers.SerializerMethodField()
     rooms_count = serializers.SerializerMethodField()
     beds_count = serializers.SerializerMethodField()
+    images = PropertyImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Property
         fields = [
             'id', 'name', 'property_type', 'address_line', 'city', 'state', 'country',
             'contact_number', 'contact_email', 'status',
-            'floors_count', 'rooms_count', 'beds_count', 'created_at', 'updated_at',
+            'floors_count', 'rooms_count', 'beds_count', 'images', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

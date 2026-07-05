@@ -39,6 +39,26 @@ class Property(TenantModelMixin):
         return self.name
 
 
+def property_image_path(instance, filename):
+    return f'properties/{instance.property.tenant_id}/{instance.property_id}/{filename}'
+
+
+class PropertyImage(TenantModelMixin):
+    """A gallery photo for a Property (PRD Module 2 property listing)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to=property_image_path)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = 'property_images'
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.property.name} - image {self.order}'
+
+
 class Floor(TenantModelMixin):
     """A floor within a property. Purely structural — no money fields."""
 

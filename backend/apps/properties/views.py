@@ -1,7 +1,9 @@
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import MethodNotAllowed, ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
@@ -11,10 +13,11 @@ from apps.core.roles import Role
 from apps.subscriptions.services import check_property_limit
 
 from . import services
-from .models import Bed, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
+from .models import Bed, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
 from .serializers import (
     BedSerializer,
     FloorSerializer,
+    PropertyImageSerializer,
     PropertySerializer,
     PropertySettingsSerializer,
     PropertyStaffAssignmentSerializer,
@@ -42,11 +45,15 @@ class PropertyViewSet(viewsets.ModelViewSet):
     deactivate via `status`."""
 
     serializer_class = PropertySerializer
-    http_method_names = ['get', 'post', 'patch']
+    # 'delete' is needed for the nested image sub-resource below; Property
+    # itself still has no hard-delete (see destroy() override) — the
+    # sub-resource route lives under the same http_method_names because DRF's
+    # dispatch() checks this list before routing to any action, custom or not.
+    http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['status', 'property_type']
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update'):
+        if self.action in ('create', 'update', 'partial_update', 'upload_image', 'delete_image'):
             return [IsAuthenticated(), require_permission('manage_properties')()]
         if self.action == 'property_settings':
             return [IsAuthenticated(), require_permission('manage_property_settings')()]
@@ -78,6 +85,33 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 action='property.updated', actor=self.request.user, obj=instance,
                 before=before, after=after, request=self.request,
             )
+
+    def destroy(self, request, *args, **kwargs):
+        # No hard delete (deactivate via status instead) — explicit so the
+        # 'delete' method name added above for the image sub-resource doesn't
+        # accidentally reopen this.
+        raise MethodNotAllowed(request.method)
+
+    @action(detail=True, methods=['post'], url_path='images', parser_classes=[MultiPartParser, FormParser])
+    def upload_image(self, request, pk=None):
+        prop = self.get_object()
+        image_file = request.FILES.get('image')
+        if not image_file:
+            raise ValidationError({'image': _('An image file is required.')})
+        instance = PropertyImage.objects.create(
+            tenant_id=prop.tenant_id, property=prop, image=image_file, order=prop.images.count(),
+        )
+        return Response(
+            PropertyImageSerializer(instance, context=self.get_serializer_context()).data, status=201,
+        )
+
+    @action(detail=True, methods=['delete'], url_path=r'images/(?P<image_id>[^/.]+)')
+    def delete_image(self, request, pk=None, image_id=None):
+        prop = self.get_object()
+        image = get_object_or_404(prop.images, pk=image_id)
+        image.image.delete(save=False)
+        image.delete()
+        return Response(status=204)
 
     # Named property_settings, not "settings" — a method called `settings`
     # shadows APIView.settings (the api_settings instance DRF relies on

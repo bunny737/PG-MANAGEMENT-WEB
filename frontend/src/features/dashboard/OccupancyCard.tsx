@@ -23,8 +23,14 @@ export function OccupancyCard({ data }: { data: OccupancySummary }) {
           value={String(data.occupiedBeds)}
           sublabel={`${data.occupiedPercent}%`}
           tone="accent"
+          dot="accent"
         />
-        <StatTile label="Vacant" value={String(data.vacantBeds)} />
+        <StatTile
+          label="Vacant"
+          value={String(data.vacantBeds)}
+          sublabel={`${data.vacantPercent}%`}
+          dot="neutral"
+        />
       </div>
 
       <ProgressBar percent={data.occupiedPercent} label="Beds occupied" />

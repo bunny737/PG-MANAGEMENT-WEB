@@ -9,6 +9,7 @@ export const mockDashboardSummary: DashboardSummary = {
     occupiedBeds: 98,
     vacantBeds: 22,
     occupiedPercent: 81.6,
+    vacantPercent: 18.4,
   },
   financials: {
     monthlyRevenue: "$42,500",
@@ -18,6 +19,28 @@ export const mockDashboardSummary: DashboardSummary = {
   },
   issues: [
     { id: "1", unit: "104A", issue: "AC not cooling", status: "open" },
+    { id: "2", unit: "212B", issue: "Wi-Fi connection drops", status: "in_progress" },
+    { id: "3", unit: "301C", issue: "Leaking faucet in bathroom", status: "open" },
   ],
   highPriorityIssueCount: 3,
+  activity: [
+    {
+      id: "1",
+      tone: "info",
+      text: "New resident **Rahul S.** checked into Unit 105B.",
+      timestamp: "10:45 AM",
+    },
+    {
+      id: "2",
+      tone: "good",
+      text: "Rent payment received for Unit 201A ($450).",
+      timestamp: "09:12 AM",
+    },
+    {
+      id: "3",
+      tone: "neutral",
+      text: "Visitor logged for Unit 304 (Guest of Amit K.).",
+      timestamp: "Yesterday, 8:30 PM",
+    },
+  ],
 };

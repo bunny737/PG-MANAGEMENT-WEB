@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatusPill } from "@/components/shared/StatusPill";
 import type { ActiveIssue } from "./types";
 
@@ -46,6 +47,13 @@ export function ActiveIssuesCard({
           ))}
         </tbody>
       </table>
+
+      <Link
+        href="/complaints"
+        className="mt-4 flex w-full items-center justify-center rounded-xl border border-border py-2.5 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-page hover:text-ink"
+      >
+        View All Complaints
+      </Link>
     </section>
   );
 }

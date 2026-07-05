@@ -8,6 +8,7 @@ export interface OccupancySummary {
   occupiedBeds: number;
   vacantBeds: number;
   occupiedPercent: number;
+  vacantPercent: number;
 }
 
 export interface FinancialsSummary {
@@ -24,9 +25,19 @@ export interface ActiveIssue {
   status: "open" | "in_progress" | "resolved";
 }
 
+/** Mirrors the eventual /api/v1/activity-timeline/?limit=n response (FE-16) —
+ * `icon`/`tone` are a frontend-only rendering hint, not backend fields. */
+export interface ActivityItem {
+  id: string;
+  tone: "info" | "good" | "neutral";
+  text: string;
+  timestamp: string;
+}
+
 export interface DashboardSummary {
   occupancy: OccupancySummary;
   financials: FinancialsSummary;
   issues: ActiveIssue[];
   highPriorityIssueCount: number;
+  activity: ActivityItem[];
 }

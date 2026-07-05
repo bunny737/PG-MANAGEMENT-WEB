@@ -104,15 +104,30 @@ not a chart requiring palette validation.
   said). Colour (not strikethrough) still marks it as attention-worthy.
 - `StatusPill` — `status-critical-soft` bg + `status-critical` text + label;
   reused for row-level status (`Open`) and card-level counts (`3 High Priority`).
-- `BottomNav` — always visible at every viewport width (owner confirmed
-  2026-07-03: match the reference mock exactly rather than switching to a
-  sidebar on desktop). Page content is centered in a `max-w-md` column at all
-  widths; the nav bar spans the viewport but its items are constrained to the
-  same column so it stays visually attached to the content on wide screens.
-  Active item gets `accent` background + inverse text; item list is driven by
-  the permission matrix from `/auth/me/` (F8), not hardcoded per role. No
-  `SideNav` — removed after the first pass to avoid a second, undocumented
-  desktop-only layout.
+- `BottomNav` (< `md`) / `SideNav` (`md`+) — two distinct reference designs,
+  not one design reflowed. Owner supplied a phone mock (tab bar, single
+  stacked column, `Add Resident`/`Generate Invoices` quick actions) and,
+  2026-07-03, a separate desktop mock (persistent sidebar with 5 sections,
+  page-header pattern, denser multi-column grid, an activity feed) — the
+  earlier "match the phone mock at every width, no sidebar" call (also
+  2026-07-03) is superseded by the desktop mock arriving. `BOTTOM_NAV_ITEMS`
+  (4 slots, capped with a `More` catch-all) and `SIDEBAR_NAV_ITEMS` (5, one
+  per section) are separate lists in `NavItems.ts` — both still driven by the
+  permission matrix from `/auth/me/` (F8), not hardcoded per role, once FE-01
+  wires real auth. Active state also differs deliberately: bottom nav uses a
+  filled `accent` pill (mobile tab-bar convention); sidebar uses a subtle
+  `surface-page` row highlight (desktop nav convention) — not a mismatch to
+  fix later.
+- `DashboardHeader` (mobile: compact brand + bell) vs. `DesktopHeader` (page
+  title + subtitle + bell-with-unread-dot + `Add Resident`) — the desktop mock
+  drops the second `Generate Invoices` quick action entirely; revisit if the
+  owner wants it back once FE-08 exists.
+- `TodaysActivity` — activity-feed preview (icon avatar + emphasized-name text
+  + timestamp) previewing FE-16's activity timeline. Icon tint is chosen from
+  the item's semantic `tone` (info/good/neutral → accent/status-good/neutral
+  tokens), not a per-item hue, to keep the feed on the same restrained palette
+  as the rest of the dashboard — the reference mock's orange visitor-icon tint
+  was dropped for this reason.
 
 ## 3. Architecture
 

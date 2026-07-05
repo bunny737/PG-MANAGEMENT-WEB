@@ -3,18 +3,17 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS } from "./NavItems";
+import { BOTTOM_NAV_ITEMS } from "./NavItems";
 
-/** Always-visible tab bar, matching the reference mock at every viewport
- * width. The bar itself spans the viewport but its items are constrained to
- * the same centered column as the page content (see (owner)/dashboard). */
+/** Mobile tab bar (< md) — matches the phone reference mock. SideNav takes
+ * over at md+ (see (owner)/layout.tsx). */
 export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card">
+    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card md:hidden">
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
-        {NAV_ITEMS.map((item) => {
+        {BOTTOM_NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (

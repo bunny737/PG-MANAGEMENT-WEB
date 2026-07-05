@@ -21,6 +21,7 @@
 
   /* Status — always paired with a text label or icon, never color alone */
   --color-status-good: #16a34a;
+  --color-status-good-soft: #dcfce7;
   --color-status-critical: #dc2626;
   --color-status-critical-soft: #fee2e2;
 }
@@ -42,6 +43,7 @@
   --color-accent-soft: var(--color-accent-soft);
 
   --color-status-good: var(--color-status-good);
+  --color-status-good-soft: var(--color-status-good-soft);
   --color-status-critical: var(--color-status-critical);
   --color-status-critical-soft: var(--color-status-critical-soft);
 

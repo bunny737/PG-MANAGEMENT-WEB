@@ -43,7 +43,10 @@ export function SideNav() {
       </div>
 
       <div className="flex items-center justify-between border-t border-border px-5 py-4">
-        <div className="flex items-center gap-3">
+        <Link
+          href="/profile"
+          className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer"
+        >
           <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-inverse text-sm font-semibold text-ink-inverse">
             OP
           </span>
@@ -51,7 +54,7 @@ export function SideNav() {
             <span className="text-sm font-semibold text-ink">Owner Portal</span>
             <span className="text-xs text-ink-faint">Premium Plan</span>
           </div>
-        </div>
+        </Link>
         <button
           onClick={() => {
             localStorage.removeItem("isLoggedIn");

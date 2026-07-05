@@ -14,14 +14,12 @@ export default function DashboardPage() {
     mockDashboardSummary;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-6">
+    <div className="mx-auto flex max-w-md flex-col gap-4 pb-6">
       <DashboardHeader />
       <QuickActions />
-      <div className="grid grid-cols-1 gap-4 px-4 md:grid-cols-2 md:px-6">
+      <div className="flex flex-col gap-4 px-4">
         <OccupancyCard data={occupancy} />
         <FinancialsCard data={financials} />
-      </div>
-      <div className="px-4 md:px-6">
         <ActiveIssuesCard
           issues={issues}
           highPriorityCount={highPriorityIssueCount}

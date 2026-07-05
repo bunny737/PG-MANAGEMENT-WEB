@@ -2,7 +2,7 @@ import { Bell, Building2 } from "lucide-react";
 
 export function DashboardHeader() {
   return (
-    <header className="flex items-center justify-between px-4 py-4 md:px-6">
+    <header className="flex items-center justify-between px-4 py-4">
       <div className="flex items-center gap-2.5">
         <span className="flex size-9 items-center justify-center rounded-xl bg-surface-inverse text-ink-inverse">
           <Building2 className="size-5" aria-hidden />

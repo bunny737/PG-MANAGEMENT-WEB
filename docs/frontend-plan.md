@@ -104,9 +104,15 @@ not a chart requiring palette validation.
   said). Colour (not strikethrough) still marks it as attention-worthy.
 - `StatusPill` — `status-critical-soft` bg + `status-critical` text + label;
   reused for row-level status (`Open`) and card-level counts (`3 High Priority`).
-- `BottomNav` (mobile, < `md`) / `SideNav` (`md`+) — same nav-item list, active
-  item gets `accent` background + inverse text; both driven by the permission
-  matrix from `/auth/me/` (F8), not hardcoded per role.
+- `BottomNav` — always visible at every viewport width (owner confirmed
+  2026-07-03: match the reference mock exactly rather than switching to a
+  sidebar on desktop). Page content is centered in a `max-w-md` column at all
+  widths; the nav bar spans the viewport but its items are constrained to the
+  same column so it stays visually attached to the content on wide screens.
+  Active item gets `accent` background + inverse text; item list is driven by
+  the permission matrix from `/auth/me/` (F8), not hardcoded per role. No
+  `SideNav` — removed after the first pass to avoid a second, undocumented
+  desktop-only layout.
 
 ## 3. Architecture
 

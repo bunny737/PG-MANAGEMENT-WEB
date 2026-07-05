@@ -1,4 +1,6 @@
-import { Bell, Building2 } from "lucide-react";
+"use client";
+
+import { Bell, Building2, LogOut } from "lucide-react";
 
 export function DashboardHeader() {
   return (
@@ -9,13 +11,26 @@ export function DashboardHeader() {
         </span>
         <span className="text-lg font-bold text-ink">PropManager</span>
       </div>
-      <button
-        type="button"
-        aria-label="Notifications"
-        className="flex size-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-card hover:text-ink"
-      >
-        <Bell className="size-5" aria-hidden />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="flex size-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-card hover:text-ink"
+        >
+          <Bell className="size-5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label="Sign Out"
+          onClick={() => {
+            localStorage.removeItem("isLoggedIn");
+            window.location.href = "/login";
+          }}
+          className="flex size-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-card hover:text-ink cursor-pointer"
+        >
+          <LogOut className="size-5" aria-hidden />
+        </button>
+      </div>
     </header>
   );
 }

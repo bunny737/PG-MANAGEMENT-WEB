@@ -5,6 +5,7 @@ import {
   Receipt,
   Settings,
   Users,
+  Building,
 } from "lucide-react";
 
 // Placeholder nav lists — FE-01 replaces these with items filtered by the
@@ -13,6 +14,7 @@ import {
 /** Desktop sidebar — every section gets its own entry. */
 export const SIDEBAR_NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/properties", label: "Properties", icon: Building },
   { href: "/residents", label: "Residents", icon: Users },
   { href: "/complaints", label: "Complaints", icon: AlertTriangle },
   { href: "/financials", label: "Financials", icon: Receipt },

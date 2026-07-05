@@ -1,4 +1,5 @@
 import { BedDouble } from "lucide-react";
+import Link from "next/link";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { StatTile } from "@/components/shared/StatTile";
 import type { OccupancySummary } from "./types";
@@ -11,9 +12,9 @@ export function OccupancyCard({ data }: { data: OccupancySummary }) {
           <BedDouble className="size-5 text-ink-muted" aria-hidden />
           Occupancy Status
         </h2>
-        <a href="#" className="text-sm font-medium text-accent">
+        <Link href="/properties" className="text-sm font-medium text-accent hover:underline">
           Details ›
-        </a>
+        </Link>
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-2">

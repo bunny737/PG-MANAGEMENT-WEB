@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Building2 } from "lucide-react";
+import { Building2, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 
@@ -42,14 +42,26 @@ export function SideNav() {
         })}
       </div>
 
-      <div className="flex items-center gap-3 border-t border-border px-5 py-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-inverse text-sm font-semibold text-ink-inverse">
-          OP
-        </span>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-ink">Owner Portal</span>
-          <span className="text-xs text-ink-faint">Premium Plan</span>
+      <div className="flex items-center justify-between border-t border-border px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-inverse text-sm font-semibold text-ink-inverse">
+            OP
+          </span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-ink">Owner Portal</span>
+            <span className="text-xs text-ink-faint">Premium Plan</span>
+          </div>
         </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem("isLoggedIn");
+            window.location.href = "/login";
+          }}
+          className="rounded-lg p-1.5 text-ink-muted hover:bg-surface-page hover:text-ink transition-colors cursor-pointer"
+          title="Sign Out"
+        >
+          <LogOut className="size-5" aria-hidden />
+        </button>
       </div>
     </nav>
   );

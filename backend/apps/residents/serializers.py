@@ -18,6 +18,10 @@ from .models import (
 
 
 class ResidentSerializer(serializers.ModelSerializer):
+    unit = serializers.SerializerMethodField()
+    block = serializers.SerializerMethodField()
+    move_in_date = serializers.SerializerMethodField()
+
     class Meta:
         model = Resident
         fields = [
@@ -27,9 +31,25 @@ class ResidentSerializer(serializers.ModelSerializer):
             'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
             'aadhaar_number', 'aadhaar_document', 'pan_number', 'pan_document',
             'passport_number', 'employee_id', 'student_id',
+            'unit', 'block', 'move_in_date',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+
+    def get_unit(self, obj) -> str:
+        if hasattr(obj, 'allocation') and obj.allocation:
+            return f"Room {obj.allocation.allocated_bed.room.room_number}"
+        return "Not Allocated"
+
+    def get_block(self, obj) -> str:
+        if hasattr(obj, 'allocation') and obj.allocation:
+            return obj.allocation.allocated_bed.room.floor.building.name
+        return ""
+
+    def get_move_in_date(self, obj) -> str:
+        if hasattr(obj, 'admission') and obj.admission:
+            return obj.admission.joining_date.strftime('%B %d, %Y')
+        return "N/A"
 
     def validate_property(self, value):
         request = self.context['request']

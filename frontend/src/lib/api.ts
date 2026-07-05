@@ -374,3 +374,314 @@ export function updateBed(bedId: string, payload: Partial<Bed>) {
     body: JSON.stringify(payload),
   });
 }
+
+export interface Resident {
+  id: string;
+  property: string;
+  status: "inquiry" | "reserved" | "active" | "notice_period" | "vacated" | "absconded" | "blacklisted" | "inactive";
+  first_name: string;
+  last_name: string;
+  gender: string;
+  date_of_birth: string | null;
+  phone: string;
+  email: string;
+  permanent_address: string;
+  current_address: string;
+  emergency_contact_name: string;
+  emergency_contact_relation: string;
+  emergency_contact_phone: string;
+  aadhaar_number: string;
+  pan_number: string;
+  passport_number: string;
+  employee_id: string;
+  student_id: string;
+  unit?: string;
+  block?: string;
+  move_in_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Admission {
+  id: string;
+  resident: string;
+  bed: string;
+  joining_date: string;
+  billing_mode: "monthly" | "weekly" | "daily";
+  expected_stay_duration: string;
+  contracted_sharing_type: number;
+  contracted_room_category: string;
+  food_preference: "with_food" | "without_food";
+  contracted_rent: string;
+  advance_amount: string;
+  advance_collected_date: string | null;
+  advance_mode: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listResidents(propertyId?: string, status?: string) {
+  let url = "/api/v1/residents/";
+  const params = new URLSearchParams();
+  if (propertyId) params.append("property", propertyId);
+  if (status && status !== "all") params.append("status", status);
+  const q = params.toString();
+  if (q) url += `?${q}`;
+  
+  return apiFetch<Resident[] | { results: Resident[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getResident(residentId: string) {
+  return apiFetch<Resident>(`/api/v1/residents/${residentId}/`);
+}
+
+export interface CreateResidentPayload {
+  property: string;
+  first_name: string;
+  last_name?: string;
+  gender?: string;
+  date_of_birth?: string | null;
+  phone: string;
+  email?: string;
+  permanent_address?: string;
+  current_address?: string;
+  emergency_contact_name?: string;
+  emergency_contact_relation?: string;
+  emergency_contact_phone?: string;
+  aadhaar_number?: string;
+  pan_number?: string;
+  passport_number?: string;
+  employee_id?: string;
+  student_id?: string;
+}
+
+export function createResident(payload: CreateResidentPayload) {
+  return apiFetch<Resident>("/api/v1/residents/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateResident(residentId: string, payload: Partial<CreateResidentPayload>) {
+  return apiFetch<Resident>(`/api/v1/residents/${residentId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateResidentStatus(residentId: string, status: string) {
+  return apiFetch<Resident>(`/api/v1/residents/${residentId}/status/`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export interface CreateAdmissionPayload {
+  resident: string;
+  bed: string;
+  joining_date: string;
+  billing_mode: "monthly" | "weekly" | "daily";
+  expected_stay_duration?: string;
+  food_preference: "with_food" | "without_food";
+  advance_amount: string;
+  advance_collected_date?: string | null;
+  advance_mode?: string;
+}
+
+export function createAdmission(payload: CreateAdmissionPayload) {
+  return apiFetch<Admission>("/api/v1/admissions/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface StaffUser {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+}
+
+export function listStaff() {
+  return apiFetch<StaffUser[] | { results: StaffUser[] }>("/api/v1/staff/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export interface ComplaintComment {
+  id: string;
+  complaint: string;
+  author: string | null;
+  author_details?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+  } | null;
+  body: string;
+  created_at: string;
+}
+
+export interface Complaint {
+  id: string;
+  resident: string; // ID of resident
+  resident_name?: string; // Resolved name helper
+  resident_room?: string; // Resolved room helper
+  resident_details?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    unit: string;
+    block: string;
+  };
+  category: "electrical" | "plumbing" | "internet_wifi" | "housekeeping" | "security" | "furniture" | "other";
+  priority: "low" | "medium" | "high" | "urgent";
+  status: "open" | "assigned" | "in_progress" | "resolved" | "closed";
+  description: string;
+  attachment: string | null;
+  assigned_to: string | null; // User ID
+  assigned_to_details?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  } | null;
+  raised_by: string | null; // User ID
+  raised_by_details?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  } | null;
+  comments: ComplaintComment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string }) {
+  let url = "/api/v1/complaints/";
+  const params = new URLSearchParams();
+  if (filters) {
+    if (filters.resident) params.append("resident", filters.resident);
+    if (filters.status && filters.status !== "all") params.append("status", filters.status);
+    if (filters.category && filters.category !== "all") params.append("category", filters.category);
+    if (filters.priority && filters.priority !== "all") params.append("priority", filters.priority);
+  }
+  const q = params.toString();
+  if (q) url += `?${q}`;
+
+  return apiFetch<Complaint[] | { results: Complaint[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getComplaint(complaintId: string) {
+  return apiFetch<Complaint>(`/api/v1/complaints/${complaintId}/`);
+}
+
+export function createComplaint(formData: FormData) {
+  // Uses FormData directly for file uploads
+  return apiFetch<Complaint>("/api/v1/complaints/", {
+    method: "POST",
+    body: formData, // Skip JSON stringify for multipart uploads
+  });
+}
+
+export function assignComplaint(complaintId: string, assignedToId: string) {
+  return apiFetch<Complaint>(`/api/v1/complaints/${complaintId}/assign/`, {
+    method: "POST",
+    body: JSON.stringify({ assigned_to: assignedToId }),
+  });
+}
+
+export function updateComplaintStatus(complaintId: string, status: string) {
+  return apiFetch<Complaint>(`/api/v1/complaints/${complaintId}/status/`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function listComplaintComments(complaintId: string) {
+  return apiFetch<ComplaintComment[]>(`/api/v1/complaints/${complaintId}/comments/`);
+}
+
+export function createComplaintComment(complaintId: string, body: string) {
+  return apiFetch<ComplaintComment>(`/api/v1/complaints/${complaintId}/comments/`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  tenant_id: string;
+}
+
+export function getCurrentUser() {
+  return apiFetch<CurrentUser>("/api/v1/auth/me/");
+}
+
+export interface Invoice {
+  id: string;
+  resident: string;
+  period_start: string;
+  period_end: string;
+  billing_mode: string;
+  issue_date: string;
+  due_date: string;
+  status: "draft" | "issued" | "paid" | "partially_paid" | "void";
+  total: string;
+  amount_paid: string;
+  balance_due: string;
+  is_overdue: boolean;
+  created_at: string;
+}
+
+export interface Payment {
+  id: string;
+  invoice: string;
+  payment_date: string;
+  payment_mode: string;
+  amount: string;
+  reference_number?: string;
+  created_at: string;
+}
+
+export function listInvoices() {
+  return apiFetch<Invoice[] | { results: Invoice[] }>("/api/v1/invoices/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listPayments() {
+  return apiFetch<Payment[] | { results: Payment[] }>("/api/v1/payments/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listAdmissions() {
+  return apiFetch<Admission[] | { results: Admission[] }>("/api/v1/admissions/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listAllRooms() {
+  return apiFetch<Room[] | { results: Room[] }>("/api/v1/rooms/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listAllBeds() {
+  return apiFetch<Bed[] | { results: Bed[] }>("/api/v1/beds/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}

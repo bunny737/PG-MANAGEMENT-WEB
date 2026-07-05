@@ -15,6 +15,20 @@ class ComplaintCommentSerializer(serializers.ModelSerializer):
         fields = ['id', 'complaint', 'author', 'body', 'created_at']
         read_only_fields = ['id', 'complaint', 'author', 'created_at']
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.author:
+            representation['author_details'] = {
+                'id': str(instance.author.id),
+                'first_name': instance.author.first_name,
+                'last_name': instance.author.last_name,
+                'email': instance.author.email,
+                'role': instance.author.role,
+            }
+        else:
+            representation['author_details'] = None
+        return representation
+
 
 class ComplaintCommentWriteSerializer(serializers.ModelSerializer):
     class Meta:
@@ -40,6 +54,48 @@ class ComplaintSerializer(serializers.ModelSerializer):
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
         return value
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # resident details
+        resident = instance.resident
+        unit = "Not Allocated"
+        block = ""
+        if hasattr(resident, 'allocation') and resident.allocation:
+            unit = f"Room {resident.allocation.allocated_bed.room.room_number}"
+            block = resident.allocation.allocated_bed.room.floor.building.name
+        
+        representation['resident_details'] = {
+            'id': str(resident.id),
+            'first_name': resident.first_name,
+            'last_name': resident.last_name,
+            'unit': unit,
+            'block': block,
+        }
+        
+        # assigned_to details
+        if instance.assigned_to:
+            representation['assigned_to_details'] = {
+                'id': str(instance.assigned_to.id),
+                'first_name': instance.assigned_to.first_name,
+                'last_name': instance.assigned_to.last_name,
+                'email': instance.assigned_to.email,
+            }
+        else:
+            representation['assigned_to_details'] = None
+
+        # raised_by details
+        if instance.raised_by:
+            representation['raised_by_details'] = {
+                'id': str(instance.raised_by.id),
+                'first_name': instance.raised_by.first_name,
+                'last_name': instance.raised_by.last_name,
+                'email': instance.raised_by.email,
+            }
+        else:
+            representation['raised_by_details'] = None
+
+        return representation
 
 
 class ComplaintUpdateSerializer(serializers.ModelSerializer):

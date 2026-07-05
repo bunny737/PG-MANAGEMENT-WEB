@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown } from "lucide-react";
+import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown, LoaderCircle, AlertTriangle } from "lucide-react";
 import { getInitials } from "@/lib/utils";
-import { mockResidents } from "./mock-residents";
+import { listResidents, type Resident, ApiError } from "@/lib/api";
 
 export function ResidentsDirectory() {
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBlock, setSelectedBlock] = useState("");
@@ -15,6 +19,50 @@ export function ResidentsDirectory() {
 
   // Sorting
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    listResidents()
+      .then((data) => {
+        if (cancelled) return;
+        setResidents(data);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+        setError(err instanceof ApiError ? err.message : "Failed to load residents list. Please try again.");
+        setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Dynamically collect unique blocks/buildings and floors from the loaded residents list
+  const blocks = useMemo(() => {
+    const unique = new Set<string>();
+    residents.forEach((r) => {
+      if (r.block) unique.add(r.block);
+    });
+    return Array.from(unique).sort();
+  }, [residents]);
+
+  const floors = useMemo(() => {
+    const unique = new Set<string>();
+    residents.forEach((r) => {
+      if (r.unit) {
+        // e.g. "Room 401" -> extract digits (e.g. 401) -> extract floor (e.g. 4)
+        const digits = r.unit.replace(/\D/g, "");
+        if (digits.length >= 3) {
+          unique.add(digits.substring(0, digits.length - 2));
+        }
+      }
+    });
+    return Array.from(unique).sort((a, b) => Number(a) - Number(b));
+  }, [residents]);
 
   // Avatar Background Color Helper
   const getAvatarBg = (name: string) => {
@@ -32,35 +80,52 @@ export function ResidentsDirectory() {
 
   // Filtered and Sorted Residents
   const filteredResidents = useMemo(() => {
-    return mockResidents
+    return residents
       .filter((resident) => {
+        const fullName = `${resident.first_name} ${resident.last_name}`.trim();
+        const unitStr = resident.unit || "";
+        const blockStr = resident.block || "";
+
         // Search filter (name, unit, phone, email)
         const query = searchTerm.toLowerCase();
         const matchesSearch =
-          resident.name.toLowerCase().includes(query) ||
-          resident.unit.toLowerCase().includes(query) ||
+          fullName.toLowerCase().includes(query) ||
+          unitStr.toLowerCase().includes(query) ||
           resident.phone.includes(query) ||
           resident.email.toLowerCase().includes(query);
 
         // Block filter
-        const matchesBlock = selectedBlock ? resident.block === selectedBlock : true;
+        const matchesBlock = selectedBlock ? blockStr === selectedBlock : true;
 
-        // Floor filter
-        const matchesFloor = selectedFloor ? resident.floor === Number(selectedFloor) : true;
+        // Floor filter (extract room digits and check prefix matching floor)
+        let matchesFloor = true;
+        if (selectedFloor) {
+          const roomDigits = unitStr.replace(/^\D+/g, ""); // e.g. "401"
+          matchesFloor = roomDigits.startsWith(selectedFloor);
+        }
 
         // Status filter
-        const matchesStatus = selectedStatus === "all" ? true : resident.status === selectedStatus;
+        let matchesStatus = true;
+        if (selectedStatus !== "all") {
+          if (selectedStatus === "inactive") {
+            matchesStatus = ["vacated", "absconded", "blacklisted", "inactive"].includes(resident.status);
+          } else {
+            matchesStatus = resident.status === selectedStatus;
+          }
+        }
 
         return matchesSearch && matchesBlock && matchesFloor && matchesStatus;
       })
       .sort((a, b) => {
+        const nameA = `${a.first_name} ${a.last_name}`.trim();
+        const nameB = `${b.first_name} ${b.last_name}`.trim();
         if (sortOrder === "asc") {
-          return a.name.localeCompare(b.name);
+          return nameA.localeCompare(nameB);
         } else {
-          return b.name.localeCompare(a.name);
+          return nameB.localeCompare(nameA);
         }
       });
-  }, [searchTerm, selectedBlock, selectedFloor, selectedStatus, sortOrder]);
+  }, [residents, searchTerm, selectedBlock, selectedFloor, selectedStatus, sortOrder]);
 
   const handleResetFilters = () => {
     setSearchTerm("");
@@ -68,6 +133,33 @@ export function ResidentsDirectory() {
     setSelectedFloor("");
     setSelectedStatus("all");
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
+        <LoaderCircle className="size-8 animate-spin text-accent" />
+        <p className="font-semibold mt-2">Loading resident directory...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4 max-w-md mx-auto py-16 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
+          <AlertTriangle className="size-6" />
+        </div>
+        <h3 className="text-lg font-bold text-ink">Failed to Load Directory</h3>
+        <p className="text-xs text-ink-muted leading-relaxed">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -96,6 +188,8 @@ export function ResidentsDirectory() {
             { id: "all", label: "All Tenants" },
             { id: "active", label: "Active" },
             { id: "notice_period", label: "Notice Period" },
+            { id: "reserved", label: "Reserved" },
+            { id: "inquiry", label: "Inquiry" },
             { id: "inactive", label: "Inactive" },
           ].map((tab) => {
             const isActive = selectedStatus === tab.id;
@@ -139,9 +233,11 @@ export function ResidentsDirectory() {
               className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
             >
               <option value="">All Blocks</option>
-              <option value="A">Block A</option>
-              <option value="B">Block B</option>
-              <option value="C">Block C</option>
+              {blocks.map((block) => (
+                <option key={block} value={block}>
+                  Block {block}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -153,10 +249,11 @@ export function ResidentsDirectory() {
               className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
             >
               <option value="">All Floors</option>
-              <option value="1">Floor 1</option>
-              <option value="2">Floor 2</option>
-              <option value="3">Floor 3</option>
-              <option value="4">Floor 4</option>
+              {floors.map((floor) => (
+                <option key={floor} value={floor}>
+                  Floor {floor}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -206,42 +303,131 @@ export function ResidentsDirectory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredResidents.map((resident) => (
-                  <tr
-                    key={resident.id}
-                    className="hover:bg-surface-page/40 transition-colors"
-                  >
-                    {/* Resident Info column */}
-                    <td className="px-6 py-4">
-                      <Link
-                        href={`/residents/${resident.id}`}
-                        className="flex items-center gap-3 group hover:opacity-90 transition-opacity"
-                      >
-                        <span
-                          className={`flex size-10 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${getAvatarBg(
-                            resident.name
-                          )}`}
+                {filteredResidents.map((resident) => {
+                  const fullName = `${resident.first_name} ${resident.last_name}`.trim();
+                  return (
+                    <tr
+                      key={resident.id}
+                      className="hover:bg-surface-page/40 transition-colors"
+                    >
+                      {/* Resident Info column */}
+                      <td className="px-6 py-4">
+                        <Link
+                          href={`/residents/${resident.id}`}
+                          className="flex items-center gap-3 group hover:opacity-90 transition-opacity"
                         >
-                          {getInitials(resident.name)}
-                        </span>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-ink group-hover:text-accent transition-colors">
-                            {resident.name}
+                          <span
+                            className={`flex size-10 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${getAvatarBg(
+                              fullName
+                            )}`}
+                          >
+                            {getInitials(fullName)}
                           </span>
-                          <span className="text-xs text-ink-muted">{resident.email}</span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-ink group-hover:text-accent transition-colors">
+                              {fullName}
+                            </span>
+                            <span className="text-xs text-ink-muted">{resident.email}</span>
+                          </div>
+                        </Link>
+                      </td>
+
+                      {/* Unit ID Column */}
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-xs font-semibold text-ink bg-surface-page border border-border px-2.5 py-1 rounded-md">
+                          {resident.unit || "Not Allocated"}
+                        </span>
+                      </td>
+
+                      {/* Status Badge column */}
+                      <td className="px-6 py-4">
+                        {resident.status === "active" && (
+                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-100">
+                            Active
+                          </span>
+                        )}
+                        {resident.status === "notice_period" && (
+                          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 border border-red-100">
+                            Notice Period
+                          </span>
+                        )}
+                        {resident.status === "reserved" && (
+                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 border border-amber-100">
+                            Reserved
+                          </span>
+                        )}
+                        {resident.status === "inquiry" && (
+                          <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-100">
+                            Inquiry
+                          </span>
+                        )}
+                        {resident.status === "inactive" && (
+                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-500 border border-slate-200">
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Move In Date Column */}
+                      <td className="px-6 py-4 text-sm text-ink-muted">
+                        {resident.move_in_date || "N/A"}
+                      </td>
+
+                      {/* Action buttons column */}
+                      <td className="px-6 py-4 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <a
+                            href={`tel:${resident.phone}`}
+                            className="flex size-9 items-center justify-center rounded-full border border-border text-ink-muted hover:bg-surface-page hover:text-accent hover:border-accent/35 transition-all cursor-pointer"
+                            title={`Call ${fullName} (${resident.phone})`}
+                          >
+                            <Phone className="size-4" />
+                          </a>
+                          <a
+                            href={`mailto:${resident.email}`}
+                            className="flex size-9 items-center justify-center rounded-full border border-border text-ink-muted hover:bg-surface-page hover:text-accent hover:border-accent/35 transition-all cursor-pointer"
+                            title={`Email ${fullName} (${resident.email})`}
+                          >
+                            <Mail className="size-4" />
+                          </a>
                         </div>
-                      </Link>
-                    </td>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-                    {/* Unit ID Column */}
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs font-semibold text-ink bg-surface-page border border-border px-2.5 py-1 rounded-md">
-                        {resident.unit}
+          {/* Mobile Grid/List Layout (< md) */}
+          <div className="block md:hidden divide-y divide-border">
+            {filteredResidents.map((resident) => {
+              const fullName = `${resident.first_name} ${resident.last_name}`.trim();
+              return (
+                <div key={resident.id} className="p-4 space-y-3.5 hover:bg-surface-page/30 transition-colors">
+                  {/* Header card info */}
+                  <div className="flex items-start justify-between">
+                    <Link
+                      href={`/residents/${resident.id}`}
+                      className="flex items-center gap-3 group hover:opacity-90 transition-opacity"
+                    >
+                      <span
+                        className={`flex size-10 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${getAvatarBg(
+                          fullName
+                        )}`}
+                      >
+                        {getInitials(fullName)}
                       </span>
-                    </td>
-
-                    {/* Status Badge column */}
-                    <td className="px-6 py-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-ink group-hover:text-accent transition-colors">
+                          {fullName}
+                        </h4>
+                        <p className="text-xs text-ink-muted">Room {resident.unit || "N/A"} · Move-in {resident.move_in_date || "N/A"}</p>
+                      </div>
+                    </Link>
+                    
+                    {/* Status Badge */}
+                    <div>
                       {resident.status === "active" && (
                         <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-100">
                           Active
@@ -249,7 +435,17 @@ export function ResidentsDirectory() {
                       )}
                       {resident.status === "notice_period" && (
                         <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 border border-red-100">
-                          Notice Period
+                          Notice
+                        </span>
+                      )}
+                      {resident.status === "reserved" && (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 border border-amber-100">
+                          Reserved
+                        </span>
+                      )}
+                      {resident.status === "inquiry" && (
+                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-100">
+                          Inquiry
                         </span>
                       )}
                       {resident.status === "inactive" && (
@@ -257,105 +453,32 @@ export function ResidentsDirectory() {
                           Inactive
                         </span>
                       )}
-                    </td>
-
-                    {/* Move In Date Column */}
-                    <td className="px-6 py-4 text-sm text-ink-muted">
-                      {resident.moveInDate}
-                    </td>
-
-                    {/* Action buttons column */}
-                    <td className="px-6 py-4 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <a
-                          href={`tel:${resident.phone}`}
-                          className="flex size-9 items-center justify-center rounded-full border border-border text-ink-muted hover:bg-surface-page hover:text-accent hover:border-accent/35 transition-all cursor-pointer"
-                          title={`Call ${resident.name} (${resident.phone})`}
-                        >
-                          <Phone className="size-4" />
-                        </a>
-                        <a
-                          href={`mailto:${resident.email}`}
-                          className="flex size-9 items-center justify-center rounded-full border border-border text-ink-muted hover:bg-surface-page hover:text-accent hover:border-accent/35 transition-all cursor-pointer"
-                          title={`Email ${resident.name} (${resident.email})`}
-                        >
-                          <Mail className="size-4" />
-                        </a>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Grid/List Layout (< md) */}
-          <div className="block md:hidden divide-y divide-border">
-            {filteredResidents.map((resident) => (
-              <div key={resident.id} className="p-4 space-y-3.5 hover:bg-surface-page/30 transition-colors">
-                {/* Header card info */}
-                <div className="flex items-start justify-between">
-                  <Link
-                    href={`/residents/${resident.id}`}
-                    className="flex items-center gap-3 group hover:opacity-90 transition-opacity"
-                  >
-                    <span
-                      className={`flex size-10 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${getAvatarBg(
-                        resident.name
-                      )}`}
-                    >
-                      {getInitials(resident.name)}
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-bold text-ink group-hover:text-accent transition-colors">
-                        {resident.name}
-                      </h4>
-                      <p className="text-xs text-ink-muted">Room {resident.unit} · Move-in {resident.moveInDate}</p>
                     </div>
-                  </Link>
-                  
-                  {/* Status Badge */}
-                  <div>
-                    {resident.status === "active" && (
-                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-100">
-                        Active
-                      </span>
-                    )}
-                    {resident.status === "notice_period" && (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 border border-red-100">
-                        Notice
-                      </span>
-                    )}
-                    {resident.status === "inactive" && (
-                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-500 border border-slate-200">
-                        Inactive
-                      </span>
-                    )}
                   </div>
-                </div>
 
-                {/* Subinfo & Contact buttons */}
-                <div className="flex items-center justify-between border-t border-border/40 pt-3">
-                  <span className="text-xs text-ink-faint font-mono">{resident.email}</span>
-                  <div className="flex gap-2">
-                    <a
-                      href={`tel:${resident.phone}`}
-                      className="flex size-9 items-center justify-center rounded-full border border-border bg-surface-card text-ink-muted hover:bg-surface-page hover:text-accent transition-colors"
-                      title="Call"
-                    >
-                      <Phone className="size-4" />
-                    </a>
-                    <a
-                      href={`mailto:${resident.email}`}
-                      className="flex size-9 items-center justify-center rounded-full border border-border bg-surface-card text-ink-muted hover:bg-surface-page hover:text-accent transition-colors"
-                      title="Email"
-                    >
-                      <Mail className="size-4" />
-                    </a>
+                  {/* Subinfo & Contact buttons */}
+                  <div className="flex items-center justify-between border-t border-border/40 pt-3">
+                    <span className="text-xs text-ink-faint font-mono">{resident.email}</span>
+                    <div className="flex gap-2">
+                      <a
+                        href={`tel:${resident.phone}`}
+                        className="flex size-9 items-center justify-center rounded-full border border-border bg-surface-card text-ink-muted hover:bg-surface-page hover:text-accent transition-colors"
+                        title="Call"
+                      >
+                        <Phone className="size-4" />
+                      </a>
+                      <a
+                        href={`mailto:${resident.email}`}
+                        className="flex size-9 items-center justify-center rounded-full border border-border bg-surface-card text-ink-muted hover:bg-surface-page hover:text-accent transition-colors"
+                        title="Email"
+                      >
+                        <Mail className="size-4" />
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (

@@ -82,7 +82,7 @@ export function BedDetails({
               </li>
               <li className="flex items-center">
                 <ChevronRight className="size-3 text-ink-faint mx-1" />
-                <Link href={`/properties/${property.id}/floors`} className="hover:text-accent font-medium transition-colors">
+                <Link href={`/properties/${property.id}/buildings`} className="hover:text-accent font-medium transition-colors">
                   {property.name}
                 </Link>
               </li>

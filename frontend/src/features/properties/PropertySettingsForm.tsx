@@ -76,7 +76,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
       {/* Header and Breadcrumbs */}
       <div className="flex items-center gap-3">
         <Link
-          href={`/properties/${property.id}/floors`}
+          href={`/properties/${property.id}/buildings`}
           className="hover:bg-surface-page p-2 rounded-full transition-colors inline-flex items-center justify-center border border-border"
         >
           <ArrowLeft className="size-5 text-ink-muted" />
@@ -92,7 +92,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
               </li>
               <li className="flex items-center">
                 <ChevronRight className="size-3 text-ink-faint mx-1" />
-                <Link href={`/properties/${property.id}/floors`} className="hover:text-accent font-medium transition-colors">
+                <Link href={`/properties/${property.id}/buildings`} className="hover:text-accent font-medium transition-colors">
                   {property.name}
                 </Link>
               </li>
@@ -272,7 +272,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
         {/* Save button footer */}
         <div className="flex justify-end gap-3 pt-2">
           <Link
-            href={`/properties/${property.id}/floors`}
+            href={`/properties/${property.id}/buildings`}
             className="rounded-xl border border-border bg-surface-page px-5 py-2.5 text-xs font-bold text-ink-muted hover:bg-surface-card hover:text-ink transition-colors cursor-pointer"
           >
             Cancel

@@ -116,7 +116,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             return Admission.objects.none()
         ids = visible_property_ids(self.request.user)
         return Admission.objects.filter(
-            bed__room__floor__property_id__in=ids
+            bed__room__floor__building__property_id__in=ids
         ).select_related('resident', 'bed')
 
     @transaction.atomic
@@ -128,7 +128,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         # Plan limit (PRD §4: checked per property) — Module 13's concern;
         # fail-open when no plan is configured. Checked before any side
         # effect so a blocked check-in leaves the bed/resident untouched.
-        check_resident_limit(bed.room.floor.property)
+        check_resident_limit(bed.room.floor.building.property)
 
         instance = serializer.save(
             tenant_id=self.request.user.tenant_id,
@@ -176,7 +176,7 @@ class AllocationViewSet(viewsets.ReadOnlyModelViewSet):
             return Allocation.objects.none()
         ids = visible_property_ids(self.request.user)
         return Allocation.objects.filter(
-            allocated_bed__room__floor__property_id__in=ids
+            allocated_bed__room__floor__building__property_id__in=ids
         ).select_related('resident', 'allocated_bed__room')
 
 
@@ -197,7 +197,7 @@ class TransferViewSet(viewsets.ModelViewSet):
             return Transfer.objects.none()
         ids = visible_property_ids(self.request.user)
         return Transfer.objects.filter(
-            new_bed__room__floor__property_id__in=ids
+            new_bed__room__floor__building__property_id__in=ids
         ).select_related('resident', 'previous_bed', 'new_bed')
 
     def create(self, request, *args, **kwargs):

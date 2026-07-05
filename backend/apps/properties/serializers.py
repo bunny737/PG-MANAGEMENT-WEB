@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -5,7 +6,16 @@ from apps.accounts.models import User
 from apps.core.roles import STAFF_ROLES
 
 from . import services
-from .models import Bed, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+
+
+def _ordinal_floor_name(index):
+    """0 -> "Ground Floor", 1 -> "1st Floor", 2 -> "2nd Floor", ... — used to
+    auto-name floors generated from a Building's `number_of_floors`."""
+    if index == 0:
+        return 'Ground Floor'
+    suffix = 'th' if 10 <= index % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(index % 10, 'th')
+    return f'{index}{suffix} Floor'
 
 
 class PropertyImageSerializer(serializers.ModelSerializer):
@@ -16,9 +26,11 @@ class PropertyImageSerializer(serializers.ModelSerializer):
 
 
 class PropertySerializer(serializers.ModelSerializer):
+    buildings_count = serializers.SerializerMethodField()
     floors_count = serializers.SerializerMethodField()
     rooms_count = serializers.SerializerMethodField()
     beds_count = serializers.SerializerMethodField()
+    occupancy_percent = serializers.SerializerMethodField()
     images = PropertyImageSerializer(many=True, read_only=True)
 
     class Meta:
@@ -26,24 +38,49 @@ class PropertySerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'property_type', 'address_line', 'city', 'state', 'country',
             'contact_number', 'contact_email', 'status',
-            'floors_count', 'rooms_count', 'beds_count', 'images', 'created_at', 'updated_at',
+            'buildings_count', 'floors_count', 'rooms_count', 'beds_count', 'occupancy_percent',
+            'images', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def get_buildings_count(self, obj) -> int:
+        return obj.buildings.count()
+
     def get_floors_count(self, obj) -> int:
-        return obj.floors.count()
+        return Floor.objects.filter(building__property=obj).count()
 
     def get_rooms_count(self, obj) -> int:
-        return Room.objects.filter(floor__property=obj).count()
+        return Room.objects.filter(floor__building__property=obj).count()
 
     def get_beds_count(self, obj) -> int:
-        return Bed.objects.filter(room__floor__property=obj).count()
+        return Bed.objects.filter(room__floor__building__property=obj).count()
+
+    def get_occupancy_percent(self, obj) -> int:
+        total_beds = Bed.objects.filter(room__floor__building__property=obj).count()
+        if total_beds == 0:
+            return 0
+        occupied_beds = Bed.objects.filter(
+            room__floor__building__property=obj, status=Bed.Status.OCCUPIED
+        ).count()
+        return int((occupied_beds / total_beds) * 100)
 
 
-class FloorSerializer(serializers.ModelSerializer):
+class BuildingSerializer(serializers.ModelSerializer):
+    order = serializers.IntegerField(required=False)
+    # Write-only convenience: auto-generates that many Floors (named "Ground
+    # Floor", "1st Floor", ...) in the same request, so an owner adding a new
+    # block doesn't have to add each floor by hand afterwards.
+    number_of_floors = serializers.IntegerField(write_only=True, required=False, default=0, min_value=0, max_value=100)
+    floors_count = serializers.SerializerMethodField()
+    rooms_count = serializers.SerializerMethodField()
+    occupancy_percent = serializers.SerializerMethodField()
+
     class Meta:
-        model = Floor
-        fields = ['id', 'property', 'name', 'order', 'created_at', 'updated_at']
+        model = Building
+        fields = [
+            'id', 'property', 'name', 'order', 'number_of_floors',
+            'floors_count', 'rooms_count', 'occupancy_percent', 'created_at', 'updated_at',
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_property(self, value):
@@ -53,6 +90,90 @@ class FloorSerializer(serializers.ModelSerializer):
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
         return value
+
+    def to_internal_value(self, data):
+        if self.instance is None:
+            if 'order' not in data or data.get('order') == '' or data.get('order') is None:
+                if hasattr(data, 'copy'):
+                    data = data.copy()
+                else:
+                    data = dict(data)
+                prop_id = data.get('property')
+                if prop_id:
+                    last_building = Building.objects.filter(property_id=prop_id).order_by('-order').first()
+                    data['order'] = (last_building.order + 1) if last_building else 0
+                else:
+                    data['order'] = 0
+        return super().to_internal_value(data)
+
+    def create(self, validated_data):
+        number_of_floors = validated_data.pop('number_of_floors', 0)
+        with transaction.atomic():
+            building = super().create(validated_data)
+            for i in range(number_of_floors):
+                Floor.objects.create(
+                    tenant_id=building.tenant_id, building=building,
+                    name=_ordinal_floor_name(i), order=i,
+                )
+        return building
+
+    def get_floors_count(self, obj) -> int:
+        return obj.floors.count()
+
+    def get_rooms_count(self, obj) -> int:
+        return Room.objects.filter(floor__building=obj).count()
+
+    def get_occupancy_percent(self, obj) -> int:
+        total_beds = Bed.objects.filter(room__floor__building=obj).count()
+        if total_beds == 0:
+            return 0
+        occupied_beds = Bed.objects.filter(room__floor__building=obj, status=Bed.Status.OCCUPIED).count()
+        return int((occupied_beds / total_beds) * 100)
+
+
+class FloorSerializer(serializers.ModelSerializer):
+    order = serializers.IntegerField(required=False)
+    rooms_count = serializers.SerializerMethodField()
+    occupancy_percent = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Floor
+        fields = ['id', 'building', 'name', 'order', 'rooms_count', 'occupancy_percent', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_building(self, value):
+        request = self.context['request']
+        if not services.can_view_property(request.user, value.property_id):
+            raise serializers.ValidationError(
+                _('You are not assigned to this property.'), code='property_not_assigned'
+            )
+        return value
+
+    def to_internal_value(self, data):
+        if self.instance is None:
+            if 'order' not in data or data.get('order') == '' or data.get('order') is None:
+                # Support mutable dict copy
+                if hasattr(data, 'copy'):
+                    data = data.copy()
+                else:
+                    data = dict(data)
+                building_id = data.get('building')
+                if building_id:
+                    last_floor = Floor.objects.filter(building_id=building_id).order_by('-order').first()
+                    data['order'] = (last_floor.order + 1) if last_floor else 0
+                else:
+                    data['order'] = 0
+        return super().to_internal_value(data)
+
+    def get_rooms_count(self, obj) -> int:
+        return obj.rooms.count()
+
+    def get_occupancy_percent(self, obj) -> int:
+        total_beds = Bed.objects.filter(room__floor=obj).count()
+        if total_beds == 0:
+            return 0
+        occupied_beds = Bed.objects.filter(room__floor=obj, status=Bed.Status.OCCUPIED).count()
+        return int((occupied_beds / total_beds) * 100)
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -76,7 +197,7 @@ class RoomSerializer(serializers.ModelSerializer):
 
     def validate_floor(self, value):
         request = self.context['request']
-        if not services.can_view_property(request.user, value.property_id):
+        if not services.can_view_property(request.user, value.building.property_id):
             raise serializers.ValidationError(
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
@@ -105,7 +226,7 @@ class BedSerializer(serializers.ModelSerializer):
 
     def validate_room(self, value):
         request = self.context['request']
-        if not services.can_view_property(request.user, value.floor.property_id):
+        if not services.can_view_property(request.user, value.floor.building.property_id):
             raise serializers.ValidationError(
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )

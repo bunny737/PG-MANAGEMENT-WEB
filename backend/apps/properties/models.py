@@ -9,7 +9,7 @@ from apps.core.models import TenantModelMixin
 
 
 class Property(TenantModelMixin):
-    """Root of the Property -> Floor -> Room -> Bed hierarchy (PRD Module 2)."""
+    """Root of the Property -> Building -> Floor -> Room -> Bed hierarchy (PRD Module 2)."""
 
     class PropertyType(models.TextChoices):
         BOYS_HOSTEL = 'boys_hostel', _('Boys Hostel')
@@ -59,23 +59,45 @@ class PropertyImage(TenantModelMixin):
         return f'{self.property.name} - image {self.order}'
 
 
-class Floor(TenantModelMixin):
-    """A floor within a property. Purely structural — no money fields."""
+class Building(TenantModelMixin):
+    """A building/block within a property (PRD Module 2). Most properties
+    have exactly one (auto-created as "Main Building" when the Property is
+    created — see PropertyViewSet.perform_create); owners whose PG spans
+    multiple physical buildings (e.g. "Block A", "Block B") add more."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='floors')
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='buildings')
+    name = models.CharField(max_length=100)  # e.g. "Main Building", "Block A"
+    order = models.PositiveSmallIntegerField()  # display/sort order
+
+    class Meta:
+        db_table = 'buildings'
+        constraints = [
+            models.UniqueConstraint(fields=['property', 'order'], name='unique_building_order_per_property'),
+        ]
+        ordering = ['order']
+
+    def __str__(self):
+        return f'{self.property.name} - {self.name}'
+
+
+class Floor(TenantModelMixin):
+    """A floor within a building. Purely structural — no money fields."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='floors')
     name = models.CharField(max_length=100)  # e.g. "Ground Floor", "1st Floor"
     order = models.PositiveSmallIntegerField()  # display/sort order, e.g. 0 for ground
 
     class Meta:
         db_table = 'floors'
         constraints = [
-            models.UniqueConstraint(fields=['property', 'order'], name='unique_floor_order_per_property'),
+            models.UniqueConstraint(fields=['building', 'order'], name='unique_floor_order_per_building'),
         ]
         ordering = ['order']
 
     def __str__(self):
-        return f'{self.property.name} - {self.name}'
+        return f'{self.building.property.name} - {self.building.name} - {self.name}'
 
 
 class Room(TenantModelMixin):
@@ -118,7 +140,7 @@ class Room(TenantModelMixin):
         ordering = ['room_number']
 
     def __str__(self):
-        return f'{self.floor.property.name} - {self.room_number}'
+        return f'{self.floor.building.property.name} - {self.room_number}'
 
     def sync_status(self):
         """Recompute status from child beds (PRD Module 3 room status rules).

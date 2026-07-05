@@ -12,8 +12,8 @@ Module 4 (Bed Management), PRD §6 (Property Assignment Rules)
 **Blocks:** 03, 04, 13
 
 ## Purpose
-Owner builds the Property → Floor → Room → Bed hierarchy for each of their
-PGs/hostels, and assigns Manager/Receptionist staff to the specific
+Owner builds the Property → Building → Floor → Room → Bed hierarchy for each
+of their PGs/hostels, and assigns Manager/Receptionist staff to the specific
 properties they're allowed to work on. Every later module (residents,
 admissions, allocations, billing) hangs off this hierarchy.
 
@@ -29,8 +29,8 @@ Table: properties                   (RLS enforced)
   contact_number    varchar(15)     contact_email  blank-allowed
   status            active | inactive
   created_at / updated_at
-  -- floors_count / rooms_count / beds_count are computed in the
-  -- serializer (child counts), never stored — avoids drift.
+  -- buildings_count / floors_count / rooms_count / beds_count are computed
+  -- in the serializer (child counts), never stored — avoids drift.
 
 Table: property_images              (RLS enforced)
   id                uuid PK
@@ -43,12 +43,25 @@ Table: property_images              (RLS enforced)
                                      upload — display order)
   created_at / updated_at
 
+Table: buildings                    (RLS enforced)
+  id                uuid PK
+  tenant_id         uuid            (RLS)
+  property          FK -> properties (related_name='buildings')
+  name              varchar(100)    e.g. "Main Building", "Block A"
+  order             positive smallint  (unique per property — display order)
+  created_at / updated_at
+  -- Every Property always has >=1 Building — a "Main Building" is
+  -- auto-created by PropertyViewSet.perform_create the moment the Property
+  -- is created (see Decisions, 2026-07-05). Owners whose PG spans multiple
+  -- physical blocks add more from the Buildings screen.
+
 Table: floors                       (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
-  property          FK -> properties
+  building          FK -> buildings (was `property` directly before
+                                     2026-07-05 — see Decisions)
   name              varchar(100)    e.g. "Ground Floor"
-  order             positive smallint  (unique per property — display order)
+  order             positive smallint  (unique per building — display order)
   created_at / updated_at
 
 Table: rooms                        (RLS enforced)
@@ -89,7 +102,11 @@ GET|POST    /api/v1/properties/                          list/create        mana
 GET|PATCH   /api/v1/properties/{id}/                      detail/update      same (no DELETE — deactivate via status)
 POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
 DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
-GET|POST    /api/v1/floors/                               list (filter ?property=)/create   manage_rooms_beds
+GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds
+                                                            (create accepts write-only `number_of_floors` to
+                                                            auto-generate that many named Floors — see Decisions)
+GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds
+GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds
 GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
 GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
 GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds
@@ -106,30 +123,38 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
    see only properties they've been explicitly assigned (PRD §6). Enforced
    both by role gate (`CanViewProperties`) and queryset scoping
    (`services.visible_property_ids`).
-3. `manage_rooms_beds` (floors/rooms/beds CRUD) excludes Receptionist
-   entirely, per the PRD permission matrix.
-4. Creating a Floor/Room/Bed under a property the requesting Manager isn't
-   assigned to is rejected (`property_not_assigned`), even though the
-   property is in the same tenant and would otherwise pass RLS — RLS is
-   tenant-level only, assignment-level scoping is app code.
+3. `manage_rooms_beds` (buildings/floors/rooms/beds CRUD) excludes
+   Receptionist entirely, per the PRD permission matrix.
+4. Creating a Building/Floor/Room/Bed under a property the requesting
+   Manager isn't assigned to is rejected (`property_not_assigned`), even
+   though the property is in the same tenant and would otherwise pass RLS —
+   RLS is tenant-level only, assignment-level scoping is app code.
 5. A room's bed count can never exceed its `sharing_type` (its declared
    capacity) — enforced on Bed create.
 6. Room `status` auto-syncs from its beds: all occupied → occupied; any
    bed available → available; otherwise → reserved. A manually-set
    `maintenance` status is left alone by sync until cleared.
-7. Floors/Rooms cannot be deleted while they still have children; Beds
-   cannot be deleted while `occupied` or `reserved`.
+7. Buildings/Floors/Rooms cannot be deleted while they still have children;
+   Beds cannot be deleted while `occupied` or `reserved`.
 8. Only Owner (or Super Admin) can create/remove a
    `PropertyStaffAssignment`; the `staff` field is restricted to
    Manager/Receptionist accounts in the same tenant.
-9. Property create/update (incl. status change) and staff-property
-   assignment create/remove write audit logs (invariant 9).
+9. Property create/update (incl. status change), Building create, and
+   staff-property assignment create/remove write audit logs (invariant 9).
 10. Rack rates are `DecimalField(12,2)` throughout (invariant 5); Bed-level
     overrides fall back to the room's rate when unset
     (`Bed.rack_rate(with_food)`).
-11. Tenant isolation: `properties`, `floors`, `rooms`, `beds`, and
-    `property_staff_assignments` are all RLS-enforced (`test_isolation.py`
+11. Tenant isolation: `properties`, `buildings`, `floors`, `rooms`, `beds`,
+    and `property_staff_assignments` are all RLS-enforced (`test_isolation.py`
     proves it for `properties`, mirroring `apps/core/tests.py`).
+12. Every Property always has at least one Building — a "Main Building" is
+    auto-created in `PropertyViewSet.perform_create` the instant the
+    Property row is created. There is no code path that leaves a Property
+    without a Building.
+13. `BuildingSerializer.create()` accepts a write-only `number_of_floors`
+    (0–100, default 0) and auto-creates that many Floors in the same
+    request, named "Ground Floor", "1st Floor", "2nd Floor", ... — so an
+    owner adding a second block doesn't have to add each floor by hand.
 
 ## Permissions
 - `manage_properties` (Super Admin, Owner): create/update properties.
@@ -217,6 +242,45 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   still needs to be built (FE-01) and this client swapped out before the
   app is exposed beyond a developer's machine. Tracked in
   `docs/frontend-plan.md` Decisions as well.
+- [DECISION 2026-07-05] Inserted a `Building` model between Property and
+  Floor (`Property → Building → Floor → Room → Bed`) to support PGs that
+  span multiple physical buildings/blocks (e.g. "Block A", "Block B") —
+  the PRD was silent on this case; owner confirmed the requirement and
+  chose the design over chat. Two design calls made explicitly with the
+  owner rather than guessed:
+  1. **Building is always required, never optional.** Every Property gets
+     a "Main Building" auto-created in `PropertyViewSet.perform_create` the
+     moment the Property is created, so single-building owners (the
+     overwhelming majority) never see or think about the concept — they
+     only interact with it if they explicitly add a second building. The
+     alternative (Building optional, Floor attaches to either Property or
+     Building) was rejected because it would force every query/serializer
+     that touches Floor to branch on whether a Building exists.
+  2. **Entity is named "Building"**, not "Block" — the owner's own example
+     used "Block A"/"Block B" as *names* of buildings, matching how Floor
+     names ("Ground Floor", "1st Floor") are free-text under the model,
+     not enum values.
+  Floor's FK was repointed from `property` directly to `building`
+  (migration `0004_building`); the unique-order constraint moved from
+  `(property, order)` to `(building, order)`. All `floor__property*` /
+  `floor.property_id` lookups across `apps.residents` and `apps.reporting`
+  were updated to go through `floor.building.property` — these apps only
+  read the hierarchy and needed no schema changes of their own.
+  `BuildingSerializer.create()` also accepts a write-only
+  `number_of_floors` so adding a new block can auto-generate its floors in
+  the same request (owner's follow-up ask, same conversation) — floors are
+  named "Ground Floor", "1st Floor", "2nd Floor", ... via an ordinal-suffix
+  helper.
+  Frontend: the Floor list/add pages moved from
+  `/properties/{id}/floors(/add)` to
+  `/properties/{id}/buildings/{buildingId}/floors(/add)`, with a new
+  `/properties/{id}/buildings(/add)` pair in front of them. The Property
+  detail redirect and every property-level "manage layout" link (property
+  list, property settings, room/bed breadcrumbs) now point at `/buildings`
+  instead of `/floors`. Rooms/Beds pages (`floors/{floorId}/rooms/...`)
+  were left exactly where they were — they don't depend on Building and
+  are still mock-data-only (never wired to the real API), so there was
+  nothing to migrate there.
 
 ## Bugs found and fixed
 - **2026-07-03 (during Module 04):** `services.can_view_property()` chained
@@ -254,4 +318,15 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   counterpart and no `contact_number`/`contact_email` fields at all, and
   its `property_type` options didn't match the backend enum). Added
   dev-only CORS and Django media serving (see Decisions). Regenerated
+  `docs/erd.png`.
+- 2026-07-05  Added `Building` model between Property and Floor for
+  multi-block PGs (migration `0004_building`, RLS-enforced; data migration
+  re-parents pre-existing Floors onto an auto-created "Main Building" per
+  Property). New `BuildingViewSet`/`buildings` endpoint with
+  `number_of_floors` auto-floor-generation on create. Updated
+  `apps.residents`/`apps.reporting` hierarchy lookups
+  (`floor.building.property`). Frontend: new Buildings list/add pages,
+  Floor list/add moved under `/buildings/{buildingId}/floors`. 7 new
+  Building tests + existing Floor tests updated (51 tests in this app's
+  suite; 424 across the whole backend, all passing). Regenerated
   `docs/erd.png`.

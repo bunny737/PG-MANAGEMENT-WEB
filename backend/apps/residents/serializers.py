@@ -85,7 +85,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 )},
                 code='resident_not_ready_for_checkin',
             )
-        if bed.room.floor.property_id != resident.property_id:
+        if bed.room.floor.building.property_id != resident.property_id:
             raise serializers.ValidationError(
                 {'bed': _('This bed is not in the same property as the resident.')},
                 code='bed_property_mismatch',
@@ -171,7 +171,7 @@ class TransferCreateSerializer(serializers.Serializer):
                 {'resident': _('Only active residents can be transferred.')},
                 code='resident_not_transferable',
             )
-        if new_bed.room.floor.property_id != resident.property_id:
+        if new_bed.room.floor.building.property_id != resident.property_id:
             raise serializers.ValidationError(
                 {'new_bed': _('This bed is not in the same property as the resident.')},
                 code='bed_property_mismatch',

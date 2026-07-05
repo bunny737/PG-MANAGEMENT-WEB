@@ -115,7 +115,7 @@ export function PropertyList() {
             <div className="p-5 space-y-4">
               <div>
                 <h3 className="text-lg font-bold text-ink hover:text-accent transition-colors">
-                  <Link href={`/properties/${property.id}/floors`}>{property.name}</Link>
+                  <Link href={`/properties/${property.id}/buildings`}>{property.name}</Link>
                 </h3>
                 <p className="text-xs text-ink-muted mt-1 flex items-center gap-1.5">
                   <MapPin className="size-3.5 text-ink-faint shrink-0" />
@@ -143,7 +143,7 @@ export function PropertyList() {
             {/* Footer Action link */}
             <div className="px-5 py-3.5 bg-surface-page/30 border-t border-border flex justify-end">
               <Link
-                href={`/properties/${property.id}/floors`}
+                href={`/properties/${property.id}/buildings`}
                 className="text-xs font-bold text-accent hover:text-accent-hover transition-colors inline-flex items-center gap-1 cursor-pointer"
               >
                 Manage Layout

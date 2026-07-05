@@ -177,7 +177,7 @@ export function GlobalSettings() {
                       </Link>
 
                       <Link
-                        href={`/properties/${p.id}/floors`}
+                        href={`/properties/${p.id}/buildings`}
                         className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
                       >
                         <div className="flex items-center gap-2.5">

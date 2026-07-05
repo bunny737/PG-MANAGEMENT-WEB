@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function PropertyDetailPage({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/properties/${id}/floors`);
+  redirect(`/properties/${id}/buildings`);
 }

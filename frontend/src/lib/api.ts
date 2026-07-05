@@ -154,10 +154,35 @@ export interface PropertyPayload {
 export interface Property extends PropertyPayload {
   id: string;
   status: string;
+  buildings_count: number;
   floors_count: number;
   rooms_count: number;
   beds_count: number;
+  occupancy_percent: number;
   images: PropertyImage[];
+}
+
+export interface Building {
+  id: string;
+  property: string;
+  name: string;
+  order: number;
+  floors_count: number;
+  rooms_count: number;
+  occupancy_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Floor {
+  id: string;
+  building: string;
+  name: string;
+  order: number;
+  rooms_count: number;
+  occupancy_percent: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export function listProperties() {
@@ -195,6 +220,48 @@ export function uploadPropertyImage(propertyId: string, file: File) {
 
 export function deletePropertyImage(propertyId: string, imageId: string) {
   return apiFetch<void>(`/api/v1/properties/${propertyId}/images/${imageId}/`, {
+    method: "DELETE",
+  });
+}
+
+export function listBuildings(propertyId: string) {
+  return apiFetch<Building[] | { results: Building[] }>(`/api/v1/buildings/?property=${propertyId}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getBuilding(buildingId: string) {
+  return apiFetch<Building>(`/api/v1/buildings/${buildingId}/`);
+}
+
+export function createBuilding(payload: { property: string; name: string; order?: number; number_of_floors?: number }) {
+  return apiFetch<Building>("/api/v1/buildings/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteBuilding(buildingId: string) {
+  return apiFetch<void>(`/api/v1/buildings/${buildingId}/`, {
+    method: "DELETE",
+  });
+}
+
+export function listFloors(buildingId: string) {
+  return apiFetch<Floor[] | { results: Floor[] }>(`/api/v1/floors/?building=${buildingId}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function createFloor(payload: { building: string; name: string; order?: number }) {
+  return apiFetch<Floor>("/api/v1/floors/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteFloor(floorId: string) {
+  return apiFetch<void>(`/api/v1/floors/${floorId}/`, {
     method: "DELETE",
   });
 }

@@ -4,7 +4,7 @@ from apps.accounts.tests.base import AuthAPITestCase
 from apps.core.roles import Role
 from apps.core.tenancy import tenant_context
 
-from apps.properties.models import Bed, Floor, Property, PropertyStaffAssignment, Room
+from apps.properties.models import Bed, Building, Floor, Property, PropertyStaffAssignment, Room
 
 
 class PropertyAPITestCase(AuthAPITestCase):
@@ -16,12 +16,33 @@ class PropertyAPITestCase(AuthAPITestCase):
         kwargs.setdefault('state', 'Telangana')
         kwargs.setdefault('contact_number', '9999999999')
         with tenant_context(tenant.id):
-            return Property.objects.create(tenant_id=tenant.id, name=name, **kwargs)
+            prop = Property.objects.create(tenant_id=tenant.id, name=name, **kwargs)
+            # Mirrors PropertyViewSet.perform_create: every Property always has
+            # a default Building (see docs/modules/02-property-hierarchy.md
+            # Decisions, 2026-07-05) — this fixture bypasses the view, so
+            # provision it here too.
+            Building.objects.create(tenant_id=tenant.id, property=prop, name='Main Building', order=0)
+            return prop
 
     @staticmethod
-    def create_floor(prop, name='Ground Floor', order=0):
+    def create_building(prop, name='Block A', order=None):
         with tenant_context(prop.tenant_id):
-            return Floor.objects.create(tenant_id=prop.tenant_id, property=prop, name=name, order=order)
+            if order is None:
+                last = Building.objects.filter(property=prop).order_by('-order').first()
+                order = (last.order + 1) if last else 0
+            return Building.objects.create(tenant_id=prop.tenant_id, property=prop, name=name, order=order)
+
+    @classmethod
+    def create_floor(cls, prop, name='Ground Floor', order=0):
+        with tenant_context(prop.tenant_id):
+            # Every Property has a default Building in production (auto-created
+            # by PropertyViewSet.perform_create); test fixtures built directly
+            # from the model bypass that, so lazily provision the same default
+            # here rather than forcing every test/module to know about Building.
+            building, _ = Building.objects.get_or_create(
+                property=prop, order=0, defaults={'tenant_id': prop.tenant_id, 'name': 'Main Building'},
+            )
+            return Floor.objects.create(tenant_id=prop.tenant_id, building=building, name=name, order=order)
 
     @staticmethod
     def create_room(

@@ -3,48 +3,51 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Landmark, Eye, CheckCircle2, LoaderCircle } from "lucide-react";
-import { getProperty, getBuilding, createFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
+import { ArrowLeft, Building2, CheckCircle2, LoaderCircle } from "lucide-react";
+import { getProperty, createBuilding, type Property, type Building, ApiError } from "@/lib/api";
 
-export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
+export function AddBuildingForm({ propertyId }: { propertyId: string }) {
   const router = useRouter();
 
   const [property, setProperty] = useState<Property | null>(null);
-  const [building, setBuilding] = useState<Building | null>(null);
-  const [floorName, setFloorName] = useState("");
+  const [buildingName, setBuildingName] = useState("");
+  const [numberOfFloors, setNumberOfFloors] = useState("0");
 
   const [isLoading, setIsLoading] = useState(false);
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [createdFloor, setCreatedFloor] = useState<Floor | null>(null);
+  const [createdBuilding, setCreatedBuilding] = useState<Building | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getProperty(propertyId), getBuilding(buildingId)])
-      .then(([propData, buildingData]) => {
+    getProperty(propertyId)
+      .then((prop) => {
         if (cancelled) return;
-        setProperty(propData);
-        setBuilding(buildingData);
+        setProperty(prop);
         setIsPageLoading(false);
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error("Failed to load building details:", err);
+        console.error("Failed to load property details:", err);
         setIsPageLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [propertyId, buildingId]);
+  }, [propertyId]);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!floorName.trim()) newErrors.floorName = "Floor Name is required";
+    if (!buildingName.trim()) newErrors.buildingName = "Building name is required";
+    const floors = Number(numberOfFloors);
+    if (numberOfFloors !== "" && (!Number.isInteger(floors) || floors < 0)) {
+      newErrors.numberOfFloors = "Enter a whole number of floors (0 or more)";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -55,26 +58,26 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
     setIsLoading(true);
 
     try {
-      const result = await createFloor({
-        building: buildingId,
-        name: floorName.trim(),
+      const result = await createBuilding({
+        property: propertyId,
+        name: buildingName.trim(),
+        number_of_floors: numberOfFloors === "" ? 0 : floors,
       });
-      setCreatedFloor(result);
+      setCreatedBuilding(result);
       setIsLoading(false);
       setShowSuccess(true);
     } catch (err) {
       console.error(err);
       setIsLoading(false);
       if (err instanceof ApiError) {
-        // Handle field level errors
-        const buildingErr = err.fieldError("building");
         const nameErr = err.fieldError("name");
+        const floorsErr = err.fieldError("number_of_floors");
         const detailErr = err.message;
 
         setErrors({
-          ...(buildingErr ? { global: buildingErr } : {}),
-          ...(nameErr ? { floorName: nameErr } : {}),
-          ...(!buildingErr && !nameErr ? { global: detailErr } : {}),
+          ...(nameErr ? { buildingName: nameErr } : {}),
+          ...(floorsErr ? { numberOfFloors: floorsErr } : {}),
+          ...(!nameErr && !floorsErr ? { global: detailErr } : {}),
         });
       } else {
         setErrors({ global: "An unexpected error occurred. Please try again." });
@@ -84,48 +87,52 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
 
   const handleCloseModal = () => {
     setShowSuccess(false);
-    router.push(`/properties/${propertyId}/buildings/${buildingId}/floors`);
+    if (createdBuilding) {
+      router.push(`/properties/${propertyId}/buildings/${createdBuilding.id}/floors`);
+    } else {
+      router.push(`/properties/${propertyId}/buildings`);
+    }
   };
 
   if (isPageLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading building details...</p>
+        <p className="font-semibold mt-2">Loading property details...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
-      {/* Success Modal Backdrop */}
       {showSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-on-surface/40 backdrop-blur-sm transition-opacity duration-300">
           <div className="bg-surface-container-lowest p-8 rounded-2xl max-w-sm w-full text-center shadow-2xl border border-border">
             <div className="size-20 bg-blue-50 text-accent border border-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="size-10" />
             </div>
-            <h3 className="text-xl font-bold text-ink mb-2">Floor Created</h3>
+            <h3 className="text-xl font-bold text-ink mb-2">Building Created</h3>
             <p className="text-xs text-ink-muted mb-4 leading-relaxed">
-              Building hierarchy has been updated successfully.
+              {createdBuilding && createdBuilding.floors_count > 0
+                ? `${createdBuilding.floors_count} floor(s) were created automatically.`
+                : "You can add floors to this building next."}
             </p>
 
-            {/* Added Details Card */}
-            {createdFloor && (
+            {createdBuilding && (
               <div className="bg-surface-page border border-border rounded-xl p-4 mb-6 text-left space-y-2">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Floor Name:</span>
-                  <span className="font-bold text-ink">{createdFloor.name}</span>
+                  <span className="text-ink-muted font-medium">Building Name:</span>
+                  <span className="font-bold text-ink">{createdBuilding.name}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Building:</span>
+                  <span className="text-ink-muted font-medium">Property:</span>
                   <span className="font-semibold text-ink text-right max-w-[180px] truncate">
-                    {building?.name || "Selected Building"}
+                    {property?.name || "Selected Property"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Floor Level / Order:</span>
-                  <span className="font-mono font-bold text-accent">L{createdFloor.order}</span>
+                  <span className="text-ink-muted font-medium">Floors Created:</span>
+                  <span className="font-mono font-bold text-accent">{createdBuilding.floors_count}</span>
                 </div>
               </div>
             )}
@@ -134,43 +141,41 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
               onClick={handleCloseModal}
               className="w-full py-3 bg-surface-inverse text-ink-inverse font-bold rounded-xl hover:opacity-90 transition-opacity cursor-pointer text-sm"
             >
-              Back to Floor List
+              View Floors
             </button>
           </div>
         </div>
       )}
 
-      {/* Header */}
       <div className="flex items-center gap-3">
         <Link
-          href={`/properties/${propertyId}/buildings/${buildingId}/floors`}
+          href={`/properties/${propertyId}/buildings`}
           className="hover:bg-surface-page p-2 rounded-full transition-colors inline-flex items-center justify-center border border-border"
         >
           <ArrowLeft className="size-5 text-ink-muted" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">Add Floor</h1>
-          <p className="text-xs text-ink-muted">Create a new level under the selected building.</p>
-        </div>
-      </div>
-
-      {/* Bento Context Card */}
-      <div className="bg-surface-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4">
-        <div className="size-11 rounded-lg bg-accent-soft text-accent border border-accent/15 flex items-center justify-center shrink-0">
-          <Landmark className="size-5.5" />
-        </div>
-        <div className="space-y-0.5 text-xs">
-          <p className="font-bold text-accent uppercase tracking-wider">Property Management</p>
-          <h2 className="text-sm font-bold text-ink">Floor Registration</h2>
-          <p className="text-ink-muted leading-relaxed mt-1">
-            {property && building
-              ? `Adding a floor to ${building.name} at ${property.name}.`
-              : "Expanding your building's vertical capacity and inventory."}
+          <h1 className="text-xl font-bold tracking-tight text-ink">Add Building</h1>
+          <p className="text-xs text-ink-muted">
+            {property ? `Add another block to ${property.name}.` : "Add another block to this property."}
           </p>
         </div>
       </div>
 
-      {/* Form Fields */}
+      <div className="bg-surface-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4">
+        <div className="size-11 rounded-lg bg-accent-soft text-accent border border-accent/15 flex items-center justify-center shrink-0">
+          <Building2 className="size-5.5" />
+        </div>
+        <div className="space-y-0.5 text-xs">
+          <p className="font-bold text-accent uppercase tracking-wider">Property Management</p>
+          <h2 className="text-sm font-bold text-ink">Building Registration</h2>
+          <p className="text-ink-muted leading-relaxed mt-1">
+            Use this for a physically separate block (e.g. &quot;Block A&quot;, &quot;Block B&quot;) — not for floors
+            within the same building.
+          </p>
+        </div>
+      </div>
+
       <form onSubmit={handleFormSubmit} className="space-y-5">
         {errors.global && (
           <div className="p-3 bg-status-critical-soft border border-status-critical/15 text-status-critical rounded-xl text-xs font-medium">
@@ -178,53 +183,57 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           </div>
         )}
 
-        {/* Floor ID (Name) */}
         <div className="space-y-1.5">
-          <label htmlFor="floor_name" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
-            Floor Name / ID <span className="text-status-critical">*</span>
+          <label htmlFor="building_name" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
+            Building Name <span className="text-status-critical">*</span>
           </label>
           <input
-            id="floor_name"
+            id="building_name"
             type="text"
-            placeholder="e.g. Ground Floor, 14, Penthouse"
-            value={floorName}
-            onChange={(e) => setFloorName(e.target.value)}
+            placeholder="e.g. Block A, Main Building"
+            value={buildingName}
+            onChange={(e) => setBuildingName(e.target.value)}
             className={`w-full rounded-xl border ${
-              errors.floorName ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
+              errors.buildingName ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
             } bg-surface-card px-4 py-2.5 text-sm text-ink outline-none transition-all focus:ring-4`}
             disabled={isLoading}
           />
-          {errors.floorName && <p className="text-xs text-status-critical ml-1">{errors.floorName}</p>}
+          {errors.buildingName && <p className="text-xs text-status-critical ml-1">{errors.buildingName}</p>}
         </div>
 
-        {/* Blueprint Visual Preview Area */}
-        <div className="relative h-44 w-full rounded-2xl overflow-hidden border border-border group bg-slate-900">
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent z-10" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            alt="Floor Blueprint"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpmXRPgbatfIpR-cLRxt_weqLuH1S0ZeGPx1n6F8yzzpnZsLaLD5Wz4ESovxH_hXJ6ZOS65wU3vJdyCnQcIT-InQx6wxGs7AU6sdscXep7aA7l4h_NM3ug--SVKOEGJd8KvaJvJqwVV--4fUvdWoc83PBrLWev3a2FnP4RnlHtvgkdbMMygXpnRrcLHwlNUlaZRhQeN7rRCF9Xc2Saw2eLvNlOTTfAeFCNyqAbqiAy5FH4VMHggvg8Sw"
-            className="size-full object-cover group-hover:scale-105 transition-transform duration-700 opacity-80"
+        <div className="space-y-1.5">
+          <label htmlFor="number_of_floors" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
+            Number of Floors
+          </label>
+          <input
+            id="number_of_floors"
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            placeholder="0"
+            value={numberOfFloors}
+            onChange={(e) => setNumberOfFloors(e.target.value)}
+            className={`w-full rounded-xl border ${
+              errors.numberOfFloors ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
+            } bg-surface-card px-4 py-2.5 text-sm text-ink outline-none transition-all focus:ring-4`}
+            disabled={isLoading}
           />
-          <div className="absolute bottom-4 left-4 z-20">
-            <div className="flex items-center gap-1.5 bg-slate-950/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-              <Eye className="size-3.5 text-white" />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Preview Blueprint</span>
-            </div>
-          </div>
+          {errors.numberOfFloors ? (
+            <p className="text-xs text-status-critical ml-1">{errors.numberOfFloors}</p>
+          ) : (
+            <p className="text-xs text-ink-muted ml-1">
+              We&apos;ll create these automatically — Ground Floor, 1st Floor, 2nd Floor, and so on.
+            </p>
+          )}
         </div>
 
-        <p className="text-center text-[10px] text-ink-muted">
-          Creating a floor level will automatically log an entry in the Audit timeline.
-        </p>
-
-        {/* Action Button */}
         <button
           type="submit"
           disabled={isLoading}
           className="w-full bg-accent text-ink-inverse hover:bg-accent-hover font-semibold py-3 px-6 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
         >
-          {isLoading ? "Creating Floor..." : "Add Floor"}
+          {isLoading ? "Creating Building..." : "Add Building"}
         </button>
       </form>
     </div>

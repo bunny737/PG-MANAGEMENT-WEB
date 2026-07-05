@@ -13,9 +13,10 @@ from apps.core.roles import Role
 from apps.subscriptions.services import check_property_limit
 
 from . import services
-from .models import Bed, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
 from .serializers import (
     BedSerializer,
+    BuildingSerializer,
     FloorSerializer,
     PropertyImageSerializer,
     PropertySerializer,
@@ -70,6 +71,12 @@ class PropertyViewSet(viewsets.ModelViewSet):
         # Module 13's concern; fail-open when no plan is configured.
         check_property_limit(self.request.user.tenant_id)
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
+        # Every Property always has at least one Building (see docs/modules/
+        # 02-property-hierarchy.md Decisions, 2026-07-05) — auto-provisioned
+        # so single-building owners never have to think about the concept.
+        Building.objects.create(
+            tenant_id=instance.tenant_id, property=instance, name='Main Building', order=0,
+        )
         audit_log.record(
             action='property.created', actor=self.request.user, obj=instance,
             after={'name': instance.name, 'status': instance.status},
@@ -141,17 +148,46 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return Response(after)
 
 
-class FloorViewSet(viewsets.ModelViewSet):
-    serializer_class = FloorSerializer
+class BuildingViewSet(viewsets.ModelViewSet):
+    serializer_class = BuildingSerializer
     permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['property']
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
+            return Building.objects.none()
+        ids = services.visible_property_ids(self.request.user)
+        return Building.objects.filter(property_id__in=ids).select_related('property')
+
+    def perform_create(self, serializer):
+        instance = serializer.save(tenant_id=self.request.user.tenant_id)
+        audit_log.record(
+            action='building.created', actor=self.request.user, obj=instance,
+            after={'name': instance.name, 'property': instance.property.name},
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.floors.exists():
+            raise ValidationError(
+                {'detail': _('Cannot delete a building that still has floors.')},
+                code='building_not_empty',
+            )
+        instance.delete()
+
+
+class FloorViewSet(viewsets.ModelViewSet):
+    serializer_class = FloorSerializer
+    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
+    http_method_names = ['get', 'post', 'patch', 'delete']
+    filterset_fields = ['building']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
             return Floor.objects.none()
         ids = services.visible_property_ids(self.request.user)
-        return Floor.objects.filter(property_id__in=ids).select_related('property')
+        return Floor.objects.filter(building__property_id__in=ids).select_related('building__property')
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)
@@ -175,7 +211,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Room.objects.none()
         ids = services.visible_property_ids(self.request.user)
-        return Room.objects.filter(floor__property_id__in=ids).select_related('floor')
+        return Room.objects.filter(floor__building__property_id__in=ids).select_related('floor')
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)
@@ -199,7 +235,7 @@ class BedViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Bed.objects.none()
         ids = services.visible_property_ids(self.request.user)
-        return Bed.objects.filter(room__floor__property_id__in=ids).select_related('room')
+        return Bed.objects.filter(room__floor__building__property_id__in=ids).select_related('room')
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)

@@ -91,7 +91,7 @@ def occupancy_rows(user, property_id=None):
     columns = ['Property', 'Total Beds', 'Occupied', 'Available', 'Reserved', 'Maintenance', 'Occupancy %']
     rows = []
     for prop in properties.order_by('name'):
-        beds = Bed.objects.filter(room__floor__property=prop)
+        beds = Bed.objects.filter(room__floor__building__property=prop)
         total = beds.count()
         occupied = beds.filter(status=Bed.Status.OCCUPIED).count()
         available = beds.filter(status=Bed.Status.AVAILABLE).count()

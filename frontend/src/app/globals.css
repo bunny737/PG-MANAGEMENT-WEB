@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  /* Surfaces */
+  --color-surface-page: #f8fafc;
+  --color-surface-card: #ffffff;
+  --color-surface-inverse: #1e293b;
+  --color-border: #e2e8f0;
+
+  /* Ink */
+  --color-ink: #0f172a;
+  --color-ink-muted: #64748b;
+  --color-ink-faint: #94a3b8;
+  --color-ink-inverse: #ffffff;
+  --color-ink-inverse-muted: #94a3b8;
+
+  /* Accent */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-soft: #eff6ff;
+
+  /* Status — always paired with a text label or icon, never color alone */
+  --color-status-good: #16a34a;
+  --color-status-critical: #dc2626;
+  --color-status-critical-soft: #fee2e2;
+}
+
+@theme inline {
+  --color-surface-page: var(--color-surface-page);
+  --color-surface-card: var(--color-surface-card);
+  --color-surface-inverse: var(--color-surface-inverse);
+  --color-border: var(--color-border);
+
+  --color-ink: var(--color-ink);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-ink-inverse: var(--color-ink-inverse);
+  --color-ink-inverse-muted: var(--color-ink-inverse-muted);
+
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-soft: var(--color-accent-soft);
+
+  --color-status-good: var(--color-status-good);
+  --color-status-critical: var(--color-status-critical);
+  --color-status-critical-soft: var(--color-status-critical-soft);
+
+  --font-sans: var(--font-noto-sans);
+}
+
+body {
+  background: var(--color-surface-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}

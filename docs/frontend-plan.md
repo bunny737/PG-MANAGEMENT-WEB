@@ -22,7 +22,7 @@ shape, and never re-implements money logic.
 
 | Concern | Choice | Notes |
 |---------|--------|-------|
-| Framework | Next.js 15 (App Router) + React 19 + TypeScript (strict) | PRD says "Next.js 14" — written June 2026; scaffold on current stable 15.x |
+| Framework | Next.js 16 (App Router) + React 19 + TypeScript (strict) | PRD says "Next.js 14" — written June 2026; scaffolded 2026-07-03 on current stable (16.x had shipped by then — same "don't start new on an old major" reasoning as the original 15 call, see Decisions §11) |
 | Styling | Tailwind CSS v4 + shadcn/ui | Noto Sans via `next/font` (Indic script coverage per PRD i18n) |
 | Server state | TanStack Query v5 | All API reads/writes; cache invalidation per module key |
 | Client state | Zustand (minimal) | Only UI state: active property, sidebar, dialogs |
@@ -40,6 +40,74 @@ alongside the existing `docker-compose.yml` (Next.js standalone output behind Ng
 
 ---
 
+## 2.1 Visual design system
+
+Reference mock: mobile Owner dashboard (Occupancy + Financials + Active Issues
+cards, bottom tab bar). Tokens below are implemented as Tailwind v4 `@theme`
+variables in `src/app/globals.css` — components consume the token names, never
+raw hex, so retheming is a one-file change.
+
+### Colors (light mode — the only mode targeted for MVP; tokens are CSS
+variables so a dark variant is a later addition, not a rewrite)
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| `--color-surface-page` | `#F8FAFC` | App background |
+| `--color-surface-card` | `#FFFFFF` | Default card background |
+| `--color-surface-inverse` | `#1E293B` | Dark feature card (Financials) |
+| `--color-border` | `#E2E8F0` | Card borders, dividers, progress-bar track |
+| `--color-ink` | `#0F172A` | Primary text |
+| `--color-ink-muted` | `#64748B` | Secondary text |
+| `--color-ink-faint` | `#94A3B8` | Small uppercase labels, placeholder text |
+| `--color-ink-inverse` | `#FFFFFF` | Text on `surface-inverse` |
+| `--color-ink-inverse-muted` | `#94A3B8` | Secondary text on `surface-inverse` |
+| `--color-accent` | `#2563EB` | Primary actions, active nav, links, progress fill |
+| `--color-accent-hover` | `#1D4ED8` | Accent hover/pressed |
+| `--color-accent-soft` | `#EFF6FF` | Accent tint background (outline button fill on hover, soft icon bg) |
+| `--color-status-good` | `#16A34A` | Positive deltas ("+5.2% vs last month") |
+| `--color-status-critical` | `#DC2626` | Text for critical status |
+| `--color-status-critical-soft` | `#FEE2E2` | Pill/badge background for critical status |
+
+Status colors always ship with a text label or icon next to them (never color
+alone — e.g. "Open", "3 High Priority"), per the dataviz skill's status-color
+rule. They are not used as an adjacent categorical set, so no CVD-pair check
+applies; each was checked standalone for text contrast against its own
+background. The Occupied/Vacant figure is a single-measure fill (accent on a
+border-colored track), not a 2-series categorical chart, so it's a stat tile,
+not a chart requiring palette validation.
+
+### Typography, shape, elevation
+
+- **Font**: Noto Sans via `next/font/google` (already required for Indic
+  script coverage, §6/§11) — do not add a second display font.
+- **Numerals**: large stat numbers are bold, tabular (`font-variant-numeric:
+  tabular-nums`) so figures don't jitter as they update.
+- **Radius**: cards `rounded-2xl` (16px), buttons/inputs `rounded-xl` (12px),
+  pills/badges `rounded-full`.
+- **Elevation**: cards use a soft single shadow (`shadow-sm` on white cards,
+  `shadow-md` on the inverse Financials card) — never more than one shadow step.
+- **Spacing**: card padding 20px (`p-5`), inter-card gap 16px (`gap-4`).
+
+### Component patterns (`components/shared/`)
+
+- `StatTile` — uppercase faint label + bold large number + optional muted
+  sub-line (e.g. a percentage). Used for occupancy figures.
+- `ProgressBar` — single-hue accent fill on a `--color-border` track; used for
+  occupancy, never for multi-segment data (that would need a categorical
+  palette instead).
+- `MoneyStat` — muted uppercase label + large bold amount + optional
+  `StatusDelta` (colored ↗/↘ + percentage, `status-good`/`status-critical`).
+  Renders the string amount from the API verbatim per invariant F1 — no
+  strikethrough-to-imply-waived styling (a version of this mock used
+  strikethrough on an outstanding-dues figure; dropped as a real-money UX risk
+  — a struck-through amount owed reads as "waived," which the backend hasn't
+  said). Colour (not strikethrough) still marks it as attention-worthy.
+- `StatusPill` — `status-critical-soft` bg + `status-critical` text + label;
+  reused for row-level status (`Open`) and card-level counts (`3 High Priority`).
+- `BottomNav` (mobile, < `md`) / `SideNav` (`md`+) — same nav-item list, active
+  item gets `accent` background + inverse text; both driven by the permission
+  matrix from `/auth/me/` (F8), not hardcoded per role.
+
 ## 3. Architecture
 
 ### 3.1 API integration — BFF proxy with httpOnly cookies
@@ -50,8 +118,9 @@ alongside the existing `docker-compose.yml` (Next.js standalone output behind Ng
   cookies set by the proxy. Proxy transparently refreshes on 401-expired and retries once.
 - Refresh failure, account suspension (`403 SUBSCRIPTION_SUSPENDED`), or force-logout →
   proxy clears cookies, client redirects to `/login` with a translated reason banner.
-- Next.js `middleware.ts` guards route groups by role claim (decoded server-side only);
-  the API remains the real authority — middleware is UX, not security.
+- Next.js `proxy.ts` (renamed from `middleware.ts` in Next 16 — same mechanism)
+  guards route groups by role claim (decoded server-side only); the API remains
+  the real authority — this is UX, not security.
 - Same-origin API calls mean no CORS config and the service worker can apply cache
   strategies uniformly.
 
@@ -229,7 +298,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 
 | # | FE task | Status |
 |---|---------|--------|
-| FE-00 | Foundation | ⬜ |
+| FE-00 | Foundation | 🟨 |
 | FE-01 | Auth & shell | ⬜ |
 | FE-02 | Property setup | ⬜ |
 | FE-03 | Property settings | ⬜ |

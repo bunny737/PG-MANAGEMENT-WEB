@@ -245,11 +245,11 @@ export default function DashboardPage() {
       <div className="hidden md:block">
         <DesktopHeader />
         <div className="flex flex-col gap-6 p-8">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
             <OccupancyCard data={summaryData.occupancy} />
             <FinancialsCard data={summaryData.financials} />
           </div>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
             <ActiveIssuesCard
               issues={summaryData.issues}
               highPriorityCount={summaryData.highPriorityIssueCount}

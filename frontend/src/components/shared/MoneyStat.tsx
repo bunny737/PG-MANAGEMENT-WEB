@@ -19,11 +19,12 @@ export function MoneyStat({
   className,
 }: MoneyStatProps) {
   const DeltaIcon = delta?.direction === "down" ? TrendingDown : TrendingUp;
+  const isDown = delta?.direction === "down";
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       <span
         className={cn(
-          "text-xs font-medium tracking-wide uppercase",
+          "text-[0.6875rem] font-semibold tracking-[0.06em] uppercase",
           inverse ? "text-ink-inverse-muted" : "text-ink-faint"
         )}
       >
@@ -31,7 +32,7 @@ export function MoneyStat({
       </span>
       <span
         className={cn(
-          "text-3xl font-bold tabular-nums",
+          "font-display text-[2.125rem] leading-none font-bold tabular-nums",
           inverse ? "text-ink-inverse" : "text-ink"
         )}
       >
@@ -40,13 +41,15 @@ export function MoneyStat({
       {delta ? (
         <span
           className={cn(
-            "flex items-center gap-1 text-sm font-medium",
-            delta.direction === "down"
-              ? "text-status-critical"
-              : "text-status-good"
+            "inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+            isDown
+              ? "bg-status-critical/15 text-status-critical"
+              : "bg-status-good/15 text-status-good",
+            // On the dark card the -600 status inks lose contrast; lighten them.
+            inverse && (isDown ? "text-red-300" : "text-emerald-300")
           )}
         >
-          <DeltaIcon className="size-4" aria-hidden />
+          <DeltaIcon className="size-3.5" aria-hidden />
           {delta.label}
         </span>
       ) : null}
@@ -66,13 +69,17 @@ interface MoneyRowProps {
  * never strikethrough, which would misread as "waived". */
 export function MoneyRow({ label, amount, emphasis, attention }: MoneyRowProps) {
   return (
-    <div className="flex items-center justify-between text-sm">
+    <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-white/5">
       <span className="text-ink-inverse-muted">{label}</span>
       <span
         className={cn(
-          "tabular-nums",
-          emphasis ? "text-base font-semibold text-ink-inverse" : "text-ink-inverse",
-          attention && "font-semibold text-status-critical"
+          "font-display tabular-nums",
+          emphasis
+            ? "text-base font-bold text-ink-inverse"
+            : "font-semibold text-ink-inverse",
+          // red-600 on near-black fails contrast — red-300 keeps the "needs
+          // attention" read while staying legible.
+          attention && "font-bold text-red-300"
         )}
       >
         {amount}

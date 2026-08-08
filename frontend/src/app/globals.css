@@ -2,35 +2,53 @@
 
 :root {
   /* Surfaces */
-  --color-surface-page: #f8fafc;
+  --color-surface-page: #f4f6fa;
   --color-surface-card: #ffffff;
-  --color-surface-inverse: #1e293b;
-  --color-border: #e2e8f0;
+  --color-surface-subtle: #f1f4f9;
+  --color-surface-inverse: #101828;
+  /* Lighter end of the inverse gradient — dark cards read as a surface with
+     depth rather than a flat block (see FinancialsCard). */
+  --color-surface-inverse-soft: #1f2a3c;
+  --color-border: #e5e9f0;
+  --color-border-strong: #ccd4e0;
 
   /* Ink */
-  --color-ink: #0f172a;
-  --color-ink-muted: #64748b;
-  --color-ink-faint: #94a3b8;
+  --color-ink: #0b1220;
+  --color-ink-muted: #5a6779;
+  --color-ink-faint: #8a95a6;
   --color-ink-inverse: #ffffff;
-  --color-ink-inverse-muted: #94a3b8;
+  --color-ink-inverse-muted: #9aa6ba;
 
   /* Accent */
-  --color-accent: #2563eb;
-  --color-accent-hover: #1d4ed8;
-  --color-accent-soft: #eff6ff;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-soft: #eef2ff;
+  --color-accent-border: #c7d2fe;
 
   /* Status — always paired with a text label or icon, never color alone */
-  --color-status-good: #16a34a;
-  --color-status-good-soft: #dcfce7;
+  --color-status-good: #047857;
+  --color-status-good-soft: #d1fae5;
+  --color-status-warn: #b45309;
+  --color-status-warn-soft: #fef3c7;
   --color-status-critical: #dc2626;
   --color-status-critical-soft: #fee2e2;
+
+  /* Elevation — low-alpha layered shadows tinted with the ink hue, so cards
+     lift off the page without the grey haze of a plain black shadow. */
+  --shadow-xs: 0 1px 2px 0 rgb(11 18 32 / 0.04);
+  --shadow-sm: 0 1px 2px 0 rgb(11 18 32 / 0.04), 0 1px 3px 0 rgb(11 18 32 / 0.05);
+  --shadow-md: 0 2px 4px -1px rgb(11 18 32 / 0.04), 0 8px 20px -6px rgb(11 18 32 / 0.10);
+  --shadow-lg: 0 4px 8px -2px rgb(11 18 32 / 0.06), 0 16px 32px -12px rgb(11 18 32 / 0.16);
 }
 
 @theme inline {
   --color-surface-page: var(--color-surface-page);
   --color-surface-card: var(--color-surface-card);
+  --color-surface-subtle: var(--color-surface-subtle);
   --color-surface-inverse: var(--color-surface-inverse);
+  --color-surface-inverse-soft: var(--color-surface-inverse-soft);
   --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
 
   --color-ink: var(--color-ink);
   --color-ink-muted: var(--color-ink-muted);
@@ -41,17 +59,95 @@
   --color-accent: var(--color-accent);
   --color-accent-hover: var(--color-accent-hover);
   --color-accent-soft: var(--color-accent-soft);
+  --color-accent-border: var(--color-accent-border);
 
   --color-status-good: var(--color-status-good);
   --color-status-good-soft: var(--color-status-good-soft);
+  --color-status-warn: var(--color-status-warn);
+  --color-status-warn-soft: var(--color-status-warn-soft);
   --color-status-critical: var(--color-status-critical);
   --color-status-critical-soft: var(--color-status-critical-soft);
 
-  --font-sans: var(--font-noto-sans);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  /* Inter carries UI text; Plus Jakarta Sans gives headings and money figures
+     a distinct voice. Noto Sans stays in both stacks as the per-glyph fallback
+     so Devanagari/Telugu/Tamil/Malayalam still resolve once hi/te/ta/ml land
+     (PRD §11 / §6 i18n) — neither Latin face covers those scripts. */
+  --font-sans: var(--font-inter), var(--font-noto-sans), system-ui, sans-serif;
+  --font-display: var(--font-plus-jakarta), var(--font-inter),
+    var(--font-noto-sans), system-ui, sans-serif;
 }
 
-body {
-  background: var(--color-surface-page);
-  color: var(--color-ink);
-  font-family: var(--font-sans), system-ui, sans-serif;
+@layer base {
+  body {
+    background: var(--color-surface-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Slightly open body text; headings tighten it back up below. */
+    letter-spacing: -0.006em;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.022em;
+  }
+
+  /* Figures line up column-wise wherever they appear, without each call site
+     remembering to add `tabular-nums`. */
+  th,
+  td,
+  output {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Keyboard focus was previously unstyled — this is the only visible
+     affordance keyboard users get, so it applies app-wide. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-hover);
+  }
+
+  /* Thin, neutral scrollbars so long tables don't ship a chunky grey gutter. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

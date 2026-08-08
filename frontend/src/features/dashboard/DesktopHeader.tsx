@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Bell, Plus } from "lucide-react";
 
 export function DesktopHeader() {
@@ -18,13 +19,13 @@ export function DesktopHeader() {
           <Bell className="size-4.5" aria-hidden />
           <span className="absolute top-2 right-2.5 size-2 rounded-full bg-status-critical ring-2 ring-surface-card" />
         </button>
-        <button
-          type="button"
+        <Link
+          href="/admissions"
           className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-semibold text-ink-inverse shadow-sm transition-all hover:bg-accent-hover hover:shadow-md active:scale-[0.98]"
         >
           <Plus className="size-4" aria-hidden />
           Add Resident
-        </button>
+        </Link>
       </div>
     </header>
   );

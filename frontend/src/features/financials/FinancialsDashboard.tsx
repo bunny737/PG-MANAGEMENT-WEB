@@ -176,7 +176,7 @@ export function FinancialsDashboard() {
         {/* Metric 1: Total Revenue */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
           <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Received Revenue</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink">${totalRevenue.toFixed(2)}</h3>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink">₹{totalRevenue.toLocaleString("en-IN")}</h3>
           <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
             <ArrowUpRight className="size-3.5" /> +12% vs last month
           </span>
@@ -185,14 +185,14 @@ export function FinancialsDashboard() {
         {/* Metric 2: Pending Invoices */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
           <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Pending Receivables</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink">${pendingAmount.toFixed(2)}</h3>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink">₹{pendingAmount.toLocaleString("en-IN")}</h3>
           <span className="text-[10px] text-ink-muted">Due by 10th of month</span>
         </div>
 
         {/* Metric 3: Overdue + Penalty */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
           <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Overdue Balances</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink text-status-critical">${overdueAmount.toFixed(2)}</h3>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink text-status-critical">₹{overdueAmount.toLocaleString("en-IN")}</h3>
           <span className="text-[10px] text-status-critical font-semibold flex items-center gap-0.5">
             <AlertTriangle className="size-3.5" /> Includes active penalties
           </span>
@@ -340,10 +340,10 @@ export function FinancialsDashboard() {
                       <td className="px-4 py-3 font-mono text-ink-muted">{inv.room}</td>
                       <td className="px-4 py-3 text-ink-muted">{inv.type}</td>
                       <td className="px-4 py-3 font-mono">
-                        <span className="font-semibold">${inv.amount.toFixed(2)}</span>
+                        <span className="font-semibold">₹{inv.amount.toLocaleString("en-IN")}</span>
                         {inv.penaltyAmount && (
                           <span className="text-[10px] text-status-critical ml-1 font-bold">
-                            (+${inv.penaltyAmount.toFixed(2)} penalty)
+                            (+₹{inv.penaltyAmount.toLocaleString("en-IN")} penalty)
                           </span>
                         )}
                       </td>

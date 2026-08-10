@@ -290,6 +290,11 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
 
 ## 6. i18n plan
 
+> Detailed implementation plan — current-state audit, phased build P0–P8, decisions
+> and risks — lives in [frontend-i18n-plan.md](frontend-i18n-plan.md). As of
+> 2026-08-10 the backend i18n plumbing is complete and the **frontend has none of
+> this built yet**; every component still uses literal JSX strings.
+
 - next-intl with **cookie-based locale** (no `/en/` URL prefix — this is an authed
   dashboard, not SEO content). Locale = user profile `language_code`, editable in
   profile settings; tenant default applies to new accounts (PRD §11).

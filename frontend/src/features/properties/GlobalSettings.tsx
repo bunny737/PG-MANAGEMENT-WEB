@@ -18,19 +18,20 @@ import {
   Download
 } from "lucide-react";
 import { mockProperties } from "./mock-properties";
+import { SUPPORTED_LANGUAGES, getLanguageSelectLabel } from "@/lib/constants/languages";
 
 export function GlobalSettings() {
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
-  const [portalName, setPortalName] = useState("PropManager");
-  const [notificationEmail, setNotificationEmail] = useState("admin@propmanager.com");
-  const [currency, setCurrency] = useState("USD");
+  const [portalName, setPortalName] = useState("StaysManager Premium");
+  const [notificationEmail, setNotificationEmail] = useState("support@staysmanager.in");
+  const [currency, setCurrency] = useState("INR");
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
   // Security/Account states
-  const [language, setLanguage] = useState("en-US");
+  const [language, setLanguage] = useState("en");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -301,10 +302,11 @@ export function GlobalSettings() {
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
                   disabled={isLoading}
                 >
-                  <option value="en-US">English (United States)</option>
-                  <option value="en-GB">English (United Kingdom)</option>
-                  <option value="es-ES">Español (España)</option>
-                  <option value="hi-IN">हिन्दी (भारत)</option>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {getLanguageSelectLabel(lang)}
+                    </option>
+                  ))}
                 </select>
               </div>
 

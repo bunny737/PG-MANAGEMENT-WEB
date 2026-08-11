@@ -1,0 +1,27 @@
+{
+  "title": "Global Settings",
+  "subtitle": "Manage workspace system settings and access configurations.",
+  "tabs": {
+    "property": "Portal Setup",
+    "security": "Account & Security",
+    "subscription": "Plan & Billing"
+  },
+  "tenantLanguage": {
+    "title": "Tenant Default Language",
+    "subtitle": "Set the default language inherited by newly created staff accounts for this tenant (Owner only).",
+    "label": "Default Language for New Accounts",
+    "button": "Update Tenant Default"
+  },
+  "profile": {
+    "title": "User Profile",
+    "subtitle": "Manage your personal information, role details, and preferred UI language.",
+    "languageLabel": "Preferred Interface Language",
+    "saveButton": "Save Profile Settings",
+    "personalDetails": "Personal Information Details",
+    "fullName": "Full Name",
+    "emailAddress": "Email Address",
+    "phoneNumber": "Phone Number",
+    "companyName": "Associated Company Name",
+    "saving": "Saving Profile..."
+  }
+}

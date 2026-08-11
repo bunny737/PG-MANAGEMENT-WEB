@@ -74,12 +74,14 @@
   --shadow-lg: var(--shadow-lg);
 
   /* Inter carries UI text; Plus Jakarta Sans gives headings and money figures
-     a distinct voice. Noto Sans stays in both stacks as the per-glyph fallback
-     so Devanagari/Telugu/Tamil/Malayalam still resolve once hi/te/ta/ml land
-     (PRD §11 / §6 i18n) — neither Latin face covers those scripts. */
-  --font-sans: var(--font-inter), var(--font-noto-sans), system-ui, sans-serif;
+     a distinct voice. Noto Sans (Devanagari) and Noto Sans Telugu are the
+     per-glyph fallbacks — Google ships Telugu as a separate family from the
+     base Noto Sans, which only covers Devanagari among our target scripts
+     (PRD §11 / §6 i18n). Tamil/Malayalam families join when ta/ml go active. */
+  --font-sans: var(--font-inter), var(--font-noto-sans),
+    var(--font-noto-sans-telugu), system-ui, sans-serif;
   --font-display: var(--font-plus-jakarta), var(--font-inter),
-    var(--font-noto-sans), system-ui, sans-serif;
+    var(--font-noto-sans), var(--font-noto-sans-telugu), system-ui, sans-serif;
 }
 
 @layer base {

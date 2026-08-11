@@ -45,7 +45,9 @@ residents, billing, and operations through a single system.
    changes. Keep reserved addons JSON field (empty [] in MVP).
 
 7. NO HARDCODED UI STRINGS. Every user-facing string goes through i18n
-   (gettext server-side). English only in MVP but plumbing is mandatory now.
+   (gettext server-side). English and Telugu ship in MVP (owner decision
+   2026-08-11 — Telugu pulled forward from V2); Hindi/Tamil/Malayalam
+   plumbing is mandatory now but their translations aren't.
 
 8. STATUS LIFECYCLES are exact. Only Active + Notice Period count toward
    plan resident limits. Inquiry/Reserved/Vacated/Absconded/Blacklisted do not.

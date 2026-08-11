@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building,
@@ -17,10 +17,13 @@ import {
   Zap,
   Download
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
-import { SUPPORTED_LANGUAGES, getLanguageSelectLabel } from "@/lib/constants/languages";
+import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
+import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
 
 export function GlobalSettings() {
+  const t = useTranslations("settings.tenantLanguage");
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
@@ -30,8 +33,17 @@ export function GlobalSettings() {
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
-  // Security/Account states
+  // Security/Account states — "language" here is the TENANT's default for new
+  // accounts, not this browser's own UI locale, so it's seeded from the
+  // tenant record, never from the locale cookie.
   const [language, setLanguage] = useState("en");
+  useEffect(() => {
+    getCurrentUser()
+      .then((user) => {
+        if (user.tenant?.default_language) setLanguage(user.tenant.default_language);
+      })
+      .catch(() => {});
+  }, []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -76,13 +88,20 @@ export function GlobalSettings() {
     }, 1500);
   };
 
-  const handleLanguageChange = (e: React.FormEvent) => {
+  const handleLanguageChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
+    // Tenant default only seeds NEW staff/resident accounts — it must not touch
+    // this Owner's own session locale (that's Profile's language_code, saved
+    // separately via updateMe). No cookie write, no reload, here.
+    try {
+      await updateTenantDefaultLanguage(language);
+      triggerSaveAlert("language", "Tenant default language updated successfully.");
+    } catch {
+      triggerSaveAlert("language", "Could not update tenant default language.");
+    } finally {
       setIsLoading(false);
-      triggerSaveAlert("language", "Language preferences updated successfully.");
-    }, 800);
+    }
   };
 
   return (
@@ -285,15 +304,15 @@ export function GlobalSettings() {
             <form onSubmit={handleLanguageChange} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
                 <Globe className="size-4.5 text-ink-muted" />
-                Language Settings
+                {t("title")}
               </h2>
               <p className="text-[11px] text-ink-muted leading-relaxed">
-                Choose your localization and regional configuration options for invoice generation and portals.
+                {t("subtitle")}
               </p>
 
               <div className="space-y-1.5">
                 <label htmlFor="language" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Default Interface Language
+                  {t("label")}
                 </label>
                 <select
                   id="language"
@@ -303,7 +322,7 @@ export function GlobalSettings() {
                   disabled={isLoading}
                 >
                   {SUPPORTED_LANGUAGES.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
+                    <option key={lang.code} value={lang.code} disabled={!isActiveLocale(lang.code)}>
                       {getLanguageSelectLabel(lang)}
                     </option>
                   ))}
@@ -315,7 +334,7 @@ export function GlobalSettings() {
                 disabled={isLoading}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? "Saving Language..." : "Update Language"}
+                {isLoading ? "Saving Language..." : t("button")}
               </button>
             </form>
           </div>

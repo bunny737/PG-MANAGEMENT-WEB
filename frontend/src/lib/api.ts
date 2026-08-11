@@ -8,6 +8,8 @@
 // backend/config/settings/dev.py), but it must be replaced by the BFF proxy before
 // this app is exposed beyond a developer's machine.
 
+import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const ACCESS_TOKEN_KEY = "accessToken";
@@ -90,6 +92,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   if (!isFormData && options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", currentLocale);
+  }
   if (!options.skipAuth) {
     const token = getAccessToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -113,12 +119,6 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   return (await res.json()) as T;
 }
 
-interface MeResponse {
-  first_name: string;
-  last_name: string;
-  role: string;
-}
-
 export async function login(email: string, password: string) {
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login/", {
     method: "POST",
@@ -127,10 +127,12 @@ export async function login(email: string, password: string) {
   });
   setTokens(tokens.access, tokens.refresh);
 
-  const me = await apiFetch<MeResponse>("/api/v1/auth/me/");
+  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
   localStorage.setItem("isLoggedIn", "true");
   localStorage.setItem("userRole", me.role);
-  localStorage.setItem("userName", `${me.first_name} ${me.last_name}`.trim());
+  localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  const effectiveLang = me.language_code || me.tenant?.default_language || "en";
+  writeLocaleCookie(effectiveLang);
   return me;
 }
 
@@ -617,17 +619,49 @@ export function createComplaintComment(complaintId: string, body: string) {
   });
 }
 
+export interface TenantDetails {
+  id: string;
+  name: string;
+  status: string;
+  default_language: string;
+  trial_ends_at?: string;
+}
+
 export interface CurrentUser {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
   role: string;
-  tenant_id: string;
+  language_code: string;
+  email_verified: boolean;
+  tenant?: TenantDetails;
+  tenant_id?: string;
+  permissions?: string[];
 }
 
 export function getCurrentUser() {
   return apiFetch<CurrentUser>("/api/v1/auth/me/");
+}
+
+export function updateMe(payload: { first_name?: string; last_name?: string; phone?: string; language_code?: string }) {
+  return apiFetch<CurrentUser>("/api/v1/auth/me/", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }).then((user) => {
+    if (payload.language_code) {
+      writeLocaleCookie(payload.language_code);
+    }
+    return user;
+  });
+}
+
+export function updateTenantDefaultLanguage(default_language: string) {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
+    method: "PATCH",
+    body: JSON.stringify({ default_language }),
+  });
 }
 
 export interface Invoice {

@@ -1,0 +1,15 @@
+{
+  "title": "Property Management",
+  "subtitle": "Overview and configuration of host units, rooms, and bed spaces.",
+  "list": {
+    "title": "All Properties",
+    "addProperty": "Add Property",
+    "emptyTitle": "No properties available",
+    "emptyDescription": "Get started by adding your first PG property."
+  },
+  "status": {
+    "active": "Active",
+    "maintenance": "Under Maintenance",
+    "inactive": "Inactive"
+  }
+}

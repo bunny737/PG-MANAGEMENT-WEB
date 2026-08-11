@@ -1,0 +1,29 @@
+{
+  "appName": "PropManager",
+  "portalTitle": "StaysManager Premium",
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "create": "Create",
+    "filter": "Filter",
+    "search": "Search",
+    "export": "Export",
+    "submit": "Submit"
+  },
+  "labels": {
+    "status": "Status",
+    "actions": "Actions",
+    "created": "Created",
+    "updated": "Updated",
+    "details": "Details",
+    "language": "Language",
+    "comingSoon": "Coming Soon"
+  },
+  "emptyState": {
+    "noData": "No items found",
+    "noDataSub": "There are no entries to display at this time."
+  }
+}

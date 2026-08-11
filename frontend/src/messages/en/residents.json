@@ -1,0 +1,10 @@
+{
+  "title": "Resident Directory",
+  "subtitle": "Manage resident profiles, room allocations, and occupancy statuses.",
+  "list": {
+    "title": "Residents",
+    "addResident": "Admit Resident",
+    "emptyTitle": "No residents found",
+    "emptyDescription": "There are currently no active or past residents recorded."
+  }
+}

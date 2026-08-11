@@ -236,7 +236,9 @@ F1. **Money is a string.** DRF Decimal serializes as string — keep it a string
     Display via `MoneyText` (Intl.NumberFormat, `en-IN`, INR). **No arithmetic on money in
     the frontend** — totals, balances, refunds, penalties always come from the API.
 F2. **No hardcoded UI strings.** Every label through next-intl `t()` from day one. Lint
-    rule blocks literal JSX text. Language switcher shipped in MVP, English-only active.
+    rule blocks literal JSX text. Language switcher shipped in MVP; English and Telugu
+    active (owner decision 2026-08-11 — Telugu pulled forward from V2), others
+    selectable-but-disabled until translated.
 F3. **Statuses are exact and translated by key.** `StatusBadge` maps the backend status
     enum → i18n key + color. Unknown status renders as-is with a neutral badge, never crashes.
 F4. **Plan limits come from the API.** Never hardcode 60/5/caps. `LimitGate` reacts to

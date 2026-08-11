@@ -1379,8 +1379,8 @@ Full translation of all languages in MVP is not required — but the **architect
 
 | Phase | Language Support |
 |-------|----------------|
-| MVP | English fully implemented. i18n architecture in place (all strings externalised). Language switcher UI built but only English active. |
-| V2 | Hindi and Telugu added |
+| MVP | English fully implemented. Telugu released alongside it (owner decision 2026-08-11 — pulled forward from V2). i18n architecture in place (all strings externalised). Language switcher UI built; Hindi and the rest remain selectable-but-disabled until translated. |
+| V2 | Hindi added |
 | V3 | Tamil and Malayalam added |
 
 > **Critical rule for developers:** No hardcoded UI strings anywhere. Every label, message, and status text must go through the i18n translation function from the first line of code. Adding a new language later should require only adding a new JSON file — zero code changes.

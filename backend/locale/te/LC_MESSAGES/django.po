@@ -1,0 +1,736 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-10 21:17-0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: te\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Verify your email address"
+msgstr "మీ ఇమెయిల్ చిరునామాను ధృవీకరించండి"
+
+#, python-format
+msgid "Welcome, %(name)s! Verify your email to activate your account: %(url)s"
+msgstr ""
+"స్వాగతం, %(name)s! మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్‌ను ధృవీకరించండి: "
+"%(url)s"
+
+msgid "Reset your password"
+msgstr "మీ పాస్‌వర్డ్‌ను రీసెట్ చేయండి"
+
+#, python-format
+msgid "Use this link to reset your password: %(url)s"
+msgstr "మీ పాస్‌వర్డ్‌ను రీసెట్ చేయడానికి ఈ లింక్‌ను ఉపయోగించండి: %(url)s"
+
+#, python-format
+msgid "You have been invited to %(business)s"
+msgstr "మిమ్మల్ని %(business)sకి ఆహ్వానించారు"
+
+#, python-format
+msgid ""
+"%(name)s, an account was created for you at %(business)s. Set your password "
+"to get started: %(url)s"
+msgstr ""
+"%(name)s, %(business)s వద్ద మీ కోసం ఒక ఖాతా సృష్టించబడింది. ప్రారంభించడానికి"
+" మీ పాస్‌వర్డ్‌ను సెట్ చేయండి: %(url)s"
+
+msgid "Trial"
+msgstr "ట్రయల్"
+
+msgid "Active"
+msgstr "క్రియాశీలం"
+
+msgid "Payment Failed"
+msgstr "చెల్లింపు విఫలమైంది"
+
+msgid "Suspended"
+msgstr "సస్పెండ్ చేయబడింది"
+
+msgid "Cancelled"
+msgstr "రద్దు చేయబడింది"
+
+msgid "business name"
+msgstr "వ్యాపార పేరు"
+
+msgid "email address"
+msgstr "ఇమెయిల్ చిరునామా"
+
+msgid "Verify your email address to log in."
+msgstr "లాగిన్ చేయడానికి మీ ఇమెయిల్ చిరునామాను ధృవీకరించండి."
+
+msgid "This account is suspended."
+msgstr "ఈ ఖాతా సస్పెండ్ చేయబడింది."
+
+msgid "An account with this email already exists."
+msgstr "ఈ ఇమెయిల్‌తో ఖాతా ఇప్పటికే ఉంది."
+
+msgid "An account with this phone number already exists."
+msgstr "ఈ ఫోన్ నంబర్‌తో ఖాతా ఇప్పటికే ఉంది."
+
+msgid "This verification link is invalid or has expired."
+msgstr "ఈ ధృవీకరణ లింక్ చెల్లదు లేదా గడువు ముగిసింది."
+
+msgid "No active account found."
+msgstr "క్రియాశీల ఖాతా కనుగొనబడలేదు."
+
+msgid "The code is incorrect or has expired."
+msgstr "కోడ్ తప్పు లేదా గడువు ముగిసింది."
+
+msgid "This reset link is invalid or has expired."
+msgstr "ఈ రీసెట్ లింక్ చెల్లదు లేదా గడువు ముగిసింది."
+
+msgid "Staff accounts must be Manager or Receptionist."
+msgstr "సిబ్బంది ఖాతాలు మేనేజర్ లేదా రిసెప్షనిస్ట్‌గా ఉండాలి."
+
+msgid "OK"
+msgstr "సరే"
+
+msgid "Account created. Check your email to verify your address."
+msgstr ""
+"ఖాతా సృష్టించబడింది. మీ చిరునామాను ధృవీకరించడానికి మీ ఇమెయిల్‌ను తనిఖీ "
+"చేయండి."
+
+msgid "Email verified. You can log in now."
+msgstr "ఇమెయిల్ ధృవీకరించబడింది. మీరు ఇప్పుడు లాగిన్ చేయవచ్చు."
+
+msgid "If that email is registered, a verification link has been sent."
+msgstr "ఆ ఇమెయిల్ నమోదు చేయబడితే, ధృవీకరణ లింక్ పంపబడింది."
+
+msgid "If that phone number is registered, a code has been sent."
+msgstr "ఆ ఫోన్ నంబర్ నమోదు చేయబడితే, ఒక కోడ్ పంపబడింది."
+
+msgid "If that email is registered, a reset link has been sent."
+msgstr "ఆ ఇమెయిల్ నమోదు చేయబడితే, రీసెట్ లింక్ పంపబడింది."
+
+msgid "Password updated. You can log in now."
+msgstr "పాస్‌వర్డ్ నవీకరించబడింది. మీరు ఇప్పుడు లాగిన్ చేయవచ్చు."
+
+msgid "Fixed Amount"
+msgstr "నిర్ణీత మొత్తం"
+
+msgid "Percentage"
+msgstr "శాతం"
+
+msgid "Loyalty"
+msgstr "లాయల్టీ"
+
+msgid "Referral"
+msgstr "రెఫరల్"
+
+msgid "Corporate"
+msgstr "కార్పొరేట్"
+
+msgid "Negotiated"
+msgstr "చర్చించిన"
+
+msgid "Seasonal"
+msgstr "సీజనల్"
+
+msgid "Other"
+msgstr "ఇతర"
+
+msgid "Draft"
+msgstr "డ్రాఫ్ట్"
+
+msgid "Issued"
+msgstr "జారీ చేయబడింది"
+
+msgid "Partially Paid"
+msgstr "పాక్షికంగా చెల్లించబడింది"
+
+msgid "Paid"
+msgstr "చెల్లించబడింది"
+
+msgid "Accommodation"
+msgstr "వసతి"
+
+msgid "Food"
+msgstr "ఆహారం"
+
+msgid "Electricity"
+msgstr "విద్యుత్"
+
+msgid "Water"
+msgstr "నీరు"
+
+msgid "Laundry"
+msgstr "లాండ్రీ"
+
+msgid "Add-on Service"
+msgstr "అదనపు సేవ"
+
+msgid "Additional"
+msgstr "అదనపు"
+
+msgid "Discount"
+msgstr "డిస్కౌంట్"
+
+msgid "Late Payment Penalty"
+msgstr "ఆలస్య చెల్లింపు జరిమానా"
+
+msgid "UPI"
+msgstr "యూపీఐ"
+
+msgid "Cash"
+msgstr "నగదు"
+
+msgid "Bank Transfer"
+msgstr "బ్యాంక్ బదిలీ"
+
+msgid "Card"
+msgstr "కార్డ్"
+
+msgid "Cheque"
+msgstr "చెక్కు"
+
+msgid "You are not assigned to this property."
+msgstr "మీరు ఈ ప్రాపర్టీకి కేటాయించబడలేదు."
+
+msgid "Discount value must be greater than zero."
+msgstr "డిస్కౌంట్ విలువ సున్నా కంటే ఎక్కువగా ఉండాలి."
+
+msgid "A percentage discount cannot exceed 100."
+msgstr "శాతం డిస్కౌంట్ 100ని మించకూడదు."
+
+msgid "valid_until cannot be before valid_from."
+msgstr "valid_until, valid_from కంటే ముందు ఉండకూడదు."
+
+msgid "This resident already has a discount active in this period."
+msgstr "ఈ నివాసికి ఈ కాలంలో ఇప్పటికే క్రియాశీల డిస్కౌంట్ ఉంది."
+
+msgid "Only active residents can be invoiced."
+msgstr "క్రియాశీల నివాసులకు మాత్రమే ఇన్‌వాయిస్ చేయవచ్చు."
+
+msgid "This resident is not allocated to a bed."
+msgstr "ఈ నివాసికి బెడ్ కేటాయించబడలేదు."
+
+msgid "period_end cannot be before period_start."
+msgstr "period_end, period_start కంటే ముందు ఉండకూడదు."
+
+msgid "This resident already has an invoice for this period."
+msgstr "ఈ నివాసికి ఈ కాలానికి ఇప్పటికే ఇన్‌వాయిస్ ఉంది."
+
+msgid "Payment amount must be greater than zero."
+msgstr "చెల్లింపు మొత్తం సున్నా కంటే ఎక్కువగా ఉండాలి."
+
+msgid "Payments can only be recorded against an issued invoice."
+msgstr "జారీ చేయబడిన ఇన్‌వాయిస్‌కు మాత్రమే చెల్లింపులు నమోదు చేయవచ్చు."
+
+msgid "This invoice is already fully paid."
+msgstr "ఈ ఇన్‌వాయిస్ ఇప్పటికే పూర్తిగా చెల్లించబడింది."
+
+#, python-format
+msgid "Payment exceeds the outstanding balance of %(balance)s."
+msgstr "చెల్లింపు %(balance)s బాకీ మిగులును మించిపోయింది."
+
+msgid "Only draft invoices can be modified."
+msgstr "డ్రాఫ్ట్ ఇన్‌వాయిస్‌లను మాత్రమే సవరించవచ్చు."
+
+msgid "Line item not found."
+msgstr "లైన్ ఐటెమ్ కనుగొనబడలేదు."
+
+msgid "You do not have permission to perform this action."
+msgstr "ఈ చర్యను చేయడానికి మీకు అనుమతి లేదు."
+
+msgid "Only platform administrators can perform this action."
+msgstr "ప్లాట్‌ఫారమ్ నిర్వాహకులు మాత్రమే ఈ చర్యను చేయగలరు."
+
+msgid "Super Admin"
+msgstr "సూపర్ అడ్మిన్"
+
+msgid "Owner"
+msgstr "యజమాని"
+
+msgid "Manager"
+msgstr "మేనేజర్"
+
+msgid "Receptionist"
+msgstr "రిసెప్షనిస్ట్"
+
+msgid "Resident"
+msgstr "నివాసి"
+
+#, python-format
+msgid "Invoice for %(period)s"
+msgstr "%(period)s కోసం ఇన్‌వాయిస్"
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"Your invoice for the period %(start)s to %(end)s has been issued.\n"
+"Amount due: %(total)s\n"
+"Due date: %(due)s\n"
+"\n"
+"Thank you."
+msgstr ""
+"ప్రియమైన %(name)s,\n"
+"\n"
+"%(start)s నుండి %(end)s వరకు కాలానికి మీ ఇన్‌వాయిస్ జారీ చేయబడింది.\n"
+"చెల్లించవలసిన మొత్తం: %(total)s\n"
+"చెల్లించవలసిన తేదీ: %(due)s\n"
+"\n"
+"ధన్యవాదాలు."
+
+#, python-format
+msgid "Payment receipt — %(amount)s received"
+msgstr "చెల్లింపు రసీదు — %(amount)s అందుకోబడింది"
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"We have received your payment of %(amount)s on %(date)s via %(mode)s.\n"
+"Remaining balance on this invoice: %(balance)s\n"
+"\n"
+"Thank you."
+msgstr ""
+"ప్రియమైన %(name)s,\n"
+"\n"
+"%(date)s న %(mode)s ద్వారా మీ %(amount)s చెల్లింపును మేము అందుకున్నాము.\n"
+"ఈ ఇన్‌వాయిస్‌పై మిగిలిన బాకీ: %(balance)s\n"
+"\n"
+"ధన్యవాదాలు."
+
+#, python-format
+msgid "Your trial ends in %(days)s day(s)"
+msgstr "మీ ట్రయల్ %(days)s రోజు(ల)లో ముగుస్తుంది"
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"Your free trial of the platform for %(business)s ends in %(days)s day(s), on %(end_date)s. Choose a plan to keep using the platform without interruption.\n"
+"\n"
+"Thank you."
+msgstr ""
+"ప్రియమైన %(name)s,\n"
+"\n"
+"%(business)s కోసం ప్లాట్‌ఫారమ్ యొక్క మీ ఉచిత ట్రయల్ %(days)s రోజు(ల)లో, %(end_date)s న ముగుస్తుంది. అంతరాయం లేకుండా ప్లాట్‌ఫారమ్‌ను ఉపయోగించడం కొనసాగించడానికి ఒక ప్లాన్‌ను ఎంచుకోండి.\n"
+"\n"
+"ధన్యవాదాలు."
+
+msgid "Welcome"
+msgstr "స్వాగతం"
+
+msgid "Trial Expiry Reminder"
+msgstr "ట్రయల్ గడువు ముగింపు రిమైండర్"
+
+msgid "Invoice Issued"
+msgstr "ఇన్‌వాయిస్ జారీ చేయబడింది"
+
+msgid "Payment Receipt"
+msgstr "చెల్లింపు రసీదు"
+
+msgid "Sent"
+msgstr "పంపబడింది"
+
+msgid "Failed"
+msgstr "విఫలమైంది"
+
+msgid "Skipped"
+msgstr "దాటవేయబడింది"
+
+msgid "Electrical"
+msgstr "విద్యుత్ సంబంధిత"
+
+msgid "Plumbing"
+msgstr "ప్లంబింగ్"
+
+msgid "Internet / WiFi"
+msgstr "ఇంటర్నెట్ / వైఫై"
+
+msgid "Housekeeping"
+msgstr "హౌస్‌కీపింగ్"
+
+msgid "Security"
+msgstr "భద్రత"
+
+msgid "Furniture"
+msgstr "ఫర్నిచర్"
+
+msgid "Low"
+msgstr "తక్కువ"
+
+msgid "Medium"
+msgstr "మధ్యస్థం"
+
+msgid "High"
+msgstr "అధికం"
+
+msgid "Urgent"
+msgstr "అత్యవసరం"
+
+msgid "Open"
+msgstr "తెరిచి ఉంది"
+
+msgid "Assigned"
+msgstr "కేటాయించబడింది"
+
+msgid "In Progress"
+msgstr "పురోగతిలో ఉంది"
+
+msgid "Resolved"
+msgstr "పరిష్కరించబడింది"
+
+msgid "Closed"
+msgstr "మూసివేయబడింది"
+
+msgid "Use the assign action to move a complaint to Assigned."
+msgstr ""
+"ఫిర్యాదును కేటాయించబడింది స్థితికి మార్చడానికి కేటాయింపు చర్యను ఉపయోగించండి."
+
+#, python-format
+msgid "Cannot move a complaint from %(current)s to %(new)s."
+msgstr "ఫిర్యాదును %(current)s నుండి %(new)sకి మార్చడం సాధ్యం కాదు."
+
+msgid "This user is not in your tenant."
+msgstr "ఈ వినియోగదారు మీ టెనెంట్‌లో లేరు."
+
+msgid "This user does not have complaint-management access."
+msgstr "ఈ వినియోగదారుకు ఫిర్యాదు-నిర్వహణ యాక్సెస్ లేదు."
+
+msgid "This user is not assigned to the resident's property."
+msgstr "ఈ వినియోగదారు నివాసి యొక్క ప్రాపర్టీకి కేటాయించబడలేదు."
+
+msgid "Exit time cannot be before entry time."
+msgstr "నిష్క్రమణ సమయం ప్రవేశ సమయానికి ముందు ఉండకూడదు."
+
+msgid "Only an open complaint can be edited or assigned."
+msgstr "తెరిచి ఉన్న ఫిర్యాదును మాత్రమే సవరించవచ్చు లేదా కేటాయించవచ్చు."
+
+msgid "This visitor has already checked out."
+msgstr "ఈ సందర్శకుడు ఇప్పటికే చెక్-అవుట్ చేశారు."
+
+msgid "This visitor has already been confirmed."
+msgstr "ఈ సందర్శకుడు ఇప్పటికే నిర్ధారించబడ్డారు."
+
+msgid "Boys Hostel"
+msgstr "బాయ్స్ హాస్టల్"
+
+msgid "Girls Hostel"
+msgstr "గర్ల్స్ హాస్టల్"
+
+msgid "PG"
+msgstr "పీజీ"
+
+msgid "Co-Living Space"
+msgstr "కో-లివింగ్ స్పేస్"
+
+msgid "Inactive"
+msgstr "నిష్క్రియం"
+
+msgid "1-sharing"
+msgstr "1-షేరింగ్"
+
+msgid "2-sharing"
+msgstr "2-షేరింగ్"
+
+msgid "3-sharing"
+msgstr "3-షేరింగ్"
+
+msgid "4-sharing"
+msgstr "4-షేరింగ్"
+
+msgid "5-sharing"
+msgstr "5-షేరింగ్"
+
+msgid "6-sharing"
+msgstr "6-షేరింగ్"
+
+msgid "7-sharing"
+msgstr "7-షేరింగ్"
+
+msgid "8-sharing"
+msgstr "8-షేరింగ్"
+
+msgid "AC"
+msgstr "ఏసీ"
+
+msgid "Non-AC"
+msgstr "నాన్-ఏసీ"
+
+msgid "Available"
+msgstr "అందుబాటులో ఉంది"
+
+msgid "Occupied"
+msgstr "ఆక్రమించబడింది"
+
+msgid "Reserved"
+msgstr "రిజర్వ్ చేయబడింది"
+
+msgid "Maintenance"
+msgstr "నిర్వహణ"
+
+msgid "Immediately"
+msgstr "వెంటనే"
+
+msgid "Next Billing Cycle"
+msgstr "తదుపరి బిల్లింగ్ చక్రం"
+
+msgid "No Penalty"
+msgstr "జరిమానా లేదు"
+
+msgid "Full Invoice Amount"
+msgstr "పూర్తి ఇన్‌వాయిస్ మొత్తం"
+
+msgid "Outstanding Balance Only"
+msgstr "బాకీ మిగులు మాత్రమే"
+
+msgid "One-time"
+msgstr "ఒకసారి"
+
+msgid "Monthly"
+msgstr "నెలవారీ"
+
+msgid "This room already has its full sharing-type capacity of beds."
+msgstr "ఈ గదికి ఇప్పటికే దాని పూర్తి షేరింగ్-రకం బెడ్ సామర్థ్యం ఉంది."
+
+msgid "A penalty value is required when a penalty type is set."
+msgstr "జరిమానా రకం సెట్ చేసినప్పుడు జరిమానా విలువ అవసరం."
+
+msgid "A percentage penalty must be between 0 and 100."
+msgstr "శాతం జరిమానా 0 మరియు 100 మధ్య ఉండాలి."
+
+msgid "You do not have access to properties."
+msgstr "మీకు ప్రాపర్టీలకు యాక్సెస్ లేదు."
+
+msgid "An image file is required."
+msgstr "చిత్రం ఫైల్ అవసరం."
+
+msgid "Cannot delete a building that still has floors."
+msgstr "ఇంకా అంతస్తులు ఉన్న భవనాన్ని తొలగించడం సాధ్యం కాదు."
+
+msgid "Cannot delete a floor that still has rooms."
+msgstr "ఇంకా గదులు ఉన్న అంతస్తును తొలగించడం సాధ్యం కాదు."
+
+msgid "Cannot delete a room that still has beds."
+msgstr "ఇంకా బెడ్‌లు ఉన్న గదిని తొలగించడం సాధ్యం కాదు."
+
+msgid "Cannot delete a bed that is occupied or reserved."
+msgstr "ఆక్రమించబడిన లేదా రిజర్వ్ చేయబడిన బెడ్‌ను తొలగించడం సాధ్యం కాదు."
+
+#, python-format
+msgid "filetype must be one of: %(formats)s."
+msgstr "ఫైల్ రకం తప్పనిసరిగా వీటిలో ఒకటి అయి ఉండాలి: %(formats)s."
+
+msgid "Resident List"
+msgstr "నివాసుల జాబితా"
+
+msgid "Payment History"
+msgstr "చెల్లింపు చరిత్ర"
+
+msgid "Outstanding Dues"
+msgstr "బాకీ మొత్తాలు"
+
+msgid "Occupancy Report"
+msgstr "ఆక్యుపెన్సీ నివేదిక"
+
+msgid "Male"
+msgstr "పురుషుడు"
+
+msgid "Female"
+msgstr "స్త్రీ"
+
+msgid "Inquiry"
+msgstr "విచారణ"
+
+msgid "Notice Period"
+msgstr "నోటీసు వ్యవధి"
+
+msgid "Vacated"
+msgstr "ఖాళీ చేయబడింది"
+
+msgid "Absconded"
+msgstr "పరారీలో ఉన్నారు"
+
+msgid "Blacklisted"
+msgstr "బ్లాక్‌లిస్ట్ చేయబడింది"
+
+msgid "Weekly"
+msgstr "వారానికి"
+
+msgid "Daily"
+msgstr "రోజువారీ"
+
+msgid "With Food"
+msgstr "ఆహారంతో"
+
+msgid "Without Food"
+msgstr "ఆహారం లేకుండా"
+
+msgid "Outstanding"
+msgstr "బాకీ"
+
+msgid "Partially Recovered"
+msgstr "పాక్షికంగా రికవర్ చేయబడింది"
+
+msgid "Written Off"
+msgstr "రద్దు చేయబడింది (రైట్-ఆఫ్)"
+
+#, python-format
+msgid "Cannot move a resident from %(current)s to %(new)s."
+msgstr "నివాసిని %(current)s నుండి %(new)sకి మార్చడం సాధ్యం కాదు."
+
+msgid "This resident is not ready for check-in — they must be Reserved first."
+msgstr ""
+"ఈ నివాసి చెక్-ఇన్‌కు సిద్ధంగా లేరు — వారు ముందుగా రిజర్వ్ చేయబడి ఉండాలి."
+
+msgid "This bed is not in the same property as the resident."
+msgstr "ఈ బెడ్ నివాసి ఉన్న అదే ప్రాపర్టీలో లేదు."
+
+msgid "This bed is not available."
+msgstr "ఈ బెడ్ అందుబాటులో లేదు."
+
+msgid "This resident is not currently allocated to a bed."
+msgstr "ఈ నివాసికి ప్రస్తుతం బెడ్ కేటాయించబడలేదు."
+
+msgid "Only active residents can be transferred."
+msgstr "క్రియాశీల నివాసులను మాత్రమే బదిలీ చేయవచ్చు."
+
+msgid "The resident is already in this bed."
+msgstr "నివాసి ఇప్పటికే ఈ బెడ్‌లో ఉన్నారు."
+
+msgid "Only an active resident can give notice to vacate."
+msgstr "క్రియాశీల నివాసి మాత్రమే ఖాళీ చేసే నోటీసు ఇవ్వగలరు."
+
+msgid "This resident already has a vacate record."
+msgstr "ఈ నివాసికి ఇప్పటికే ఖాళీ చేసే రికార్డు ఉంది."
+
+msgid "Deduction cannot be negative."
+msgstr "తగ్గింపు ప్రతికూలంగా ఉండకూడదు."
+
+#, python-format
+msgid "Deduction cannot exceed the advance amount of %(advance)s."
+msgstr "తగ్గింపు %(advance)s అడ్వాన్స్ మొత్తాన్ని మించకూడదు."
+
+msgid "Only an active resident can be marked absconded."
+msgstr "క్రియాశీల నివాసిని మాత్రమే పరారీగా గుర్తించవచ్చు."
+
+msgid "A note is required to write off dues."
+msgstr "బాకీలను రద్దు చేయడానికి ఒక గమనిక అవసరం."
+
+msgid "This resident cannot be blacklisted from their current status."
+msgstr "ప్రస్తుత స్థితి నుండి ఈ నివాసిని బ్లాక్‌లిస్ట్ చేయడం సాధ్యం కాదు."
+
+msgid "Inquiry Received"
+msgstr "విచారణ స్వీకరించబడింది"
+
+msgid "Room Reserved"
+msgstr "గది రిజర్వ్ చేయబడింది"
+
+msgid "Admission Completed — Checked In"
+msgstr "ప్రవేశం పూర్తయింది — చెక్-ఇన్ చేయబడింది"
+
+#, python-format
+msgid "Room %(room)s (%(bed)s)"
+msgstr "గది %(room)s (%(bed)s)"
+
+msgid "Invoice Generated"
+msgstr "ఇన్‌వాయిస్ రూపొందించబడింది"
+
+#, python-format
+msgid "Total ₹%(total)s"
+msgstr "మొత్తం ₹%(total)s"
+
+msgid "Invoice Overdue"
+msgstr "ఇన్‌వాయిస్ గడువు ముగిసింది"
+
+#, python-format
+msgid "Balance due ₹%(balance)s"
+msgstr "బాకీ ₹%(balance)s"
+
+msgid "Partial Payment"
+msgstr "పాక్షిక చెల్లింపు"
+
+msgid "Payment Received"
+msgstr "చెల్లింపు స్వీకరించబడింది"
+
+msgid "Remaining Paid"
+msgstr "మిగిలినది చెల్లించబడింది"
+
+#, python-format
+msgid "₹%(amount)s via %(mode)s"
+msgstr "%(mode)s ద్వారా ₹%(amount)s"
+
+msgid "Transferred"
+msgstr "బదిలీ చేయబడింది"
+
+msgid "Complaint Raised"
+msgstr "ఫిర్యాదు లేవనెత్తబడింది"
+
+msgid "Notice Given"
+msgstr "నోటీసు ఇవ్వబడింది"
+
+#, python-format
+msgid "Expected vacate %(date)s"
+msgstr "ఖాళీ చేయాల్సిన అంచనా తేదీ %(date)s"
+
+#, python-format
+msgid "Refund ₹%(amount)s"
+msgstr "వాపసు ₹%(amount)s"
+
+#, python-format
+msgid "Last seen %(date)s"
+msgstr "చివరిసారి కనిపించింది %(date)s"
+
+msgid "Marked Absconded"
+msgstr "పరారీగా గుర్తించబడింది"
+
+msgid "Advance Forfeited"
+msgstr "అడ్వాన్స్ జప్తు చేయబడింది"
+
+#, python-format
+msgid "₹%(amount)s applied against dues"
+msgstr "బాకీలకు వ్యతిరేకంగా ₹%(amount)s వర్తింపజేయబడింది"
+
+msgid "Dues Written Off"
+msgstr "బాకీలు రద్దు చేయబడ్డాయి"
+
+#, python-format
+msgid "₹%(amount)s — %(note)s"
+msgstr "₹%(amount)s — %(note)s"
+
+msgid "This vacate has already been settled."
+msgstr "ఈ ఖాళీ ఇప్పటికే పరిష్కరించబడింది."
+
+msgid "Dues have already been written off."
+msgstr "బాకీలు ఇప్పటికే రద్దు చేయబడ్డాయి."
+
+msgid "Success"
+msgstr "విజయం"
+
+#, python-format
+msgid "Your plan allows a maximum of %(max)s properties. Upgrade to add more."
+msgstr ""
+"మీ ప్లాన్ గరిష్టంగా %(max)s ప్రాపర్టీలను అనుమతిస్తుంది. మరిన్ని జోడించడానికి"
+" అప్‌గ్రేడ్ చేయండి."
+
+#, python-format
+msgid ""
+"Your plan allows a maximum of %(max)s active residents per property. Upgrade"
+" to add more."
+msgstr ""
+"మీ ప్లాన్ ప్రతి ప్రాపర్టీకి గరిష్టంగా %(max)s క్రియాశీల నివాసులను "
+"అనుమతిస్తుంది. మరిన్ని జోడించడానికి అప్‌గ్రేడ్ చేయండి."
+
+msgid "Cannot delete a plan that tenants are subscribed to."
+msgstr "టెనెంట్లు సభ్యత్వం పొందిన ప్లాన్‌ను తొలగించడం సాధ్యం కాదు."
+
+msgid "This tenant is already suspended."
+msgstr "ఈ టెనెంట్ ఇప్పటికే సస్పెండ్ చేయబడింది."
+
+msgid "This tenant is not suspended."
+msgstr "ఈ టెనెంట్ సస్పెండ్ చేయబడలేదు."

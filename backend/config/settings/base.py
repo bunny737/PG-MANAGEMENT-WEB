@@ -63,8 +63,9 @@ DATABASES = {
     }
 }
 
-# i18n — architecture mandatory from day one; English only active in MVP.
-# V2: Hindi + Telugu. V3: Tamil + Malayalam.
+# i18n — architecture mandatory from day one.
+# MVP: English + Telugu active (owner decision 2026-08-11 — Telugu pulled
+# forward from V2). V2: Hindi. V3: Tamil + Malayalam.
 USE_I18N = True
 USE_L10N = True
 LANGUAGE_CODE = 'en'

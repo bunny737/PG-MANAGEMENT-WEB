@@ -1,0 +1,10 @@
+{
+  "title": "Dashboard Overview",
+  "welcome": "Welcome back",
+  "stats": {
+    "totalProperties": "Total Properties",
+    "occupancyRate": "Occupancy Rate",
+    "totalResidents": "Total Residents",
+    "pendingDues": "Pending Dues"
+  }
+}

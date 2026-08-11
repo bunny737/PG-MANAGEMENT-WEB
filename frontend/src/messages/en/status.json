@@ -1,0 +1,19 @@
+{
+  "active": "Active",
+  "inactive": "Inactive",
+  "pending": "Pending",
+  "completed": "Completed",
+  "failed": "Failed",
+  "cancelled": "Cancelled",
+  "in_progress": "In Progress",
+  "resolved": "Resolved",
+  "open": "Open",
+  "closed": "Closed",
+  "draft": "Draft",
+  "issued": "Issued",
+  "paid": "Paid",
+  "partially_paid": "Partially Paid",
+  "void": "Void",
+  "trial": "Trial",
+  "suspended": "Suspended"
+}

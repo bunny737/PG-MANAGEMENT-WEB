@@ -5,7 +5,11 @@ frontend-plan.md invariant F2. Expands `frontend-plan.md` §6 — that section s
 the *what*; this document is the *how*, in dependency order, with acceptance
 criteria per phase.
 
-Status: **not started** (see §2). Owner of this doc: whoever picks up FE-00 i18n.
+Status: **in progress** — P1 (foundation), P2 (locale round-trip), P4 (language
+switchers), and B1 (writable tenant default) are built; P5's B2 is only weakly
+tested; P3 (extracting the other ~38 components) hasn't started. English and
+Telugu are the active MVP languages as of 2026-08-11 (see §7). Owner of this
+doc: whoever picks up the remaining P3 extraction work.
 
 ---
 
@@ -23,8 +27,9 @@ In scope:
 Out of scope (already built or deliberately deferred):
 - Backend `gettext` plumbing, `translation.override()` in emails/Celery, and the
   per-user/per-tenant language columns — **already done**, see §2.
-- Actual `hi`/`te`/`ta`/`ml` translations. MVP ships English-complete with the
-  other four selectable-but-disabled. V2 = `hi`, `te`; V3 = `ta`, `ml`
+- Full `hi`/`ta`/`ml` translations. MVP ships English **and Telugu** complete
+  (owner decision 2026-08-11 — Telugu pulled forward from V2); `hi`/`ta`/`ml`
+  stay selectable-but-disabled until translated. V2 = `hi`; V3 = `ta`, `ml`
   (PRD i18n table; `backend/config/settings/base.py:66-77`).
 - Server-rendered PDF invoices/receipts — backend renders them in the user's
   language, the frontend only downloads. No client-side document generation.
@@ -126,7 +131,7 @@ Key mechanics:
 | # | Question | Decision |
 |---|---|---|
 | D1 | Where does the language registry live? | `src/i18n/config.ts`, generated-by-hand but **asserted against the OpenAPI `LanguageEnum` in a unit test** so backend/frontend drift fails CI. Fold the untracked `src/lib/constants/languages.ts` into it and delete that file. |
-| D2 | Are non-`en` locales selectable in MVP? | Yes, shown with a "Coming soon" suffix and `disabled` — matches F2 ("language switcher shipped in MVP, English-only active") and what `languages.ts` already encodes. A disabled option cannot be submitted, so no half-translated UI can be reached. |
+| D2 | Are non-active locales selectable in MVP? | No. Shown with a "Coming soon" suffix and `disabled` — matches F2 ("English and Telugu active in MVP", owner decision 2026-08-11) and `src/i18n/config.ts`'s `status` field. A disabled option cannot be submitted, so no half-translated UI can be reached. `en` and `te` are `active`; `hi` is `v2`; `ta`/`ml` are `v3`. |
 | D3 | Big-bang extraction or incremental? | **Incremental, by module.** ~40 components is too large a single diff to review safely. Lint rule lands as `warn` globally, flipped to `error` per directory as each module is converted (§5, P3). |
 | D4 | Does the tenant default belong in Settings or Profile? | Both, distinctly. Profile = *my* language (PRD: primary mechanism, any user). Settings → Account & Security = *tenant default for new accounts* (PRD: Owner-only override). Today only the second exists and it is mislabelled "Default Interface Language" as though it changed the current user's UI. |
 | B1 | Backend: can a tenant's `default_language` be updated? | **No — gap.** `TenantSerializer` is read-only (`serializers.py:250-251`). Needs a writable Owner-only path before the Settings picker can work. |
@@ -259,16 +264,20 @@ Tamil, or Malayalam coverage in any subset — those are separate families
 (`Noto_Sans_Telugu`, `Noto_Sans_Tamil`, `Noto_Sans_Malayalam`). Devanagari *is* a
 valid `Noto Sans` subset.
 
-- V2 (`hi`, `te`): add `devanagari` to the `Noto_Sans` subsets; add
-  `Noto_Sans_Telugu`.
-- V3 (`ta`, `ml`): add `Noto_Sans_Tamil`, `Noto_Sans_Malayalam`.
-- Load script fonts **conditionally per active locale**, not all five always —
-  five Indic families in the critical path would wreck the dashboard LCP budget
-  (< 2.5s on mid-range Android, `frontend-plan.md` §8).
+- **Done for MVP:** `devanagari` added to `Noto_Sans` subsets (ahead of `hi`
+  going active, so it's ready when V2 lands); `Noto_Sans_Telugu` added and wired
+  as its own `next/font` family + CSS variable (`--font-noto-sans-telugu`),
+  since Telugu is a separate Google family, not a `Noto_Sans` subset.
+- V3 (`ta`, `ml`): add `Noto_Sans_Tamil`, `Noto_Sans_Malayalam` the same way.
+- **Known deviation:** fonts are loaded statically for every request, not
+  conditionally per active locale as originally planned here. Two active
+  script families (Latin + Telugu) is cheap enough not to block MVP on it, but
+  revisit before V2 — five Indic families all in the critical path would wreck
+  the dashboard LCP budget (< 2.5s on mid-range Android, `frontend-plan.md` §8).
 - Correct the misleading comment now, even before V2, so nobody relies on it.
 
-**Done when:** the comment reflects reality and the conditional-loading approach
-is in place (exercised by the stub `hi` catalog).
+**Done when:** the comment reflects reality (✅) and conditional loading lands
+before a third script family is added.
 
 ### P7 — Enforcement
 
@@ -288,10 +297,13 @@ is in place (exercised by the stub `hi` catalog).
 
 ### P8 — Adding a locale later (the payoff)
 
-Adding `hi` should be: drop `messages/hi/*.json`, add the Devanagari subset, flip
-`status` to `active` in `src/i18n/config.ts`, add `backend/locale/hi/LC_MESSAGES/
-django.po`. **Zero component changes.** If a locale addition requires touching a
-component, P1–P7 was done wrong.
+Telugu going active 2026-08-11 is the first real test of this: it took a
+`messages/te/*.json` per wired module, a `Noto_Sans_Telugu` font addition, and
+flipping `status` to `active` in `src/i18n/config.ts` — **zero component
+changes**. Adding `hi` next should be exactly the same shape: drop
+`messages/hi/*.json` (already started — `common`, `settings`), flip its
+`status` to `active`, add `backend/locale/hi/LC_MESSAGES/django.po`. If a
+locale addition ever requires touching a component, P1–P7 was done wrong.
 
 ---
 
@@ -323,3 +335,4 @@ component, P1–P7 was done wrong.
 | Tenant default vs. user preference | Two separate UIs (Profile, Settings) | PRD treats per-user as primary and tenant default as an Owner override for *new* accounts |
 | Non-active locales in MVP | Listed but `disabled` | F2 wants the switcher shipped; disabling prevents reaching a half-translated UI |
 | Extraction strategy | Incremental, lint escalating per directory | 40 components in one diff cannot be reviewed responsibly |
+| **MVP active languages (2026-08-11)** | **English + Telugu**, not English-only | **Owner decision, pulled Telugu forward from V2.** Requires full `en`-parity Telugu catalogs for every wired module (enforced by `i18n-config.test.ts`, stricter than `hi`'s partial-subset rule) and its own font family (`Noto_Sans_Telugu` — not a `Noto_Sans` subset). Hindi stays `v2`/disabled until it gets the same treatment. Updated everywhere the old "English-only in MVP" line lived: `CLAUDE.md` invariant 7, PRD §11, `frontend-plan.md` F2, `backend/config/settings/base.py` comment. |

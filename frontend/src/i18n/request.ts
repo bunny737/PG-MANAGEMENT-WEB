@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { COOKIE_NAME, isValidLocale } from './locale';
 import { DEFAULT_LOCALE } from './config';
 
-const MODULES = [
+export const MODULES = [
   'common',
   'auth',
   'settings',

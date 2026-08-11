@@ -1,13 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
-import { StatusPill } from "@/components/shared/StatusPill";
+import { useTranslations } from "next-intl";
+import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import type { ActiveIssue } from "./types";
-
-const STATUS_LABEL: Record<ActiveIssue["status"], string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  resolved: "Resolved",
-};
 
 export function ActiveIssuesCard({
   issues,
@@ -16,6 +13,9 @@ export function ActiveIssuesCard({
   issues: ActiveIssue[];
   highPriorityCount: number;
 }) {
+  const t = useTranslations("dashboard.issues");
+  const tStatus = useTranslations("status");
+
   return (
     <section className="flex h-full flex-col justify-between rounded-2xl border border-border bg-surface-card p-5.5 shadow-xs transition-all hover:border-border-strong hover:shadow-md">
       <div>
@@ -24,12 +24,12 @@ export function ActiveIssuesCard({
             <span className="flex size-8.5 items-center justify-center rounded-xl bg-status-warn-soft text-status-warn ring-1 ring-status-warn/15">
               <TriangleAlert className="size-4.5" aria-hidden />
             </span>
-            Active Issues
+            {t("title")}
           </h2>
           {highPriorityCount > 0 ? (
-            <StatusPill tone="critical" dot label={`${highPriorityCount} High Priority`} />
+            <StatusPill tone="critical" dot label={t("highPriority", { count: highPriorityCount })} />
           ) : (
-            <span className="text-xs text-ink-faint">All clear</span>
+            <span className="text-xs text-ink-faint">{t("allClear")}</span>
           )}
         </div>
 
@@ -38,9 +38,9 @@ export function ActiveIssuesCard({
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border/80 text-[0.6875rem] font-semibold tracking-[0.06em] text-ink-faint uppercase">
-                  <th className="pb-2.5 font-semibold">Unit</th>
-                  <th className="pb-2.5 font-semibold">Issue</th>
-                  <th className="pb-2.5 text-right font-semibold">Status</th>
+                  <th className="pb-2.5 font-semibold">{t("unit")}</th>
+                  <th className="pb-2.5 font-semibold">{t("issue")}</th>
+                  <th className="pb-2.5 text-right font-semibold">{t("status")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -59,8 +59,8 @@ export function ActiveIssuesCard({
                     </td>
                     <td className="py-3 text-right align-top">
                       <StatusPill
-                        tone={issue.status === "open" ? "critical" : "accent"}
-                        label={STATUS_LABEL[issue.status]}
+                        tone={getStatusTone(issue.status)}
+                        label={tStatus(issue.status as "open" | "assigned" | "in_progress" | "resolved" | "closed") ?? issue.status}
                       />
                     </td>
                   </tr>
@@ -70,7 +70,7 @@ export function ActiveIssuesCard({
           </div>
         ) : (
           <div className="rounded-xl bg-surface-subtle px-4 py-8 text-center text-sm text-ink-muted">
-            No active issues right now.
+            {t("noIssues")}
           </div>
         )}
       </div>
@@ -80,7 +80,7 @@ export function ActiveIssuesCard({
           href="/complaints"
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-subtle/50 py-2 text-xs font-semibold text-ink-muted transition-all hover:border-border-strong hover:bg-surface-subtle hover:text-ink"
         >
-          View All Complaints →
+          {t("viewAllComplaints")}
         </Link>
       </div>
     </section>

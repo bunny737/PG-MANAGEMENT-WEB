@@ -1,4 +1,83 @@
 {
   "title": "Helpdesk & Complaints",
-  "subtitle": "Track resident issues, maintenance requests, and resolution statuses."
+  "subtitle": "Track resident issues, maintenance requests, and resolution statuses.",
+  "logComplaint": "Log Complaint",
+  "loading": "Loading complaints...",
+  "errLoadFailed": "Failed to Load Complaints",
+  "retry": "Retry",
+  "categories": {
+    "electrical": "Electrical",
+    "plumbing": "Plumbing",
+    "internet_wifi": "Internet & WiFi",
+    "housekeeping": "Housekeeping",
+    "security": "Security",
+    "furniture": "Furniture",
+    "other": "Other"
+  },
+  "priorities": {
+    "low": "Low Priority",
+    "medium": "Medium Priority",
+    "high": "High Priority",
+    "urgent": "Urgent Priority"
+  },
+  "statuses": {
+    "open": "Open",
+    "assigned": "Assigned",
+    "in_progress": "In Progress",
+    "resolved": "Resolved",
+    "closed": "Closed"
+  },
+  "filters": {
+    "allStatuses": "All Statuses",
+    "allCategories": "All Categories",
+    "allPriorities": "All Priorities",
+    "searchPlaceholder": "Search by ticket #, description, resident or room..."
+  },
+  "stats": {
+    "totalTickets": "Total Tickets",
+    "openIssues": "Open Issues",
+    "inProgress": "In Progress",
+    "resolvedClosed": "Resolved / Closed"
+  },
+  "list": {
+    "ticket": "Ticket #{number}",
+    "resident": "Resident",
+    "room": "Room / Bed",
+    "assignedTo": "Assigned To",
+    "unassigned": "Unassigned",
+    "viewDetail": "View Details",
+    "emptyTitle": "No Complaints Found",
+    "emptyDesc": "We couldn't find any complaints matching your active search or filters."
+  },
+  "detail": {
+    "ticketHeader": "Ticket #{number}",
+    "raisedBy": "Raised By",
+    "roomBed": "Room / Bed Slot",
+    "loggedOn": "Logged On",
+    "assignStaff": "Assign Staff Member",
+    "selectStaff": "Select Staff Member",
+    "updateStatus": "Update Status",
+    "activityLog": "Activity Log & Comments",
+    "addCommentPlaceholder": "Write a message or internal note...",
+    "sendComment": "Send Comment",
+    "attachment": "Attached File",
+    "downloadAttachment": "View / Download Attachment",
+    "noComments": "No comments logged yet.",
+    "staffFallback": "Staff"
+  },
+  "modal": {
+    "title": "Log New Resident Complaint",
+    "subtitle": "Create a maintenance ticket for a resident issue.",
+    "selectResident": "Select Resident",
+    "category": "Category",
+    "priority": "Priority",
+    "description": "Issue Description",
+    "descriptionPlaceholder": "Describe the problem in detail...",
+    "attachFile": "Attach File / Photo",
+    "submit": "Submit Ticket",
+    "submitting": "Submitting Ticket...",
+    "cancel": "Cancel",
+    "errResidentRequired": "Please select a resident",
+    "errDescriptionRequired": "Please provide an issue description"
+  }
 }

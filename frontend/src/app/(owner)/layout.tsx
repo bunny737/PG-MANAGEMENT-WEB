@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { SideNav } from "@/components/shared/SideNav";
 
@@ -11,6 +12,7 @@ export default function OwnerLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const t = useTranslations("common");
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export default function OwnerLayout({
       <div className="flex min-h-screen w-full items-center justify-center bg-surface-page">
         <div className="flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-4 border-accent border-t-transparent" />
-          <p className="text-sm text-ink-muted">Checking authentication...</p>
+          <p className="text-sm text-ink-muted">{t("authCheck")}</p>
         </div>
       </div>
     );

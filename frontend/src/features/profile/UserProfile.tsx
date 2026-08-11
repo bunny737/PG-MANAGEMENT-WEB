@@ -64,8 +64,8 @@ export function UserProfile() {
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800 shadow-xl animate-bounce max-w-sm">
           <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
           <div className="text-sm">
-            <span className="font-semibold">Profile Updated</span>
-            <p className="text-xs text-emerald-700 mt-0.5">Your profile settings have been saved successfully.</p>
+            <span className="font-semibold">{t("updatedToast")}</span>
+            <p className="text-xs text-emerald-700 mt-0.5">{t("updatedToastSub")}</p>
           </div>
         </div>
       )}
@@ -98,24 +98,24 @@ export function UserProfile() {
 
           <h2 className="text-base font-bold text-ink">{name}</h2>
           <span className="mt-1 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-bold uppercase tracking-wider">
-            <Shield className="size-3" /> System Owner
+            <Shield className="size-3" /> {t("systemOwner")}
           </span>
 
           {/* Quick specs details card */}
           <div className="w-full mt-5 rounded-xl bg-surface-page p-3 border border-border/60 text-left text-xs space-y-2.5">
             <div className="flex justify-between items-center text-ink-muted">
-              <span>Account State</span>
+              <span>{t("accountState")}</span>
               <span className="font-semibold text-emerald-600 flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-emerald-500" /> Active Verified
+                <span className="size-1.5 rounded-full bg-emerald-500" /> {t("activeVerified")}
               </span>
             </div>
             <div className="flex justify-between items-center text-ink-muted">
-              <span>Tenant System</span>
+              <span>{t("tenantSystem")}</span>
               <span className="font-semibold text-ink">{company}</span>
             </div>
             <div className="flex justify-between items-center text-ink-muted">
-              <span>Assigned Scope</span>
-              <span className="font-semibold text-ink">All Properties (Owner)</span>
+              <span>{t("assignedScope")}</span>
+              <span className="font-semibold text-ink">{t("allPropertiesOwner")}</span>
             </div>
           </div>
         </div>
@@ -165,7 +165,7 @@ export function UserProfile() {
                   disabled
                 />
               </div>
-              <p className="text-[9px] text-ink-faint italic ml-1">Email changes require secondary security OTP validation.</p>
+              <p className="text-[9px] text-ink-faint italic ml-1">{t("emailOtpNotice")}</p>
             </div>
 
             {/* Phone Number */}

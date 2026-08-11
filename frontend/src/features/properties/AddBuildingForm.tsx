@@ -4,10 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, CheckCircle2, LoaderCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { getProperty, createBuilding, type Property, type Building, ApiError } from "@/lib/api";
 
 export function AddBuildingForm({ propertyId }: { propertyId: string }) {
   const router = useRouter();
+  const t = useTranslations("properties.buildings");
+  const tCommon = useTranslations("common");
 
   const [property, setProperty] = useState<Property | null>(null);
   const [buildingName, setBuildingName] = useState("");
@@ -43,10 +46,10 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!buildingName.trim()) newErrors.buildingName = "Building name is required";
+    if (!buildingName.trim()) newErrors.buildingName = t("errNameRequired");
     const floors = Number(numberOfFloors);
     if (numberOfFloors !== "" && (!Number.isInteger(floors) || floors < 0)) {
-      newErrors.numberOfFloors = "Enter a whole number of floors (0 or more)";
+      newErrors.numberOfFloors = t("errFloorsWholeNumber");
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -80,7 +83,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
           ...(!nameErr && !floorsErr ? { global: detailErr } : {}),
         });
       } else {
-        setErrors({ global: "An unexpected error occurred. Please try again." });
+        setErrors({ global: t("errUnexpected") });
       }
     }
   };
@@ -98,7 +101,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading property details...</p>
+        <p className="font-semibold mt-2">{t("loadingBuildings")}</p>
       </div>
     );
   }
@@ -111,27 +114,27 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
             <div className="size-20 bg-blue-50 text-accent border border-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="size-10" />
             </div>
-            <h3 className="text-xl font-bold text-ink mb-2">Building Created</h3>
+            <h3 className="text-xl font-bold text-ink mb-2">{t("modalTitle")}</h3>
             <p className="text-xs text-ink-muted mb-4 leading-relaxed">
               {createdBuilding && createdBuilding.floors_count > 0
-                ? `${createdBuilding.floors_count} floor(s) were created automatically.`
-                : "You can add floors to this building next."}
+                ? t("modalDescAuto", { count: createdBuilding.floors_count })
+                : t("modalDescManual")}
             </p>
 
             {createdBuilding && (
               <div className="bg-surface-page border border-border rounded-xl p-4 mb-6 text-left space-y-2">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Building Name:</span>
+                  <span className="text-ink-muted font-medium">{t("nameLabel")}:</span>
                   <span className="font-bold text-ink">{createdBuilding.name}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Property:</span>
+                  <span className="text-ink-muted font-medium">{t("modalPropLabel")}</span>
                   <span className="font-semibold text-ink text-right max-w-[180px] truncate">
-                    {property?.name || "Selected Property"}
+                    {property?.name || t("modalDefaultProp")}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Floors Created:</span>
+                  <span className="text-ink-muted font-medium">{t("modalFloorsLabel")}</span>
                   <span className="font-mono font-bold text-accent">{createdBuilding.floors_count}</span>
                 </div>
               </div>
@@ -141,7 +144,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
               onClick={handleCloseModal}
               className="w-full py-3 bg-surface-inverse text-ink-inverse font-bold rounded-xl hover:opacity-90 transition-opacity cursor-pointer text-sm"
             >
-              View Floors
+              {t("viewFloors")}
             </button>
           </div>
         </div>
@@ -155,9 +158,9 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
           <ArrowLeft className="size-5 text-ink-muted" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">Add Building</h1>
+          <h1 className="text-xl font-bold tracking-tight text-ink">{t("formTitle")}</h1>
           <p className="text-xs text-ink-muted">
-            {property ? `Add another block to ${property.name}.` : "Add another block to this property."}
+            {property ? t("formSubtitleProp", { name: property.name }) : t("formSubtitle")}
           </p>
         </div>
       </div>
@@ -167,11 +170,10 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
           <Building2 className="size-5.5" />
         </div>
         <div className="space-y-0.5 text-xs">
-          <p className="font-bold text-accent uppercase tracking-wider">Property Management</p>
-          <h2 className="text-sm font-bold text-ink">Building Registration</h2>
+          <p className="font-bold text-accent uppercase tracking-wider">{tCommon("nav.properties")}</p>
+          <h2 className="text-sm font-bold text-ink">{t("formCardHeading")}</h2>
           <p className="text-ink-muted leading-relaxed mt-1">
-            Use this for a physically separate block (e.g. &quot;Block A&quot;, &quot;Block B&quot;) — not for floors
-            within the same building.
+            {t("formCardDesc")}
           </p>
         </div>
       </div>
@@ -185,12 +187,12 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
 
         <div className="space-y-1.5">
           <label htmlFor="building_name" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
-            Building Name <span className="text-status-critical">*</span>
+            {t("nameLabel")} <span className="text-status-critical">*</span>
           </label>
           <input
             id="building_name"
             type="text"
-            placeholder="e.g. Block A, Main Building"
+            placeholder={t("namePlaceholder")}
             value={buildingName}
             onChange={(e) => setBuildingName(e.target.value)}
             className={`w-full rounded-xl border ${
@@ -203,7 +205,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
 
         <div className="space-y-1.5">
           <label htmlFor="number_of_floors" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
-            Number of Floors
+            {t("floorsLabel")}
           </label>
           <input
             id="number_of_floors"
@@ -211,7 +213,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
             min={0}
             max={100}
             step={1}
-            placeholder="0"
+            placeholder={t("floorsPlaceholder")}
             value={numberOfFloors}
             onChange={(e) => setNumberOfFloors(e.target.value)}
             className={`w-full rounded-xl border ${
@@ -223,7 +225,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
             <p className="text-xs text-status-critical ml-1">{errors.numberOfFloors}</p>
           ) : (
             <p className="text-xs text-ink-muted ml-1">
-              We&apos;ll create these automatically — Ground Floor, 1st Floor, 2nd Floor, and so on.
+              {t("floorsHint")}
             </p>
           )}
         </div>
@@ -233,7 +235,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
           disabled={isLoading}
           className="w-full bg-accent text-ink-inverse hover:bg-accent-hover font-semibold py-3 px-6 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
         >
-          {isLoading ? "Creating Building..." : "Add Building"}
+          {isLoading ? t("creating") : t("createButton")}
         </button>
       </form>
     </div>

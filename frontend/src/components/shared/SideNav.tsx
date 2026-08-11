@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Building2, LogOut } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 
@@ -10,6 +11,7 @@ import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 // with the authenticated user's name/role and the tenant's actual plan name.
 export function SideNav() {
   const pathname = usePathname();
+  const t = useTranslations("common");
 
   return (
     <nav className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-surface-card md:flex">
@@ -18,7 +20,7 @@ export function SideNav() {
           <Building2 className="size-5" aria-hidden />
         </span>
         <span className="font-display text-lg font-extrabold text-ink">
-          PropManager
+          {t("appName")}
         </span>
       </div>
 
@@ -53,7 +55,7 @@ export function SideNav() {
                 )}
                 aria-hidden
               />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}
@@ -69,9 +71,9 @@ export function SideNav() {
           </span>
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold text-ink">
-              Owner Portal
+              {t("sideNav.ownerPortal")}
             </span>
-            <span className="truncate text-xs text-ink-faint">Premium Plan</span>
+            <span className="truncate text-xs text-ink-faint">{t("sideNav.premiumPlan")}</span>
           </div>
         </Link>
         <button
@@ -80,7 +82,7 @@ export function SideNav() {
             window.location.href = "/login";
           }}
           className="shrink-0 cursor-pointer rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-status-critical-soft hover:text-status-critical"
-          title="Sign Out"
+          title={t("sideNav.signOut")}
         >
           <LogOut className="size-4.5" aria-hidden />
         </button>

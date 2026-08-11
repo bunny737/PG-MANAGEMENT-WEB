@@ -400,6 +400,20 @@ export interface Resident {
   unit?: string;
   block?: string;
   move_in_date?: string;
+  joining_date?: string;
+  rent?: string;
+  deposit?: string;
+  rent_type?: string;
+  invoices?: Array<{
+    id: string;
+    invoice_number?: string;
+    billing_period_start?: string;
+    billing_period_end?: string;
+    total_amount?: string;
+    status: string;
+    payment_mode?: string;
+  }>;
+  complaints?: Complaint[];
   created_at: string;
   updated_at: string;
 }

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type Tone = "critical" | "warn" | "good" | "accent" | "neutral";
+export type Tone = "critical" | "warn" | "good" | "accent" | "neutral";
 
 interface StatusPillProps {
   label: string;
@@ -34,14 +34,61 @@ const TONE_STYLES: Record<Tone, { pill: string; dot: string }> = {
   },
 };
 
+const STATUS_TONE_MAP: Record<string, Tone> = {
+  // Good/Positive
+  active: "good",
+  available: "good",
+  paid: "good",
+  resolved: "good",
+  completed: "good",
+  // Warn/Notice
+  pending: "warn",
+  notice_period: "warn",
+  reserved: "warn",
+  maintenance: "warn",
+  issued: "warn",
+  partially_paid: "warn",
+  in_progress: "warn",
+  assigned: "warn",
+  inquiry: "warn",
+  high: "warn",
+  // Critical
+  critical: "critical",
+  failed: "critical",
+  overdue: "critical",
+  void: "critical",
+  absconded: "critical",
+  blacklisted: "critical",
+  urgent: "critical",
+  // Accent/Blue
+  occupied: "accent",
+  open: "accent",
+  medium: "accent",
+  // Neutral/Grey
+  inactive: "neutral",
+  vacated: "neutral",
+  closed: "neutral",
+  draft: "neutral",
+  cancelled: "neutral",
+  trial: "neutral",
+  suspended: "neutral",
+  low: "neutral",
+};
+
+export function getStatusTone(status: string): Tone {
+  const normalized = status?.toLowerCase() ?? "";
+  return STATUS_TONE_MAP[normalized] ?? "neutral";
+}
+
 /** Status colour always ships with a text label — never colour alone. */
 export function StatusPill({
   label,
-  tone = "neutral",
+  tone,
   dot = false,
   className,
 }: StatusPillProps) {
-  const styles = TONE_STYLES[tone];
+  const effectiveTone = tone ?? "neutral";
+  const styles = TONE_STYLES[effectiveTone] ?? TONE_STYLES.neutral;
   return (
     <span
       className={cn(
@@ -60,3 +107,4 @@ export function StatusPill({
     </span>
   );
 }
+

@@ -1,10 +1,9 @@
 import assert from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 import { LOCALES, isActiveLocale } from "../config";
 import commonEn from "../../messages/en/common.json";
 import commonHi from "../../messages/hi/common.json";
-import commonTe from "../../messages/te/common.json";
-import settingsEn from "../../messages/en/settings.json";
-import settingsTe from "../../messages/te/settings.json";
 
 export function testI18nConfig() {
   const expectedCodes = ["en", "hi", "te", "ta", "ml"];
@@ -32,9 +31,9 @@ export function testI18nConfig() {
 
   // Telugu is an active MVP language — it must have FULL key parity with
   // English for every catalog it ships, not just a subset (unlike hi/v2).
-  const checkFullParity = (activeObj: Record<string, unknown>, enObj: Record<string, unknown>, path = "") => {
+  const checkFullParity = (activeObj: Record<string, unknown>, enObj: Record<string, unknown>, pathPrefix = "") => {
     for (const key in enObj) {
-      const keyPath = path ? `${path}.${key}` : key;
+      const keyPath = pathPrefix ? `${pathPrefix}.${key}` : key;
       assert.ok(key in activeObj, `Key ${keyPath} missing in Telugu catalog`);
       const enVal = enObj[key];
       const activeVal = activeObj[key];
@@ -43,6 +42,23 @@ export function testI18nConfig() {
       }
     }
   };
-  checkFullParity(commonTe as Record<string, unknown>, commonEn as Record<string, unknown>);
-  checkFullParity(settingsTe as Record<string, unknown>, settingsEn as Record<string, unknown>);
+
+  const messagesDir = path.resolve(__dirname, "../../messages");
+  const enDir = path.join(messagesDir, "en");
+  const teDir = path.join(messagesDir, "te");
+
+  if (fs.existsSync(enDir)) {
+    const files = fs.readdirSync(enDir).filter((f) => f.endsWith(".json"));
+    for (const file of files) {
+      const enFilePath = path.join(enDir, file);
+      const teFilePath = path.join(teDir, file);
+
+      assert.ok(fs.existsSync(teFilePath), `Telugu catalog missing for ${file}`);
+
+      const enObj = JSON.parse(fs.readFileSync(enFilePath, "utf8"));
+      const teObj = JSON.parse(fs.readFileSync(teFilePath, "utf8"));
+
+      checkFullParity(teObj, enObj, file);
+    }
+  }
 }

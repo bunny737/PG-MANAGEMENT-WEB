@@ -1,3 +1,5 @@
+"use client";
+
 import { Fragment } from "react";
 import {
   Banknote,
@@ -7,6 +9,7 @@ import {
   Wrench,
   AlertCircle
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { ActivityItem } from "./types";
 
@@ -62,6 +65,8 @@ function renderEmphasis(text: string) {
 }
 
 export function TodaysActivity({ items }: { items: ActivityItem[] }) {
+  const t = useTranslations("dashboard.activity");
+
   return (
     <section className="flex h-full flex-col justify-between rounded-2xl border border-border bg-surface-card p-5.5 shadow-xs transition-all hover:border-border-strong hover:shadow-md">
       <div>
@@ -69,7 +74,7 @@ export function TodaysActivity({ items }: { items: ActivityItem[] }) {
           <span className="flex size-8.5 items-center justify-center rounded-xl bg-surface-subtle text-ink-muted ring-1 ring-border">
             <Clock className="size-4.5" aria-hidden />
           </span>
-          Today&apos;s Activity
+          {t("title")}
         </h2>
 
         {items.length > 0 ? (
@@ -104,7 +109,7 @@ export function TodaysActivity({ items }: { items: ActivityItem[] }) {
           </ul>
         ) : (
           <div className="rounded-xl bg-surface-subtle px-4 py-8 text-center text-xs font-medium text-ink-muted">
-            No activity logged today.
+            {t("noActivity")}
           </div>
         )}
       </div>

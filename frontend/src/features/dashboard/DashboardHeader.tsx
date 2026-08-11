@@ -1,8 +1,13 @@
 "use client";
 
 import { Bell, Building2, LogOut } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 export function DashboardHeader() {
+  const t = useTranslations("dashboard.header");
+  const tCommon = useTranslations("common");
+  const tAuth = useTranslations("auth.logout");
+
   return (
     <header className="flex items-center justify-between px-4 py-4">
       <div className="flex items-center gap-2.5">
@@ -10,13 +15,13 @@ export function DashboardHeader() {
           <Building2 className="size-5" aria-hidden />
         </span>
         <span className="font-display text-lg font-extrabold text-ink">
-          PropManager
+          {tCommon("brandName")}
         </span>
       </div>
       <div className="flex items-center gap-1">
         <button
           type="button"
-          aria-label="Notifications"
+          aria-label={t("notifications")}
           className="relative flex size-9 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"
         >
           <Bell className="size-5" aria-hidden />
@@ -24,11 +29,12 @@ export function DashboardHeader() {
         </button>
         <button
           type="button"
-          aria-label="Sign Out"
+          aria-label={t("signOut")}
           onClick={() => {
             localStorage.removeItem("isLoggedIn");
             window.location.href = "/login";
           }}
+          title={tAuth("title")}
           className="flex size-9 cursor-pointer items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"
         >
           <LogOut className="size-5" aria-hidden />

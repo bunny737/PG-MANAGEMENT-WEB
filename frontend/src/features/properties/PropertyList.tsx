@@ -3,16 +3,11 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, MapPin, Building, ChevronRight, LoaderCircle, AlertTriangle, Pencil } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { ApiError, listProperties, type Property } from "@/lib/api";
 
-const PROPERTY_TYPE_LABELS: Record<string, string> = {
-  pg: "PG (Paying Guest)",
-  boys_hostel: "Boys Hostel",
-  girls_hostel: "Girls Hostel",
-  co_living: "Co-Living Space",
-};
-
 export function PropertyList() {
+  const t = useTranslations("properties");
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [error, setError] = useState("");
 
@@ -36,9 +31,9 @@ export function PropertyList() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">Properties Portfolio</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">{t("list.portfolioTitle")}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Manage your real estate assets, building hierarchies, floor layouts, and bed grids.
+            {t("list.portfolioSubtitle")}
           </p>
         </div>
         <Link
@@ -46,7 +41,7 @@ export function PropertyList() {
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
         >
           <Plus className="size-4.5" />
-          Add Property
+          {t("list.addProperty")}
         </Link>
       </div>
 
@@ -60,15 +55,15 @@ export function PropertyList() {
       {!error && properties === null && (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-ink-muted">
           <LoaderCircle className="size-4.5 animate-spin" />
-          Loading properties...
+          {t("list.loadingProperties")}
         </div>
       )}
 
       {!error && properties !== null && properties.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border py-16 text-center">
           <Building className="size-8 text-ink-faint" />
-          <p className="text-sm font-semibold text-ink">No properties registered yet</p>
-          <p className="text-xs text-ink-muted">Add your first property to start building its floor and bed hierarchy.</p>
+          <p className="text-sm font-semibold text-ink">{t("list.emptyTitle")}</p>
+          <p className="text-xs text-ink-muted">{t("list.emptyDesc")}</p>
         </div>
       )}
 
@@ -92,13 +87,13 @@ export function PropertyList() {
               ) : (
                 <div className="size-full flex flex-col items-center justify-center text-ink-faint gap-2">
                   <Building className="size-10 text-slate-700" />
-                  <span className="text-xs uppercase tracking-wider text-slate-500 font-bold">No photo uploaded</span>
+                  <span className="text-xs uppercase tracking-wider text-slate-500 font-bold">{t("list.noPhoto")}</span>
                 </div>
               )}
               {/* Type pill overlay */}
               <div className="absolute top-4 left-4 z-10">
                 <span className="bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                  {PROPERTY_TYPE_LABELS[property.property_type] ?? property.property_type}
+                  {t(`types.${property.property_type as "pg" | "boys_hostel" | "girls_hostel" | "co_living"}`) ?? property.property_type}
                 </span>
               </div>
               {/* Edit action overlay */}
@@ -107,7 +102,7 @@ export function PropertyList() {
                 className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-slate-950/70 transition-colors cursor-pointer"
               >
                 <Pencil className="size-3" />
-                Edit
+                {t("list.edit")}
               </Link>
             </div>
 
@@ -126,16 +121,16 @@ export function PropertyList() {
               {/* Metrics */}
               <div className="grid grid-cols-3 gap-3.5 bg-surface-page p-3 rounded-xl border border-border/60 text-xs">
                 <div className="flex flex-col">
-                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">Levels</span>
-                  <span className="font-semibold text-ink mt-0.5">{property.floors_count} Floors</span>
+                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">{t("list.levels")}</span>
+                  <span className="font-semibold text-ink mt-0.5">{t("list.floorsCount", { count: property.floors_count })}</span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">Capacity</span>
-                  <span className="font-semibold text-ink mt-0.5">{property.rooms_count} Rooms</span>
+                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">{t("list.capacity")}</span>
+                  <span className="font-semibold text-ink mt-0.5">{t("list.roomsCount", { count: property.rooms_count })}</span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">Beds</span>
-                  <span className="font-semibold text-ink mt-0.5">{property.beds_count} Beds</span>
+                  <span className="text-ink-faint uppercase font-bold text-[10px] tracking-wide">{t("list.beds")}</span>
+                  <span className="font-semibold text-ink mt-0.5">{t("list.bedsCount", { count: property.beds_count })}</span>
                 </div>
               </div>
             </div>
@@ -146,7 +141,7 @@ export function PropertyList() {
                 href={`/properties/${property.id}/buildings`}
                 className="text-xs font-bold text-accent hover:text-accent-hover transition-colors inline-flex items-center gap-1 cursor-pointer"
               >
-                Manage Layout
+                {t("list.manageLayout")}
                 <ChevronRight className="size-4" />
               </Link>
             </div>

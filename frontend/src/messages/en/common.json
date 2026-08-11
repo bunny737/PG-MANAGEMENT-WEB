@@ -1,6 +1,22 @@
 {
   "appName": "PropManager",
+  "brandName": "PropManager",
   "portalTitle": "StaysManager Premium",
+  "authCheck": "Checking authentication...",
+  "nav": {
+    "dashboard": "Dashboard",
+    "properties": "Properties",
+    "residents": "Residents",
+    "complaints": "Complaints",
+    "financials": "Financials",
+    "settings": "Settings",
+    "more": "More"
+  },
+  "sideNav": {
+    "ownerPortal": "Owner Portal",
+    "premiumPlan": "Premium Plan",
+    "signOut": "Sign Out"
+  },
   "actions": {
     "save": "Save",
     "cancel": "Cancel",
@@ -14,6 +30,9 @@
     "submit": "Submit"
   },
   "labels": {
+    "yes": "Yes",
+    "no": "No",
+    "rupeeSymbol": "₹",
     "status": "Status",
     "actions": "Actions",
     "created": "Created",
@@ -27,3 +46,4 @@
     "noDataSub": "There are no entries to display at this time."
   }
 }
+

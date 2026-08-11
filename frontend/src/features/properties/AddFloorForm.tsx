@@ -4,10 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Landmark, Eye, CheckCircle2, LoaderCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { getProperty, getBuilding, createFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
 
 export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
   const router = useRouter();
+  const t = useTranslations("properties.floors");
+  const tCommon = useTranslations("common");
 
   const [property, setProperty] = useState<Property | null>(null);
   const [building, setBuilding] = useState<Building | null>(null);
@@ -44,7 +47,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!floorName.trim()) newErrors.floorName = "Floor Name is required";
+    if (!floorName.trim()) newErrors.floorName = t("errNameRequired");
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -77,7 +80,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           ...(!buildingErr && !nameErr ? { global: detailErr } : {}),
         });
       } else {
-        setErrors({ global: "An unexpected error occurred. Please try again." });
+        setErrors({ global: t("errNameRequired") });
       }
     }
   };
@@ -91,7 +94,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading building details...</p>
+        <p className="font-semibold mt-2">{t("loadingFloors")}</p>
       </div>
     );
   }
@@ -105,26 +108,26 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
             <div className="size-20 bg-blue-50 text-accent border border-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="size-10" />
             </div>
-            <h3 className="text-xl font-bold text-ink mb-2">Floor Created</h3>
+            <h3 className="text-xl font-bold text-ink mb-2">{t("modalTitle")}</h3>
             <p className="text-xs text-ink-muted mb-4 leading-relaxed">
-              Building hierarchy has been updated successfully.
+              {t("modalDesc")}
             </p>
 
             {/* Added Details Card */}
             {createdFloor && (
               <div className="bg-surface-page border border-border rounded-xl p-4 mb-6 text-left space-y-2">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Floor Name:</span>
+                  <span className="text-ink-muted font-medium">{t("modalFloorName")}</span>
                   <span className="font-bold text-ink">{createdFloor.name}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Building:</span>
+                  <span className="text-ink-muted font-medium">{t("modalBuilding")}</span>
                   <span className="font-semibold text-ink text-right max-w-[180px] truncate">
-                    {building?.name || "Selected Building"}
+                    {building?.name || t("modalDefaultBuilding")}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-ink-muted font-medium">Floor Level / Order:</span>
+                  <span className="text-ink-muted font-medium">{t("modalOrder")}</span>
                   <span className="font-mono font-bold text-accent">L{createdFloor.order}</span>
                 </div>
               </div>
@@ -134,7 +137,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
               onClick={handleCloseModal}
               className="w-full py-3 bg-surface-inverse text-ink-inverse font-bold rounded-xl hover:opacity-90 transition-opacity cursor-pointer text-sm"
             >
-              Back to Floor List
+              {t("backToFloorList")}
             </button>
           </div>
         </div>
@@ -149,8 +152,8 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           <ArrowLeft className="size-5 text-ink-muted" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">Add Floor</h1>
-          <p className="text-xs text-ink-muted">Create a new level under the selected building.</p>
+          <h1 className="text-xl font-bold tracking-tight text-ink">{t("formTitle")}</h1>
+          <p className="text-xs text-ink-muted">{t("formSubtitle")}</p>
         </div>
       </div>
 
@@ -160,12 +163,12 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           <Landmark className="size-5.5" />
         </div>
         <div className="space-y-0.5 text-xs">
-          <p className="font-bold text-accent uppercase tracking-wider">Property Management</p>
-          <h2 className="text-sm font-bold text-ink">Floor Registration</h2>
+          <p className="font-bold text-accent uppercase tracking-wider">{tCommon("nav.properties")}</p>
+          <h2 className="text-sm font-bold text-ink">{t("formCardHeading")}</h2>
           <p className="text-ink-muted leading-relaxed mt-1">
             {property && building
-              ? `Adding a floor to ${building.name} at ${property.name}.`
-              : "Expanding your building's vertical capacity and inventory."}
+              ? t("formCardDescProp", { building: building.name, property: property.name })
+              : t("formCardDesc")}
           </p>
         </div>
       </div>
@@ -181,12 +184,12 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
         {/* Floor ID (Name) */}
         <div className="space-y-1.5">
           <label htmlFor="floor_name" className="text-xs font-semibold uppercase tracking-wider text-ink-muted ml-1">
-            Floor Name / ID <span className="text-status-critical">*</span>
+            {t("nameLabel")} <span className="text-status-critical">*</span>
           </label>
           <input
             id="floor_name"
             type="text"
-            placeholder="e.g. Ground Floor, 14, Penthouse"
+            placeholder={t("namePlaceholder")}
             value={floorName}
             onChange={(e) => setFloorName(e.target.value)}
             className={`w-full rounded-xl border ${
@@ -209,13 +212,13 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           <div className="absolute bottom-4 left-4 z-20">
             <div className="flex items-center gap-1.5 bg-slate-950/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
               <Eye className="size-3.5 text-white" />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Preview Blueprint</span>
+              <span className="text-[10px] font-bold text-white uppercase tracking-wider">{t("previewBlueprint")}</span>
             </div>
           </div>
         </div>
 
         <p className="text-center text-[10px] text-ink-muted">
-          Creating a floor level will automatically log an entry in the Audit timeline.
+          {t("auditNotice")}
         </p>
 
         {/* Action Button */}
@@ -224,7 +227,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
           disabled={isLoading}
           className="w-full bg-accent text-ink-inverse hover:bg-accent-hover font-semibold py-3 px-6 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
         >
-          {isLoading ? "Creating Floor..." : "Add Floor"}
+          {isLoading ? t("creating") : t("createButton")}
         </button>
       </form>
     </div>

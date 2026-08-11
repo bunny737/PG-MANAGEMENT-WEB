@@ -3,9 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Trash2, Edit, Building2, Settings, LoaderCircle, AlertTriangle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { getProperty, getBuilding, listFloors, deleteFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
 
 export function FloorList({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
+  const t = useTranslations("properties.floors");
+  const tCommon = useTranslations("common");
   const [property, setProperty] = useState<Property | null>(null);
   const [building, setBuilding] = useState<Building | null>(null);
   const [floors, setFloors] = useState<Floor[] | null>(null);
@@ -35,25 +38,25 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : "Failed to load floor layout. Please try again.");
+        console.warn(err?.message || err);
+        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [propertyId, buildingId]);
+  }, [propertyId, buildingId, t]);
 
   const handleDeleteFloor = async (floorId: string, name: string) => {
     try {
       await deleteFloor(floorId);
       setFloors((prev) => (prev ? prev.filter((f) => f.id !== floorId) : null));
-      setDeleteAlert(`Floor "${name}" removed from building inventory.`);
+      setDeleteAlert(t("deletedMsg", { name }));
       setTimeout(() => setDeleteAlert(null), 3000);
     } catch (err) {
       console.error(err);
-      alert(err instanceof ApiError ? err.message : "Failed to delete floor.");
+      alert(err instanceof ApiError ? err.message : t("errLoadFailed"));
     }
   };
 
@@ -61,7 +64,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading building hierarchy...</p>
+        <p className="font-semibold mt-2">{t("loadingFloors")}</p>
       </div>
     );
   }
@@ -72,15 +75,15 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
         <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
           <AlertTriangle className="size-6" />
         </div>
-        <h3 className="text-lg font-bold text-ink">Failed to Load Layout</h3>
+        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
         <p className="text-xs text-ink-muted leading-relaxed">
-          {error || "Could not retrieve property metadata."}
+          {error || t("errLoadFailed")}
         </p>
         <button
           onClick={() => window.location.reload()}
           className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
         >
-          Retry
+          {tCommon("actions.retry")}
         </button>
       </div>
     );
@@ -93,7 +96,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-red-800 shadow-xl animate-bounce">
           <Trash2 className="size-5 text-red-600" />
           <div className="text-sm">
-            <span className="font-semibold">Floor Deleted</span>
+            <span className="font-semibold">{t("deletedToast")}</span>
             <p className="text-xs text-red-700">{deleteAlert}</p>
           </div>
         </div>
@@ -107,7 +110,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
             <ol className="inline-flex items-center space-x-1">
               <li>
                 <Link href="/properties" className="hover:text-accent font-medium transition-colors">
-                  Properties
+                  {tCommon("nav.properties")}
                 </Link>
               </li>
               <li className="flex items-center">
@@ -123,7 +126,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
             </ol>
           </nav>
 
-          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">Floor Management</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">{t("title")}</h1>
         </div>
 
         <div className="flex gap-2.5 self-start sm:self-auto">
@@ -132,14 +135,14 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
           >
             <Settings className="size-4" />
-            Billing Settings
+            {t("billingSettings")}
           </Link>
           <Link
             href={`/properties/${property.id}/buildings/${building.id}/floors/add`}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
           >
             <Plus className="size-4.5" />
-            Add Floor
+            {t("addFloor")}
           </Link>
         </div>
       </div>
@@ -147,15 +150,15 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
       {/* Metrics Row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-xl border border-border bg-surface-card p-4.5 shadow-sm flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Total Floors</span>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("totalFloors")}</span>
           <span className="text-2xl font-extrabold tracking-tight text-ink mt-2">{floors.length}</span>
         </div>
         <div className="rounded-xl border border-border bg-surface-card p-4.5 shadow-sm flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Total Rooms</span>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("totalRooms")}</span>
           <span className="text-2xl font-extrabold tracking-tight text-ink mt-2">{building.rooms_count}</span>
         </div>
         <div className="rounded-xl border border-border bg-surface-card p-4.5 shadow-sm flex flex-col justify-between col-span-2">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Building Occupancy</span>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("occupancy")}</span>
           <div className="flex items-center gap-4 mt-2.5">
             <span className="text-2xl font-extrabold text-accent">{building.occupancy_percent}%</span>
             <div className="flex-grow h-2 bg-surface-page rounded-full overflow-hidden border border-border">
@@ -169,10 +172,10 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
       <div className="rounded-2xl border border-border bg-surface-card shadow-sm overflow-hidden">
         {/* Table header (desktop only) */}
         <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-surface-page border-b border-border font-bold text-xs text-ink-muted uppercase tracking-wider items-center">
-          <div className="col-span-3">Level</div>
-          <div className="col-span-2 text-right pr-6">Rooms</div>
-          <div className="col-span-5">Occupancy Status</div>
-          <div className="col-span-2 text-right">Actions</div>
+          <div className="col-span-3">{t("tableLevel")}</div>
+          <div className="col-span-2 text-right pr-6">{t("tableRooms")}</div>
+          <div className="col-span-5">{t("tableOccupancy")}</div>
+          <div className="col-span-2 text-right">{t("tableActions")}</div>
         </div>
 
         {/* Floor Rows */}
@@ -196,7 +199,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
                       {floor.name}
                     </Link>
                     <p className="text-xs text-ink-muted md:hidden mt-0.5">
-                      {floor.rooms_count} Rooms · {floor.occupancy_percent}% Occupied
+                      {t("roomsCount", { count: floor.rooms_count })} · {t("occupancyPercent", { percent: floor.occupancy_percent })}
                     </p>
                   </div>
                 </div>
@@ -247,9 +250,9 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
               <Building2 className="size-6 text-ink-faint animate-pulse" />
             </div>
             <div className="space-y-1 max-w-sm">
-              <h3 className="text-sm font-bold text-ink">No Floors Configured</h3>
+              <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
               <p className="text-xs text-ink-muted leading-relaxed">
-                This building does not have any floor structures configured yet. Click Add Floor to begin expanding your capacity.
+                {t("emptyDesc")}
               </p>
             </div>
           </div>

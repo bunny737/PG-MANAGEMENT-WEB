@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CloudUpload, X, Info, CheckCircle2, AlertTriangle, LoaderCircle } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import {
   ApiError,
   createProperty,
@@ -15,10 +16,10 @@ import {
 } from "@/lib/api";
 
 const PROPERTY_TYPES = [
-  { value: "pg", label: "PG (Paying Guest)" },
-  { value: "boys_hostel", label: "Boys Hostel" },
-  { value: "girls_hostel", label: "Girls Hostel" },
-  { value: "co_living", label: "Co-Living Space" },
+  { value: "pg", key: "pg" },
+  { value: "boys_hostel", key: "boys_hostel" },
+  { value: "girls_hostel", key: "girls_hostel" },
+  { value: "co_living", key: "co_living" },
 ];
 
 interface PendingImage {
@@ -35,6 +36,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
   const isEditMode = Boolean(propertyId);
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const t = useTranslations("properties");
 
   const [name, setName] = useState("");
   const [propertyType, setPropertyType] = useState(PROPERTY_TYPES[0].value);
@@ -72,13 +74,13 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
       })
       .catch(() => {
         if (cancelled) return;
-        setLoadError("Could not load this property. Please try again.");
+        setLoadError(t("form.errLoadFailed"));
         setIsLoadingProperty(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [propertyId]);
+  }, [propertyId, t]);
 
   const handleFilesSelected = (fileList: FileList | null) => {
     if (!fileList) return;
@@ -100,7 +102,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
       await deletePropertyImage(propertyId, image.id);
       setExistingImages((prev) => prev.filter((img) => img.id !== image.id));
     } catch {
-      setImageWarning("Could not remove that photo. Please try again.");
+      setImageWarning(t("form.errImageRemoveFailed"));
     } finally {
       setRemovingImageId(null);
     }
@@ -110,11 +112,11 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
-    if (!name) newErrors.name = "Property Name is required";
-    if (!addressLine) newErrors.address = "Address is required";
-    if (!city) newErrors.city = "City is required";
-    if (!state) newErrors.state = "State is required";
-    if (!contactNumber) newErrors.contactNumber = "Contact number is required";
+    if (!name) newErrors.name = t("form.errNameRequired");
+    if (!addressLine) newErrors.address = t("form.errAddressRequired");
+    if (!city) newErrors.city = t("form.errCityRequired");
+    if (!state) newErrors.state = t("form.errStateRequired");
+    if (!contactNumber) newErrors.contactNumber = t("form.errContactRequired");
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -146,7 +148,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
       const failedCount = uploadResults.filter((r) => r.status === "rejected").length;
       if (failedCount > 0) {
         setImageWarning(
-          `Property saved, but ${failedCount} of ${images.length} photo(s) failed to upload.`
+          t("form.errPhotosPartial", { count: failedCount, total: images.length })
         );
       }
 
@@ -165,9 +167,9 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
           form: err.fieldError("detail") ?? "",
         });
       } else if (err instanceof ApiError && err.status === 403) {
-        setErrors({ form: "You don't have permission to edit properties." });
+        setErrors({ form: t("form.errPermission") });
       } else {
-        setErrors({ form: "Could not reach the server. Please try again." });
+        setErrors({ form: t("form.errServerUnreachable") });
       }
     }
   };
@@ -181,7 +183,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-sm text-ink-muted">
         <LoaderCircle className="size-4.5 animate-spin" />
-        Loading property...
+        {t("form.loadingProperty")}
       </div>
     );
   }
@@ -205,12 +207,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               <CheckCircle2 className="size-10" />
             </div>
             <h3 className="text-xl font-bold text-ink mb-2">
-              {isEditMode ? "Property Updated" : "Property Registered"}
+              {isEditMode ? t("form.modalUpdatedTitle") : t("form.modalRegisteredTitle")}
             </h3>
             <p className="text-xs text-ink-muted mb-2 leading-relaxed">
               {isEditMode
-                ? "Your changes have been saved successfully."
-                : "Your new building hierarchy has been registered successfully. You can now build floors and units."}
+                ? t("form.modalUpdatedDesc")
+                : t("form.modalRegisteredDesc")}
             </p>
             {imageWarning && (
               <p className="text-xs text-status-critical mb-6 leading-relaxed">{imageWarning}</p>
@@ -219,7 +221,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               onClick={handleCloseModal}
               className="w-full py-3 bg-surface-inverse text-ink-inverse font-bold rounded-xl hover:opacity-90 transition-opacity cursor-pointer text-sm mt-4"
             >
-              Back to Properties
+              {t("form.backToProperties")}
             </button>
           </div>
         </div>
@@ -235,12 +237,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-ink">
-            {isEditMode ? "Edit Property" : "Add Property"}
+            {isEditMode ? t("form.editTitle") : t("form.addTitle")}
           </h1>
           <p className="text-xs text-ink-muted">
             {isEditMode
-              ? "Update this property's details and photos."
-              : "List a new property asset in your multi-tenant PG directory."}
+              ? t("form.editSubtitle")
+              : t("form.addSubtitle")}
           </p>
         </div>
       </div>
@@ -258,18 +260,18 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-2.5">
-              Property Information
+              {t("form.infoHeading")}
             </h2>
 
             {/* Property Name */}
             <div className="space-y-1.5">
               <label htmlFor="name" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Property Name
+                {t("form.propertyNameLabel")}
               </label>
               <input
                 id="name"
                 type="text"
-                placeholder="e.g. Skyline Residency"
+                placeholder={t("form.propertyNamePlaceholder")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className={`w-full rounded-xl border ${
@@ -283,7 +285,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             {/* Property Type */}
             <div className="space-y-1.5">
               <label htmlFor="type" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Property Type
+                {t("form.propertyTypeLabel")}
               </label>
               <select
                 id="type"
@@ -294,7 +296,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               >
                 {PROPERTY_TYPES.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {t(`types.${option.key as "pg" | "boys_hostel" | "girls_hostel" | "co_living"}`)}
                   </option>
                 ))}
               </select>
@@ -303,11 +305,11 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             {/* Address */}
             <div className="space-y-1.5">
               <label htmlFor="address" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Address
+                {t("form.addressLabel")}
               </label>
               <textarea
                 id="address"
-                placeholder="Street name, building number, block details..."
+                placeholder={t("form.addressPlaceholder")}
                 value={addressLine}
                 onChange={(e) => setAddressLine(e.target.value)}
                 rows={3}
@@ -323,12 +325,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="city" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  City
+                  {t("form.cityLabel")}
                 </label>
                 <input
                   id="city"
                   type="text"
-                  placeholder="City"
+                  placeholder={t("form.cityPlaceholder")}
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   className={`w-full rounded-xl border ${
@@ -341,12 +343,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
 
               <div className="space-y-1.5">
                 <label htmlFor="state" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  State
+                  {t("form.stateLabel")}
                 </label>
                 <input
                   id="state"
                   type="text"
-                  placeholder="State"
+                  placeholder={t("form.statePlaceholder")}
                   value={state}
                   onChange={(e) => setState(e.target.value)}
                   className={`w-full rounded-xl border ${
@@ -362,12 +364,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="contactNumber" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Contact Number
+                  {t("form.contactNumberLabel")}
                 </label>
                 <input
                   id="contactNumber"
                   type="tel"
-                  placeholder="98765 43210"
+                  placeholder={t("form.contactNumberPlaceholder")}
                   value={contactNumber}
                   onChange={(e) => setContactNumber(e.target.value.replace(/\D/g, "").slice(0, 15))}
                   className={`w-full rounded-xl border ${
@@ -380,12 +382,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
 
               <div className="space-y-1.5">
                 <label htmlFor="contactEmail" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Contact Email <span className="normal-case text-ink-faint">(optional)</span>
+                  {t("form.contactEmailLabel")} <span className="normal-case text-ink-faint">{t("form.optionalText")}</span>
                 </label>
                 <input
                   id="contactEmail"
                   type="email"
-                  placeholder="name@example.com"
+                  placeholder={t("form.emailPlaceholder")}
                   value={contactEmail}
                   onChange={(e) => setContactEmail(e.target.value)}
                   className={`w-full rounded-xl border ${
@@ -402,7 +404,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         {/* Right Column: Image uploads */}
         <div className="lg:col-span-5 space-y-6">
           <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-4">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-ink">Property Images</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("form.imagesHeading")}</h2>
 
             <input
               ref={fileInputRef}
@@ -427,8 +429,8 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
                 className="col-span-2 aspect-video bg-surface-page border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center text-ink-muted hover:bg-surface-card hover:border-accent/40 transition-colors cursor-pointer group disabled:opacity-50"
               >
                 <CloudUpload className="size-8 text-ink-faint mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-semibold text-ink">Upload Photos</p>
-                <p className="text-[10px] text-ink-faint mt-0.5">PNG, JPG — you can select multiple</p>
+                <p className="text-xs font-semibold text-ink">{t("form.uploadPhotos")}</p>
+                <p className="text-[10px] text-ink-faint mt-0.5">{t("form.uploadHint")}</p>
               </button>
 
               {/* Existing photos (edit mode) */}
@@ -472,9 +474,9 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             <div className="bg-accent-soft border border-accent/15 p-4 rounded-xl flex gap-3.5 mt-2">
               <Info className="size-5 text-accent shrink-0" />
               <div className="space-y-0.5 text-xs">
-                <p className="font-bold text-accent">Pro Tip</p>
+                <p className="font-bold text-accent">{t("form.proTipTitle")}</p>
                 <p className="text-ink-muted leading-relaxed">
-                  Properties with at least 5 high-quality photos get 40% more lease inquiries within the first week of listing.
+                  {t("form.proTipDesc")}
                 </p>
               </div>
             </div>
@@ -490,11 +492,11 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
           >
             {isLoading
               ? isEditMode
-                ? "Saving Changes..."
-                : "Processing Registration..."
+                ? t("form.savingChanges")
+                : t("form.processingRegistration")
               : isEditMode
-                ? "Save Changes"
-                : "Register Property"}
+                ? t("form.saveChangesButton")
+                : t("form.registerButton")}
           </button>
         </div>
       </form>

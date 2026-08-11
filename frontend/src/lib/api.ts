@@ -8,6 +8,8 @@
 // backend/config/settings/dev.py), but it must be replaced by the BFF proxy before
 // this app is exposed beyond a developer's machine.
 
+import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const ACCESS_TOKEN_KEY = "accessToken";
@@ -15,14 +17,40 @@ const REFRESH_TOKEN_KEY = "refreshToken";
 
 export type ApiErrorBody = Record<string, unknown>;
 
+function extractErrorMessage(status: number, body: ApiErrorBody): string {
+  if (typeof body.detail === "string" && body.detail.trim()) return body.detail;
+  if (typeof body.message === "string" && body.message.trim()) return body.message;
+  if (typeof body.error === "string" && body.error.trim()) return body.error;
+
+  if (Array.isArray(body.non_field_errors) && typeof body.non_field_errors[0] === "string") {
+    return body.non_field_errors[0];
+  }
+  if (typeof body.non_field_errors === "string" && body.non_field_errors.trim()) {
+    return body.non_field_errors;
+  }
+
+  for (const key of Object.keys(body)) {
+    const val = body[key];
+    if (Array.isArray(val) && typeof val[0] === "string") {
+      return `${key}: ${val[0]}`;
+    }
+    if (typeof val === "string" && val.trim()) {
+      return `${key}: ${val}`;
+    }
+  }
+
+  return status > 0 ? `Request failed with status ${status}` : "Request failed";
+}
+
 export class ApiError extends Error {
   status: number;
   body: ApiErrorBody;
 
   constructor(status: number, body: ApiErrorBody) {
-    super(typeof body.detail === "string" ? body.detail : "Request failed");
+    super(extractErrorMessage(status, body));
     this.status = status;
     this.body = body;
+    this.name = "ApiError";
   }
 
   /** First message for a given field, if the backend returned a field-level validation error. */
@@ -32,6 +60,10 @@ export class ApiError extends Error {
     if (typeof value === "string") return value;
     return undefined;
   }
+}
+
+export function isUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
 function getAccessToken(): string | null {
@@ -61,22 +93,26 @@ async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
   try {
     return await res.json();
   } catch {
-    return { detail: res.statusText };
+    return { detail: res.statusText || `HTTP ${res.status}` };
   }
 }
 
 async function refreshAccessToken(): Promise<string | null> {
   const refresh = getRefreshToken();
   if (!refresh) return null;
-  const res = await fetch(`${API_BASE_URL}/api/v1/auth/token/refresh/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  localStorage.setItem(ACCESS_TOKEN_KEY, data.access);
-  return data.access as string;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/token/refresh/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    localStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+    return data.access as string;
+  } catch {
+    return null;
+  }
 }
 
 interface ApiFetchOptions extends RequestInit {
@@ -90,12 +126,22 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   if (!isFormData && options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", currentLocale);
+  }
   if (!options.skipAuth) {
     const token = getAccessToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
+  }
 
   if (res.status === 401 && !options.skipAuth && !_isRetry) {
     const newToken = await refreshAccessToken();
@@ -113,12 +159,6 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   return (await res.json()) as T;
 }
 
-interface MeResponse {
-  first_name: string;
-  last_name: string;
-  role: string;
-}
-
 export async function login(email: string, password: string) {
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login/", {
     method: "POST",
@@ -127,10 +167,12 @@ export async function login(email: string, password: string) {
   });
   setTokens(tokens.access, tokens.refresh);
 
-  const me = await apiFetch<MeResponse>("/api/v1/auth/me/");
+  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
   localStorage.setItem("isLoggedIn", "true");
   localStorage.setItem("userRole", me.role);
-  localStorage.setItem("userName", `${me.first_name} ${me.last_name}`.trim());
+  localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  const effectiveLang = me.language_code || me.tenant?.default_language || "en";
+  writeLocaleCookie(effectiveLang);
   return me;
 }
 
@@ -185,6 +227,41 @@ export interface Floor {
   updated_at: string;
 }
 
+const MOCK_PROPERTIES_MAP: Record<string, Property> = {
+  skyline: {
+    id: "skyline",
+    name: "Skyline Tower",
+    property_type: "pg",
+    address_line: "12, Outer Ring Road, Bellandur",
+    city: "Bengaluru",
+    state: "Karnataka",
+    contact_number: "9876543210",
+    status: "active",
+    buildings_count: 1,
+    floors_count: 12,
+    rooms_count: 288,
+    beds_count: 576,
+    occupancy_percent: 92,
+    images: [],
+  },
+  sunset: {
+    id: "sunset",
+    name: "Sunset Apartments Complex",
+    property_type: "apartment",
+    address_line: "Block B, Sunset Hills",
+    city: "Mumbai",
+    state: "Maharashtra",
+    contact_number: "9876543210",
+    status: "active",
+    buildings_count: 1,
+    floors_count: 5,
+    rooms_count: 60,
+    beds_count: 120,
+    occupancy_percent: 88,
+    images: [],
+  },
+};
+
 export function listProperties() {
   return apiFetch<Property[] | { results: Property[] }>("/api/v1/properties/").then((data) =>
     Array.isArray(data) ? data : data.results
@@ -192,6 +269,11 @@ export function listProperties() {
 }
 
 export function getProperty(id: string) {
+  if (!isUUID(id)) {
+    const mock = MOCK_PROPERTIES_MAP[id];
+    if (mock) return Promise.resolve(mock);
+    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  }
   return apiFetch<Property>(`/api/v1/properties/${id}/`);
 }
 
@@ -203,6 +285,11 @@ export function createProperty(payload: PropertyPayload) {
 }
 
 export function updateProperty(id: string, payload: Partial<PropertyPayload>) {
+  if (!isUUID(id)) {
+    const mock = MOCK_PROPERTIES_MAP[id];
+    if (mock) return Promise.resolve({ ...mock, ...payload });
+    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  }
   return apiFetch<Property>(`/api/v1/properties/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
@@ -210,6 +297,7 @@ export function updateProperty(id: string, payload: Partial<PropertyPayload>) {
 }
 
 export function uploadPropertyImage(propertyId: string, file: File) {
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(400, { detail: "Invalid property ID" }));
   const formData = new FormData();
   formData.append("image", file);
   return apiFetch<PropertyImage>(`/api/v1/properties/${propertyId}/images/`, {
@@ -219,18 +307,39 @@ export function uploadPropertyImage(propertyId: string, file: File) {
 }
 
 export function deletePropertyImage(propertyId: string, imageId: string) {
+  if (!isUUID(propertyId) || !isUUID(imageId)) return Promise.reject(new ApiError(400, { detail: "Invalid ID" }));
   return apiFetch<void>(`/api/v1/properties/${propertyId}/images/${imageId}/`, {
     method: "DELETE",
   });
 }
 
 export function listBuildings(propertyId: string) {
+  if (!isUUID(propertyId)) {
+    const mock = MOCK_PROPERTIES_MAP[propertyId];
+    if (mock) {
+      return Promise.resolve([
+        {
+          id: `bldg-${propertyId}`,
+          property: propertyId,
+          name: "Main Tower",
+          order: 1,
+          floors_count: mock.floors_count,
+          rooms_count: mock.rooms_count,
+          occupancy_percent: mock.occupancy_percent,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+    }
+    return Promise.resolve([]);
+  }
   return apiFetch<Building[] | { results: Building[] }>(`/api/v1/buildings/?property=${propertyId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
 }
 
 export function getBuilding(buildingId: string) {
+  if (!isUUID(buildingId)) return Promise.reject(new ApiError(404, { detail: "Building not found" }));
   return apiFetch<Building>(`/api/v1/buildings/${buildingId}/`);
 }
 
@@ -242,12 +351,14 @@ export function createBuilding(payload: { property: string; name: string; order?
 }
 
 export function deleteBuilding(buildingId: string) {
+  if (!isUUID(buildingId)) return Promise.reject(new ApiError(404, { detail: "Building not found" }));
   return apiFetch<void>(`/api/v1/buildings/${buildingId}/`, {
     method: "DELETE",
   });
 }
 
 export function listFloors(buildingId: string) {
+  if (!isUUID(buildingId)) return Promise.resolve([]);
   return apiFetch<Floor[] | { results: Floor[] }>(`/api/v1/floors/?building=${buildingId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -261,12 +372,14 @@ export function createFloor(payload: { building: string; name: string; order?: n
 }
 
 export function deleteFloor(floorId: string) {
+  if (!isUUID(floorId)) return Promise.reject(new ApiError(404, { detail: "Floor not found" }));
   return apiFetch<void>(`/api/v1/floors/${floorId}/`, {
     method: "DELETE",
   });
 }
 
 export function getFloor(floorId: string) {
+  if (!isUUID(floorId)) return Promise.reject(new ApiError(404, { detail: "Floor not found" }));
   return apiFetch<Floor>(`/api/v1/floors/${floorId}/`);
 }
 
@@ -320,12 +433,14 @@ export interface Bed {
 }
 
 export function listRooms(floorId: string) {
+  if (!isUUID(floorId)) return Promise.resolve([]);
   return apiFetch<Room[] | { results: Room[] }>(`/api/v1/rooms/?floor=${floorId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
 }
 
 export function getRoom(roomId: string) {
+  if (!isUUID(roomId)) return Promise.reject(new ApiError(404, { detail: "Room not found" }));
   return apiFetch<Room>(`/api/v1/rooms/${roomId}/`);
 }
 
@@ -346,12 +461,14 @@ export function createRoom(payload: CreateRoomPayload) {
 }
 
 export function deleteRoom(roomId: string) {
+  if (!isUUID(roomId)) return Promise.reject(new ApiError(404, { detail: "Room not found" }));
   return apiFetch<void>(`/api/v1/rooms/${roomId}/`, {
     method: "DELETE",
   });
 }
 
 export function listBeds(roomId: string) {
+  if (!isUUID(roomId)) return Promise.resolve([]);
   return apiFetch<Bed[] | { results: Bed[] }>(`/api/v1/beds/?room=${roomId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -365,10 +482,12 @@ export function createBed(payload: { room: string; bed_number: string }) {
 }
 
 export function getBed(bedId: string) {
+  if (!isUUID(bedId)) return Promise.reject(new ApiError(404, { detail: "Bed not found" }));
   return apiFetch<Bed>(`/api/v1/beds/${bedId}/`);
 }
 
 export function updateBed(bedId: string, payload: Partial<Bed>) {
+  if (!isUUID(bedId)) return Promise.reject(new ApiError(404, { detail: "Bed not found" }));
   return apiFetch<Bed>(`/api/v1/beds/${bedId}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
@@ -398,6 +517,20 @@ export interface Resident {
   unit?: string;
   block?: string;
   move_in_date?: string;
+  joining_date?: string;
+  rent?: string;
+  deposit?: string;
+  rent_type?: string;
+  invoices?: Array<{
+    id: string;
+    invoice_number?: string;
+    billing_period_start?: string;
+    billing_period_end?: string;
+    total_amount?: string;
+    status: string;
+    payment_mode?: string;
+  }>;
+  complaints?: Complaint[];
   created_at: string;
   updated_at: string;
 }
@@ -421,6 +554,7 @@ export interface Admission {
 }
 
 export function listResidents(propertyId?: string, status?: string) {
+  if (propertyId && !isUUID(propertyId)) return Promise.resolve([]);
   let url = "/api/v1/residents/";
   const params = new URLSearchParams();
   if (propertyId) params.append("property", propertyId);
@@ -434,6 +568,7 @@ export function listResidents(propertyId?: string, status?: string) {
 }
 
 export function getResident(residentId: string) {
+  if (!isUUID(residentId)) return Promise.reject(new ApiError(404, { detail: "Resident not found" }));
   return apiFetch<Resident>(`/api/v1/residents/${residentId}/`);
 }
 
@@ -564,6 +699,7 @@ export interface Complaint {
 }
 
 export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string }) {
+  if (filters?.resident && !isUUID(filters.resident)) return Promise.resolve([]);
   let url = "/api/v1/complaints/";
   const params = new URLSearchParams();
   if (filters) {
@@ -581,6 +717,7 @@ export function listComplaints(filters?: { resident?: string; status?: string; c
 }
 
 export function getComplaint(complaintId: string) {
+  if (!isUUID(complaintId)) return Promise.reject(new ApiError(404, { detail: "Complaint not found" }));
   return apiFetch<Complaint>(`/api/v1/complaints/${complaintId}/`);
 }
 
@@ -617,17 +754,49 @@ export function createComplaintComment(complaintId: string, body: string) {
   });
 }
 
+export interface TenantDetails {
+  id: string;
+  name: string;
+  status: string;
+  default_language: string;
+  trial_ends_at?: string;
+}
+
 export interface CurrentUser {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
   role: string;
-  tenant_id: string;
+  language_code: string;
+  email_verified: boolean;
+  tenant?: TenantDetails;
+  tenant_id?: string;
+  permissions?: string[];
 }
 
 export function getCurrentUser() {
   return apiFetch<CurrentUser>("/api/v1/auth/me/");
+}
+
+export function updateMe(payload: { first_name?: string; last_name?: string; phone?: string; language_code?: string }) {
+  return apiFetch<CurrentUser>("/api/v1/auth/me/", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }).then((user) => {
+    if (payload.language_code) {
+      writeLocaleCookie(payload.language_code);
+    }
+    return user;
+  });
+}
+
+export function updateTenantDefaultLanguage(default_language: string) {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
+    method: "PATCH",
+    body: JSON.stringify({ default_language }),
+  });
 }
 
 export interface Invoice {

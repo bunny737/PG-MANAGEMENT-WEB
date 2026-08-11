@@ -3,9 +3,12 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Search, FilterX, User, Wrench, ShieldAlert, LoaderCircle, AlertTriangle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { getProperty, getFloor, listRooms, type Property, type Room, ApiError } from "@/lib/api";
 
 export function RoomList({ propertyId, floorId }: { propertyId: string; floorId: string }) {
+  const t = useTranslations("properties.rooms");
+  const tCommon = useTranslations("common");
   const [property, setProperty] = useState<Property | null>(null);
   const [floorName, setFloorName] = useState("");
   const [rooms, setRooms] = useState<Room[] | null>(null);
@@ -36,15 +39,15 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : "Failed to load room details. Please try again.");
+        console.warn(err?.message || err);
+        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [propertyId, floorId]);
+  }, [propertyId, floorId, t]);
 
   const filteredRooms = useMemo(() => {
     if (!rooms) return [];
@@ -70,7 +73,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading rooms list...</p>
+        <p className="font-semibold mt-2">{t("loadingRooms")}</p>
       </div>
     );
   }
@@ -81,15 +84,15 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
           <AlertTriangle className="size-6" />
         </div>
-        <h3 className="text-lg font-bold text-ink">Failed to Load Rooms</h3>
+        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
         <p className="text-xs text-ink-muted leading-relaxed">
-          {error || "Could not retrieve rooms data."}
+          {error || t("errLoadFailed")}
         </p>
         <button
           onClick={() => window.location.reload()}
           className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
         >
-          Retry
+          {tCommon("actions.retry")}
         </button>
       </div>
     );
@@ -105,7 +108,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             <ol className="inline-flex items-center space-x-1">
               <li>
                 <Link href="/properties" className="hover:text-accent font-medium transition-colors">
-                  Properties
+                  {tCommon("nav.properties")}
                 </Link>
               </li>
               <li className="flex items-center">
@@ -120,7 +123,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
               </li>
             </ol>
           </nav>
-          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">Rooms Portfolio</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">{t("title")}</h1>
         </div>
 
         <Link
@@ -128,7 +131,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
         >
           <Plus className="size-4.5" />
-          Add Room
+          {t("addRoom")}
         </Link>
       </div>
 
@@ -137,10 +140,10 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
         {/* Status Pill Filters */}
         <div className="flex flex-wrap gap-2 border-b border-border pb-4">
           {[
-            { id: "all", label: "All Units" },
-            { id: "available", label: "Available Beds" },
-            { id: "occupied", label: "Fully Occupied" },
-            { id: "maintenance", label: "Under Maintenance" },
+            { id: "all", label: t("unitsAll") },
+            { id: "available", label: t("bedsAvailable") },
+            { id: "occupied", label: t("fullyOccupied") },
+            { id: "maintenance", label: t("underMaintenance") },
           ].map((tab) => {
             const isActive = statusFilter === tab.id;
             return (
@@ -167,7 +170,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             </span>
             <input
               type="text"
-              placeholder="Search by room name..."
+              placeholder={t("searchPlaceholder")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full rounded-xl border border-border bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
@@ -182,7 +185,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
               }}
               className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-page px-4 py-2.5 text-sm font-medium text-ink-muted hover:bg-surface-card hover:text-ink transition-colors cursor-pointer"
             >
-              <FilterX className="size-4.5" /> Clear Filters
+              <FilterX className="size-4.5" /> {t("clearFilters")}
             </button>
           )}
         </div>
@@ -204,21 +207,21 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
               : `/properties/${property.id}/floors/${floorId}/rooms/${room.id}`;
 
             const sharingTypeLabel = room.sharing_type === 1 
-              ? "Single" 
+              ? t("sharingSingle") 
               : room.sharing_type === 2 
-              ? "Double" 
+              ? t("sharingDouble") 
               : room.sharing_type === 3 
-              ? "Triple" 
+              ? t("sharingTriple") 
               : room.sharing_type === 4 
-              ? "Four" 
+              ? t("sharingQuad") 
               : room.sharing_type === 5
-              ? "Five"
+              ? t("sharingFive")
               : room.sharing_type === 6
-              ? "Six"
+              ? t("sharingSix")
               : room.sharing_type === 7
-              ? "Seven"
+              ? t("sharingSeven")
               : room.sharing_type === 8
-              ? "Eight"
+              ? t("sharingEight")
               : `${room.sharing_type}-sharing`;
 
             return (
@@ -236,7 +239,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                     </Link>
                     <p className="text-xs text-ink-muted mt-0.5 flex items-center gap-1">
                       <User className="size-3.5" />
-                      {sharingTypeLabel} sharing
+                      {sharingTypeLabel}
                     </p>
                   </div>
 
@@ -246,7 +249,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                         ? "bg-blue-50 text-blue-600 border border-blue-100" 
                         : "bg-amber-50 text-amber-600 border border-amber-100"
                     }`}
-                    title={room.category === "ac" ? "AC Room" : "Non-AC Room"}
+                    title={room.category === "ac" ? t("acOption") : t("nonAcOption")}
                   >
                     {room.category}
                   </span>
@@ -254,9 +257,9 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
 
                 <div className="space-y-1.5 mt-2">
                   <div className="flex justify-between items-baseline text-xs">
-                    <span className="text-ink-muted">Beds Occupancy</span>
+                    <span className="text-ink-muted">{t("bedsOccupancy")}</span>
                     <span className="font-semibold text-ink">
-                      {room.current_occupancy}/{room.bed_capacity} occupied
+                      {t("occupiedCount", { current: room.current_occupancy, capacity: room.bed_capacity })}
                     </span>
                   </div>
                   {/* Occupancy bar */}
@@ -275,15 +278,15 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                   {hasMaintenance ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-status-critical-soft text-status-critical font-bold text-[10px] uppercase tracking-wider border border-status-critical/10">
                       <Wrench className="size-3 shrink-0" />
-                      Maintenance
+                      {t("statusMaintenance")}
                     </span>
                   ) : isFull ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] uppercase tracking-wider border border-slate-200">
-                      Occupied
+                      {t("statusOccupied")}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-accent-soft text-accent font-bold text-[10px] uppercase tracking-wider border border-accent/10">
-                      Available
+                      {t("statusAvailable")}
                     </span>
                   )}
 
@@ -291,7 +294,7 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
                     href={viewDetailsUrl}
                     className="text-xs font-bold text-ink-muted hover:text-accent transition-colors"
                   >
-                    View Details ›
+                    {t("viewDetails")}
                   </Link>
                 </div>
               </div>
@@ -305,9 +308,9 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
             <ShieldAlert className="size-6 text-ink-faint animate-pulse" />
           </div>
           <div className="space-y-1 max-w-sm">
-            <h3 className="text-sm font-bold text-ink">No Rooms Found</h3>
+            <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
             <p className="text-xs text-ink-muted leading-relaxed">
-              We couldn&apos;t find any rooms matching your active filters. Try clearing your search term.
+              {t("emptyDesc")}
             </p>
           </div>
         </div>

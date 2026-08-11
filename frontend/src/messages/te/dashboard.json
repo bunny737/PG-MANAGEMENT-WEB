@@ -1,0 +1,46 @@
+{
+  "title": "డాష్‌బోర్డ్ అవలోకనం",
+  "welcome": "తిరిగి స్వాగతం, ఇది నేటి సారాంశం.",
+  "loadingSummary": "డాష్‌బోర్డ్ నివేదిక సారాంశాన్ని లోడ్ చేస్తోంది...",
+  "errLoadFailed": "డాష్‌బోర్డ్‌ను లోడ్ చేయడం విఫలమైంది",
+  "errLoadDesc": "టెనెంట్ రిపోర్టింగ్ సారాంశ మెట్రిక్‌లను పొందలేకపోయాము.",
+  "header": {
+    "signOut": "సైన్ అవుట్",
+    "notifications": "నోటిఫికేషన్‌లు",
+    "addResident": "నివాసిని జోడించండి"
+  },
+  "occupancy": {
+    "title": "ఆక్యుపెన్సీ స్థితి",
+    "viewDetails": "వివరాలు వీక్షించండి ›",
+    "totalBeds": "మొత్తం బెడ్‌లు",
+    "occupied": "ఆక్రమించబడింది",
+    "vacant": "ఖాళీగా ఉంది",
+    "capacityFilled": "సామర్థ్యం నిండింది",
+    "capacitySubtitle": "{total} లో {occupied} బెడ్‌లు ({percent}%)",
+    "bedsOccupied": "ఆక్రమించిన బెడ్‌లు"
+  },
+  "financials": {
+    "title": "ఆర్థిక సారాంశం",
+    "monthlyRevenue": "నెలవారీ రాబడి",
+    "outstandingDues": "బాకీ ఉన్న నిల్వలు",
+    "securityDeposits": "సెక్యూరిటీ డిపాజిట్లు"
+  },
+  "issues": {
+    "title": "యాక్టివ్ సమస్యలు",
+    "highPriority": "{count} అధిక ప్రాధాన్యత",
+    "allClear": "అన్నీ సరిగ్గా ఉన్నాయి",
+    "unit": "యూనిట్",
+    "issue": "సమస్య",
+    "status": "స్థితి",
+    "noIssues": "ప్రస్తుతం ఎలాంటి యాక్టివ్ సమస్యలు లేవు.",
+    "viewAllComplaints": "అన్ని ఫిర్యాదులను వీక్షించండి →"
+  },
+  "quickActions": {
+    "addResident": "నివాసిని జోడించండి",
+    "generateInvoices": "ఇన్‌వాయిస్‌లను ఉత్పత్తి చేయండి"
+  },
+  "activity": {
+    "title": "నేటి యాక్టివిటీ",
+    "noActivity": "ఈరోజు ఎలాంటి యాక్టివిటీ నమోదు కాలేదు."
+  }
+}

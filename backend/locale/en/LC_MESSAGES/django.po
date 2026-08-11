@@ -1,8 +1,700 @@
-# English translation file — MVP active language.
+# English translation file — MVP active language (alongside Telugu).
 # All server-side strings must use gettext/gettext_lazy.
-# Additional languages added in V2 (Hindi, Telugu) and V3 (Tamil, Malayalam).
+# Telugu pulled forward to MVP 2026-08-11. Hindi added in V2, Tamil +
+# Malayalam in V3.
 msgid ""
 msgstr ""
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-10 21:15-0500\n"
+"Language: en\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Language: en\n"
+
+msgid "Verify your email address"
+msgstr ""
+
+#, python-format
+msgid "Welcome, %(name)s! Verify your email to activate your account: %(url)s"
+msgstr ""
+
+msgid "Reset your password"
+msgstr ""
+
+#, python-format
+msgid "Use this link to reset your password: %(url)s"
+msgstr ""
+
+#, python-format
+msgid "You have been invited to %(business)s"
+msgstr ""
+
+#, python-format
+msgid ""
+"%(name)s, an account was created for you at %(business)s. Set your password "
+"to get started: %(url)s"
+msgstr ""
+
+msgid "Trial"
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "Payment Failed"
+msgstr ""
+
+msgid "Suspended"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "business name"
+msgstr ""
+
+msgid "email address"
+msgstr ""
+
+msgid "Verify your email address to log in."
+msgstr ""
+
+msgid "This account is suspended."
+msgstr ""
+
+msgid "An account with this email already exists."
+msgstr ""
+
+msgid "An account with this phone number already exists."
+msgstr ""
+
+msgid "This verification link is invalid or has expired."
+msgstr ""
+
+msgid "No active account found."
+msgstr ""
+
+msgid "The code is incorrect or has expired."
+msgstr ""
+
+msgid "This reset link is invalid or has expired."
+msgstr ""
+
+msgid "Staff accounts must be Manager or Receptionist."
+msgstr ""
+
+msgid "OK"
+msgstr ""
+
+msgid "Account created. Check your email to verify your address."
+msgstr ""
+
+msgid "Email verified. You can log in now."
+msgstr ""
+
+msgid "If that email is registered, a verification link has been sent."
+msgstr ""
+
+msgid "If that phone number is registered, a code has been sent."
+msgstr ""
+
+msgid "If that email is registered, a reset link has been sent."
+msgstr ""
+
+msgid "Password updated. You can log in now."
+msgstr ""
+
+msgid "Fixed Amount"
+msgstr ""
+
+msgid "Percentage"
+msgstr ""
+
+msgid "Loyalty"
+msgstr ""
+
+msgid "Referral"
+msgstr ""
+
+msgid "Corporate"
+msgstr ""
+
+msgid "Negotiated"
+msgstr ""
+
+msgid "Seasonal"
+msgstr ""
+
+msgid "Other"
+msgstr ""
+
+msgid "Draft"
+msgstr ""
+
+msgid "Issued"
+msgstr ""
+
+msgid "Partially Paid"
+msgstr ""
+
+msgid "Paid"
+msgstr ""
+
+msgid "Accommodation"
+msgstr ""
+
+msgid "Food"
+msgstr ""
+
+msgid "Electricity"
+msgstr ""
+
+msgid "Water"
+msgstr ""
+
+msgid "Laundry"
+msgstr ""
+
+msgid "Add-on Service"
+msgstr ""
+
+msgid "Additional"
+msgstr ""
+
+msgid "Discount"
+msgstr ""
+
+msgid "Late Payment Penalty"
+msgstr ""
+
+msgid "UPI"
+msgstr ""
+
+msgid "Cash"
+msgstr ""
+
+msgid "Bank Transfer"
+msgstr ""
+
+msgid "Card"
+msgstr ""
+
+msgid "Cheque"
+msgstr ""
+
+msgid "You are not assigned to this property."
+msgstr ""
+
+msgid "Discount value must be greater than zero."
+msgstr ""
+
+msgid "A percentage discount cannot exceed 100."
+msgstr ""
+
+msgid "valid_until cannot be before valid_from."
+msgstr ""
+
+msgid "This resident already has a discount active in this period."
+msgstr ""
+
+msgid "Only active residents can be invoiced."
+msgstr ""
+
+msgid "This resident is not allocated to a bed."
+msgstr ""
+
+msgid "period_end cannot be before period_start."
+msgstr ""
+
+msgid "This resident already has an invoice for this period."
+msgstr ""
+
+msgid "Payment amount must be greater than zero."
+msgstr ""
+
+msgid "Payments can only be recorded against an issued invoice."
+msgstr ""
+
+msgid "This invoice is already fully paid."
+msgstr ""
+
+#, python-format
+msgid "Payment exceeds the outstanding balance of %(balance)s."
+msgstr ""
+
+msgid "Only draft invoices can be modified."
+msgstr ""
+
+msgid "Line item not found."
+msgstr ""
+
+msgid "You do not have permission to perform this action."
+msgstr ""
+
+msgid "Only platform administrators can perform this action."
+msgstr ""
+
+msgid "Super Admin"
+msgstr ""
+
+msgid "Owner"
+msgstr ""
+
+msgid "Manager"
+msgstr ""
+
+msgid "Receptionist"
+msgstr ""
+
+msgid "Resident"
+msgstr ""
+
+#, python-format
+msgid "Invoice for %(period)s"
+msgstr ""
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"Your invoice for the period %(start)s to %(end)s has been issued.\n"
+"Amount due: %(total)s\n"
+"Due date: %(due)s\n"
+"\n"
+"Thank you."
+msgstr ""
+
+#, python-format
+msgid "Payment receipt — %(amount)s received"
+msgstr ""
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"We have received your payment of %(amount)s on %(date)s via %(mode)s.\n"
+"Remaining balance on this invoice: %(balance)s\n"
+"\n"
+"Thank you."
+msgstr ""
+
+#, python-format
+msgid "Your trial ends in %(days)s day(s)"
+msgstr ""
+
+#, python-format
+msgid ""
+"Dear %(name)s,\n"
+"\n"
+"Your free trial of the platform for %(business)s ends in %(days)s day(s), on "
+"%(end_date)s. Choose a plan to keep using the platform without "
+"interruption.\n"
+"\n"
+"Thank you."
+msgstr ""
+
+msgid "Welcome"
+msgstr ""
+
+msgid "Trial Expiry Reminder"
+msgstr ""
+
+msgid "Invoice Issued"
+msgstr ""
+
+msgid "Payment Receipt"
+msgstr ""
+
+msgid "Sent"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Skipped"
+msgstr ""
+
+msgid "Electrical"
+msgstr ""
+
+msgid "Plumbing"
+msgstr ""
+
+msgid "Internet / WiFi"
+msgstr ""
+
+msgid "Housekeeping"
+msgstr ""
+
+msgid "Security"
+msgstr ""
+
+msgid "Furniture"
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "High"
+msgstr ""
+
+msgid "Urgent"
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+msgid "Assigned"
+msgstr ""
+
+msgid "In Progress"
+msgstr ""
+
+msgid "Resolved"
+msgstr ""
+
+msgid "Closed"
+msgstr ""
+
+msgid "Use the assign action to move a complaint to Assigned."
+msgstr ""
+
+#, python-format
+msgid "Cannot move a complaint from %(current)s to %(new)s."
+msgstr ""
+
+msgid "This user is not in your tenant."
+msgstr ""
+
+msgid "This user does not have complaint-management access."
+msgstr ""
+
+msgid "This user is not assigned to the resident's property."
+msgstr ""
+
+msgid "Exit time cannot be before entry time."
+msgstr ""
+
+msgid "Only an open complaint can be edited or assigned."
+msgstr ""
+
+msgid "This visitor has already checked out."
+msgstr ""
+
+msgid "This visitor has already been confirmed."
+msgstr ""
+
+msgid "Boys Hostel"
+msgstr ""
+
+msgid "Girls Hostel"
+msgstr ""
+
+msgid "PG"
+msgstr ""
+
+msgid "Co-Living Space"
+msgstr ""
+
+msgid "Inactive"
+msgstr ""
+
+msgid "1-sharing"
+msgstr ""
+
+msgid "2-sharing"
+msgstr ""
+
+msgid "3-sharing"
+msgstr ""
+
+msgid "4-sharing"
+msgstr ""
+
+msgid "5-sharing"
+msgstr ""
+
+msgid "6-sharing"
+msgstr ""
+
+msgid "7-sharing"
+msgstr ""
+
+msgid "8-sharing"
+msgstr ""
+
+msgid "AC"
+msgstr ""
+
+msgid "Non-AC"
+msgstr ""
+
+msgid "Available"
+msgstr ""
+
+msgid "Occupied"
+msgstr ""
+
+msgid "Reserved"
+msgstr ""
+
+msgid "Maintenance"
+msgstr ""
+
+msgid "Immediately"
+msgstr ""
+
+msgid "Next Billing Cycle"
+msgstr ""
+
+msgid "No Penalty"
+msgstr ""
+
+msgid "Full Invoice Amount"
+msgstr ""
+
+msgid "Outstanding Balance Only"
+msgstr ""
+
+msgid "One-time"
+msgstr ""
+
+msgid "Monthly"
+msgstr ""
+
+msgid "This room already has its full sharing-type capacity of beds."
+msgstr ""
+
+msgid "A penalty value is required when a penalty type is set."
+msgstr ""
+
+msgid "A percentage penalty must be between 0 and 100."
+msgstr ""
+
+msgid "You do not have access to properties."
+msgstr ""
+
+msgid "An image file is required."
+msgstr ""
+
+msgid "Cannot delete a building that still has floors."
+msgstr ""
+
+msgid "Cannot delete a floor that still has rooms."
+msgstr ""
+
+msgid "Cannot delete a room that still has beds."
+msgstr ""
+
+msgid "Cannot delete a bed that is occupied or reserved."
+msgstr ""
+
+#, python-format
+msgid "filetype must be one of: %(formats)s."
+msgstr ""
+
+msgid "Resident List"
+msgstr ""
+
+msgid "Payment History"
+msgstr ""
+
+msgid "Outstanding Dues"
+msgstr ""
+
+msgid "Occupancy Report"
+msgstr ""
+
+msgid "Male"
+msgstr ""
+
+msgid "Female"
+msgstr ""
+
+msgid "Inquiry"
+msgstr ""
+
+msgid "Notice Period"
+msgstr ""
+
+msgid "Vacated"
+msgstr ""
+
+msgid "Absconded"
+msgstr ""
+
+msgid "Blacklisted"
+msgstr ""
+
+msgid "Weekly"
+msgstr ""
+
+msgid "Daily"
+msgstr ""
+
+msgid "With Food"
+msgstr ""
+
+msgid "Without Food"
+msgstr ""
+
+msgid "Outstanding"
+msgstr ""
+
+msgid "Partially Recovered"
+msgstr ""
+
+msgid "Written Off"
+msgstr ""
+
+#, python-format
+msgid "Cannot move a resident from %(current)s to %(new)s."
+msgstr ""
+
+msgid "This resident is not ready for check-in — they must be Reserved first."
+msgstr ""
+
+msgid "This bed is not in the same property as the resident."
+msgstr ""
+
+msgid "This bed is not available."
+msgstr ""
+
+msgid "This resident is not currently allocated to a bed."
+msgstr ""
+
+msgid "Only active residents can be transferred."
+msgstr ""
+
+msgid "The resident is already in this bed."
+msgstr ""
+
+msgid "Only an active resident can give notice to vacate."
+msgstr ""
+
+msgid "This resident already has a vacate record."
+msgstr ""
+
+msgid "Deduction cannot be negative."
+msgstr ""
+
+#, python-format
+msgid "Deduction cannot exceed the advance amount of %(advance)s."
+msgstr ""
+
+msgid "Only an active resident can be marked absconded."
+msgstr ""
+
+msgid "A note is required to write off dues."
+msgstr ""
+
+msgid "This resident cannot be blacklisted from their current status."
+msgstr ""
+
+msgid "Inquiry Received"
+msgstr ""
+
+msgid "Room Reserved"
+msgstr ""
+
+msgid "Admission Completed — Checked In"
+msgstr ""
+
+#, python-format
+msgid "Room %(room)s (%(bed)s)"
+msgstr ""
+
+msgid "Invoice Generated"
+msgstr ""
+
+#, python-format
+msgid "Total ₹%(total)s"
+msgstr ""
+
+msgid "Invoice Overdue"
+msgstr ""
+
+#, python-format
+msgid "Balance due ₹%(balance)s"
+msgstr ""
+
+msgid "Partial Payment"
+msgstr ""
+
+msgid "Payment Received"
+msgstr ""
+
+msgid "Remaining Paid"
+msgstr ""
+
+#, python-format
+msgid "₹%(amount)s via %(mode)s"
+msgstr ""
+
+msgid "Transferred"
+msgstr ""
+
+msgid "Complaint Raised"
+msgstr ""
+
+msgid "Notice Given"
+msgstr ""
+
+#, python-format
+msgid "Expected vacate %(date)s"
+msgstr ""
+
+#, python-format
+msgid "Refund ₹%(amount)s"
+msgstr ""
+
+#, python-format
+msgid "Last seen %(date)s"
+msgstr ""
+
+msgid "Marked Absconded"
+msgstr ""
+
+msgid "Advance Forfeited"
+msgstr ""
+
+#, python-format
+msgid "₹%(amount)s applied against dues"
+msgstr ""
+
+msgid "Dues Written Off"
+msgstr ""
+
+#, python-format
+msgid "₹%(amount)s — %(note)s"
+msgstr ""
+
+msgid "This vacate has already been settled."
+msgstr ""
+
+msgid "Dues have already been written off."
+msgstr ""
+
+msgid "Success"
+msgstr ""
+
+#, python-format
+msgid "Your plan allows a maximum of %(max)s properties. Upgrade to add more."
+msgstr ""
+
+#, python-format
+msgid ""
+"Your plan allows a maximum of %(max)s active residents per property. Upgrade "
+"to add more."
+msgstr ""
+
+msgid "Cannot delete a plan that tenants are subscribed to."
+msgstr ""
+
+msgid "This tenant is already suspended."
+msgstr ""
+
+msgid "This tenant is not suspended."
+msgstr ""

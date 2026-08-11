@@ -3,9 +3,12 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Save, CheckCircle2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 
 export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
+  const t = useTranslations("settings.propertySettings");
+  const tCommon = useTranslations("common");
   const property = mockProperties.find((p) => p.id === propertyId) || mockProperties[0];
 
   // Default state values from specs
@@ -26,19 +29,19 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
 
     // Validate grace days cap
     if (graceDays < 0 || graceDays > 30) {
-      newErrors.graceDays = "Grace days must be between 0 and 30 days.";
+      newErrors.graceDays = t("errGraceDaysRange");
     }
 
     // Validate penalty value if penalty type is enabled
     if (penaltyType !== "none") {
       if (!penaltyValue) {
-        newErrors.penaltyValue = "Penalty value is required when late payment penalty is active.";
+        newErrors.penaltyValue = t("errPenaltyValueRequired");
       } else {
         const val = parseFloat(penaltyValue);
         if (isNaN(val) || val <= 0) {
-          newErrors.penaltyValue = "Penalty value must be a positive number.";
+          newErrors.penaltyValue = t("errPenaltyValuePositive");
         } else if (penaltyType === "percentage" && val > 100) {
-          newErrors.penaltyValue = "Percentage penalty cannot exceed 100%.";
+          newErrors.penaltyValue = t("errPenaltyValuePercentCap");
         }
       }
     }
@@ -65,9 +68,9 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800 shadow-xl animate-bounce max-w-sm">
           <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
           <div className="text-sm">
-            <span className="font-semibold">Settings Saved</span>
+            <span className="font-semibold">{t("savedToast")}</span>
             <p className="text-xs text-emerald-700 mt-0.5">
-              Property billing behavior updated successfully. Audit log written.
+              {t("savedToastSub")}
             </p>
           </div>
         </div>
@@ -87,7 +90,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             <ol className="inline-flex items-center space-x-1">
               <li>
                 <Link href="/properties" className="hover:text-accent font-medium transition-colors">
-                  Properties
+                  {tCommon("nav.properties")}
                 </Link>
               </li>
               <li className="flex items-center">
@@ -98,11 +101,11 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
               </li>
               <li className="flex items-center">
                 <ChevronRight className="size-3 text-ink-faint mx-1" />
-                <span className="text-ink font-semibold">Settings</span>
+                <span className="text-ink font-semibold">{tCommon("nav.settings")}</span>
               </li>
             </ol>
           </nav>
-          <h1 className="text-xl font-bold tracking-tight text-ink">Property Settings (Module 2B)</h1>
+          <h1 className="text-xl font-bold tracking-tight text-ink">{t("title")}</h1>
         </div>
       </div>
 
@@ -110,11 +113,11 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
         {/* Section 1: Billing & Room Transfer Rent Timing */}
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
-            Billing & Room Transfers
+            {t("billingHeading")}
           </h2>
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-              Transfer Rent Effective Date
+              {t("effectiveDateLabel")}
             </label>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div
@@ -126,7 +129,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-ink">Next Billing Cycle</span>
+                  <span className="text-xs font-bold text-ink">{t("nextCycleTitle")}</span>
                   <input
                     type="radio"
                     checked={rentTiming === "next_billing_cycle"}
@@ -135,7 +138,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                   />
                 </div>
                 <p className="text-[10px] text-ink-muted mt-2 leading-relaxed">
-                  Rent adjustments are applied only from the next automated invoice sequence.
+                  {t("nextCycleDesc")}
                 </p>
               </div>
 
@@ -148,7 +151,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-ink">Immediate Timing</span>
+                  <span className="text-xs font-bold text-ink">{t("immediateTitle")}</span>
                   <input
                     type="radio"
                     checked={rentTiming === "immediate"}
@@ -157,7 +160,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                   />
                 </div>
                 <p className="text-[10px] text-ink-muted mt-2 leading-relaxed">
-                  New room rates take effect immediately upon completion of the transfer check.
+                  {t("immediateDesc")}
                 </p>
               </div>
             </div>
@@ -167,14 +170,14 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
         {/* Section 2: Late Payment Penalty configs */}
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
-            Late Payment Penalty Policy
+            {t("penaltyPolicyHeading")}
           </h2>
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             {/* Penalty Type select */}
             <div className="space-y-1.5 sm:col-span-2">
               <label htmlFor="penaltyType" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Penalty calculation mode
+                {t("calculationModeLabel")}
               </label>
               <select
                 id="penaltyType"
@@ -185,16 +188,16 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                 }}
                 className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
               >
-                <option value="none">No penalty policies active</option>
-                <option value="fixed">Fixed Rate penalty ($)</option>
-                <option value="percentage">Percentage based penalty (%)</option>
+                <option value="none">{t("noPenalty")}</option>
+                <option value="fixed">{t("fixedRate")}</option>
+                <option value="percentage">{t("percentageRate")}</option>
               </select>
             </div>
 
             {/* Penalty Grace Days */}
             <div className="space-y-1.5">
               <label htmlFor="grace" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Grace Days (0 - 30 days)
+                {t("graceDaysLabel")}
               </label>
               <input
                 id="grace"
@@ -214,7 +217,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             {penaltyType !== "none" && (
               <div className="space-y-1.5 animate-fade-in">
                 <label htmlFor="penaltyValue" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Penalty rate amount ({penaltyType === "fixed" ? "$" : "%"})
+                  {t("penaltyRateLabel", { symbol: penaltyType === "fixed" ? "$" : "%" })}
                 </label>
                 <input
                   id="penaltyValue"
@@ -235,7 +238,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             {penaltyType !== "none" && (
               <div className="space-y-1.5 animate-fade-in">
                 <label htmlFor="appliesTo" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Penalty Applies To
+                  {t("appliesToLabel")}
                 </label>
                 <select
                   id="appliesTo"
@@ -243,8 +246,8 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                   onChange={(e) => setAppliesTo(e.target.value as typeof appliesTo)}
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
                 >
-                  <option value="full_invoice">Full Invoice Amount</option>
-                  <option value="outstanding_balance">Outstanding Balance Only</option>
+                  <option value="full_invoice">{t("fullInvoice")}</option>
+                  <option value="outstanding_balance">{t("outstandingBalance")}</option>
                 </select>
               </div>
             )}
@@ -253,7 +256,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             {penaltyType !== "none" && (
               <div className="space-y-1.5 animate-fade-in">
                 <label htmlFor="compounding" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Compounding logic
+                  {t("compoundingLabel")}
                 </label>
                 <select
                   id="compounding"
@@ -261,8 +264,8 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
                   onChange={(e) => setCompounding(e.target.value as typeof compounding)}
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
                 >
-                  <option value="one_time">One-time penalty</option>
-                  <option value="monthly">Monthly compounding</option>
+                  <option value="one_time">{t("oneTime")}</option>
+                  <option value="monthly">{t("monthlyCompounding")}</option>
                 </select>
               </div>
             )}
@@ -275,7 +278,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             href={`/properties/${property.id}/buildings`}
             className="rounded-xl border border-border bg-surface-page px-5 py-2.5 text-xs font-bold text-ink-muted hover:bg-surface-card hover:text-ink transition-colors cursor-pointer"
           >
-            Cancel
+            {tCommon("actions.cancel")}
           </Link>
           <button
             type="submit"
@@ -283,7 +286,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-xs font-bold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
           >
             <Save className="size-4" />
-            {isLoading ? "Saving Settings..." : "Save Settings"}
+            {isLoading ? t("saving") : t("save")}
           </button>
         </div>
       </form>

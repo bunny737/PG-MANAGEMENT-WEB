@@ -1,0 +1,46 @@
+{
+  "title": "Dashboard Overview",
+  "welcome": "Welcome back, here's today's summary.",
+  "loadingSummary": "Loading dashboard report summary...",
+  "errLoadFailed": "Failed to Load Dashboard",
+  "errLoadDesc": "Could not retrieve tenant reporting summary metrics.",
+  "header": {
+    "signOut": "Sign Out",
+    "notifications": "Notifications",
+    "addResident": "Add Resident"
+  },
+  "occupancy": {
+    "title": "Occupancy Status",
+    "viewDetails": "View Details ›",
+    "totalBeds": "Total Beds",
+    "occupied": "Occupied",
+    "vacant": "Vacant",
+    "capacityFilled": "Capacity Filled",
+    "capacitySubtitle": "{occupied} of {total} beds ({percent}%)",
+    "bedsOccupied": "Beds occupied"
+  },
+  "financials": {
+    "title": "Financial Summary",
+    "monthlyRevenue": "Monthly Revenue",
+    "outstandingDues": "Outstanding Dues",
+    "securityDeposits": "Security Deposits"
+  },
+  "issues": {
+    "title": "Active Issues",
+    "highPriority": "{count} High Priority",
+    "allClear": "All clear",
+    "unit": "Unit",
+    "issue": "Issue",
+    "status": "Status",
+    "noIssues": "No active issues right now.",
+    "viewAllComplaints": "View All Complaints →"
+  },
+  "quickActions": {
+    "addResident": "Add Resident",
+    "generateInvoices": "Generate Invoices"
+  },
+  "activity": {
+    "title": "Today's Activity",
+    "noActivity": "No activity logged today."
+  }
+}

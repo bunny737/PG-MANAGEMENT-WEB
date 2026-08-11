@@ -1,0 +1,11 @@
+{
+  "title": "Invoices & Billing",
+  "subtitle": "Track monthly rent invoices, due dates, and fee schedules.",
+  "invoice": {
+    "title": "Invoices",
+    "issueDate": "Issue Date",
+    "dueDate": "Due Date",
+    "total": "Total Amount",
+    "balance": "Balance Due"
+  }
+}

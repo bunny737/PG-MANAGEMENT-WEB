@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Mail, Lock, Phone, KeyRound, Eye, EyeOff, CheckCircle2, ArrowLeft, Loader2, Building2 } from "lucide-react";
 import { ApiError, login } from "@/lib/api";
 
@@ -10,17 +11,19 @@ type FlowState = "login" | "forgot_password";
 
 export function LoginForm() {
   const router = useRouter();
-  
+  const t = useTranslations("auth");
+  const tCommon = useTranslations("common");
+
   // Navigation & Flow
   const [activeTab, setActiveTab] = useState<LoginTab>("password");
   const [flowState, setFlowState] = useState<FlowState>("login");
-  
+
   // Credentials Inputs
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  
+
   // OTP Inputs
   const [phone, setPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -66,15 +69,15 @@ export function LoginForm() {
     const newErrors: Record<string, string> = {};
 
     if (!email) {
-      newErrors.email = "Email address is required";
+      newErrors.email = t("login.errEmailRequired");
     } else if (!validateEmail(email)) {
-      newErrors.email = "Please enter a valid email address";
+      newErrors.email = t("login.errEmailInvalid");
     }
 
     if (!password) {
-      newErrors.password = "Password is required";
+      newErrors.password = t("login.errPasswordRequired");
     } else if (password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
+      newErrors.password = t("login.errPasswordLength");
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -96,18 +99,18 @@ export function LoginForm() {
       setIsLoading(false);
       const message =
         err instanceof ApiError
-          ? err.fieldError("detail") ?? "Invalid email or password"
-          : "Could not reach the server. Please try again.";
+          ? err.fieldError("detail") ?? t("login.errLoginFallback")
+          : t("login.errServerUnreachable");
       setErrors({ password: message });
     }
   };
 
   const handleSendOtp = () => {
     if (!phone) {
-      setErrors({ phone: "Phone number is required" });
+      setErrors({ phone: t("login.errPhoneRequired") });
       return;
     } else if (!validatePhone(phone)) {
-      setErrors({ phone: "Please enter a valid 10-digit mobile number" });
+      setErrors({ phone: t("login.errPhoneInvalid") });
       return;
     }
 
@@ -131,7 +134,7 @@ export function LoginForm() {
   const handleOtpVerifySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpCode || otpCode.length !== 6) {
-      setErrors({ otpCode: "Please enter a valid 6-digit OTP code" });
+      setErrors({ otpCode: t("login.errOtpCodeInvalid") });
       return;
     }
 
@@ -154,10 +157,10 @@ export function LoginForm() {
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail) {
-      setErrors({ forgotEmail: "Email address is required" });
+      setErrors({ forgotEmail: t("login.errEmailRequired") });
       return;
     } else if (!validateEmail(forgotEmail)) {
-      setErrors({ forgotEmail: "Please enter a valid email address" });
+      setErrors({ forgotEmail: t("login.errEmailInvalid") });
       return;
     }
 
@@ -185,13 +188,13 @@ export function LoginForm() {
             className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors"
           >
             <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
-            Back to login
+            {t("forgotPassword.backToLogin")}
           </button>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight text-ink">Reset password</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-ink">{t("forgotPassword.title")}</h2>
             <p className="text-sm text-ink-muted">
-              Enter your email address and we&apos;ll send you a link to reset your password.
+              {t("forgotPassword.subtitle")}
             </p>
           </div>
 
@@ -201,9 +204,9 @@ export function LoginForm() {
                 <CheckCircle2 className="size-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-semibold text-ink">Reset Link Sent</h3>
+                <h3 className="font-semibold text-ink">{t("forgotPassword.sentTitle")}</h3>
                 <p className="text-xs text-ink-muted">
-                  We&apos;ve sent password reset instructions to <span className="font-medium text-ink">{forgotEmail}</span>. Please check your inbox.
+                  {t("forgotPassword.sentSubtitle", { email: forgotEmail })}
                 </p>
               </div>
               <button
@@ -214,14 +217,14 @@ export function LoginForm() {
                 }}
                 className="w-full rounded-xl bg-surface-inverse px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:opacity-90 transition-opacity"
               >
-                Back to Login
+                {t("forgotPassword.backToLogin")}
               </button>
             </div>
           ) : (
             <form onSubmit={handleForgotSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label htmlFor="forgot-email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Email Address
+                  {t("login.emailLabel")}
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
@@ -230,7 +233,7 @@ export function LoginForm() {
                   <input
                     id="forgot-email"
                     type="email"
-                    placeholder="name@example.com"
+                    placeholder={t("login.emailPlaceholder")}
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     className={`w-full rounded-xl border ${
@@ -249,10 +252,10 @@ export function LoginForm() {
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 size-4.5 animate-spin" /> Sending reset link...
+                    <Loader2 className="mr-2 size-4.5 animate-spin" /> {t("forgotPassword.sending")}
                   </>
                 ) : (
-                  "Send Reset Link"
+                  t("forgotPassword.submit")
                 )}
               </button>
             </form>
@@ -271,13 +274,13 @@ export function LoginForm() {
           <span className="flex size-9 items-center justify-center rounded-xl bg-accent text-white">
             <Building2 className="size-5" />
           </span>
-          <span className="text-lg font-bold text-ink">PropManager</span>
+          <span className="text-lg font-bold text-ink">{tCommon("appName")}</span>
         </div>
 
         {/* Welcome Headers */}
         <div className="space-y-2">
-          <h2 className="text-3xl font-extrabold tracking-tight text-ink">Welcome back</h2>
-          <p className="text-sm text-ink-muted">Sign in to your PropManager dashboard to manage your tenants and properties.</p>
+          <h2 className="text-3xl font-extrabold tracking-tight text-ink">{t("login.title")}</h2>
+          <p className="text-sm text-ink-muted">{t("login.subtitle")}</p>
         </div>
 
         {/* Slider Tab Switcher */}
@@ -296,7 +299,7 @@ export function LoginForm() {
               activeTab === "password" ? "text-ink" : "text-ink-muted"
             }`}
           >
-            Password
+            {t("login.tabPassword")}
           </button>
           <button
             onClick={() => {
@@ -307,7 +310,7 @@ export function LoginForm() {
               activeTab === "otp" ? "text-ink" : "text-ink-muted"
             }`}
           >
-            OTP Code
+            {t("login.tabOtp")}
           </button>
         </div>
 
@@ -316,7 +319,7 @@ export function LoginForm() {
           <form onSubmit={handlePasswordSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Email Address
+                {t("login.emailLabel")}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
@@ -325,7 +328,7 @@ export function LoginForm() {
                 <input
                   id="email"
                   type="email"
-                  placeholder="name@example.com"
+                  placeholder={t("login.emailPlaceholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className={`w-full rounded-xl border ${
@@ -340,14 +343,14 @@ export function LoginForm() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Password
+                  {t("login.passwordLabel")}
                 </label>
                 <button
                   type="button"
                   onClick={() => setFlowState("forgot_password")}
                   className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
                 >
-                  Forgot password?
+                  {t("login.forgotPassword")}
                 </button>
               </div>
               <div className="relative">
@@ -357,7 +360,7 @@ export function LoginForm() {
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder={t("login.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={`w-full rounded-xl border ${
@@ -386,7 +389,7 @@ export function LoginForm() {
                 disabled={isLoading || isSuccess}
               />
               <label htmlFor="remember-me" className="ml-2.5 text-sm font-medium text-ink-muted select-none">
-                Keep me signed in
+                {t("login.rememberMe")}
               </label>
             </div>
 
@@ -401,14 +404,14 @@ export function LoginForm() {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 size-4.5 animate-spin" /> Verifying...
+                  <Loader2 className="mr-2 size-4.5 animate-spin" /> {t("login.verifying")}
                 </>
               ) : isSuccess ? (
                 <>
-                  <CheckCircle2 className="mr-2 size-4.5 animate-bounce" /> Signed in successfully!
+                  <CheckCircle2 className="mr-2 size-4.5 animate-bounce" /> {t("login.success")}
                 </>
               ) : (
-                "Sign In"
+                t("login.submitPassword")
               )}
             </button>
           </form>
@@ -421,7 +424,7 @@ export function LoginForm() {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                    Mobile Number
+                    {t("login.phoneLabel")}
                   </label>
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
@@ -430,7 +433,7 @@ export function LoginForm() {
                     <input
                       id="phone"
                       type="tel"
-                      placeholder="98765 43210"
+                      placeholder={t("login.phonePlaceholder")}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                       className={`w-full rounded-xl border ${
@@ -450,10 +453,10 @@ export function LoginForm() {
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="mr-2 size-4.5 animate-spin" /> Sending OTP...
+                      <Loader2 className="mr-2 size-4.5 animate-spin" /> {t("login.sendingOtp")}
                     </>
                   ) : (
-                    "Send Verification Code"
+                    t("login.sendOtp")
                   )}
                 </button>
               </div>
@@ -462,14 +465,14 @@ export function LoginForm() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label htmlFor="otpCode" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                      Verification Code
+                      {t("login.otpCodeLabel")}
                     </label>
                     <button
                       type="button"
                       onClick={() => setOtpSent(false)}
                       className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
                     >
-                      Change number
+                      {t("login.changeNumber")}
                     </button>
                   </div>
                   <div className="relative">
@@ -479,7 +482,7 @@ export function LoginForm() {
                     <input
                       id="otpCode"
                       type="text"
-                      placeholder="6-digit OTP code"
+                      placeholder={t("login.otpCodePlaceholder")}
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                       className={`w-full rounded-xl border ${
@@ -494,9 +497,9 @@ export function LoginForm() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-ink-muted">
                     {otpCountdown > 0 ? (
-                      `Resend OTP in ${otpCountdown}s`
+                      t("login.resendCountdown", { count: otpCountdown })
                     ) : (
-                      "Didn't receive the code?"
+                      t("login.noCode")
                     )}
                   </span>
                   <button
@@ -507,7 +510,7 @@ export function LoginForm() {
                       canResendOtp ? "hover:text-accent-hover cursor-pointer" : "opacity-40 cursor-not-allowed"
                     }`}
                   >
-                    Resend Code
+                    {t("login.resendCode")}
                   </button>
                 </div>
 
@@ -522,14 +525,14 @@ export function LoginForm() {
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="mr-2 size-4.5 animate-spin" /> Verifying...
+                      <Loader2 className="mr-2 size-4.5 animate-spin" /> {t("login.verifying")}
                     </>
                   ) : isSuccess ? (
                     <>
-                      <CheckCircle2 className="mr-2 size-4.5 animate-bounce" /> Verified! Redirecting...
+                      <CheckCircle2 className="mr-2 size-4.5 animate-bounce" /> {t("login.verified")}
                     </>
                   ) : (
-                    "Verify & Sign In"
+                    t("login.verifySubmit")
                   )}
                 </button>
               </form>
@@ -539,12 +542,12 @@ export function LoginForm() {
 
         {/* Demo Credentials Helper */}
         <div className="rounded-xl border border-border bg-surface-card p-4 text-xs space-y-1">
-          <p className="font-semibold text-ink">Demo Credentials:</p>
+          <p className="font-semibold text-ink">{t("login.demoTitle")}</p>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 text-ink-muted">
-            <span className="font-medium text-ink-faint">Password tab:</span>
-            <span>Real backend account (use your own signup/owner credentials)</span>
-            <span className="font-medium text-ink-faint">Phone:</span>
-            <span>9876543210 (any 6-digit OTP works — OTP login is still a mock)</span>
+            <span className="font-medium text-ink-faint">{t("login.demoPasswordTab")}</span>
+            <span>{t("login.demoPasswordText")}</span>
+            <span className="font-medium text-ink-faint">{t("login.demoPhoneTab")}</span>
+            <span>{t("login.demoPhoneText")}</span>
           </div>
         </div>
 

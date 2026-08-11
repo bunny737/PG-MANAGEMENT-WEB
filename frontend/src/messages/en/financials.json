@@ -1,0 +1,62 @@
+{
+  "title": "Financial Overview",
+  "subtitle": "Track rent collection timelines, pending invoice balances, and penalty fee configurations.",
+  "kpi": {
+    "receivedRevenue": "Received Revenue",
+    "vsLastMonth": "+12% vs last month",
+    "pendingReceivables": "Pending Receivables",
+    "dueBy10th": "Due by 10th of month",
+    "overdueBalances": "Overdue Balances",
+    "includesPenalties": "Includes active penalties",
+    "collectionsRate": "Collections Rate"
+  },
+  "chart": {
+    "title": "Monthly Revenue Performance",
+    "year": "YEAR 2024"
+  },
+  "ops": {
+    "title": "Billing Operations",
+    "desc1": "Invoices are issued automatically on the 1st of each month. Tenants have a 5-day grace period to settle.",
+    "desc2": "Late charges compound monthly according to property settings guidelines.",
+    "quickAction": "Quick Action",
+    "regenerateInvoices": "Regenerate Invoices"
+  },
+  "log": {
+    "title": "Invoices & Receivables Log",
+    "subtitle": "Filter invoices by payment state or search by resident.",
+    "all": "All Logs",
+    "paid": "Paid",
+    "pending": "Pending",
+    "overdue": "Overdue",
+    "searchPlaceholder": "Search resident or invoice...",
+    "tableInvoice": "Invoice #",
+    "tableResident": "Resident",
+    "tableRoom": "Room",
+    "tableType": "Type",
+    "tableAmount": "Amount",
+    "tableDueDate": "Due Date",
+    "tableStatus": "Status",
+    "tableActions": "Actions",
+    "waivePenalty": "Waive Penalty",
+    "penaltyTag": "(+₹{amount} penalty)",
+    "emptyTitle": "No transactions found",
+    "emptyDesc": "Try removing search keywords or changing filters."
+  },
+  "types": {
+    "Rent": "Rent",
+    "Deposit": "Deposit",
+    "Penalty": "Penalty",
+    "Utility": "Utility"
+  },
+  "modal": {
+    "title": "Waive Late Penalty Fee",
+    "sub": "Confirm waiving the accumulated penalty fee for invoice {id}. A mandatory justification note is required to write to audit logs.",
+    "labelNote": "Waiver Justification Note",
+    "placeholderNote": "e.g. Bank transfer delayed due to server issue. Tenant shared transaction slip.",
+    "confirm": "Confirm Waiver",
+    "cancel": "Cancel",
+    "errNoteRequired": "A mandatory justification note is required to waive penalties.",
+    "toastTitle": "Penalty Waived",
+    "toastBody": "Late penalty waived for {name}. Logged note: \"{note}\""
+  }
+}

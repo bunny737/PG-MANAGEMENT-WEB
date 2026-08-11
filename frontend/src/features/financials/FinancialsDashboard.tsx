@@ -7,12 +7,12 @@ import {
   Download,
   FilterX,
   Search,
-  CheckCircle2,
   AlertTriangle,
-  Clock,
   ShieldCheck,
   Undo
 } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 
 interface Invoice {
   id: string;
@@ -27,6 +27,10 @@ interface Invoice {
 }
 
 export function FinancialsDashboard() {
+  const t = useTranslations("financials");
+  const tCommon = useTranslations("common");
+  const tStatus = useTranslations("status");
+
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending" | "overdue">("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showWaiverModal, setShowWaiverModal] = useState<string | null>(null); // Invoice ID to waive penalty
@@ -51,7 +55,7 @@ export function FinancialsDashboard() {
   const submitWaiver = (e: React.FormEvent) => {
     e.preventDefault();
     if (!waiverNote.trim()) {
-      alert("A mandatory justification note is required to waive penalties.");
+      alert(t("modal.errNoteRequired"));
       return;
     }
 
@@ -60,14 +64,14 @@ export function FinancialsDashboard() {
         return {
           ...inv,
           penaltyAmount: undefined,
-          status: inv.status === "overdue" ? "pending" : inv.status // Change status if needed
+          status: inv.status === "overdue" ? "pending" : inv.status
         };
       }
       return inv;
     }));
 
     const selectedInv = invoices.find(inv => inv.id === showWaiverModal);
-    setSuccessToast(`Late penalty waived for ${selectedInv?.residentName}. Logged note: "${waiverNote}"`);
+    setSuccessToast(t("modal.toastBody", { name: selectedInv?.residentName || "", note: waiverNote }));
     setShowWaiverModal(null);
     setWaiverNote("");
     setTimeout(() => setSuccessToast(null), 5000);
@@ -107,7 +111,7 @@ export function FinancialsDashboard() {
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800 shadow-xl animate-bounce max-w-sm">
           <ShieldCheck className="size-5 text-emerald-600 shrink-0" />
           <div className="text-sm">
-            <span className="font-semibold">Penalty Waived (Module 08)</span>
+            <span className="font-semibold">{t("modal.toastTitle")}</span>
             <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">{successToast}</p>
           </div>
         </div>
@@ -119,21 +123,20 @@ export function FinancialsDashboard() {
           <form onSubmit={submitWaiver} className="bg-surface-card p-6 rounded-2xl max-w-md w-full shadow-2xl border border-border space-y-4">
             <h3 className="text-base font-bold text-ink flex items-center gap-1.5">
               <Undo className="size-4.5 text-accent" />
-              Waive Late Penalty Fee
+              {t("modal.title")}
             </h3>
             <p className="text-xs text-ink-muted leading-relaxed">
-              Confirm waiving the accumulated penalty fee for invoice <strong>{showWaiverModal}</strong>.
-              Module 08 billing policy requires a mandatory justification note to write to audit logs.
+              {t("modal.sub", { id: showWaiverModal })}
             </p>
 
             <div className="space-y-1.5">
               <label htmlFor="waiverNote" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Waiver Justification Note <span className="text-status-critical">*</span>
+                {t("modal.labelNote")} <span className="text-status-critical">*</span>
               </label>
               <textarea
                 id="waiverNote"
                 rows={3}
-                placeholder="e.g. Bank transfer delayed due to server issue. Tenant shared transaction slip."
+                placeholder={t("modal.placeholderNote")}
                 value={waiverNote}
                 onChange={(e) => setWaiverNote(e.target.value)}
                 className="w-full rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
@@ -150,13 +153,13 @@ export function FinancialsDashboard() {
                 }}
                 className="rounded-xl border border-border bg-surface-page px-4 py-2 text-xs font-bold text-ink hover:bg-surface-card transition-colors cursor-pointer"
               >
-                Cancel
+                {t("modal.cancel")}
               </button>
               <button
                 type="submit"
                 className="rounded-xl bg-accent px-4 py-2 text-xs font-bold text-ink-inverse hover:bg-accent-hover transition-colors cursor-pointer"
               >
-                Confirm Waiver
+                {t("modal.confirm")}
               </button>
             </div>
           </form>
@@ -165,9 +168,9 @@ export function FinancialsDashboard() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">Financial Overview</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">{t("title")}</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Track rent collection timelines, pending invoice balances, and penalty fee configurations.
+          {t("subtitle")}
         </p>
       </div>
 
@@ -175,32 +178,32 @@ export function FinancialsDashboard() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/* Metric 1: Total Revenue */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Received Revenue</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink">${totalRevenue.toFixed(2)}</h3>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("kpi.receivedRevenue")}</span>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink">{tCommon("labels.rupeeSymbol")}{totalRevenue.toLocaleString("en-IN")}</h3>
           <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
-            <ArrowUpRight className="size-3.5" /> +12% vs last month
+            <ArrowUpRight className="size-3.5" /> {t("kpi.vsLastMonth")}
           </span>
         </div>
 
         {/* Metric 2: Pending Invoices */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Pending Receivables</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink">${pendingAmount.toFixed(2)}</h3>
-          <span className="text-[10px] text-ink-muted">Due by 10th of month</span>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("kpi.pendingReceivables")}</span>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink">{tCommon("labels.rupeeSymbol")}{pendingAmount.toLocaleString("en-IN")}</h3>
+          <span className="text-[10px] text-ink-muted">{t("kpi.dueBy10th")}</span>
         </div>
 
         {/* Metric 3: Overdue + Penalty */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Overdue Balances</span>
-          <h3 className="text-2xl font-extrabold tracking-tight text-ink text-status-critical">${overdueAmount.toFixed(2)}</h3>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("kpi.overdueBalances")}</span>
+          <h3 className="text-2xl font-extrabold tracking-tight text-ink text-status-critical">{tCommon("labels.rupeeSymbol")}{overdueAmount.toLocaleString("en-IN")}</h3>
           <span className="text-[10px] text-status-critical font-semibold flex items-center gap-0.5">
-            <AlertTriangle className="size-3.5" /> Includes active penalties
+            <AlertTriangle className="size-3.5" /> {t("kpi.includesPenalties")}
           </span>
         </div>
 
         {/* Metric 4: Collections Rate */}
         <div className="rounded-2xl border border-border bg-surface-card p-5 shadow-sm space-y-3 flex flex-col justify-between">
-          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">Collections Rate</span>
+          <span className="text-xs font-bold text-ink-faint uppercase tracking-wider">{t("kpi.collectionsRate")}</span>
           <h3 className="text-2xl font-extrabold tracking-tight text-ink">95.8%</h3>
           <div className="h-1.5 w-full bg-surface-page rounded-full overflow-hidden border border-border">
             <div className="h-full bg-accent rounded-full" style={{ width: "95.8%" }} />
@@ -215,9 +218,9 @@ export function FinancialsDashboard() {
           <div className="flex justify-between items-center pb-2 border-b border-border/55">
             <h3 className="text-sm font-bold uppercase tracking-wider text-ink flex items-center gap-1.5">
               <TrendingUp className="size-4.5 text-accent animate-pulse" />
-              Monthly Revenue Performance
+              {t("chart.title")}
             </h3>
-            <span className="text-[10px] font-bold text-ink-muted">YEAR 2024</span>
+            <span className="text-[10px] font-bold text-ink-muted">{t("chart.year")}</span>
           </div>
 
           {/* Simple, gorgeous HTML/CSS bar chart */}
@@ -250,19 +253,15 @@ export function FinancialsDashboard() {
         <div className="lg:col-span-4 bg-surface-inverse text-ink-inverse rounded-2xl p-5 shadow-md space-y-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-white/50 border-b border-white/10 pb-2.5 flex items-center gap-1.5">
             <ShieldCheck className="size-4.5 text-accent" />
-            Billing Operations
+            {t("ops.title")}
           </h3>
           <div className="space-y-3.5 text-xs text-white/80 leading-relaxed">
-            <p>
-              Invoices are issued automatically on the <strong>1st of each month</strong>. Tenants have a 5-day grace period to settle.
-            </p>
-            <p>
-              Late charges compound monthly according to property settings guidelines (Module 2B).
-            </p>
+            <p>{t("ops.desc1")}</p>
+            <p>{t("ops.desc2")}</p>
             <div className="pt-2">
-              <span className="font-bold text-white uppercase tracking-wider text-[9px] block mb-1">Quick Action</span>
+              <span className="font-bold text-white uppercase tracking-wider text-[9px] block mb-1">{t("ops.quickAction")}</span>
               <button className="w-full bg-white text-slate-900 font-bold py-2 rounded-xl text-xs hover:bg-slate-100 transition-colors">
-                Regenerate Invoices
+                {t("ops.regenerateInvoices")}
               </button>
             </div>
           </div>
@@ -272,17 +271,17 @@ export function FinancialsDashboard() {
         <div className="lg:col-span-12 bg-surface-card border border-border rounded-2xl overflow-hidden shadow-sm space-y-4 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center justify-between">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">Invoices & Receivables Log</h3>
-              <p className="text-[10px] text-ink-muted mt-0.5">Filter invoices by payment state or search by resident.</p>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("log.title")}</h3>
+              <p className="text-[10px] text-ink-muted mt-0.5">{t("log.subtitle")}</p>
             </div>
 
             {/* Filters */}
             <div className="flex flex-wrap gap-2 items-center">
               {[
-                { id: "all", label: "All Logs" },
-                { id: "paid", label: "Paid" },
-                { id: "pending", label: "Pending" },
-                { id: "overdue", label: "Overdue" },
+                { id: "all", label: t("log.all") },
+                { id: "paid", label: t("log.paid") },
+                { id: "pending", label: t("log.pending") },
+                { id: "overdue", label: t("log.overdue") },
               ].map((tab) => {
                 const isActive = filterStatus === tab.id;
                 return (
@@ -309,7 +308,7 @@ export function FinancialsDashboard() {
             </span>
             <input
               type="text"
-              placeholder="Search resident or invoice..."
+              placeholder={t("log.searchPlaceholder")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full rounded-xl border border-border bg-surface-card py-2 pl-9 pr-4 text-xs text-ink outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
@@ -322,14 +321,14 @@ export function FinancialsDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                    <th className="px-4 py-2.5">Invoice #</th>
-                    <th className="px-4 py-2.5">Resident</th>
-                    <th className="px-4 py-2.5">Room</th>
-                    <th className="px-4 py-2.5">Type</th>
-                    <th className="px-4 py-2.5">Amount</th>
-                    <th className="px-4 py-2.5">Due Date</th>
-                    <th className="px-4 py-2.5">Status</th>
-                    <th className="px-4 py-2.5 text-right">Actions</th>
+                    <th className="px-4 py-2.5">{t("log.tableInvoice")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableResident")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableRoom")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableType")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableAmount")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableDueDate")}</th>
+                    <th className="px-4 py-2.5">{t("log.tableStatus")}</th>
+                    <th className="px-4 py-2.5 text-right">{t("log.tableActions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border text-ink">
@@ -338,29 +337,21 @@ export function FinancialsDashboard() {
                       <td className="px-4 py-3 font-mono font-medium">{inv.id}</td>
                       <td className="px-4 py-3 font-semibold">{inv.residentName}</td>
                       <td className="px-4 py-3 font-mono text-ink-muted">{inv.room}</td>
-                      <td className="px-4 py-3 text-ink-muted">{inv.type}</td>
+                      <td className="px-4 py-3 text-ink-muted">{t(`types.${inv.type}`)}</td>
                       <td className="px-4 py-3 font-mono">
-                        <span className="font-semibold">${inv.amount.toFixed(2)}</span>
+                        <span className="font-semibold">{tCommon("labels.rupeeSymbol")}{inv.amount.toLocaleString("en-IN")}</span>
                         {inv.penaltyAmount && (
                           <span className="text-[10px] text-status-critical ml-1 font-bold">
-                            (+${inv.penaltyAmount.toFixed(2)} penalty)
+                            {t("log.penaltyTag", { amount: inv.penaltyAmount.toLocaleString("en-IN") })}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-ink-muted">{inv.dueDate}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
-                          inv.status === "paid"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                            : inv.status === "pending"
-                            ? "bg-amber-50 text-amber-700 border-amber-100"
-                            : "bg-red-50 text-red-700 border-red-100 animate-pulse"
-                        }`}>
-                          {inv.status === "paid" && <CheckCircle2 className="size-2.5" />}
-                          {inv.status === "pending" && <Clock className="size-2.5" />}
-                          {inv.status === "overdue" && <AlertTriangle className="size-2.5" />}
-                          {inv.status}
-                        </span>
+                        <StatusPill
+                          label={tStatus(inv.status as "draft" | "issued" | "paid" | "partially_paid" | "void") ?? inv.status}
+                          tone={getStatusTone(inv.status)}
+                        />
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
                         {inv.status === "overdue" && inv.penaltyAmount && (
@@ -368,7 +359,7 @@ export function FinancialsDashboard() {
                             onClick={() => handleWaivePenalty(inv.id)}
                             className="text-[10px] font-bold text-accent border border-accent/20 bg-accent-soft hover:bg-accent hover:text-white px-2.5 py-1 rounded transition-colors cursor-pointer"
                           >
-                            Waive Penalty
+                            {t("log.waivePenalty")}
                           </button>
                         )}
                         <button className="p-1 rounded text-ink-muted hover:text-accent transition-colors cursor-pointer">
@@ -386,8 +377,8 @@ export function FinancialsDashboard() {
                 <FilterX className="size-5 text-ink-faint animate-pulse" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-xs font-bold text-ink">No transactions found</h3>
-                <p className="text-[10px] text-ink-muted">Try removing search keywords or changing filters.</p>
+                <h3 className="text-xs font-bold text-ink">{t("log.emptyTitle")}</h3>
+                <p className="text-[10px] text-ink-muted">{t("log.emptyDesc")}</p>
               </div>
             </div>
           )}

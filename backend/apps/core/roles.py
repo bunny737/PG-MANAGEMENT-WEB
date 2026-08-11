@@ -22,6 +22,7 @@ _OPS = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER)
 
 PERMISSION_MATRIX = {
     'manage_tenants': (Role.SUPER_ADMIN,),
+    'manage_tenant_settings': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_subscription': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_properties': (Role.SUPER_ADMIN, Role.OWNER),
     # PRD §6's matrix table lists Owner-only, but PRD Module 2B's prose and its

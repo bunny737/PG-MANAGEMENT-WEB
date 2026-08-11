@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building,
@@ -17,20 +17,33 @@ import {
   Zap,
   Download
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
+import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
+import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
 
 export function GlobalSettings() {
+  const t = useTranslations("settings");
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
-  const [portalName, setPortalName] = useState("PropManager");
-  const [notificationEmail, setNotificationEmail] = useState("admin@propmanager.com");
-  const [currency, setCurrency] = useState("USD");
+  const [portalName, setPortalName] = useState("StaysManager Premium");
+  const [notificationEmail, setNotificationEmail] = useState("support@staysmanager.in");
+  const [currency, setCurrency] = useState("INR");
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
-  // Security/Account states
-  const [language, setLanguage] = useState("en-US");
+  // Security/Account states — "language" here is the TENANT's default for new
+  // accounts, not this browser's own UI locale, so it's seeded from the
+  // tenant record, never from the locale cookie.
+  const [language, setLanguage] = useState("en");
+  useEffect(() => {
+    getCurrentUser()
+      .then((user) => {
+        if (user.tenant?.default_language) setLanguage(user.tenant.default_language);
+      })
+      .catch(() => {});
+  }, []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -46,7 +59,7 @@ export function GlobalSettings() {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      triggerSaveAlert("portal", "General portal configurations updated successfully.");
+      triggerSaveAlert("portal", t("global.portalSavedToast"));
     }, 1000);
   };
 
@@ -54,10 +67,10 @@ export function GlobalSettings() {
     e.preventDefault();
     const errs: Record<string, string> = {};
 
-    if (!currentPassword) errs.current = "Current Password is required";
-    if (!newPassword) errs.new = "New Password is required";
-    else if (newPassword.length < 6) errs.new = "Password must be at least 6 characters";
-    if (newPassword !== confirmPassword) errs.confirm = "Passwords do not match";
+    if (!currentPassword) errs.current = t("global.errCurrentRequired");
+    if (!newPassword) errs.new = t("global.errNewRequired");
+    else if (newPassword.length < 6) errs.new = t("global.errNewMinLength");
+    if (newPassword !== confirmPassword) errs.confirm = t("global.errConfirmMatch");
 
     if (Object.keys(errs).length > 0) {
       setPasswordErrors(errs);
@@ -71,17 +84,24 @@ export function GlobalSettings() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      triggerSaveAlert("password", "Security credentials updated successfully.");
+      triggerSaveAlert("password", t("global.passwordSavedToast"));
     }, 1500);
   };
 
-  const handleLanguageChange = (e: React.FormEvent) => {
+  const handleLanguageChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
+    // Tenant default only seeds NEW staff/resident accounts — it must not touch
+    // this Owner's own session locale (that's Profile's language_code, saved
+    // separately via updateMe). No cookie write, no reload, here.
+    try {
+      await updateTenantDefaultLanguage(language);
+      triggerSaveAlert("language", t("tenantLanguage.successToast"));
+    } catch {
+      triggerSaveAlert("language", t("tenantLanguage.errorToast"));
+    } finally {
       setIsLoading(false);
-      triggerSaveAlert("language", "Language preferences updated successfully.");
-    }, 800);
+    }
   };
 
   return (
@@ -91,7 +111,7 @@ export function GlobalSettings() {
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800 shadow-xl animate-bounce max-w-sm">
           <ShieldCheck className="size-5 text-emerald-600 shrink-0" />
           <div className="text-sm">
-            <span className="font-semibold capitalize">{saveAlert.type} Saved</span>
+            <span className="font-semibold capitalize">{t("global.savedPrefix", { type: saveAlert.type })}</span>
             <p className="text-xs text-emerald-700 mt-0.5">{saveAlert.message}</p>
           </div>
         </div>
@@ -100,9 +120,9 @@ export function GlobalSettings() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">System Settings</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">{t("title")}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Configure property hierarchies, security policies, language setups, and subscription plans.
+            {t("subtitle")}
           </p>
         </div>
       </div>
@@ -110,9 +130,9 @@ export function GlobalSettings() {
       {/* Tabs Menu Selection */}
       <div className="flex border-b border-border bg-surface-card rounded-xl p-1 shadow-sm max-w-md">
         {[
-          { id: "property", label: "Property Setup", icon: Building },
-          { id: "security", label: "Account & Security", icon: Lock },
-          { id: "subscription", label: "Plan & Billing", icon: CreditCard },
+          { id: "property", label: t("tabs.property"), icon: Building },
+          { id: "security", label: t("tabs.security"), icon: Lock },
+          { id: "subscription", label: t("tabs.subscription"), icon: CreditCard },
         ].map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -142,8 +162,8 @@ export function GlobalSettings() {
           <div className="md:col-span-7 space-y-6">
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-ink">Property Configuration Profiles</h2>
-                <p className="text-xs text-ink-muted mt-0.5">Select settings dashboards to configure setup and billing policies.</p>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
+                <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
               </div>
 
               <div className="space-y-5">
@@ -171,7 +191,7 @@ export function GlobalSettings() {
                       >
                         <div className="flex items-center gap-2.5">
                           <CreditCard className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">Late Penalties & Billing Policy</span>
+                          <span className="font-semibold text-ink">{t("global.penaltiesPolicy")}</span>
                         </div>
                         <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
                       </Link>
@@ -182,7 +202,7 @@ export function GlobalSettings() {
                       >
                         <div className="flex items-center gap-2.5">
                           <Layers className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">Levels & Floor Hierarchy Setup</span>
+                          <span className="font-semibold text-ink">{t("global.floorHierarchy")}</span>
                         </div>
                         <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
                       </Link>
@@ -193,7 +213,7 @@ export function GlobalSettings() {
                       >
                         <div className="flex items-center gap-2.5">
                           <Home className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">Rooms Portfolio Inventory</span>
+                          <span className="font-semibold text-ink">{t("global.roomsInventory")}</span>
                         </div>
                         <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
                       </Link>
@@ -209,12 +229,12 @@ export function GlobalSettings() {
             <form onSubmit={handleSavePortal} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
                 <Settings className="size-4.5 text-ink-muted" />
-                General Portal Setup
+                {t("global.portalSetup")}
               </h2>
 
               <div className="space-y-1.5">
                 <label htmlFor="portalName" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  System Brand Title
+                  {t("global.brandTitle")}
                 </label>
                 <input
                   id="portalName"
@@ -228,7 +248,7 @@ export function GlobalSettings() {
 
               <div className="space-y-1.5">
                 <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  System Notification Email
+                  {t("global.notificationEmail")}
                 </label>
                 <input
                   id="email"
@@ -242,7 +262,7 @@ export function GlobalSettings() {
 
               <div className="space-y-1.5">
                 <label htmlFor="currency" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Base Currency Symbol
+                  {t("global.baseCurrency")}
                 </label>
                 <select
                   id="currency"
@@ -251,16 +271,16 @@ export function GlobalSettings() {
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
                   disabled={isLoading}
                 >
-                  <option value="USD">USD ($) - US Dollar</option>
-                  <option value="INR">INR (₹) - Indian Rupee</option>
-                  <option value="EUR">EUR (€) - Euro</option>
+                  <option value="USD">{t("global.currencyUSD")}</option>
+                  <option value="INR">{t("global.currencyINR")}</option>
+                  <option value="EUR">{t("global.currencyEUR")}</option>
                 </select>
               </div>
 
               <div className="bg-slate-50 border border-border/80 p-3 rounded-xl flex gap-2 text-[10px] text-ink-muted">
                 <ShieldAlert className="size-4.5 text-amber-500 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">
-                  Modifying general configurations requires Owner privileges. Audited log checks are run daily.
+                  {t("global.privilegesWarning")}
                 </p>
               </div>
 
@@ -269,7 +289,7 @@ export function GlobalSettings() {
                 disabled={isLoading}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? "Saving Setup..." : "Save Portal Setup"}
+                {isLoading ? t("global.savingSetup") : t("global.saveSetup")}
               </button>
             </form>
           </div>
@@ -284,15 +304,15 @@ export function GlobalSettings() {
             <form onSubmit={handleLanguageChange} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
                 <Globe className="size-4.5 text-ink-muted" />
-                Language Settings
+                {t("tenantLanguage.title")}
               </h2>
               <p className="text-[11px] text-ink-muted leading-relaxed">
-                Choose your localization and regional configuration options for invoice generation and portals.
+                {t("tenantLanguage.subtitle")}
               </p>
 
               <div className="space-y-1.5">
                 <label htmlFor="language" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Default Interface Language
+                  {t("tenantLanguage.label")}
                 </label>
                 <select
                   id="language"
@@ -301,10 +321,11 @@ export function GlobalSettings() {
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
                   disabled={isLoading}
                 >
-                  <option value="en-US">English (United States)</option>
-                  <option value="en-GB">English (United Kingdom)</option>
-                  <option value="es-ES">Español (España)</option>
-                  <option value="hi-IN">हिन्दी (भारत)</option>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code} disabled={!isActiveLocale(lang.code)}>
+                      {getLanguageSelectLabel(lang)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -313,7 +334,7 @@ export function GlobalSettings() {
                 disabled={isLoading}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? "Saving Language..." : "Update Language"}
+                {isLoading ? t("tenantLanguage.saving") : t("tenantLanguage.button")}
               </button>
             </form>
           </div>
@@ -323,16 +344,16 @@ export function GlobalSettings() {
             <form onSubmit={handleSaveSecurity} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
                 <Lock className="size-4.5 text-ink-muted" />
-                Change Password
+                {t("global.changePassword")}
               </h2>
               <p className="text-[11px] text-ink-muted leading-relaxed">
-                Update your login credentials. Security logs record all password reset timelines.
+                {t("global.changePasswordSub")}
               </p>
 
               {/* Current Password */}
               <div className="space-y-1.5">
                 <label htmlFor="current" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Current Password
+                  {t("global.currentPassword")}
                 </label>
                 <input
                   id="current"
@@ -350,7 +371,7 @@ export function GlobalSettings() {
               {/* New Password */}
               <div className="space-y-1.5">
                 <label htmlFor="new" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  New Password
+                  {t("global.newPassword")}
                 </label>
                 <input
                   id="new"
@@ -368,7 +389,7 @@ export function GlobalSettings() {
               {/* Confirm Password */}
               <div className="space-y-1.5">
                 <label htmlFor="confirm" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Confirm New Password
+                  {t("global.confirmPassword")}
                 </label>
                 <input
                   id="confirm"
@@ -388,7 +409,7 @@ export function GlobalSettings() {
                 disabled={isLoading}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? "Saving Credentials..." : "Update Security Credentials"}
+                {isLoading ? t("global.savingCredentials") : t("global.updateCredentials")}
               </button>
             </form>
           </div>
@@ -405,32 +426,32 @@ export function GlobalSettings() {
               <div className="flex justify-between items-start border-b border-border pb-3">
                 <div className="space-y-1">
                   <span className="text-[9px] font-bold text-accent border border-accent/25 bg-accent-soft px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                    Premium SaaS Plan
+                    {t("subscription.premiumTag")}
                   </span>
-                  <h3 className="text-lg font-bold text-ink">PropManager Pro</h3>
+                  <h3 className="text-lg font-bold text-ink">{t("subscription.proTitle")}</h3>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-extrabold text-ink">$49.00</p>
-                  <p className="text-[10px] text-ink-muted">per month billing</p>
+                  <p className="text-xl font-extrabold text-ink">₹49.00</p>
+                  <p className="text-[10px] text-ink-muted">{t("subscription.perMonth")}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div className="space-y-0.5">
-                  <span className="text-ink-muted">Payment Method</span>
-                  <p className="font-semibold text-ink">Mastercard ending in 4921</p>
+                  <span className="text-ink-muted">{t("subscription.paymentMethod")}</span>
+                  <p className="font-semibold text-ink">{t("subscription.mastercardEnding")}</p>
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-ink-muted">Renewal Date</span>
-                  <p className="font-semibold text-ink">Oct 1, 2024</p>
+                  <span className="text-ink-muted">{t("subscription.renewalDate")}</span>
+                  <p className="font-semibold text-ink">{t("subscription.renewalDateValue")}</p>
                 </div>
               </div>
 
               {/* Usage stats bar */}
               <div className="space-y-1.5 pt-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-ink-muted">Active Bed Allocations</span>
-                  <span className="font-bold text-ink">348 / 500 Beds used</span>
+                  <span className="text-ink-muted">{t("subscription.activeAllocations")}</span>
+                  <span className="font-bold text-ink">{t("subscription.bedsUsed", { used: 348, total: 500 })}</span>
                 </div>
                 <div className="h-2 w-full bg-surface-page rounded-full overflow-hidden border border-border">
                   <div className="h-full bg-accent rounded-full" style={{ width: "70%" }} />
@@ -439,36 +460,36 @@ export function GlobalSettings() {
 
               {/* Upgrade Plan button */}
               <button className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-xs font-bold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 transition-all cursor-pointer">
-                <Zap className="size-3.5" /> Upgrade Plan Capacity
+                <Zap className="size-3.5" /> {t("subscription.upgradeCapacity")}
               </button>
             </div>
 
             {/* Invoices List */}
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink border-b border-border pb-3">Subscription Invoices</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-ink border-b border-border pb-3">{t("subscription.invoicesTitle")}</h3>
               <div className="overflow-x-auto text-xs">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                      <th className="px-4 py-2.5">Billing Period</th>
-                      <th className="px-4 py-2.5">Invoice #</th>
-                      <th className="px-4 py-2.5">Amount</th>
-                      <th className="px-4 py-2.5 text-right font-medium">Download</th>
+                      <th className="px-4 py-2.5">{t("subscription.billingPeriod")}</th>
+                      <th className="px-4 py-2.5">{t("subscription.invoiceNumber")}</th>
+                      <th className="px-4 py-2.5">{t("subscription.amount")}</th>
+                      <th className="px-4 py-2.5 text-right font-medium">{t("subscription.download")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border text-ink">
                     <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">Aug 1 - Aug 31, 2024</td>
-                      <td className="px-4 py-3 font-mono">#INV-SUB-842</td>
-                      <td className="px-4 py-3 font-semibold">$49.00</td>
+                      <td className="px-4 py-3">{t("subscription.periodAug")}</td>
+                      <td className="px-4 py-3 font-mono">{t("subscription.invSub842")}</td>
+                      <td className="px-4 py-3 font-semibold">₹49.00</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>
                     </tr>
                     <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">Jul 1 - Jul 31, 2024</td>
-                      <td className="px-4 py-3 font-mono">#INV-SUB-710</td>
-                      <td className="px-4 py-3 font-semibold">$49.00</td>
+                      <td className="px-4 py-3">{t("subscription.periodJul")}</td>
+                      <td className="px-4 py-3 font-mono">{t("subscription.invSub710")}</td>
+                      <td className="px-4 py-3 font-semibold">₹49.00</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>
@@ -484,43 +505,43 @@ export function GlobalSettings() {
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
               <h3 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
                 <Award className="size-4.5 text-ink-muted" />
-                Available Plans
+                {t("subscription.availablePlans")}
               </h3>
 
               <div className="space-y-3.5">
                 {/* Plan 1 */}
                 <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
                   <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">Starter Plan</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">$19/mo</span>
+                    <h4 className="text-xs font-bold text-ink">{t("subscription.starterPlan")}</h4>
+                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.starterPrice")}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
-                    Up to 100 beds, basic tenant registration, and manual billing.
+                    {t("subscription.starterSub")}
                   </p>
                 </div>
 
                 {/* Plan 2 */}
                 <div className="border-2 border-accent rounded-xl p-3.5 bg-accent-soft/10 space-y-2 relative">
                   <span className="absolute -top-2.5 right-4 bg-accent text-ink-inverse text-[8px] font-extrabold uppercase px-2 py-0.5 rounded-full tracking-wider shadow-sm">
-                    Current Plan
+                    {t("subscription.currentPlanBadge")}
                   </span>
                   <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">Pro Plan</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">$49/mo</span>
+                    <h4 className="text-xs font-bold text-ink">{t("subscription.proPlan")}</h4>
+                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.proPrice")}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
-                    Up to 500 beds, auto late penalty triggers, and custom tenant contracts.
+                    {t("subscription.proSub")}
                   </p>
                 </div>
 
                 {/* Plan 3 */}
                 <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
                   <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">Enterprise Plan</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">$99/mo</span>
+                    <h4 className="text-xs font-bold text-ink">{t("subscription.enterprisePlan")}</h4>
+                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.enterprisePrice")}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
-                    Unlimited beds, custom roles & permissions matrix, API webhooks, and 24/7 priority support.
+                    {t("subscription.enterpriseSub")}
                   </p>
                 </div>
               </div>

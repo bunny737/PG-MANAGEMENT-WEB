@@ -8,6 +8,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.core.roles import STAFF_ROLES
 
@@ -27,6 +28,8 @@ from .serializers import (
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
+    TenantSerializer,
+    TenantUpdateSerializer,
     TokenPairSerializer,
 )
 
@@ -166,3 +169,33 @@ class StaffViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(StaffSerializer(instance).data)
+
+
+class CurrentTenantView(RetrieveUpdateAPIView):
+    permission_classes = [IsAuthenticated, require_permission('manage_tenant_settings')]
+    http_method_names = ['get', 'patch']
+
+    def get_object(self):
+        return self.request.user.tenant
+
+    def get_serializer_class(self):
+        return TenantUpdateSerializer if self.request.method == 'PATCH' else TenantSerializer
+
+    def partial_update(self, request, *args, **kwargs):
+        tenant = self.get_object()
+        old_lang = tenant.default_language
+        serializer = self.get_serializer(tenant, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        new_lang = tenant.default_language
+        if old_lang != new_lang:
+            audit_log.record(
+                action='tenant.updated',
+                actor=request.user,
+                obj=tenant,
+                before={'default_language': old_lang},
+                after={'default_language': new_lang},
+                request=request,
+            )
+        return Response(TenantSerializer(tenant).data)
+

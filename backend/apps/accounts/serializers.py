@@ -251,6 +251,12 @@ class TenantSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class TenantUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ['default_language']
+
+
 class MeSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer(read_only=True)
     permissions = serializers.SerializerMethodField()

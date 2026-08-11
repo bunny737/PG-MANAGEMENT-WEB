@@ -77,6 +77,7 @@ POST /api/v1/auth/otp/verify/              phone+code → JWT pair           All
 POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
 POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
+GET|PATCH /api/v1/tenants/current/           detail/update tenant default    manage_tenant_settings
 GET|POST /api/v1/staff/                    list/create Manager|Receptionist  manage_staff_accounts
 GET|PATCH /api/v1/staff/{id}/              detail/update/deactivate          manage_staff_accounts
 ```

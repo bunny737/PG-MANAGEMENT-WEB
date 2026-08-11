@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Building2, LogOut } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 
@@ -10,17 +11,20 @@ import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 // with the authenticated user's name/role and the tenant's actual plan name.
 export function SideNav() {
   const pathname = usePathname();
+  const t = useTranslations("common");
 
   return (
     <nav className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-surface-card md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-surface-inverse text-ink-inverse">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-linear-to-br from-accent to-accent-hover text-ink-inverse shadow-sm">
           <Building2 className="size-5" aria-hidden />
         </span>
-        <span className="text-lg font-bold text-ink">PropManager</span>
+        <span className="font-display text-lg font-extrabold text-ink">
+          {t("appName")}
+        </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 px-3">
+      <div className="flex flex-1 flex-col gap-0.5 px-3">
         {SIDEBAR_NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
@@ -28,31 +32,48 @@ export function SideNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                // `relative` anchors the active rail; the group lets the icon
+                // pick up the accent on hover ahead of the label.
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                 isActive
-                  ? "bg-surface-page font-semibold text-ink"
-                  : "text-ink-muted hover:bg-surface-page hover:text-ink"
+                  ? "bg-accent-soft font-semibold text-accent"
+                  : "font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
               )}
             >
-              <Icon className="size-5" aria-hidden />
-              {item.label}
+              {isActive ? (
+                <span
+                  className="absolute top-2 bottom-2 -left-3 w-1 rounded-r-full bg-accent"
+                  aria-hidden
+                />
+              ) : null}
+              <Icon
+                className={cn(
+                  "size-5 transition-colors",
+                  isActive ? "text-accent" : "text-ink-faint group-hover:text-ink"
+                )}
+                aria-hidden
+              />
+              {t(item.labelKey)}
             </Link>
           );
         })}
       </div>
 
-      <div className="flex items-center justify-between border-t border-border px-5 py-4">
+      <div className="m-3 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-subtle p-2.5">
         <Link
           href="/profile"
-          className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer"
+          className="flex min-w-0 items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80"
         >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-inverse text-sm font-semibold text-ink-inverse">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-surface-inverse-soft to-surface-inverse text-xs font-bold text-ink-inverse">
             OP
           </span>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-ink">Owner Portal</span>
-            <span className="text-xs text-ink-faint">Premium Plan</span>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold text-ink">
+              {t("sideNav.ownerPortal")}
+            </span>
+            <span className="truncate text-xs text-ink-faint">{t("sideNav.premiumPlan")}</span>
           </div>
         </Link>
         <button
@@ -60,10 +81,10 @@ export function SideNav() {
             localStorage.removeItem("isLoggedIn");
             window.location.href = "/login";
           }}
-          className="rounded-lg p-1.5 text-ink-muted hover:bg-surface-page hover:text-ink transition-colors cursor-pointer"
-          title="Sign Out"
+          className="shrink-0 cursor-pointer rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-status-critical-soft hover:text-status-critical"
+          title={t("sideNav.signOut")}
         >
-          <LogOut className="size-5" aria-hidden />
+          <LogOut className="size-4.5" aria-hidden />
         </button>
       </div>
     </nav>

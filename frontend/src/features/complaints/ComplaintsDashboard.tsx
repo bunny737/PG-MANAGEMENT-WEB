@@ -9,15 +9,10 @@ import {
   X,
   Send,
   Wrench,
-  CheckCircle,
-  Play,
   ShieldAlert,
-  Clock,
-  Lock,
-  Paperclip,
   AlertCircle
 } from "lucide-react";
-import { getInitials } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import {
   listComplaints,
   getComplaint,
@@ -31,43 +26,38 @@ import {
   type Complaint,
   type Resident,
   type StaffUser,
-  type CurrentUser,
   ApiError
 } from "@/lib/api";
+import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 
-const CATEGORY_MAP: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  electrical: { label: "Electrical", icon: Wrench, color: "text-amber-500 bg-amber-50 border-amber-100" },
-  plumbing: { label: "Plumbing", icon: Wrench, color: "text-blue-500 bg-blue-50 border-blue-100" },
-  internet_wifi: { label: "Internet & WiFi", icon: Wrench, color: "text-indigo-500 bg-indigo-50 border-indigo-100" },
-  housekeeping: { label: "Housekeeping", icon: Wrench, color: "text-teal-500 bg-teal-50 border-teal-100" },
-  security: { label: "Security", icon: ShieldAlert, color: "text-rose-500 bg-rose-50 border-rose-100" },
-  furniture: { label: "Furniture", icon: Wrench, color: "text-orange-500 bg-orange-50 border-orange-100" },
-  other: { label: "Other", icon: AlertCircle, color: "text-slate-500 bg-slate-50 border-slate-100" }
+const CATEGORY_MAP: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  electrical: { icon: Wrench, color: "text-amber-500 bg-amber-50 border-amber-100" },
+  plumbing: { icon: Wrench, color: "text-blue-500 bg-blue-50 border-blue-100" },
+  internet_wifi: { icon: Wrench, color: "text-indigo-500 bg-indigo-50 border-indigo-100" },
+  housekeeping: { icon: Wrench, color: "text-teal-500 bg-teal-50 border-teal-100" },
+  security: { icon: ShieldAlert, color: "text-rose-500 bg-rose-50 border-rose-100" },
+  furniture: { icon: Wrench, color: "text-orange-500 bg-orange-50 border-orange-100" },
+  other: { icon: AlertCircle, color: "text-slate-500 bg-slate-50 border-slate-100" }
 };
 
-const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
-  low: { label: "Low Priority", color: "bg-slate-50 border-slate-200 text-slate-500" },
-  medium: { label: "Medium Priority", color: "bg-sky-50 border-sky-100 text-sky-600" },
-  high: { label: "High Priority", color: "bg-orange-50 border-orange-200 text-orange-600" },
-  urgent: { label: "Urgent Priority", color: "bg-rose-50 border-rose-200 text-rose-600 font-bold" }
-};
-
-const STATUS_MAP: Record<string, { label: string; color: string; order: number }> = {
-  open: { label: "Open", color: "bg-blue-50 border-blue-100 text-blue-600", order: 1 },
-  assigned: { label: "Assigned", color: "bg-indigo-50 border-indigo-100 text-indigo-600", order: 2 },
-  in_progress: { label: "In Progress", color: "bg-amber-50 border-amber-100 text-amber-600", order: 3 },
-  resolved: { label: "Resolved", color: "bg-emerald-50 border-emerald-100 text-emerald-600", order: 4 },
-  closed: { label: "Closed", color: "bg-slate-100 border-slate-200 text-slate-500", order: 5 }
+const PRIORITY_MAP: Record<string, { color: string }> = {
+  low: { color: "bg-slate-50 border-slate-200 text-slate-500" },
+  medium: { color: "bg-sky-50 border-sky-100 text-sky-600" },
+  high: { color: "bg-orange-50 border-orange-200 text-orange-600" },
+  urgent: { color: "bg-rose-50 border-rose-200 text-rose-600 font-bold" }
 };
 
 export function ComplaintsDashboard() {
+  const t = useTranslations("complaints");
+  const tStatus = useTranslations("status");
+
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reloadTrigger, setReloadTrigger] = useState(0);
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState("all");
@@ -93,774 +83,629 @@ export function ComplaintsDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const loadData = () => {
-    setTimeout(() => setIsLoading(true), 0);
-    setError("");
+  useEffect(() => {
+    let cancelled = false;
 
     Promise.all([
       listComplaints(),
       listResidents(),
-      listStaff().catch(() => [] as StaffUser[]), // Fallback if staff listing fails
+      listStaff(),
       getCurrentUser().catch(() => null)
     ])
-      .then(([complaintsData, residentsData, staffData, userData]) => {
-        setComplaints(complaintsData);
-        setResidents(residentsData.filter(r => ["active", "reserved", "notice_period"].includes(r.status)));
+      .then(([complaintData, residentData, staffData]) => {
+        if (cancelled) return;
+        setComplaints(complaintData);
+        setResidents(residentData);
         setStaff(staffData);
-        setCurrentUser(userData);
+        if (residentData.length > 0) setFormResident(residentData[0].id);
         setIsLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error(err);
-        setError("Failed to fetch complaints list. Please check your network connection.");
+        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t, reloadTrigger]);
+
+  const refreshData = () => {
+    setIsLoading(true);
+    setError("");
+    setReloadTrigger((prev) => prev + 1);
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadData();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+  // Filter complaints
+  const filteredComplaints = useMemo(() => {
+    return complaints.filter((c) => {
+      const residentName = c.resident_details
+        ? `${c.resident_details.first_name} ${c.resident_details.last_name}`
+        : c.resident_name || "";
+      const roomStr = c.resident_details?.unit || c.resident_room || "";
+      const query = searchTerm.toLowerCase();
 
-  // Scroll to bottom of chat when comments change
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [selectedComplaint?.comments]);
+      const matchesSearch =
+        c.id.toLowerCase().includes(query) ||
+        c.description.toLowerCase().includes(query) ||
+        residentName.toLowerCase().includes(query) ||
+        roomStr.toLowerCase().includes(query);
 
-  // Handle reload details for active drawer
-  const refreshActiveComplaint = (id: string) => {
-    getComplaint(id)
-      .then((data) => {
-        setSelectedComplaint(data);
-        // Also refresh list
-        listComplaints().then(setComplaints).catch(console.error);
-      })
-      .catch(console.error);
+      const matchesStatus = statusFilter === "all" ? true : c.status === statusFilter;
+      const matchesCategory = categoryFilter === "all" ? true : c.category === categoryFilter;
+      const matchesPriority = priorityFilter === "all" ? true : c.priority === priorityFilter;
+
+      return matchesSearch && matchesStatus && matchesCategory && matchesPriority;
+    });
+  }, [complaints, searchTerm, statusFilter, categoryFilter, priorityFilter]);
+
+  // Handle open complaint detail modal
+  const handleOpenDetail = async (c: Complaint) => {
+    setSelectedComplaint(c);
+    try {
+      const fresh = await getComplaint(c.id);
+      setSelectedComplaint(fresh);
+    } catch (err) {
+      console.error("Failed to load fresh complaint details:", err);
+    }
   };
 
-  // Status transitions
-  const handleAssign = (assignedToId: string) => {
+  // Assign Staff
+  const handleAssignStaff = async (assignedToId: string) => {
     if (!selectedComplaint) return;
-    assignComplaint(selectedComplaint.id, assignedToId)
-      .then(() => refreshActiveComplaint(selectedComplaint.id))
-      .catch((err) => alert(err instanceof ApiError ? err.message : "Assignment failed"));
+    try {
+      const updated = await assignComplaint(selectedComplaint.id, assignedToId);
+      setSelectedComplaint(updated);
+      setComplaints((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      console.error("Failed to assign staff:", err);
+      alert(err instanceof ApiError ? err.message : "Failed to assign staff member");
+    }
   };
 
-  const handleStatusChange = (nextStatus: string) => {
+  // Update Status
+  const handleStatusChange = async (newStatus: string) => {
     if (!selectedComplaint) return;
-    updateComplaintStatus(selectedComplaint.id, nextStatus)
-      .then(() => refreshActiveComplaint(selectedComplaint.id))
-      .catch((err) => alert(err instanceof ApiError ? err.message : "Status transition failed"));
+    try {
+      const updated = await updateComplaintStatus(selectedComplaint.id, newStatus);
+      setSelectedComplaint(updated);
+      setComplaints((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (err) {
+      console.error("Failed to update status:", err);
+      alert(err instanceof ApiError ? err.message : "Failed to update complaint status");
+    }
   };
 
-  // Submit comments
-  const handleAddComment = (e: React.FormEvent) => {
+  // Post Comment
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedComplaint || !newCommentText.trim() || isSubmittingComment) return;
 
     setIsSubmittingComment(true);
-    createComplaintComment(selectedComplaint.id, newCommentText.trim())
-      .then(() => {
-        setNewCommentText("");
-        setIsSubmittingComment(false);
-        refreshActiveComplaint(selectedComplaint.id);
-      })
-      .catch((err) => {
-        console.error(err);
-        setIsSubmittingComment(false);
-      });
+    try {
+      await createComplaintComment(selectedComplaint.id, newCommentText.trim());
+      setNewCommentText("");
+      const fresh = await getComplaint(selectedComplaint.id);
+      setSelectedComplaint(fresh);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+      alert(err instanceof ApiError ? err.message : "Failed to post comment");
+    } finally {
+      setIsSubmittingComment(false);
+    }
   };
 
-  // Log new Complaint
-  const handleLogComplaintSubmit = (e: React.FormEvent) => {
+  // Submit New Complaint Form
+  const handleCreateComplaintSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formResident || !formDescription.trim() || isSubmittingForm) {
-      setFormSubmitError("Please fill out all required fields.");
+    setFormSubmitError("");
+
+    if (!formResident) {
+      setFormSubmitError(t("modal.errResidentRequired"));
+      return;
+    }
+    if (!formDescription.trim()) {
+      setFormSubmitError(t("modal.errDescriptionRequired"));
       return;
     }
 
     setIsSubmittingForm(true);
-    setFormSubmitError("");
 
-    const fd = new FormData();
-    fd.append("resident", formResident);
-    fd.append("category", formCategory);
-    fd.append("priority", formPriority);
-    fd.append("description", formDescription.trim());
-    if (formFile) {
-      fd.append("attachment", formFile);
+    try {
+      const formData = new FormData();
+      formData.append("resident", formResident);
+      formData.append("category", formCategory);
+      formData.append("priority", formPriority);
+      formData.append("description", formDescription.trim());
+      if (formFile) {
+        formData.append("attachment", formFile);
+      }
+
+      await createComplaint(formData);
+      setIsLoggingNew(false);
+      setFormDescription("");
+      setFormFile(null);
+      refreshData();
+    } catch (err) {
+      console.error("Failed to create complaint:", err);
+      setFormSubmitError(err instanceof ApiError ? err.message : "Failed to submit complaint ticket.");
+    } finally {
+      setIsSubmittingForm(false);
     }
-
-    createComplaint(fd)
-      .then(() => {
-        // Reset form
-        setFormResident("");
-        setFormCategory("electrical");
-        setFormPriority("medium");
-        setFormDescription("");
-        setFormFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        
-        setIsLoggingNew(false);
-        setIsSubmittingForm(false);
-        loadData();
-      })
-      .catch((err) => {
-        console.error(err);
-        setFormSubmitError(err instanceof ApiError ? err.message : "Failed to log complaint. Please try again.");
-        setIsSubmittingForm(false);
-      });
   };
-
-  // Counters
-  const stats = useMemo(() => {
-    const counts = { total: 0, open: 0, in_progress: 0, resolved: 0, closed: 0 };
-    complaints.forEach((c) => {
-      counts.total++;
-      if (c.status === "open") counts.open++;
-      else if (c.status === "assigned" || c.status === "in_progress") counts.in_progress++;
-      else if (c.status === "resolved") counts.resolved++;
-      else if (c.status === "closed") counts.closed++;
-    });
-    return counts;
-  }, [complaints]);
-
-  // Filtered List
-  const filteredComplaints = useMemo(() => {
-    return complaints.filter((c) => {
-      // Status filter
-      let matchStatus = true;
-      if (statusFilter !== "all") {
-        if (statusFilter === "in_progress") {
-          matchStatus = c.status === "in_progress" || c.status === "assigned";
-        } else {
-          matchStatus = c.status === statusFilter;
-        }
-      }
-
-      // Category filter
-      const matchCategory = categoryFilter === "all" ? true : c.category === categoryFilter;
-
-      // Priority filter
-      const matchPriority = priorityFilter === "all" ? true : c.priority === priorityFilter;
-
-      // Search term
-      let matchSearch = true;
-      if (searchTerm.trim()) {
-        const query = searchTerm.toLowerCase();
-        const residentName = `${c.resident_details?.first_name || ""} ${c.resident_details?.last_name || ""}`.toLowerCase();
-        const unit = (c.resident_details?.unit || "").toLowerCase();
-        const desc = c.description.toLowerCase();
-        matchSearch = residentName.includes(query) || unit.includes(query) || desc.includes(query);
-      }
-
-      return matchStatus && matchCategory && matchPriority && matchSearch;
-    });
-  }, [complaints, statusFilter, categoryFilter, priorityFilter, searchTerm]);
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading complaints dashboard...</p>
+        <p className="font-semibold mt-2">{t("loading")}</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {error && (
-        <div className="flex gap-2 rounded-xl bg-status-critical-soft p-3.5 text-xs text-status-critical border border-status-critical/10">
-          <AlertTriangle className="size-4 shrink-0" />
-          <p className="font-semibold">{error}</p>
+  if (error) {
+    return (
+      <div className="space-y-4 max-w-md mx-auto py-16 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
+          <AlertTriangle className="size-6" />
         </div>
-      )}
+        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
+        <p className="text-xs text-ink-muted leading-relaxed">{error}</p>
+        <button
+          onClick={refreshData}
+          className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+        >
+          {t("retry")}
+        </button>
+      </div>
+    );
+  }
+
+  // Count stats
+  const totalCount = complaints.length;
+  const openCount = complaints.filter((c) => c.status === "open").length;
+  const inProgressCount = complaints.filter((c) => c.status === "in_progress" || c.status === "assigned").length;
+  const resolvedCount = complaints.filter((c) => c.status === "resolved" || c.status === "closed").length;
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Complaints & Tickets</h1>
-          <p className="text-sm text-ink-muted">Drive resident issues and maintenance tickets through their lifecycle.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl font-display-lg">
+            {t("title")}
+          </h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            {t("subtitle")}
+          </p>
         </div>
         <button
           onClick={() => setIsLoggingNew(true)}
-          className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-white hover:bg-accent-hover transition-all cursor-pointer shadow-sm shadow-accent/15"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
         >
-          <Plus className="size-4" />
-          Log Complaint
+          <Plus className="size-4.5" />
+          {t("logComplaint")}
         </button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <div className="rounded-2xl border border-border bg-surface-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Total Tickets</p>
-          <p className="mt-2 text-2xl font-bold text-ink">{stats.total}</p>
+      {/* KPI Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-surface-card border border-border rounded-2xl p-4 shadow-sm space-y-1">
+          <span className="text-xs text-ink-muted font-semibold">{t("stats.totalTickets")}</span>
+          <p className="text-2xl font-extrabold text-ink font-mono">{totalCount}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-surface-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Unassigned/Open</p>
-          <p className="mt-2 text-2xl font-bold text-blue-600">{stats.open}</p>
+        <div className="bg-surface-card border border-border rounded-2xl p-4 shadow-sm space-y-1">
+          <span className="text-xs text-blue-600 font-semibold">{t("stats.openIssues")}</span>
+          <p className="text-2xl font-extrabold text-blue-600 font-mono">{openCount}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-surface-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">In Progress</p>
-          <p className="mt-2 text-2xl font-bold text-amber-600">{stats.in_progress}</p>
+        <div className="bg-surface-card border border-border rounded-2xl p-4 shadow-sm space-y-1">
+          <span className="text-xs text-amber-600 font-semibold">{t("stats.inProgress")}</span>
+          <p className="text-2xl font-extrabold text-amber-600 font-mono">{inProgressCount}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-surface-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Resolved</p>
-          <p className="mt-2 text-2xl font-bold text-emerald-600">{stats.resolved}</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-surface-card p-4 col-span-2 lg:col-span-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Closed</p>
-          <p className="mt-2 text-2xl font-bold text-slate-500">{stats.closed}</p>
+        <div className="bg-surface-card border border-border rounded-2xl p-4 shadow-sm space-y-1">
+          <span className="text-xs text-emerald-600 font-semibold">{t("stats.resolvedClosed")}</span>
+          <p className="text-2xl font-extrabold text-emerald-600 font-mono">{resolvedCount}</p>
         </div>
       </div>
 
-      {/* Filters Panel */}
-      <div className="rounded-2xl border border-border bg-surface-card p-4 space-y-4">
-        {/* Status Tabs selectors */}
-        <div className="flex gap-1.5 overflow-x-auto border-b border-border pb-1">
-          {[
-            { id: "all", label: "All Tickets" },
-            { id: "open", label: "Open" },
-            { id: "in_progress", label: "In Progress" },
-            { id: "resolved", label: "Resolved" },
-            { id: "closed", label: "Closed" }
-          ].map((tab) => {
-            const active = statusFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                className={`border-b-2 px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                  active ? "border-accent text-accent" : "border-transparent text-ink-muted hover:text-ink"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+      {/* Filters Bar */}
+      <div className="bg-surface-card border border-border rounded-2xl p-4 shadow-sm grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+        {/* Search */}
+        <div className="relative sm:col-span-6 lg:col-span-5">
+          <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
+            <Search className="size-4.5" />
+          </span>
+          <input
+            type="text"
+            placeholder={t("filters.searchPlaceholder")}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-xl border border-border bg-surface-card py-2 pl-10 pr-4 text-xs text-ink outline-none transition-all focus:ring-2 focus:ring-accent"
+          />
         </div>
 
-        {/* Inputs */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          {/* Search */}
-          <div className="relative md:col-span-2">
-            <Search className="absolute inset-y-0 left-3.5 my-auto size-4 text-ink-muted" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by resident name, room, description..."
-              className="w-full rounded-xl border border-border bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
-            />
-          </div>
+        {/* Status Select */}
+        <div className="sm:col-span-2 lg:col-span-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-xs text-ink outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="all">{t("filters.allStatuses")}</option>
+            <option value="open">{t("statuses.open")}</option>
+            <option value="assigned">{t("statuses.assigned")}</option>
+            <option value="in_progress">{t("statuses.in_progress")}</option>
+            <option value="resolved">{t("statuses.resolved")}</option>
+            <option value="closed">{t("statuses.closed")}</option>
+          </select>
+        </div>
 
-          {/* Category Filter */}
+        {/* Category Select */}
+        <div className="sm:col-span-2 lg:col-span-2">
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
+            className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-xs text-ink outline-none focus:ring-2 focus:ring-accent"
           >
-            <option value="all">All Categories</option>
-            <option value="electrical">Electrical</option>
-            <option value="plumbing">Plumbing</option>
-            <option value="internet_wifi">Internet & WiFi</option>
-            <option value="housekeeping">Housekeeping</option>
-            <option value="security">Security</option>
-            <option value="furniture">Furniture</option>
-            <option value="other">Other</option>
+            <option value="all">{t("filters.allCategories")}</option>
+            <option value="electrical">{t("categories.electrical")}</option>
+            <option value="plumbing">{t("categories.plumbing")}</option>
+            <option value="internet_wifi">{t("categories.internet_wifi")}</option>
+            <option value="housekeeping">{t("categories.housekeeping")}</option>
+            <option value="security">{t("categories.security")}</option>
+            <option value="furniture">{t("categories.furniture")}</option>
+            <option value="other">{t("categories.other")}</option>
           </select>
+        </div>
 
-          {/* Priority Filter */}
+        {/* Priority Select */}
+        <div className="sm:col-span-2 lg:col-span-3">
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
-            className="rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
+            className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-xs text-ink outline-none focus:ring-2 focus:ring-accent"
           >
-            <option value="all">All Priorities</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
+            <option value="all">{t("filters.allPriorities")}</option>
+            <option value="low">{t("priorities.low")}</option>
+            <option value="medium">{t("priorities.medium")}</option>
+            <option value="high">{t("priorities.high")}</option>
+            <option value="urgent">{t("priorities.urgent")}</option>
           </select>
         </div>
       </div>
 
-      {/* Grid List */}
-      {filteredComplaints.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface-card py-16 text-center">
-          <AlertTriangle className="size-10 text-ink-muted" />
-          <h3 className="mt-4 text-base font-bold text-ink">No Tickets Found</h3>
-          <p className="mt-1 text-sm text-ink-muted">No complaints match your query parameters.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {filteredComplaints.map((c) => {
-            const cat = CATEGORY_MAP[c.category] || CATEGORY_MAP.other;
-            const prio = PRIORITY_MAP[c.priority] || PRIORITY_MAP.medium;
-            const stat = STATUS_MAP[c.status] || STATUS_MAP.open;
-            const residentName = `${c.resident_details?.first_name || ""} ${c.resident_details?.last_name || ""}`;
-            const initials = getInitials(residentName);
-            const CatIcon = cat.icon;
+      {/* Complaints List Table / Grid */}
+      <div className="bg-surface-card border border-border rounded-2xl shadow-sm overflow-hidden">
+        {filteredComplaints.length > 0 ? (
+          <div className="divide-y divide-border text-xs">
+            {filteredComplaints.map((c) => {
+              const resName = c.resident_details
+                ? `${c.resident_details.first_name} ${c.resident_details.last_name}`
+                : c.resident_name || t("list.resident");
+              const roomName = c.resident_details?.unit || c.resident_room || "--";
+              const catObj = CATEGORY_MAP[c.category] || CATEGORY_MAP.other;
+              const prioObj = PRIORITY_MAP[c.priority] || PRIORITY_MAP.medium;
+              const CatIcon = catObj.icon;
 
-            return (
-              <div
-                key={c.id}
-                onClick={() => refreshActiveComplaint(c.id)}
-                className="group relative flex flex-col justify-between rounded-2xl border border-border bg-surface-card p-5 hover:border-accent/40 hover:shadow-md transition-all cursor-pointer"
-              >
-                <div>
-                  {/* Category, Priority and Status */}
-                  <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex size-7 items-center justify-center rounded-lg border ${cat.color}`}>
-                        <CatIcon className="size-4" />
-                      </span>
-                      <span className="text-xs font-bold text-ink uppercase tracking-wider">{cat.label}</span>
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => handleOpenDetail(c)}
+                  className="p-5 hover:bg-surface-page/40 transition-colors cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className={`p-3 rounded-2xl border shrink-0 ${catObj.color}`}>
+                      <CatIcon className="size-5" />
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${prio.color}`}>
-                        {prio.label}
-                      </span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${stat.color}`}>
-                        {stat.label}
-                      </span>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-accent">#{c.id.substring(0, 8)}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${prioObj.color}`}>
+                          {t(`priorities.${c.priority as "low" | "medium" | "high" | "urgent"}`)}
+                        </span>
+                        <StatusPill
+                          label={tStatus(c.status as "open" | "assigned" | "in_progress" | "resolved" | "closed") ?? c.status}
+                          tone={getStatusTone(c.status)}
+                        />
+                      </div>
+                      <h3 className="font-bold text-ink text-sm leading-snug line-clamp-1">{c.description}</h3>
+                      <p className="text-ink-muted text-[11px] flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-ink">{resName}</span>
+                        <span>·</span>
+                        <span>{t("list.room")}: {roomName}</span>
+                        <span>·</span>
+                        <span>{c.created_at?.split("T")[0]}</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Body details */}
-                  <div className="mt-4 space-y-2">
-                    <p className="text-sm font-semibold text-ink line-clamp-2 leading-relaxed">
-                      {c.description}
-                    </p>
-
-                    <div className="flex items-center gap-2 pt-2">
-                      <div className="flex size-7 items-center justify-center rounded-full bg-accent/5 text-xs font-bold text-accent border border-accent/10">
-                        {initials}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-ink">{residentName}</p>
-                        <p className="text-[10px] font-medium text-ink-muted">
-                          {c.resident_details?.block} &bull; {c.resident_details?.unit}
-                        </p>
-                      </div>
+                  <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-border">
+                    <div className="text-right text-[11px]">
+                      <span className="text-ink-faint block">{t("list.assignedTo")}</span>
+                      <span className="font-semibold text-ink">
+                        {c.assigned_to_details
+                          ? `${c.assigned_to_details.first_name} ${c.assigned_to_details.last_name}`
+                          : t("list.unassigned")}
+                      </span>
                     </div>
+                    <button className="text-accent hover:underline font-bold text-xs cursor-pointer">
+                      {t("list.viewDetail")} ›
+                    </button>
                   </div>
                 </div>
-
-                {/* Footer metadata */}
-                <div className="mt-4 flex items-center justify-between gap-4 border-t border-border/40 pt-3 text-[11px] text-ink-muted">
-                  <div className="flex items-center gap-1">
-                    <Clock className="size-3" />
-                    <span>Logged {new Date(c.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <div className="font-semibold">
-                    {c.assigned_to_details ? (
-                      <span className="text-indigo-600">Assigned: {c.assigned_to_details.first_name}</span>
-                    ) : (
-                      <span className="text-amber-600 font-bold">Unassigned</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Details Slide-over Drawer */}
-      {selectedComplaint && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-ink/40 backdrop-blur-sm transition-all duration-300">
-          <div className="absolute inset-0" onClick={() => setSelectedComplaint(null)} />
-          
-          <div className="relative flex h-full w-full max-w-lg flex-col bg-surface-card shadow-2xl border-l border-border transition-all duration-300 animate-slide-in">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div>
-                <h2 className="text-base font-bold text-ink">Ticket Details</h2>
-                <p className="text-xs text-ink-muted">Ref #{selectedComplaint.id.slice(0, 8)}</p>
-              </div>
-              <button
-                onClick={() => setSelectedComplaint(null)}
-                className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-50 transition-colors"
-              >
-                <X className="size-5" />
-              </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center p-12 text-center space-y-3">
+            <div className="flex size-12 items-center justify-center rounded-full bg-surface-page text-ink-muted border border-border">
+              <Wrench className="size-6 text-ink-faint" />
             </div>
+            <div className="space-y-1 max-w-sm">
+              <h3 className="text-sm font-bold text-ink">{t("list.emptyTitle")}</h3>
+              <p className="text-xs text-ink-muted leading-relaxed">
+                {t("list.emptyDesc")}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
-            {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-6">
-              {/* Header Badges */}
-              <div className="flex flex-wrap gap-2">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${CATEGORY_MAP[selectedComplaint.category]?.color || CATEGORY_MAP.other.color}`}>
-                  {CATEGORY_MAP[selectedComplaint.category]?.label}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${PRIORITY_MAP[selectedComplaint.priority]?.color}`}>
-                  {PRIORITY_MAP[selectedComplaint.priority]?.label}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${STATUS_MAP[selectedComplaint.status]?.color}`}>
-                  {STATUS_MAP[selectedComplaint.status]?.label}
-                </span>
-              </div>
-
-              {/* Description */}
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Description</h4>
-                <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 text-sm text-ink leading-relaxed">
-                  {selectedComplaint.description}
-                </div>
-              </div>
-
-              {/* Photo Attachment if present */}
-              {selectedComplaint.attachment && (
-                <div className="space-y-1.5">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Attachment</h4>
-                  <div className="overflow-hidden rounded-xl border border-border bg-slate-50 max-h-48 flex items-center justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={selectedComplaint.attachment}
-                      alt="Complaint Attachment"
-                      className="max-w-full max-h-full object-contain hover:scale-105 transition-transform"
+      {/* Ticket Detail Drawer / Modal */}
+      {selectedComplaint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-on-surface/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-card border-l border-border max-w-xl w-full h-full p-6 shadow-2xl space-y-6 overflow-y-auto flex flex-col justify-between">
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex justify-between items-start border-b border-border pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-accent">
+                      #{selectedComplaint.id.substring(0, 8)}
+                    </span>
+                    <StatusPill
+                      label={tStatus(selectedComplaint.status as "open" | "assigned" | "in_progress" | "resolved" | "closed") ?? selectedComplaint.status}
+                      tone={getStatusTone(selectedComplaint.status)}
                     />
                   </div>
+                  <h2 className="text-lg font-bold text-ink mt-1 leading-snug">{selectedComplaint.description}</h2>
                 </div>
-              )}
+                <button
+                  onClick={() => setSelectedComplaint(null)}
+                  className="p-1 rounded-lg text-ink-muted hover:bg-surface-page transition-colors cursor-pointer"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
 
-              {/* Resident Card details */}
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Resident details</h4>
-                <div className="flex items-center gap-3 rounded-xl border border-border p-3.5">
-                  <div className="flex size-10 items-center justify-center rounded-full bg-accent/5 text-sm font-bold text-accent border border-accent/10">
-                    {getInitials(`${selectedComplaint.resident_details?.first_name || ""} ${selectedComplaint.resident_details?.last_name || ""}`)}
-                  </div>
-                  <div>
-                    <h5 className="text-sm font-bold text-ink">
-                      {selectedComplaint.resident_details?.first_name} {selectedComplaint.resident_details?.last_name}
-                    </h5>
-                    <p className="text-xs text-ink-muted">
-                      {selectedComplaint.resident_details?.block} &bull; {selectedComplaint.resident_details?.unit}
-                    </p>
-                  </div>
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-4 text-xs bg-surface-page/50 border border-border rounded-xl p-4">
+                <div>
+                  <span className="text-ink-muted">{t("detail.raisedBy")}</span>
+                  <p className="font-semibold text-ink mt-0.5">
+                    {selectedComplaint.resident_details
+                      ? `${selectedComplaint.resident_details.first_name} ${selectedComplaint.resident_details.last_name}`
+                      : selectedComplaint.resident_name || "--"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-ink-muted">{t("detail.roomBed")}</span>
+                  <p className="font-semibold text-ink mt-0.5">
+                    {selectedComplaint.resident_details?.unit || selectedComplaint.resident_room || "--"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-ink-muted">{t("detail.loggedOn")}</span>
+                  <p className="font-mono font-semibold text-ink mt-0.5">{selectedComplaint.created_at?.split("T")[0]}</p>
+                </div>
+                <div>
+                  <span className="text-ink-muted">{t("modal.category")}</span>
+                  <p className="font-semibold text-ink mt-0.5 capitalize">{t(`categories.${selectedComplaint.category as "electrical" | "plumbing" | "internet_wifi" | "housekeeping" | "security" | "furniture" | "other"}`)}</p>
                 </div>
               </div>
 
-              {/* Workflow Status Progression & Actions */}
-              <div className="space-y-3 rounded-2xl border border-border p-4 bg-slate-50/50">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-ink">Workflow Lifecycle</h4>
-                
-                {/* Visual workflow timeline */}
-                <div className="flex items-center justify-between gap-1 py-2">
-                  {["open", "assigned", "in_progress", "resolved", "closed"].map((step, idx) => {
-                    const currentIdx = STATUS_MAP[selectedComplaint.status]?.order || 1;
-                    const stepIdx = STATUS_MAP[step].order;
-                    const isActive = step === selectedComplaint.status;
-                    const isCompleted = stepIdx < currentIdx;
+              {/* Admin Actions: Assign & Status */}
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1">
+                  <label className="font-semibold text-ink-muted">{t("detail.assignStaff")}</label>
+                  <select
+                    value={selectedComplaint.assigned_to || ""}
+                    onChange={(e) => handleAssignStaff(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    <option value="">{t("detail.selectStaff")}</option>
+                    {staff.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.first_name} {s.last_name} ({s.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                    return (
-                      <React.Fragment key={step}>
-                        <div className="flex flex-col items-center gap-1.5 flex-1">
-                          <div className={`flex size-6 items-center justify-center rounded-full border transition-all ${
-                            isActive
-                              ? "bg-accent border-accent text-white scale-110 shadow-sm"
-                              : isCompleted
-                              ? "bg-emerald-500 border-emerald-500 text-white"
-                              : "bg-white border-border text-ink-muted"
-                          }`}>
-                            {isCompleted ? <CheckCircle className="size-3.5" /> : <span className="text-[10px] font-bold">{stepIdx}</span>}
-                          </div>
-                          <span className={`text-[9px] font-bold uppercase tracking-wider ${isActive ? "text-accent" : "text-ink-muted"}`}>
-                            {STATUS_MAP[step].label}
+                <div className="space-y-1">
+                  <label className="font-semibold text-ink-muted">{t("detail.updateStatus")}</label>
+                  <select
+                    value={selectedComplaint.status}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-ink outline-none focus:ring-2 focus:ring-accent font-semibold"
+                  >
+                    <option value="open">{t("statuses.open")}</option>
+                    <option value="assigned">{t("statuses.assigned")}</option>
+                    <option value="in_progress">{t("statuses.in_progress")}</option>
+                    <option value="resolved">{t("statuses.resolved")}</option>
+                    <option value="closed">{t("statuses.closed")}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Activity Log / Comments Timeline */}
+              <div className="space-y-3 pt-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                  {t("detail.activityLog")}
+                </h3>
+
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                  {selectedComplaint.comments && selectedComplaint.comments.length > 0 ? (
+                    selectedComplaint.comments.map((cmt) => (
+                      <div key={cmt.id} className="p-3 rounded-xl bg-surface-page border border-border text-xs space-y-1">
+                        <div className="flex justify-between items-center text-[10px] text-ink-muted">
+                          <span className="font-bold text-ink">
+                            {cmt.author_details
+                              ? `${cmt.author_details.first_name} ${cmt.author_details.last_name}`
+                              : t("detail.staffFallback")}
                           </span>
+                          <span className="font-mono">{cmt.created_at?.split("T")[0]}</span>
                         </div>
-                        {idx < 4 && <div className={`h-[2px] flex-1 ${stepIdx < currentIdx ? "bg-emerald-500" : "bg-border"}`} />}
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
-
-                {/* Transitions Action Panel */}
-                <div className="border-t border-border pt-3">
-                  {/* Status: Open -> Assign staff */}
-                  {selectedComplaint.status === "open" && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-ink-muted">Assign this ticket to start the workflow:</p>
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) handleAssign(e.target.value);
-                        }}
-                        defaultValue=""
-                        className="w-full rounded-xl border border-border bg-white px-3.5 py-2.5 text-xs text-ink-muted outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                      >
-                        <option value="" disabled>Select Staff Assignee...</option>
-                        {staff.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.first_name} {s.last_name} ({s.role})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Status: Assigned -> Start work */}
-                  {selectedComplaint.status === "assigned" && (
-                    <button
-                      onClick={() => handleStatusChange("in_progress")}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-bold text-white hover:bg-accent-hover transition-colors shadow-sm cursor-pointer"
-                    >
-                      <Play className="size-3.5" />
-                      Start Work (Mark In Progress)
-                    </button>
-                  )}
-
-                  {/* Status: In Progress -> Mark resolved */}
-                  {selectedComplaint.status === "in_progress" && (
-                    <button
-                      onClick={() => handleStatusChange("resolved")}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
-                    >
-                      <CheckCircle className="size-3.5" />
-                      Mark Resolved
-                    </button>
-                  )}
-
-                  {/* Status: Resolved -> Close ticket */}
-                  {selectedComplaint.status === "resolved" && (
-                    <button
-                      onClick={() => handleStatusChange("closed")}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-700 transition-colors shadow-sm cursor-pointer"
-                    >
-                      <Lock className="size-3.5" />
-                      Close Ticket (Lock)
-                    </button>
-                  )}
-
-                  {/* Status: Closed */}
-                  {selectedComplaint.status === "closed" && (
-                    <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 p-2.5 text-center text-xs font-bold text-slate-500 border border-slate-200">
-                      <Lock className="size-3.5" />
-                      Ticket is closed and archived
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Comments Chat Thread */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Activity Comments Thread</h4>
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-slate-50/20 p-4 max-h-72 overflow-y-auto">
-                  {selectedComplaint.comments?.length === 0 ? (
-                    <p className="text-center text-xs text-ink-muted py-6">No activity updates yet. Send a note below.</p>
+                        <p className="text-ink leading-relaxed">{cmt.body}</p>
+                      </div>
+                    ))
                   ) : (
-                    selectedComplaint.comments?.map((comment) => {
-                      const isCurrentUser = comment.author_details?.id === currentUser?.id;
-                      const authorName = `${comment.author_details?.first_name || "Staff"} ${comment.author_details?.last_name || ""}`.trim();
-                      const roleLabel = comment.author_details?.role ? ` (${comment.author_details.role})` : "";
-
-                      return (
-                        <div
-                          key={comment.id}
-                          className={`flex flex-col max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed shadow-sm ${
-                            isCurrentUser
-                              ? "bg-accent/10 border border-accent/15 self-end text-right text-ink"
-                              : "bg-white border border-border self-start text-left text-ink"
-                          }`}
-                        >
-                          <p className="text-[10px] font-bold text-ink-muted">
-                            {authorName}
-                            <span className="font-medium text-[9px]">{roleLabel}</span>
-                          </p>
-                          <p className="mt-1 font-medium text-ink break-words">{comment.body}</p>
-                          <p className="mt-1.5 text-[9px] text-ink-muted/80">
-                            {new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      );
-                    })
+                    <div className="p-4 text-center text-xs text-ink-muted italic border border-dashed border-border rounded-xl">
+                      {t("detail.noComments")}
+                    </div>
                   )}
                   <div ref={chatEndRef} />
                 </div>
-
-                {/* Add Comment input Form */}
-                <form onSubmit={handleAddComment} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newCommentText}
-                    onChange={(e) => setNewCommentText(e.target.value)}
-                    placeholder="Enter progress update comment..."
-                    disabled={isSubmittingComment}
-                    className="flex-1 rounded-xl border border-border bg-white px-3.5 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSubmittingComment || !newCommentText.trim()}
-                    className="flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-white hover:bg-accent-hover transition-colors disabled:opacity-50 cursor-pointer shadow-sm shadow-accent/10"
-                  >
-                    {isSubmittingComment ? (
-                      <LoaderCircle className="size-4 animate-spin" />
-                    ) : (
-                      <Send className="size-4" />
-                    )}
-                  </button>
-                </form>
               </div>
             </div>
+
+            {/* Comment Post Box */}
+            <form onSubmit={handleAddComment} className="pt-4 border-t border-border flex items-center gap-2">
+              <input
+                type="text"
+                placeholder={t("detail.addCommentPlaceholder")}
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                className="flex-1 rounded-xl border border-border bg-surface-card px-3.5 py-2 text-xs text-ink outline-none focus:ring-2 focus:ring-accent"
+              />
+              <button
+                type="submit"
+                disabled={isSubmittingComment || !newCommentText.trim()}
+                className="p-2.5 rounded-xl bg-accent text-ink-inverse hover:bg-accent-hover transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Send className="size-4" />
+              </button>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Log Complaint Modal */}
+      {/* Log New Complaint Modal */}
       {isLoggingNew && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-surface-card p-6 shadow-2xl animate-fade-in space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-base font-bold text-ink">Log Complaint Ticket</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-surface/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-card border border-border rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-border pb-3">
+              <div>
+                <h3 className="text-base font-bold text-ink">{t("modal.title")}</h3>
+                <p className="text-xs text-ink-muted mt-0.5">{t("modal.subtitle")}</p>
+              </div>
               <button
                 onClick={() => setIsLoggingNew(false)}
-                className="rounded-lg p-1.5 text-ink-muted hover:bg-slate-50 transition-colors"
+                className="p-1 rounded-lg text-ink-muted hover:bg-surface-page transition-colors cursor-pointer"
               >
                 <X className="size-5" />
               </button>
             </div>
 
             {formSubmitError && (
-              <div className="flex gap-2 rounded-xl bg-status-critical-soft p-3 text-xs text-status-critical border border-status-critical/10">
-                <AlertTriangle className="size-4 shrink-0" />
-                <p className="font-semibold">{formSubmitError}</p>
+              <div className="p-3 rounded-xl bg-status-critical-soft border border-status-critical/20 text-status-critical text-xs font-semibold">
+                {formSubmitError}
               </div>
             )}
 
-            <form onSubmit={handleLogComplaintSubmit} className="space-y-4">
-              {/* Resident Dropdown */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Select Occupant/Resident *
-                </label>
+            <form onSubmit={handleCreateComplaintSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-ink-muted">{t("modal.selectResident")}</label>
                 <select
                   value={formResident}
                   onChange={(e) => setFormResident(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-ink outline-none focus:ring-2 focus:ring-accent"
                 >
-                  <option value="">-- Choose Resident --</option>
                   {residents.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.first_name} {r.last_name} ({r.unit || "No Room"})
+                      {r.first_name} {r.last_name} ({r.unit || t("list.unassigned")})
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Category */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                    Category *
-                  </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-ink-muted">{t("modal.category")}</label>
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    required
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
                   >
-                    <option value="electrical">Electrical</option>
-                    <option value="plumbing">Plumbing</option>
-                    <option value="internet_wifi">Internet & WiFi</option>
-                    <option value="housekeeping">Housekeeping</option>
-                    <option value="security">Security</option>
-                    <option value="furniture">Furniture</option>
-                    <option value="other">Other</option>
+                    <option value="electrical">{t("categories.electrical")}</option>
+                    <option value="plumbing">{t("categories.plumbing")}</option>
+                    <option value="internet_wifi">{t("categories.internet_wifi")}</option>
+                    <option value="housekeeping">{t("categories.housekeeping")}</option>
+                    <option value="security">{t("categories.security")}</option>
+                    <option value="furniture">{t("categories.furniture")}</option>
+                    <option value="other">{t("categories.other")}</option>
                   </select>
                 </div>
 
-                {/* Priority */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                    Priority *
-                  </label>
+                <div className="space-y-1">
+                  <label className="font-semibold text-ink-muted">{t("modal.priority")}</label>
                   <select
                     value={formPriority}
                     onChange={(e) => setFormPriority(e.target.value)}
-                    required
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
                   >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
+                    <option value="low">{t("priorities.low")}</option>
+                    <option value="medium">{t("priorities.medium")}</option>
+                    <option value="high">{t("priorities.high")}</option>
+                    <option value="urgent">{t("priorities.urgent")}</option>
                   </select>
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Issue Description *
-                </label>
+              <div className="space-y-1">
+                <label className="font-semibold text-ink-muted">{t("modal.description")}</label>
                 <textarea
+                  rows={3}
+                  placeholder={t("modal.descriptionPlaceholder")}
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  required
-                  rows={4}
-                  placeholder="Provide precise details of the complaint (e.g. water leakage in bathroom, speed of WiFi, etc.)"
-                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent resize-none"
+                  className="w-full rounded-xl border border-border bg-surface-card p-3 text-ink outline-none focus:ring-2 focus:ring-accent resize-none"
                 />
               </div>
 
-              {/* Photo Upload */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  Photo Attachment (Optional)
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    onChange={(e) => setFormFile(e.target.files?.[0] || null)}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 rounded-xl border border-border bg-slate-50 px-4 py-2.5 text-xs font-bold text-ink-muted hover:text-ink transition-colors cursor-pointer"
-                  >
-                    <Paperclip className="size-4" />
-                    {formFile ? formFile.name.slice(0, 20) : "Upload image..."}
-                  </button>
-                  {formFile && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormFile(null);
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                      className="rounded-lg p-1 text-rose-500 hover:bg-rose-50 transition-colors"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  )}
-                </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-ink-muted">{t("modal.attachFile")}</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={(e) => setFormFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-ink-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-surface-page file:text-ink hover:file:bg-surface-card cursor-pointer"
+                />
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-3 border-t border-border">
+              <div className="flex justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setIsLoggingNew(false)}
-                  className="flex-1 rounded-xl border border-border py-2.5 text-sm font-bold text-ink-muted hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-border bg-surface-page font-bold text-ink-muted hover:bg-surface-card cursor-pointer"
                 >
-                  Cancel
+                  {t("modal.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingForm}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-bold text-white hover:bg-accent-hover disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-accent/15"
+                  className="px-4 py-2 rounded-xl bg-accent text-ink-inverse font-bold hover:bg-accent-hover transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
                 >
                   {isSubmittingForm ? (
-                    <LoaderCircle className="size-4 animate-spin" />
+                    <>
+                      <LoaderCircle className="size-4 animate-spin" />
+                      <span>{t("modal.submitting")}</span>
+                    </>
                   ) : (
-                    "Save Ticket"
+                    <span>{t("modal.submit")}</span>
                   )}
                 </button>
               </div>

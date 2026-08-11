@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { LoaderCircle, AlertTriangle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { ActiveIssuesCard } from "@/features/dashboard/ActiveIssuesCard";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
 import { DesktopHeader } from "@/features/dashboard/DesktopHeader";
@@ -27,6 +28,7 @@ import {
 import type { DashboardSummary, ActivityItem } from "@/features/dashboard/types";
 
 export default function DashboardPage() {
+  const t = useTranslations("dashboard");
   const [beds, setBeds] = useState<Bed[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -39,10 +41,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setTimeout(() => {
-      setIsLoading(true);
-      setError("");
-    }, 0);
 
     Promise.all([
       listAllBeds(),
@@ -206,7 +204,7 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
         <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">Loading dashboard report summary...</p>
+        <p className="font-semibold mt-2">{t("loadingSummary")}</p>
       </div>
     );
   }
@@ -217,9 +215,9 @@ export default function DashboardPage() {
         <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
           <AlertTriangle className="size-6" />
         </div>
-        <h3 className="text-lg font-bold text-ink">Failed to Load Dashboard</h3>
+        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
         <p className="text-sm text-ink-muted leading-relaxed">
-          {error || "Could not retrieve tenant reporting summary metrics."}
+          {error || t("errLoadDesc")}
         </p>
       </div>
     );
@@ -245,11 +243,11 @@ export default function DashboardPage() {
       <div className="hidden md:block">
         <DesktopHeader />
         <div className="flex flex-col gap-6 p-8">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
             <OccupancyCard data={summaryData.occupancy} />
             <FinancialsCard data={summaryData.financials} />
           </div>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
             <ActiveIssuesCard
               issues={summaryData.issues}
               highPriorityCount={summaryData.highPriorityIssueCount}

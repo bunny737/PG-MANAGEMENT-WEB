@@ -13,18 +13,18 @@ import {
 
 /** Desktop sidebar — every section gets its own entry. */
 export const SIDEBAR_NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/properties", label: "Properties", icon: Building },
-  { href: "/residents", label: "Residents", icon: Users },
-  { href: "/complaints", label: "Complaints", icon: AlertTriangle },
-  { href: "/financials", label: "Financials", icon: Receipt },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/properties", labelKey: "nav.properties", icon: Building },
+  { href: "/residents", labelKey: "nav.residents", icon: Users },
+  { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle },
+  { href: "/financials", labelKey: "nav.financials", icon: Receipt },
+  { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ] as const;
 
 /** Mobile tab bar — capped at 4 slots; the rest live behind "More". */
 export const BOTTOM_NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/residents", label: "Residents", icon: Users },
-  { href: "/complaints", label: "Complaints", icon: AlertTriangle },
-  { href: "/more", label: "More", icon: Menu },
+  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/residents", labelKey: "nav.residents", icon: Users },
+  { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle },
+  { href: "/more", labelKey: "nav.more", icon: Menu },
 ] as const;

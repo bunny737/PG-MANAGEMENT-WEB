@@ -1,12 +1,10 @@
-import Link from "next/link";
-import { StatusPill } from "@/components/shared/StatusPill";
-import type { ActiveIssue } from "./types";
+"use client";
 
-const STATUS_LABEL: Record<ActiveIssue["status"], string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  resolved: "Resolved",
-};
+import Link from "next/link";
+import { TriangleAlert } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import type { ActiveIssue } from "./types";
 
 export function ActiveIssuesCard({
   issues,
@@ -15,45 +13,76 @@ export function ActiveIssuesCard({
   issues: ActiveIssue[];
   highPriorityCount: number;
 }) {
+  const t = useTranslations("dashboard.issues");
+  const tStatus = useTranslations("status");
+
   return (
-    <section className="rounded-2xl bg-surface-card p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-bold text-ink">Active Issues</h2>
-        {highPriorityCount > 0 ? (
-          <StatusPill tone="critical" label={`${highPriorityCount} High Priority`} />
-        ) : null}
+    <section className="flex h-full flex-col justify-between rounded-2xl border border-border bg-surface-card p-5.5 shadow-xs transition-all hover:border-border-strong hover:shadow-md">
+      <div>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2.5 font-display text-base font-bold text-ink">
+            <span className="flex size-8.5 items-center justify-center rounded-xl bg-status-warn-soft text-status-warn ring-1 ring-status-warn/15">
+              <TriangleAlert className="size-4.5" aria-hidden />
+            </span>
+            {t("title")}
+          </h2>
+          {highPriorityCount > 0 ? (
+            <StatusPill tone="critical" dot label={t("highPriority", { count: highPriorityCount })} />
+          ) : (
+            <span className="text-xs text-ink-faint">{t("allClear")}</span>
+          )}
+        </div>
+
+        {issues.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border/80 text-[0.6875rem] font-semibold tracking-[0.06em] text-ink-faint uppercase">
+                  <th className="pb-2.5 font-semibold">{t("unit")}</th>
+                  <th className="pb-2.5 font-semibold">{t("issue")}</th>
+                  <th className="pb-2.5 text-right font-semibold">{t("status")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {issues.map((issue) => (
+                  <tr
+                    key={issue.id}
+                    className="transition-colors hover:bg-surface-subtle/80"
+                  >
+                    <td className="py-3 pr-3 align-top whitespace-nowrap">
+                      <span className="inline-flex items-center rounded-md bg-surface-subtle px-2 py-1 text-xs font-semibold text-ink ring-1 ring-border/80">
+                        {issue.unit}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-3 align-top text-xs leading-relaxed text-ink-muted">
+                      {issue.issue}
+                    </td>
+                    <td className="py-3 text-right align-top">
+                      <StatusPill
+                        tone={getStatusTone(issue.status)}
+                        label={tStatus(issue.status as "open" | "assigned" | "in_progress" | "resolved" | "closed") ?? issue.status}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-surface-subtle px-4 py-8 text-center text-sm text-ink-muted">
+            {t("noIssues")}
+          </div>
+        )}
       </div>
 
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="text-xs font-medium tracking-wide text-ink-faint uppercase">
-            <th className="pb-2 font-medium">Unit</th>
-            <th className="pb-2 font-medium">Issue</th>
-            <th className="pb-2 text-right font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {issues.map((issue) => (
-            <tr key={issue.id} className="border-t border-border">
-              <td className="py-2.5 font-medium text-ink">{issue.unit}</td>
-              <td className="py-2.5 text-ink-muted">{issue.issue}</td>
-              <td className="py-2.5 text-right">
-                <StatusPill
-                  tone={issue.status === "open" ? "critical" : "neutral"}
-                  label={STATUS_LABEL[issue.status]}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <Link
-        href="/complaints"
-        className="mt-4 flex w-full items-center justify-center rounded-xl border border-border py-2.5 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-page hover:text-ink"
-      >
-        View All Complaints
-      </Link>
+      <div className="mt-5 pt-3 border-t border-border/60">
+        <Link
+          href="/complaints"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-subtle/50 py-2 text-xs font-semibold text-ink-muted transition-all hover:border-border-strong hover:bg-surface-subtle hover:text-ink"
+        >
+          {t("viewAllComplaints")}
+        </Link>
+      </div>
     </section>
   );
 }

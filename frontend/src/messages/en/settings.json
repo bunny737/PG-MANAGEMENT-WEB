@@ -74,9 +74,9 @@
     "periodJul": "Jul 1 - Jul 31, 2024",
     "invSub842": "#INV-SUB-842",
     "invSub710": "#INV-SUB-710",
-    "starterPrice": "$19/mo",
-    "proPrice": "$49/mo",
-    "enterprisePrice": "$99/mo"
+    "starterPrice": "₹19/mo",
+    "proPrice": "₹49/mo",
+    "enterprisePrice": "₹99/mo"
   },
   "propertySettings": {
     "title": "Property Settings",
@@ -91,7 +91,7 @@
     "penaltyPolicyHeading": "Late Payment Penalty Policy",
     "calculationModeLabel": "Penalty calculation mode",
     "noPenalty": "No penalty policies active",
-    "fixedRate": "Fixed Rate penalty ($)",
+    "fixedRate": "Fixed Rate penalty (₹)",
     "percentageRate": "Percentage based penalty (%)",
     "graceDaysLabel": "Grace Days (0 - 30 days)",
     "penaltyRateLabel": "Penalty rate amount ({symbol})",

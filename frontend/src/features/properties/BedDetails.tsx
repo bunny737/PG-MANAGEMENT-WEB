@@ -58,7 +58,7 @@ export function BedDetails({
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error(err);
+        console.warn(err?.message || err);
         setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });

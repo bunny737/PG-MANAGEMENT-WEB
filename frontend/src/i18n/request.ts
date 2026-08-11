@@ -14,6 +14,7 @@ export const MODULES = [
   'payments',
   'complaints',
   'dashboard',
+  'financials',
   'status',
 ];
 

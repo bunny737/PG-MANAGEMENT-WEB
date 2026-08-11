@@ -74,9 +74,9 @@
     "periodJul": "జూలై 1 - జూలై 31, 2024",
     "invSub842": "#INV-SUB-842",
     "invSub710": "#INV-SUB-710",
-    "starterPrice": "$19/నెల",
-    "proPrice": "$49/నెల",
-    "enterprisePrice": "$99/నెల"
+    "starterPrice": "₹19/నెల",
+    "proPrice": "₹49/నెల",
+    "enterprisePrice": "₹99/నెల"
   },
   "propertySettings": {
     "title": "ప్రాపర్టీ సెట్టింగ్‌లు",
@@ -91,7 +91,7 @@
     "penaltyPolicyHeading": "ఆలస్య చెల్లింపు జరిమానా విధానం",
     "calculationModeLabel": "జరిమానా గణన మోడ్",
     "noPenalty": "జరిమానా విధానాలు ఏవీ యాక్టివ్‌గా లేవు",
-    "fixedRate": "స్థిరమైన రేటు జరిమానా ($)",
+    "fixedRate": "స్థిరమైన రేటు జరిమానా (₹)",
     "percentageRate": "శాతం ఆధారిత జరిమానా (%)",
     "graceDaysLabel": "గ్రేస్ రోజులు (0 - 30 రోజులు)",
     "penaltyRateLabel": "జరిమానా రేటు మొత్తం ({symbol})",

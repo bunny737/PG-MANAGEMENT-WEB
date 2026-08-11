@@ -431,7 +431,7 @@ export function GlobalSettings() {
                   <h3 className="text-lg font-bold text-ink">{t("subscription.proTitle")}</h3>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-extrabold text-ink">$49.00</p>
+                  <p className="text-xl font-extrabold text-ink">₹49.00</p>
                   <p className="text-[10px] text-ink-muted">{t("subscription.perMonth")}</p>
                 </div>
               </div>
@@ -481,7 +481,7 @@ export function GlobalSettings() {
                     <tr className="hover:bg-surface-page/35">
                       <td className="px-4 py-3">{t("subscription.periodAug")}</td>
                       <td className="px-4 py-3 font-mono">{t("subscription.invSub842")}</td>
-                      <td className="px-4 py-3 font-semibold">$49.00</td>
+                      <td className="px-4 py-3 font-semibold">₹49.00</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>
@@ -489,7 +489,7 @@ export function GlobalSettings() {
                     <tr className="hover:bg-surface-page/35">
                       <td className="px-4 py-3">{t("subscription.periodJul")}</td>
                       <td className="px-4 py-3 font-mono">{t("subscription.invSub710")}</td>
-                      <td className="px-4 py-3 font-semibold">$49.00</td>
+                      <td className="px-4 py-3 font-semibold">₹49.00</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>

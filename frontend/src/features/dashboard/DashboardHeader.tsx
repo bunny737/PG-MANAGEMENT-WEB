@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl";
 export function DashboardHeader() {
   const t = useTranslations("dashboard.header");
   const tCommon = useTranslations("common");
-  const tAuth = useTranslations("auth.logout");
 
   return (
     <header className="flex items-center justify-between px-4 py-4">
@@ -34,7 +33,7 @@ export function DashboardHeader() {
             localStorage.removeItem("isLoggedIn");
             window.location.href = "/login";
           }}
-          title={tAuth("title")}
+          title={t("signOut")}
           className="flex size-9 cursor-pointer items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"
         >
           <LogOut className="size-5" aria-hidden />

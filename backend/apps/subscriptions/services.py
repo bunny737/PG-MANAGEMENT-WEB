@@ -213,13 +213,20 @@ def _handle_subscription_webhook(event, payload):
     # No authenticated request set the Postgres tenant context (the webhook
     # is deliberately unauthenticated — see RazorpayWebhookView), so this
     # must set it manually before writing the RLS-scoped SubscriptionPayment.
-    with tenant_context(tenant.id):
+    with tenant_context(tenant.id), transaction.atomic():
         if event in ('subscription.activated', 'subscription.charged'):
             # Idempotency: a replayed webhook must not double-record the same charge.
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
+            if razorpay_payment_id:
+                if SubscriptionPayment.objects.filter(
+                    razorpay_payment_id=razorpay_payment_id
+                ).exists():
+                    return
+            else:
+                today = timezone.now().date()
+                if SubscriptionPayment.objects.filter(
+                    subscription=subscription, status=SubscriptionPayment.Status.SUCCESS, created_at__date=today
+                ).exists():
+                    return
             tenant.status = Tenant.Status.ACTIVE
             subscription.payment_failed_at = None
             current_start = entity.get('current_start')
@@ -283,6 +290,8 @@ def _handle_invoice_webhook(event, payload):
 
     with tenant_context(tenant.id), transaction.atomic():
         if event == 'invoice.paid':
+            if invoice.status == SubscriptionInvoice.Status.PAID:
+                return  # already processed payment for this invoice
             if razorpay_payment_id and SubscriptionPayment.objects.filter(
                 razorpay_payment_id=razorpay_payment_id
             ).exists():
@@ -393,6 +402,10 @@ def generate_invoice_for_subscription(subscription, *, today=None):
     if today < period_end:
         return None  # cycle hasn't closed yet
 
+    if not subscription.razorpay_customer_id:
+        subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(subscription.tenant)
+        subscription.save(update_fields=['razorpay_customer_id', 'updated_at'])
+
     with tenant_context(subscription.tenant_id):
         if SubscriptionInvoice.objects.filter(subscription=subscription, period_start=period_start).exists():
             return None  # already generated for this cycle — safe to re-run
@@ -436,9 +449,6 @@ def generate_invoice_for_subscription(subscription, *, today=None):
             invoice.paid_at = timezone.now()
             invoice.save(update_fields=['status', 'paid_at'])
         else:
-            if not subscription.razorpay_customer_id:
-                subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(subscription.tenant)
-                subscription.save(update_fields=['razorpay_customer_id', 'updated_at'])
             razorpay_invoice_id, _short_url = razorpay_client.create_razorpay_invoice(
                 subscription.razorpay_customer_id, invoice
             )

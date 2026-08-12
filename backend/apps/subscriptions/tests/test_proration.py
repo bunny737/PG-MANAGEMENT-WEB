@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone as dt_timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import uuid
 
 from apps.core.tenancy import tenant_context
@@ -82,7 +82,7 @@ class ProratedChargeTests(SubscriptionAPITestCase):
         # 1 bed for 15 days is within the free allowance (₹0); 100 beds for
         # the remaining 16 days is charged at 16/31 of the full-cycle rate —
         # strictly less than billing the full cycle at 100 beds throughout.
-        expected = (full_cycle_at_100 * 16 / 31).quantize(Decimal('0.01'))
+        expected = ((full_cycle_at_100 * Decimal(16)) / Decimal(31)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         self.assertEqual(breakdown.total, expected)
         self.assertLess(breakdown.total, full_cycle_at_100)
 
@@ -99,7 +99,7 @@ class ProratedChargeTests(SubscriptionAPITestCase):
         # Segment-wise (not averaged): monthly(290)*15/31 + monthly(310)*16/31.
         monthly_290 = pricing.monthly_charge(self.plan, 290).total
         monthly_310 = pricing.monthly_charge(self.plan, 310).total
-        expected = (monthly_290 * 15 / 31 + monthly_310 * 16 / 31).quantize(Decimal('0.01'))
+        expected = ((monthly_290 * Decimal(15) + monthly_310 * Decimal(16)) / Decimal(31)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         self.assertEqual(breakdown.total, expected)
         # An averaged 300 for the whole month would misprice this — assert it's different.
         averaged_wrong = pricing.monthly_charge(self.plan, 300).total

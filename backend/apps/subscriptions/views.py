@@ -97,11 +97,11 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
         subscription = self.get_object()
         serializer = SelectPlanSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        subscription = services.select_plan(
+        services.select_plan(
             subscription=subscription, plan=serializer.validated_data['plan'],
             actor=request.user, request=request,
         )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
     @action(detail=True, methods=['get'], url_path='price-preview', url_name='price-preview')
     def price_preview(self, request, tenant_id=None):
@@ -132,13 +132,13 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = OverrideLimitsSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        subscription = services.override_limits(
+        services.override_limits(
             subscription=subscription,
             max_properties_override=data.get('max_properties_override', subscription.max_properties_override),
             max_residents_override=data.get('max_residents_override', subscription.max_residents_override),
             actor=request.user, request=request,
         )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdmin])
     def suspend(self, request, tenant_id=None):
@@ -149,8 +149,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 {'detail': _('This tenant is already suspended.')}, code='already_suspended'
             )
         services.suspend_tenant(tenant=tenant, actor=request.user, request=request)
-        subscription.refresh_from_db()
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdmin])
     def reactivate(self, request, tenant_id=None):
@@ -161,8 +160,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 {'detail': _('This tenant is not suspended.')}, code='tenant_not_suspended'
             )
         services.reactivate_tenant(tenant=tenant, actor=request.user, request=request)
-        subscription.refresh_from_db()
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
 
 class RazorpayWebhookView(APIView):

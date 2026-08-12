@@ -16,6 +16,7 @@ from .serializers import (
     OverrideLimitsSerializer,
     PlanSerializer,
     SelectPlanSerializer,
+    SubscriptionInvoiceSerializer,
     SubscriptionSerializer,
 )
 
@@ -81,6 +82,26 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
             actor=request.user, request=request,
         )
         return Response(SubscriptionSerializer(subscription).data)
+
+    @action(detail=True, methods=['get'], url_path='price-preview', url_name='price-preview')
+    def price_preview(self, request, tenant_id=None):
+        """Live PER_BED_MONTHLY breakdown at the tenant's current bed count
+        (PRD §4 pricing preview) — an estimate; the actual invoice is
+        computed by `generate_invoice_for_subscription` from the bed-day
+        ledger across the whole cycle, not a single snapshot."""
+        subscription = self.get_object()
+        return Response({
+            'bed_count': services.get_total_beds(subscription.tenant_id),
+            'current_cycle_estimate': services.estimate_current_cycle(subscription),
+        })
+
+    @action(detail=True, methods=['get'])
+    def invoices(self, request, tenant_id=None):
+        """Platform billing history for PER_BED_MONTHLY subscriptions (PRD
+        Module 20 'Billing history and invoices from platform')."""
+        subscription = self.get_object()
+        queryset = subscription.invoices.prefetch_related('lines')
+        return Response(SubscriptionInvoiceSerializer(queryset, many=True).data)
 
     @action(
         detail=True, methods=['patch'], url_path='override-limits', url_name='override-limits',

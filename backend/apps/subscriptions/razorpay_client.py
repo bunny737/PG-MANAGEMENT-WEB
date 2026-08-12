@@ -56,6 +56,55 @@ def create_razorpay_subscription(plan, *, total_count=12):
     return response['id']
 
 
+def create_razorpay_customer(tenant):
+    """Returns a Razorpay customer id for `tenant`, used to issue arrears
+    invoices for PER_BED_MONTHLY plans (see Phase 0 spike: Razorpay Add-ons
+    are deprecated, so arrears amounts are billed via Invoices, not
+    Subscriptions — there is no shared per-tier Razorpay Plan to attach to).
+    Stubbed locally when unconfigured."""
+    from apps.accounts.models import User
+    from apps.core.roles import Role
+
+    client = get_client()
+    if client is None:
+        return f'test_cust_{uuid.uuid4().hex[:14]}'
+    owner = User.objects.filter(tenant=tenant, role=Role.OWNER).order_by('created_at').first()
+    response = client.customer.create({
+        'name': tenant.name,
+        'email': owner.email if owner else '',
+        'fail_existing': 0,
+    })
+    return response['id']
+
+
+def create_razorpay_invoice(customer_id, subscription_invoice):
+    """Creates and issues a Razorpay Invoice for one PER_BED_MONTHLY billing
+    cycle. One Razorpay line item per `SubscriptionInvoiceLine`, using the
+    line's own already-rounded `amount` (not unit_rate × quantity) so the
+    line items always sum to exactly `total_amount` (invariant 5/6).
+    Stubbed locally when unconfigured — the stub still returns a
+    ``(id, short_url)`` pair so the caller's flow is unchanged."""
+    client = get_client()
+    if client is None:
+        stub_id = f'test_inv_{uuid.uuid4().hex[:14]}'
+        return stub_id, f'https://rzp.io/i/{stub_id}'
+    response = client.invoice.create({
+        'type': 'invoice',
+        'customer_id': customer_id,
+        'currency': 'INR',
+        'line_items': [
+            {
+                'name': line.description[:255],
+                'amount': int(line.amount * 100),  # paise
+                'currency': 'INR',
+                'quantity': 1,
+            }
+            for line in subscription_invoice.lines.all()
+        ],
+    })
+    return response['id'], response.get('short_url', '')
+
+
 def verify_webhook_signature(payload_body, signature):
     """True if the webhook signature is valid. Verification is skipped
     (always True) when no webhook secret is configured, so dev/test can post

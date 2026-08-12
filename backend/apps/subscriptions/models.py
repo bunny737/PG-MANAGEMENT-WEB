@@ -76,10 +76,16 @@ class Plan(models.Model):
                     _('Per-bed plans cannot also cap properties or residents — '
                       'billing is already usage-based.')
                 )
-            if self.pk and not self.bed_tiers.exists():
-                raise DjangoValidationError(
-                    {'pricing_type': _('Per-bed plans require at least one bed tier.')}
-                )
+            if self.pk:
+                tiers = self.bed_tiers.all()
+                if not tiers.exists():
+                    raise DjangoValidationError(
+                        {'pricing_type': _('Per-bed plans require at least one bed tier.')}
+                    )
+                if tiers.filter(up_to_beds__isnull=True).count() != 1:
+                    raise DjangoValidationError(
+                        {'pricing_type': _('Per-bed plans must have exactly one open-ended tier (up_to_beds=None).')}
+                    )
 
 
 class PlanBedTier(models.Model):
@@ -112,6 +118,10 @@ class PlanBedTier(models.Model):
     def __str__(self):
         ceiling = self.up_to_beds if self.up_to_beds is not None else '∞'
         return f'{self.plan.name}: up to {ceiling} beds @ ₹{self.rate_per_bed}'
+
+    def clean(self):
+        if self.plan_id and self.plan.pricing_type == Plan.PricingType.FLAT_MONTHLY:
+            raise DjangoValidationError(_('Flat-monthly plans cannot have bed tiers.'))
 
 
 class Subscription(models.Model):

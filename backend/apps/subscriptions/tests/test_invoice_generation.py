@@ -67,6 +67,20 @@ class GenerateInvoiceForSubscriptionTests(SubscriptionAPITestCase):
         self.assertEqual(count, 1)
         self.assertIsNone(second)
 
+    def test_idempotency_guard_works_without_tenant_context_set_caller_side(self):
+        # Manually create invoice for period_start to simulate already-generated state
+        with tenant_context(self.tenant.id):
+            SubscriptionInvoice.objects.create(
+                tenant_id=self.tenant.id, subscription=self.subscription,
+                period_start=date(2026, 7, 1), period_end=date(2026, 8, 1),
+                status=SubscriptionInvoice.Status.ISSUED, total_amount=Decimal('100.00'),
+                billed_bed_count_start=100, billed_bed_count_end=100,
+            )
+
+        # Call generate_invoice_for_subscription without wrapping in caller tenant_context
+        res = generate_invoice_for_subscription(self.subscription, today=date(2026, 8, 1))
+        self.assertIsNone(res)
+
     def test_advances_subscription_to_next_cycle(self):
         generate_invoice_for_subscription(self.subscription, today=date(2026, 8, 1))
         self.subscription.refresh_from_db()
@@ -131,3 +145,22 @@ class GenerateSubscriptionInvoicesCommandTests(SubscriptionAPITestCase):
             count_after_second = SubscriptionInvoice.objects.filter(subscription=self.subscription).count()
         self.assertEqual(count_after_first, 1)
         self.assertEqual(count_after_second, 1)
+
+    def test_command_continues_on_individual_subscription_failure(self):
+        from apps.subscriptions.models import Plan
+        today = timezone.now().date()
+        period_start = today - timedelta(days=30)
+        # Create a second tenant with a misconfigured plan (no bed tiers)
+        bad_plan = Plan.objects.create(name='Bad Plan', pricing_type=Plan.PricingType.PER_BED_MONTHLY)
+        tenant_bad = self.create_tenant(name='Bad Tenant')
+        sub_bad = self.create_subscription(
+            tenant_bad, plan=bad_plan,
+            current_period_start=period_start, current_period_end=today,
+        )
+
+        call_command('generate_subscription_invoices')
+        # Verify valid subscription still got its invoice generated despite sub_bad failing
+        with tenant_context(self.tenant.id):
+            self.assertEqual(SubscriptionInvoice.objects.filter(subscription=self.subscription).count(), 1)
+        with tenant_context(tenant_bad.id):
+            self.assertEqual(SubscriptionInvoice.objects.filter(subscription=sub_bad).count(), 0)

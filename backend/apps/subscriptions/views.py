@@ -1,3 +1,5 @@
+from django.db.models import Count, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +11,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import Tenant
 from apps.core.permissions import IsSuperAdmin, require_permission
 from apps.core.roles import Role
+from apps.properties.models import Bed, Property
 
 from . import razorpay_client, services
 from .models import Plan, Subscription
@@ -40,8 +43,8 @@ class PlanViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Plan.objects.none()
         if self.request.user.role == Role.SUPER_ADMIN:
-            return Plan.objects.all()
-        return Plan.objects.filter(is_active=True)
+            return Plan.objects.prefetch_related('bed_tiers').all()
+        return Plan.objects.prefetch_related('bed_tiers').filter(is_active=True)
 
     def perform_destroy(self, instance):
         if instance.subscriptions.exists():
@@ -67,7 +70,24 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Subscription.objects.none()
-        queryset = Subscription.objects.select_related('plan', 'tenant')
+
+        bed_count_subquery = Bed.objects.filter(
+            tenant_id=OuterRef('tenant_id')
+        ).values('tenant_id').annotate(cnt=Count('id')).values('cnt')
+
+        property_count_subquery = Property.objects.filter(
+            tenant_id=OuterRef('tenant_id')
+        ).values('tenant_id').annotate(cnt=Count('id')).values('cnt')
+
+        queryset = (
+            Subscription.objects
+            .select_related('plan', 'tenant')
+            .prefetch_related('plan__bed_tiers')
+            .annotate(
+                annotated_bed_count=Coalesce(Subquery(bed_count_subquery), 0),
+                annotated_properties_used=Coalesce(Subquery(property_count_subquery), 0),
+            )
+        )
         if self.request.user.role == Role.SUPER_ADMIN:
             return queryset
         return queryset.filter(tenant_id=self.request.user.tenant_id)

@@ -54,9 +54,13 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_properties_used(self, obj) -> int:
+        if hasattr(obj, 'annotated_properties_used'):
+            return obj.annotated_properties_used
         return Property.objects.filter(tenant_id=obj.tenant_id).count()
 
     def get_bed_count(self, obj) -> int:
+        if hasattr(obj, 'annotated_bed_count'):
+            return obj.annotated_bed_count
         return services.get_total_beds(obj.tenant_id)
 
     def get_current_cycle_estimate(self, obj):

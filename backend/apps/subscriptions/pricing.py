@@ -76,6 +76,12 @@ def monthly_charge(plan, bed_count):
         raise ValueError('bed_count cannot be negative')
 
     tiers = list(plan.bed_tiers.all())
+    if not tiers:
+        raise ValueError(f"Plan '{plan.name}' has no bed tiers configured.")
+    open_ended = [t for t in tiers if t.up_to_beds is None]
+    if len(open_ended) != 1:
+        raise ValueError(f"Plan '{plan.name}' must have exactly one open-ended tier (up_to_beds=None).")
+
     lines = []
     total = Decimal('0')
     floor = 0
@@ -104,31 +110,30 @@ def bed_segments(tenant_id, start, end):
     """Replays `BedLedgerEntry` rows into `[(from_date, to_date, bed_count)]`
     constant-count segments covering `[start, end)`. Deferred import keeps
     this otherwise-pure module free of an ORM/DB dependency at import time."""
+    from django.db.models import Count, Q
     from .models import BedLedgerEntry
+
+    pre_counts = BedLedgerEntry.objects.filter(
+        tenant_id=tenant_id, occurred_at__date__lt=start,
+    ).aggregate(
+        added=Count('id', filter=Q(event=BedLedgerEntry.Event.ADDED)),
+        removed=Count('id', filter=Q(event=BedLedgerEntry.Event.REMOVED)),
+    )
+    count = (pre_counts['added'] or 0) - (pre_counts['removed'] or 0)
 
     entries = list(
         BedLedgerEntry.objects.filter(
-            tenant_id=tenant_id, occurred_at__date__lt=end,
+            tenant_id=tenant_id,
+            occurred_at__date__gte=start,
+            occurred_at__date__lt=end,
         ).order_by('occurred_at')
     )
-
-    # Bed count at the moment `start` opens: every ADDED before start, minus
-    # every REMOVED before start.
-    count = 0
-    for entry in entries:
-        if entry.occurred_at.date() >= start:
-            break
-        count += 1 if entry.event == BedLedgerEntry.Event.ADDED else -1
 
     segments = []
     cursor = start
     running = count
     for entry in entries:
         entry_date = entry.occurred_at.date()
-        if entry_date < start:
-            continue
-        if entry_date >= end:
-            break
         if entry_date > cursor:
             segments.append((cursor, entry_date, running))
             cursor = entry_date
@@ -163,7 +168,7 @@ def prorated_charge(plan, segments, cycle_start, cycle_end):
         if seg_days <= 0:
             continue
         breakdown = monthly_charge(plan, bed_count)
-        seg_amount = breakdown.total * seg_days / cycle_days
+        seg_amount = (breakdown.total * Decimal(seg_days)) / Decimal(cycle_days)
         raw_total += seg_amount
         segment_charges.append(SegmentCharge(
             start=seg_start, end=seg_end, bed_count=bed_count,

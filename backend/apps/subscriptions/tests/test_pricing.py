@@ -79,6 +79,57 @@ class PricingEngineTests(TestCase):
         breakdown = pricing.monthly_charge(plan, 400)
         self.assertEqual(sum(line.subtotal for line in breakdown.tier_lines), breakdown.total)
 
+    def test_monthly_charge_raises_on_empty_tiers(self):
+        plan = Plan.objects.create(
+            name='Empty Plan', pricing_type=Plan.PricingType.PER_BED_MONTHLY,
+        )
+        with self.assertRaises(ValueError) as ctx:
+            pricing.monthly_charge(plan, 50)
+        self.assertIn("has no bed tiers configured", str(ctx.exception))
+
+    def test_monthly_charge_raises_on_missing_open_ended_tier(self):
+        plan = self.make_plan([(50, '0.00'), (100, '2.00')])  # missing up_to_beds=None
+        with self.assertRaises(ValueError) as ctx:
+            pricing.monthly_charge(plan, 150)
+        self.assertIn("must have exactly one open-ended tier", str(ctx.exception))
+
+    def test_bed_segments_with_pre_period_entries(self):
+        import uuid
+        from datetime import datetime, timezone as dt_tz
+        from apps.subscriptions.models import BedLedgerEntry
+        from apps.core.tenancy import tenant_context
+
+        tenant_id = uuid.uuid4()
+        start = date(2026, 7, 1)
+        end = date(2026, 8, 1)
+
+        with tenant_context(tenant_id=tenant_id):
+            # Pre-period entries (before start date)
+            BedLedgerEntry.objects.create(
+                tenant_id=tenant_id, bed_id=uuid.uuid4(), event=BedLedgerEntry.Event.ADDED,
+                occurred_at=datetime(2026, 5, 10, tzinfo=dt_tz.utc),
+            )
+            BedLedgerEntry.objects.create(
+                tenant_id=tenant_id, bed_id=uuid.uuid4(), event=BedLedgerEntry.Event.ADDED,
+                occurred_at=datetime(2026, 6, 1, tzinfo=dt_tz.utc),
+            )
+            BedLedgerEntry.objects.create(
+                tenant_id=tenant_id, bed_id=uuid.uuid4(), event=BedLedgerEntry.Event.REMOVED,
+                occurred_at=datetime(2026, 6, 15, tzinfo=dt_tz.utc),
+            )
+            # Cycle entry (inside start..end)
+            BedLedgerEntry.objects.create(
+                tenant_id=tenant_id, bed_id=uuid.uuid4(), event=BedLedgerEntry.Event.ADDED,
+                occurred_at=datetime(2026, 7, 15, tzinfo=dt_tz.utc),
+            )
+
+            segments = pricing.bed_segments(tenant_id, start, end)
+        self.assertEqual(len(segments), 2)
+        # Seg 1: 2026-07-01 to 2026-07-15 with opening count = 1 (2 added - 1 removed)
+        self.assertEqual(segments[0], (date(2026, 7, 1), date(2026, 7, 15), 1))
+        # Seg 2: 2026-07-15 to 2026-08-01 with count = 2
+        self.assertEqual(segments[1], (date(2026, 7, 15), date(2026, 8, 1), 2))
+
 
 class NextCycleEndTests(TestCase):
     def test_28_day_february(self):

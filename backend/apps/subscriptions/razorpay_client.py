@@ -102,7 +102,9 @@ def create_razorpay_invoice(customer_id, subscription_invoice):
             for line in subscription_invoice.lines.all()
         ],
     })
-    return response['id'], response.get('short_url', '')
+    invoice_id = response['id']
+    issued_response = client.invoice.issue(invoice_id)
+    return invoice_id, issued_response.get('short_url', '')
 
 
 def verify_webhook_signature(payload_body, signature):

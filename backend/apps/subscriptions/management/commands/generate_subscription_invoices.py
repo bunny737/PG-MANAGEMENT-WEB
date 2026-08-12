@@ -24,8 +24,24 @@ class Command(BaseCommand):
         ).select_related('plan', 'tenant')
 
         generated = 0
+        failed = 0
         for subscription in due:
-            invoice = generate_invoice_for_subscription(subscription, today=today)
-            if invoice is not None:
-                generated += 1
-        self.stdout.write(self.style.SUCCESS(f'Generated {generated} invoice(s).'))
+            try:
+                invoice = generate_invoice_for_subscription(subscription, today=today)
+                if invoice is not None:
+                    generated += 1
+            except Exception as e:
+                failed += 1
+                self.stderr.write(
+                    self.style.ERROR(
+                        f'Failed to generate invoice for subscription {subscription.id} '
+                        f'(tenant: {subscription.tenant.name}): {e}'
+                    )
+                )
+
+        if failed > 0:
+            self.stdout.write(
+                self.style.WARNING(f'Generated {generated} invoice(s) with {failed} failure(s).')
+            )
+        else:
+            self.stdout.write(self.style.SUCCESS(f'Generated {generated} invoice(s).'))

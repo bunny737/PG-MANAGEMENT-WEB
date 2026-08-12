@@ -1,4 +1,5 @@
 from django.db import migrations
+from django.utils import timezone
 
 from apps.core.tenancy import tenant_context
 
@@ -18,7 +19,7 @@ def backfill_bed_ledger(apps, schema_editor):
         entries = [
             BedLedgerEntry(
                 tenant_id=bed.tenant_id, bed_id=bed.id,
-                event='added', occurred_at=bed.created_at,
+                event='added', occurred_at=getattr(bed, 'created_at', None) or timezone.now(),
             )
             for bed in Bed.objects.all().iterator()
         ]

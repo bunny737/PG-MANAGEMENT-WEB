@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from apps.accounts.models import Tenant
 from apps.audit import log as audit_log
@@ -68,7 +68,12 @@ def estimate_current_cycle(subscription):
     plan = subscription.effective_plan()
     if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
         return None
-    breakdown = pricing.monthly_charge(plan, get_total_beds(subscription.tenant_id))
+    bed_count = (
+        subscription.annotated_bed_count
+        if hasattr(subscription, 'annotated_bed_count')
+        else get_total_beds(subscription.tenant_id)
+    )
+    breakdown = pricing.monthly_charge(plan, bed_count)
     return {
         'bed_count': breakdown.bed_count,
         'total': str(breakdown.total),
@@ -131,11 +136,12 @@ def select_plan(*, subscription, plan, actor, request=None):
         today = timezone.now().date()
         subscription.current_period_start = today
         subscription.current_period_end = pricing.next_cycle_end(today)
+        subscription.payment_failed_at = None
         subscription.save(update_fields=[
             'plan', 'razorpay_customer_id', 'razorpay_subscription_id',
-            'current_period_start', 'current_period_end', 'updated_at',
+            'current_period_start', 'current_period_end', 'payment_failed_at', 'updated_at',
         ])
-        if tenant.status == Tenant.Status.TRIAL:
+        if tenant.status != Tenant.Status.ACTIVE:
             before_status = tenant.status
             tenant.status = Tenant.Status.ACTIVE
             tenant.save(update_fields=['status', 'updated_at'])
@@ -275,7 +281,7 @@ def _handle_invoice_webhook(event, payload):
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
 
-    with tenant_context(tenant.id):
+    with tenant_context(tenant.id), transaction.atomic():
         if event == 'invoice.paid':
             if razorpay_payment_id and SubscriptionPayment.objects.filter(
                 razorpay_payment_id=razorpay_payment_id
@@ -387,10 +393,10 @@ def generate_invoice_for_subscription(subscription, *, today=None):
     if today < period_end:
         return None  # cycle hasn't closed yet
 
-    if SubscriptionInvoice.objects.filter(subscription=subscription, period_start=period_start).exists():
-        return None  # already generated for this cycle — safe to re-run
-
     with tenant_context(subscription.tenant_id):
+        if SubscriptionInvoice.objects.filter(subscription=subscription, period_start=period_start).exists():
+            return None  # already generated for this cycle — safe to re-run
+
         segments = pricing.bed_segments(subscription.tenant_id, period_start, period_end)
         breakdown = pricing.prorated_charge(plan, segments, period_start, period_end)
         bed_count_start = segments[0][2] if segments else 0
@@ -409,7 +415,9 @@ def generate_invoice_for_subscription(subscription, *, today=None):
                 # line is an exact, auditable slice and the lines still sum
                 # to `total_amount`.
                 tier_amount = (
-                    (segment.amount * tier_line.subtotal / segment.unprorated_total).quantize(Decimal('0.01'))
+                    (Decimal(segment.amount) * tier_line.subtotal / segment.unprorated_total).quantize(
+                        Decimal('0.01'), rounding=ROUND_HALF_UP
+                    )
                     if segment.unprorated_total else Decimal('0.00')
                 )
                 SubscriptionInvoiceLine.objects.create(

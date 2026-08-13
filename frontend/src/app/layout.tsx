@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Noto_Sans, Noto_Sans_Telugu, Plus_Jakarta_Sans } from "next/font/google";
 import { getLocale, getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
+import { getLocaleDirection } from "@/i18n/config";
 import "./globals.css";
 
 // Inter carries UI text — it holds up at the 12–14px sizes most of this app
@@ -53,11 +54,12 @@ export default async function RootLayout({
 }>) {
   const locale = await getLocale();
   const messages = await getMessages();
+  const dir = getLocaleDirection(locale);
 
   return (
     <html
       lang={locale}
-      dir="ltr"
+      dir={dir}
       className={`${inter.variable} ${plusJakarta.variable} ${notoSans.variable} ${notoSansTelugu.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">

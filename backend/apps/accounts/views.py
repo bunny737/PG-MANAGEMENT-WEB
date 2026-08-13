@@ -186,9 +186,9 @@ class CurrentTenantView(RetrieveUpdateAPIView):
         old_lang = tenant.default_language
         serializer = self.get_serializer(tenant, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        new_lang = serializer.validated_data.get('default_language', None)
         serializer.save()
-        new_lang = tenant.default_language
-        if old_lang != new_lang:
+        if new_lang is not None and old_lang != new_lang:
             audit_log.record(
                 action='tenant.updated',
                 actor=request.user,

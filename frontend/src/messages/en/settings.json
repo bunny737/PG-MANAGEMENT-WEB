@@ -68,15 +68,7 @@
     "proSub": "Up to 500 beds, auto late penalty triggers, and custom tenant contracts.",
     "enterprisePlan": "Enterprise Plan",
     "enterpriseSub": "Unlimited beds, custom roles & permissions matrix, API webhooks, and 24/7 priority support.",
-    "currentPlanBadge": "Current Plan",
-    "renewalDateValue": "Oct 1, 2024",
-    "periodAug": "Aug 1 - Aug 31, 2024",
-    "periodJul": "Jul 1 - Jul 31, 2024",
-    "invSub842": "#INV-SUB-842",
-    "invSub710": "#INV-SUB-710",
-    "starterPrice": "₹19/mo",
-    "proPrice": "₹49/mo",
-    "enterprisePrice": "₹99/mo"
+    "currentPlanBadge": "Current Plan"
   },
   "propertySettings": {
     "title": "Property Settings",

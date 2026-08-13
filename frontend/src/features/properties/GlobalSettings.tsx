@@ -17,13 +17,41 @@ import {
   Zap,
   Download
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
 
 export function GlobalSettings() {
+  const locale = useLocale();
   const t = useTranslations("settings");
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat(locale === "en" ? "en-IN" : locale, {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: 2,
+    }).format(amount);
+
+  const formatMonthlyRate = (amount: number) =>
+    new Intl.NumberFormat(locale === "en" ? "en-IN" : locale, {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount) + "/mo";
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(d);
+  };
+
+  const formatPeriod = (startStr: string, endStr: string) => {
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const fmt = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" });
+    const fmtYear = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" });
+    return `${fmt.format(start)} - ${fmtYear.format(end)}`;
+  };
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
@@ -431,7 +459,7 @@ export function GlobalSettings() {
                   <h3 className="text-lg font-bold text-ink">{t("subscription.proTitle")}</h3>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-extrabold text-ink">₹49.00</p>
+                  <p className="text-xl font-extrabold text-ink">{formatCurrency(49)}</p>
                   <p className="text-[10px] text-ink-muted">{t("subscription.perMonth")}</p>
                 </div>
               </div>
@@ -443,7 +471,7 @@ export function GlobalSettings() {
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-ink-muted">{t("subscription.renewalDate")}</span>
-                  <p className="font-semibold text-ink">{t("subscription.renewalDateValue")}</p>
+                  <p className="font-semibold text-ink">{formatDate("2024-10-01")}</p>
                 </div>
               </div>
 
@@ -479,17 +507,17 @@ export function GlobalSettings() {
                   </thead>
                   <tbody className="divide-y divide-border text-ink">
                     <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{t("subscription.periodAug")}</td>
-                      <td className="px-4 py-3 font-mono">{t("subscription.invSub842")}</td>
-                      <td className="px-4 py-3 font-semibold">₹49.00</td>
+                      <td className="px-4 py-3">{formatPeriod("2024-08-01", "2024-08-31")}</td>
+                      <td className="px-4 py-3 font-mono">#INV-SUB-842</td>
+                      <td className="px-4 py-3 font-semibold">{formatCurrency(49)}</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>
                     </tr>
                     <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{t("subscription.periodJul")}</td>
-                      <td className="px-4 py-3 font-mono">{t("subscription.invSub710")}</td>
-                      <td className="px-4 py-3 font-semibold">₹49.00</td>
+                      <td className="px-4 py-3">{formatPeriod("2024-07-01", "2024-07-31")}</td>
+                      <td className="px-4 py-3 font-mono">#INV-SUB-710</td>
+                      <td className="px-4 py-3 font-semibold">{formatCurrency(49)}</td>
                       <td className="px-4 py-3 text-right">
                         <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
                       </td>
@@ -513,7 +541,7 @@ export function GlobalSettings() {
                 <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
                   <div className="flex justify-between items-center">
                     <h4 className="text-xs font-bold text-ink">{t("subscription.starterPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.starterPrice")}</span>
+                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(19)}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
                     {t("subscription.starterSub")}
@@ -527,7 +555,7 @@ export function GlobalSettings() {
                   </span>
                   <div className="flex justify-between items-center">
                     <h4 className="text-xs font-bold text-ink">{t("subscription.proPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.proPrice")}</span>
+                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(49)}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
                     {t("subscription.proSub")}
@@ -538,7 +566,7 @@ export function GlobalSettings() {
                 <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
                   <div className="flex justify-between items-center">
                     <h4 className="text-xs font-bold text-ink">{t("subscription.enterprisePlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.enterprisePrice")}</span>
+                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(99)}</span>
                   </div>
                   <p className="text-[10px] text-ink-muted leading-relaxed">
                     {t("subscription.enterpriseSub")}

@@ -1,0 +1,83 @@
+{
+  "title": "हेल्पडेस्क और शिकायतें",
+  "subtitle": "निवासी मुद्दों, रखरखाव अनुरोधों और समाधान स्थितियों को ट्रैक करें।",
+  "logComplaint": "शिकायत दर्ज करें",
+  "loading": "शिकायतें लोड हो रही हैं...",
+  "errLoadFailed": "शिकायतें लोड करने में विफल",
+  "retry": "पुनः प्रयास करें",
+  "categories": {
+    "electrical": "इलेक्ट्रिकल",
+    "plumbing": "प्लंबिंग",
+    "internet_wifi": "इंटरनेट और वाई-फाई",
+    "housekeeping": "हाउसकीपिंग",
+    "security": "सुरक्षा",
+    "furniture": "फर्नीचर",
+    "other": "अन्य"
+  },
+  "priorities": {
+    "low": "कम प्राथमिकता",
+    "medium": "मध्यम प्राथमिकता",
+    "high": "उच्च प्राथमिकता",
+    "urgent": "अत्यंत आवश्यक प्राथमिकता"
+  },
+  "statuses": {
+    "open": "खुला",
+    "assigned": "आवंटित",
+    "in_progress": "प्रगति पर",
+    "resolved": "हल किया गया",
+    "closed": "बंद"
+  },
+  "filters": {
+    "allStatuses": "सभी स्थितियां",
+    "allCategories": "सभी श्रेणियां",
+    "allPriorities": "सभी प्राथमिकताएं",
+    "searchPlaceholder": "टिकट #, विवरण, निवासी या कमरा द्वारा खोजें..."
+  },
+  "stats": {
+    "totalTickets": "कुल टिकट",
+    "openIssues": "खुली समस्याएं",
+    "inProgress": "प्रगति पर",
+    "resolvedClosed": "हल / बंद"
+  },
+  "list": {
+    "ticket": "टिकट #{number}",
+    "resident": "निवासी",
+    "room": "कमरा / बिस्तर",
+    "assignedTo": "आवंटित व्यक्ति",
+    "unassigned": "अनावंटित",
+    "viewDetail": "विवरण देखें",
+    "emptyTitle": "कोई शिकायत नहीं मिली",
+    "emptyDesc": "हम आपकी सक्रिय खोज या फ़िल्टर से मेल खाने वाली कोई शिकायत नहीं ढूंढ सके।"
+  },
+  "detail": {
+    "ticketHeader": "टिकट #{number}",
+    "raisedBy": "द्वारा उठाई गई",
+    "roomBed": "कमरा / बिस्तर स्लाॉट",
+    "loggedOn": "दर्ज किया गया",
+    "assignStaff": "स्टाफ सदस्य आवंटित करें",
+    "selectStaff": "स्टाफ सदस्य चुनें",
+    "updateStatus": "स्थिति अपडेट करें",
+    "activityLog": "गतिविधि लॉग और टिप्पणियां",
+    "addCommentPlaceholder": "संदेश या आंतरिक नोट लिखें...",
+    "sendComment": "टिप्पणी भेजें",
+    "attachment": "संलग्न फ़ाइल",
+    "downloadAttachment": "संलग्नक देखें / डाउनलोड करें",
+    "noComments": "अभी तक कोई टिप्पणी दर्ज नहीं की गई है।",
+    "staffFallback": "स्टाफ"
+  },
+  "modal": {
+    "title": "नई निवासी शिकायत दर्ज करें",
+    "subtitle": "निवासी समस्या के लिए रखरखाव टिकट बनाएं।",
+    "selectResident": "निवासी चुनें",
+    "category": "श्रेणी",
+    "priority": "प्राथमिकता",
+    "description": "समस्या का विवरण",
+    "descriptionPlaceholder": "समस्या का विस्तार से वर्णन करें...",
+    "attachFile": "फ़ाइल / फ़ोटो संलग्न करें",
+    "submit": "टिकट सबमिट करें",
+    "submitting": "टिकट सबमिट हो रहा है...",
+    "cancel": "रद्द करें",
+    "errResidentRequired": "कृपया एक निवासी चुनें",
+    "errDescriptionRequired": "कृपया समस्या विवरण प्रदान करें"
+  }
+}

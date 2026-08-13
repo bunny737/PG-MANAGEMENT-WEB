@@ -27,7 +27,8 @@
     "filter": "Filter",
     "search": "Search",
     "export": "Export",
-    "submit": "Submit"
+    "submit": "Submit",
+    "retry": "Retry"
   },
   "labels": {
     "yes": "Yes",

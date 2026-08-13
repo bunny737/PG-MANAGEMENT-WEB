@@ -16,6 +16,7 @@ export function UserProfile() {
   const [languageCode, setLanguageCode] = useState(() => readLocaleCookie());
   const [isLoading, setIsLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
   const avatar = "https://lh3.googleusercontent.com/aida-public/AB6AXuB-hUJwnr_qkCBBMeA5bZXB5UIFI1GeWn3lSzJs4VwB1HwY4Dn-HSwOXieVMRF5g9UUZyg6ejGZjWqTsV-7pRCI-3FL7jNVkoY-94TzL5J6Zz8Al6aCVOUSjDlrZ0mQF8dGYgPlHCIAAJufHfzYcMkh9I5OzBpAak2pPZgrE7LRDdGux0LVx8qehAV-SR00tFH9BE5RQbFzUF5zLOoEM65UVxMdPFA8Q8XIbnwHVXQmdzWLFvffAB0YBA";
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export function UserProfile() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    writeLocaleCookie(languageCode);
+    setErrorToast(null);
     try {
       const parts = name.split(" ");
       const first_name = parts[0] || "";
@@ -46,14 +47,15 @@ export function UserProfile() {
         phone,
         language_code: languageCode,
       });
-    } catch {
-      // Local mode / offline fallback
-    } finally {
-      setIsLoading(false);
+      writeLocaleCookie(languageCode);
       setShowToast(true);
       setTimeout(() => {
         window.location.reload();
       }, 500);
+    } catch {
+      setErrorToast("Failed to update profile settings. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -66,6 +68,16 @@ export function UserProfile() {
           <div className="text-sm">
             <span className="font-semibold">{t("updatedToast")}</span>
             <p className="text-xs text-emerald-700 mt-0.5">{t("updatedToastSub")}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error alert */}
+      {errorToast && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 p-4 text-rose-800 shadow-xl max-w-sm">
+          <div className="text-sm">
+            <span className="font-semibold">Update Failed</span>
+            <p className="text-xs text-rose-700 mt-0.5">{errorToast}</p>
           </div>
         </div>
       )}

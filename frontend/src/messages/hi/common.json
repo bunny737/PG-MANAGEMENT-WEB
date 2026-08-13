@@ -1,11 +1,49 @@
 {
   "appName": "प्रॉपमैनेजर",
+  "brandName": "प्रॉपमैनेजर",
   "portalTitle": "स्टेज़मैनेजर प्रीमियम",
+  "authCheck": "प्रमाणीकरण की जाँच की जा रही है...",
+  "nav": {
+    "dashboard": "डैशबोर्ड",
+    "properties": "संपत्तियां",
+    "residents": "निवासी",
+    "complaints": "शिकायतें",
+    "financials": "वित्तीय विवरण",
+    "settings": "सेटिंग्स",
+    "more": "अधिक"
+  },
+  "sideNav": {
+    "ownerPortal": "मालिक पोर्टल",
+    "premiumPlan": "प्रीमियम प्लान",
+    "signOut": "साइन आउट"
+  },
   "actions": {
     "save": "सहेजें",
     "cancel": "रद्द करें",
     "delete": "हटाएं",
     "edit": "संपादित करें",
-    "view": "देखें"
+    "view": "देखें",
+    "create": "बनाएं",
+    "filter": "फ़िल्टर",
+    "search": "खोजें",
+    "export": "निर्यात करें",
+    "submit": "सबमिट करें",
+    "retry": "पुनः प्रयास करें"
+  },
+  "labels": {
+    "yes": "हाँ",
+    "no": "नहीं",
+    "rupeeSymbol": "₹",
+    "status": "स्थिति",
+    "actions": "कार्रवाइयां",
+    "created": "निर्मित",
+    "updated": "अद्यतन",
+    "details": "विवरण",
+    "language": "भाषा",
+    "comingSoon": "शीघ्र आ रहा है"
+  },
+  "emptyState": {
+    "noData": "कोई आइटम नहीं मिला",
+    "noDataSub": "इस समय प्रदर्शित करने के लिए कोई प्रविष्टि नहीं है।"
   }
 }

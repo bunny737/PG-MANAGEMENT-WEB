@@ -1,11 +1,14 @@
 "use client";
 
 import { Bell, Building2, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { clearSession } from "@/lib/api";
 
 export function DashboardHeader() {
   const t = useTranslations("dashboard.header");
   const tCommon = useTranslations("common");
+  const router = useRouter();
 
   return (
     <header className="flex items-center justify-between px-4 py-4">
@@ -30,8 +33,8 @@ export function DashboardHeader() {
           type="button"
           aria-label={t("signOut")}
           onClick={() => {
-            localStorage.removeItem("isLoggedIn");
-            window.location.href = "/login";
+            clearSession();
+            router.push("/login");
           }}
           title={t("signOut")}
           className="flex size-9 cursor-pointer items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"

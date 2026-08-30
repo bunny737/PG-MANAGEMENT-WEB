@@ -13,9 +13,14 @@
     "more": "More"
   },
   "sideNav": {
-    "ownerPortal": "Owner Portal",
-    "premiumPlan": "Premium Plan",
     "signOut": "Sign Out"
+  },
+  "roles": {
+    "owner": "Owner",
+    "manager": "Manager",
+    "receptionist": "Receptionist",
+    "resident": "Resident",
+    "super_admin": "Super Admin"
   },
   "actions": {
     "save": "Save",

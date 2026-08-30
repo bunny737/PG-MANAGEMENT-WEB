@@ -1,48 +1,27 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { SideNav } from "@/components/shared/SideNav";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { RoleGuard } from "@/features/auth/RoleGuard";
+
+// Owner + Manager portal — shared shell, nav filtered by permission matrix
+// (docs/frontend-plan.md §3.2). Receptionist/Resident/Super Admin each have
+// their own route group.
+const ALLOWED_ROLES = ["owner", "manager"];
 
 export default function OwnerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const t = useTranslations("common");
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    const loggedIn = localStorage.getItem("isLoggedIn");
-    if (loggedIn !== "true") {
-      router.push("/login");
-    } else {
-      const timer = setTimeout(() => {
-        setAuthorized(true);
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [router]);
-
-  if (!authorized) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-surface-page">
-        <div className="flex flex-col items-center gap-2">
-          <div className="size-8 animate-spin rounded-full border-4 border-accent border-t-transparent" />
-          <p className="text-sm text-ink-muted">{t("authCheck")}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex min-h-screen">
-      <SideNav />
-      <div className="flex-1 pb-20 md:pb-0">{children}</div>
-      <BottomNav />
-    </div>
+    <AuthProvider>
+      <RoleGuard allowedRoles={ALLOWED_ROLES}>
+        <div className="flex min-h-screen">
+          <SideNav />
+          <div className="flex-1 pb-20 md:pb-0">{children}</div>
+          <BottomNav />
+        </div>
+      </RoleGuard>
+    </AuthProvider>
   );
 }

@@ -14,6 +14,14 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:3000']
 # Auth emails (verification, OTP fallback, resets) print to the console in dev.
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
+# Single-process in dev, and `manage.py test` has no Redis — the shared Redis
+# cache (base.py, for cross-process throttle state) is a prod-only concern.
+CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
+# Dev/test posts fake webhook bodies without a real Razorpay HMAC signature.
+# Never set this in production (base.py defaults it to False → fail closed).
+RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = True
+
 # Module 14: run Celery tasks (notification emails) synchronously in dev/test
 # so `manage.py test` and local runs don't need a separate worker process.
 # prod.py does not set this — production requires the real `celery` worker.

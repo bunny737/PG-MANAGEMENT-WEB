@@ -8,6 +8,7 @@ environ.Env.read_env(BASE_DIR.parent / '.env')
 SECRET_KEY = env('SECRET_KEY', default='dev-secret-key-change-in-prod')
 DEBUG = env.bool('DEBUG', default=False)
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -120,6 +121,18 @@ REST_FRAMEWORK = {
     },
 }
 
+# Shared cache. DRF throttle state (auth rate limiting — PRD Module 1 security
+# requirement) MUST be shared across gunicorn workers / pods, so it cannot live
+# in the per-process LocMemCache. Redis is already a hard dependency (Celery).
+# dev.py overrides this with LocMemCache so `manage.py test` needs no Redis.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_CACHE_URL', default=env('REDIS_URL', default='redis://redis:6379/1')),
+        'KEY_PREFIX': 'pgmgmt',
+    }
+}
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'PG/Hostel Management API',
     'VERSION': '1.0.0',
@@ -175,6 +188,12 @@ CELERY_TASK_SERIALIZER = 'json'
 RAZORPAY_KEY_ID = env('RAZORPAY_KEY_ID', default='')
 RAZORPAY_KEY_SECRET = env('RAZORPAY_KEY_SECRET', default='')
 RAZORPAY_WEBHOOK_SECRET = env('RAZORPAY_WEBHOOK_SECRET', default='')
+# The Razorpay webhook endpoint is public and unauthenticated (trust comes from
+# the HMAC signature). If no webhook secret is configured, signature checks are
+# skipped — that is a dev/test convenience ONLY and MUST NOT hold in production,
+# where an unverified payload could drive tenant status and platform payments.
+# dev.py flips this to True; base (prod) fails closed.
+RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = env.bool('RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS', default=False)
 
 # Storage
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

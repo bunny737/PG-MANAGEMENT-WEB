@@ -4,7 +4,7 @@
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -30,12 +30,26 @@ def get_or_create_subscription(tenant):
     return subscription
 
 
+def _subscription_for_limit_check(tenant_id):
+    """The tenant's Subscription, row-locked when the caller is inside a
+    transaction so concurrent creates serialize on it (the count-then-create
+    check below is otherwise a race — the PRD's 'hard block' could be sailed
+    past by parallel requests). Outside a transaction (direct calls, tests)
+    it degrades to an unlocked read."""
+    qs = Subscription.objects.filter(tenant_id=tenant_id).select_related('plan', 'tenant')
+    if connection.in_atomic_block:
+        # of=('self',): lock only the subscription row, not the joined plan /
+        # tenant rows (locking `plans` would serialize unrelated tenants).
+        qs = qs.select_for_update(of=('self',))
+    return qs.first()
+
+
 def check_property_limit(tenant_id):
     """Hard block (PRD: 'Hard block when either limit is reached'). A
     tenant with no Subscription row, no plan, or an unlimited plan has
     nothing to enforce — intentionally fail-open, so limits only bite once
     a Super Admin has actually configured a plan."""
-    subscription = Subscription.objects.filter(tenant_id=tenant_id).select_related('plan', 'tenant').first()
+    subscription = _subscription_for_limit_check(tenant_id)
     if subscription is None:
         return
     max_properties = subscription.effective_max_properties()
@@ -90,9 +104,7 @@ def estimate_current_cycle(subscription):
 def check_resident_limit(property):
     """Same hard block, per-property (PRD: 'Resident count is checked per
     property, not across all properties combined')."""
-    subscription = (
-        Subscription.objects.filter(tenant_id=property.tenant_id).select_related('plan', 'tenant').first()
-    )
+    subscription = _subscription_for_limit_check(property.tenant_id)
     if subscription is None:
         return
     max_residents = subscription.effective_max_residents_per_property()
@@ -198,8 +210,6 @@ def _handle_subscription_webhook(event, payload):
     if subscription is None:
         return  # unknown subscription — nothing to reconcile
 
-    tenant = subscription.tenant
-    before_status = tenant.status
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
     # The amount Razorpay actually charged (paise), not the plan's list price —
@@ -213,7 +223,17 @@ def _handle_subscription_webhook(event, payload):
     # No authenticated request set the Postgres tenant context (the webhook
     # is deliberately unauthenticated — see RazorpayWebhookView), so this
     # must set it manually before writing the RLS-scoped SubscriptionPayment.
-    with tenant_context(tenant.id), transaction.atomic():
+    with tenant_context(subscription.tenant_id), transaction.atomic():
+        # Lock the subscription for the rest of the handler so a replayed or
+        # concurrently-delivered webhook for the same subscription serializes
+        # behind this one — the idempotency checks below then can't race.
+        subscription = (
+            Subscription.objects.select_for_update(of=('self',))
+            .select_related('tenant', 'plan')
+            .get(pk=subscription.pk)
+        )
+        tenant = subscription.tenant
+        before_status = tenant.status  # read under the lock (was a stale pre-lock read)
         if event in ('subscription.activated', 'subscription.charged'):
             # Idempotency: a replayed webhook must not double-record the same charge.
             if razorpay_payment_id:
@@ -248,6 +268,12 @@ def _handle_subscription_webhook(event, payload):
         elif event == 'subscription.cancelled':
             tenant.status = Tenant.Status.CANCELLED
         elif event == 'payment.failed':
+            # Idempotency: a replayed failure webhook must not double-record it
+            # (also avoids tripping the unique_razorpay_payment_id constraint).
+            if razorpay_payment_id and SubscriptionPayment.objects.filter(
+                razorpay_payment_id=razorpay_payment_id
+            ).exists():
+                return
             tenant.status = Tenant.Status.PAYMENT_FAILED
             subscription.payment_failed_at = timezone.now()
             SubscriptionPayment.objects.create(
@@ -282,13 +308,21 @@ def _handle_invoice_webhook(event, payload):
     if invoice is None:
         return  # unknown invoice — nothing to reconcile
 
-    subscription = invoice.subscription
-    tenant = subscription.tenant
-    before_status = tenant.status
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
 
-    with tenant_context(tenant.id), transaction.atomic():
+    with tenant_context(invoice.subscription.tenant_id), transaction.atomic():
+        # Lock the invoice for the rest of the handler so a replayed or
+        # concurrently-delivered webhook for the same invoice serializes behind
+        # this one — the status-based idempotency checks below can't race.
+        invoice = (
+            SubscriptionInvoice.objects.select_for_update(of=('self',))
+            .select_related('subscription__tenant')
+            .get(pk=invoice.pk)
+        )
+        subscription = invoice.subscription
+        tenant = subscription.tenant
+        before_status = tenant.status
         if event == 'invoice.paid':
             if invoice.status == SubscriptionInvoice.Status.PAID:
                 return  # already processed payment for this invoice
@@ -309,6 +343,12 @@ def _handle_invoice_webhook(event, payload):
                 status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
             )
         elif event in ('invoice.expired', 'invoice.partially_paid'):
+            if invoice.status == SubscriptionInvoice.Status.FAILED:
+                return  # already processed this failure
+            if razorpay_payment_id and SubscriptionPayment.objects.filter(
+                razorpay_payment_id=razorpay_payment_id
+            ).exists():
+                return
             invoice.status = SubscriptionInvoice.Status.FAILED
             invoice.save(update_fields=['status'])
             tenant.status = Tenant.Status.PAYMENT_FAILED

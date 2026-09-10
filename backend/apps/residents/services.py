@@ -13,6 +13,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
@@ -46,8 +47,24 @@ def default_new_rent(new_bed, resident):
 def perform_transfer(*, allocation, new_bed, transfer_date, is_temporary, reason,
                      new_rent, expected_move_date, temporary_note, actor, request=None):
     resident = allocation.resident
-    previous_bed = allocation.allocated_bed
     previous_rent = allocation.contracted_rent
+
+    # Lock both beds before touching them. The serializer checked
+    # `new_bed.status == AVAILABLE`, but without a lock two concurrent transfers
+    # (or a transfer racing a check-in) could both take the same bed. Lock in a
+    # deterministic order (by id) to avoid deadlocks, then re-check.
+    bed_ids = {allocation.allocated_bed_id, new_bed.id}
+    locked_beds = {
+        bed.id: bed
+        for bed in Bed.objects.select_for_update(of=('self',))
+        .filter(pk__in=bed_ids).order_by('id')
+    }
+    previous_bed = locked_beds[allocation.allocated_bed_id]
+    new_bed = locked_beds[new_bed.id]
+    if new_bed.status != Bed.Status.AVAILABLE:
+        raise ValidationError(
+            {'new_bed': _('This bed is not available.')}, code='bed_not_available'
+        )
 
     # Free the vacated bed and occupy the new one; each save() cascades to the
     # room-status sync built in Module 02.
@@ -166,6 +183,15 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     """Step 2 of the vacating workflow (PRD Module 11): move-out settlement —
     Notice Period -> Vacated, bed freed immediately, refund computed from the
     admission's advance minus the maintenance deduction."""
+    # Lock the vacate row and re-check settlement: the view's is_settled guard
+    # runs outside any lock, so two concurrent finalize calls could both pass it
+    # and double-run the settlement (double refund audit, double bed-free).
+    vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
+    if vacate.is_settled:
+        raise ValidationError(
+            {'detail': _('This vacate has already been settled.')}, code='already_settled'
+        )
+
     resident = vacate.resident
     before_status = resident.status
 

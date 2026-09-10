@@ -38,6 +38,24 @@ class DiscountViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch']
     filterset_fields = ['resident', 'reason', 'discount_type']
 
+    @staticmethod
+    def _lock_resident(resident_id):
+        # Serialize all discount writes for one resident: the serializer's
+        # "no overlapping window" check (invariant 4 — a single discount line,
+        # no silent stacking) is a read-then-write that races without this.
+        if resident_id:
+            list(Resident.objects.select_for_update().filter(pk=resident_id))
+
+    def create(self, request, *args, **kwargs):
+        with transaction.atomic():
+            self._lock_resident(request.data.get('resident'))
+            return super().create(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            self._lock_resident(self.get_object().resident_id)
+            return super().partial_update(request, *args, **kwargs)
+
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Discount.objects.none()
@@ -185,11 +203,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         for resident in residents:
             if services.resident_has_invoice_for_period(resident, data['period_start']):
                 continue
-            created.append(services.generate_invoice(
-                resident=resident, period_start=data['period_start'],
-                period_end=data['period_end'], due_date=data['due_date'],
-                actor=request.user, request=request,
-            ))
+            try:
+                created.append(services.generate_invoice(
+                    resident=resident, period_start=data['period_start'],
+                    period_end=data['period_end'], due_date=data['due_date'],
+                    actor=request.user, request=request,
+                ))
+            except ValidationError:
+                # A concurrent run (or single-generate) already invoiced this
+                # resident for the period — unique_invoice_per_resident_period
+                # caught it. Skip, don't abort the batch.
+                continue
         return Response(
             {'created': len(created), 'invoices': InvoiceSerializer(created, many=True).data},
             status=status.HTTP_201_CREATED,

@@ -108,11 +108,16 @@ def create_razorpay_invoice(customer_id, subscription_invoice):
 
 
 def verify_webhook_signature(payload_body, signature):
-    """True if the webhook signature is valid. Verification is skipped
-    (always True) when no webhook secret is configured, so dev/test can post
-    a fake webhook body without a real Razorpay signature."""
+    """True if the webhook signature is valid.
+
+    When no webhook secret is configured, verification is skipped (always True)
+    ONLY if settings.RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS is on (dev/test). In
+    production that flag defaults to False, so a missing secret fails closed —
+    the webhook endpoint is public and unauthenticated (see RazorpayWebhookView),
+    so an unverified payload could otherwise let anyone drive tenant status
+    changes and platform payment records."""
     if not settings.RAZORPAY_WEBHOOK_SECRET:
-        return True
+        return bool(settings.RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS)
     try:
         razorpay.Utility().verify_webhook_signature(
             payload_body, signature, settings.RAZORPAY_WEBHOOK_SECRET

@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import viewsets
@@ -66,9 +67,12 @@ class PropertyViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Property.objects.filter(id__in=ids).order_by('name')
 
+    @transaction.atomic
     def perform_create(self, serializer):
         # Plan limit (PRD §4: "Hard block when either limit is reached") —
-        # Module 13's concern; fail-open when no plan is configured.
+        # Module 13's concern; fail-open when no plan is configured. Inside the
+        # transaction so check_property_limit can row-lock the subscription and
+        # two concurrent creates can't both slip past the cap.
         check_property_limit(self.request.user.tenant_id)
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
         # Every Property always has at least one Building (see docs/modules/

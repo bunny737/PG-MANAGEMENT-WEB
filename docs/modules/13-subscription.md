@@ -396,6 +396,33 @@ frontend always reaches a tenant's subscription via
   `RAZORPAY_KEY_SECRET` configured. Locally/in CI it exercises the
   same "stub when unconfigured" path the rest of this module already relies
   on (`razorpay_client.is_configured()`).
+- [DECISION 2026-09-10] **Webhook verification fails closed in production.**
+  `verify_webhook_signature` previously returned `True` whenever
+  `RAZORPAY_WEBHOOK_SECRET` was unset — the endpoint is public and
+  unauthenticated, so a misconfigured prod would let anyone drive tenant
+  status and platform payments. It now skips verification only when the new
+  `RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS` setting is on; `dev.py` sets it, `base`
+  (prod) defaults it `False`. (Can't gate on `settings.DEBUG` — Django's test
+  runner forces `DEBUG=False`.)
+- [DECISION 2026-09-10] **Webhook handlers lock their subject row + partial-
+  unique `razorpay_payment_id`.** Idempotency was an `.exists()`-then-
+  `.create()` with no lock or constraint, so replayed / concurrent Razorpay
+  deliveries could double-record a charge and double-transition status.
+  `_handle_subscription_webhook` / `_handle_invoice_webhook` now
+  `select_for_update(of=('self',))` the `Subscription` / `SubscriptionInvoice`
+  at the top of the atomic block (also fixing a stale pre-lock `before_status`
+  read), the failure branches gained the same `.exists()` guard the success
+  branches had, and `SubscriptionPayment` has a
+  `unique_razorpay_payment_id` constraint (partial, non-empty) as the backstop.
+- [DECISION 2026-09-10] **Plan-limit checks row-lock the subscription.**
+  `check_property_limit` / `check_resident_limit` were count-then-create races
+  — parallel requests sailed past the PRD "hard block". Both now go through
+  `_subscription_for_limit_check`, which `select_for_update(of=('self',))` the
+  tenant's `Subscription` row when the caller is inside a transaction (degrades
+  to an unlocked read otherwise). `PropertyViewSet.perform_create` and
+  `ResidentViewSet.change_status` were wrapped in `transaction.atomic` so the
+  lock is held through the insert; `AdmissionViewSet.perform_create` already
+  was.
 
 ## Changelog
 - 2026-06-xx  Created stub.

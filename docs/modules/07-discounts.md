@@ -88,6 +88,11 @@ platform's no-hard-delete stance for financial records).
   non-overlapping windows keeps Module 08's per-period discount selection
   deterministic. Not raised with the product owner as it's the clear PRD
   reading; revisit in Module 08 if genuine stacking is ever required.
+  [2026-09-10] The overlap check is serializer-only (no DB exclusion
+  constraint), so it raced: `DiscountViewSet.create`/`partial_update` now
+  wrap the request in a transaction and `select_for_update()` the resident
+  row first, serializing all discount writes for that resident so the check
+  is reliable.
 - [DECISION 2026-07-03] **`Discount` lives in `apps.billing`** (its first
   model), not `apps.residents`. It's a money modifier consumed by billing,
   and this keeps the dependency direction clean (billing → residents).

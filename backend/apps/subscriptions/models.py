@@ -202,6 +202,16 @@ class SubscriptionPayment(TenantModelMixin):
     class Meta:
         db_table = 'subscription_payments'
         ordering = ['-created_at']
+        constraints = [
+            # Idempotency backstop: a replayed / concurrently-delivered Razorpay
+            # webhook must never double-record the same charge. The exists()
+            # guard in services.handle_webhook_event races without this.
+            models.UniqueConstraint(
+                fields=['razorpay_payment_id'],
+                condition=~models.Q(razorpay_payment_id=''),
+                name='unique_razorpay_payment_id',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.get_status_display()} payment for {self.subscription.tenant.name}'

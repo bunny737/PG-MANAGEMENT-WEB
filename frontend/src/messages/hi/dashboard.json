@@ -1,0 +1,46 @@
+{
+  "title": "डैशबोर्ड अवलोकन",
+  "welcome": "वापसी पर स्वागत है, यहाँ आज का सारांश है।",
+  "loadingSummary": "डैशबोर्ड रिपोर्ट सारांश लोड हो रहा है...",
+  "errLoadFailed": "डैशबोर्ड लोड करने में विफल",
+  "errLoadDesc": "टेनेंट रिपोर्टिंग सारांश मीट्रिक प्राप्त नहीं किए जा सके।",
+  "header": {
+    "signOut": "साइन आउट",
+    "notifications": "अधिसूचनाएं",
+    "addResident": "निवासी जोड़ें"
+  },
+  "occupancy": {
+    "title": "ऑक्यूपेंसी स्थिति",
+    "viewDetails": "विवरण देखें ›",
+    "totalBeds": "कुल बिस्तर",
+    "occupied": "भरे हुए",
+    "vacant": "खाली",
+    "capacityFilled": "क्षमता भरी हुई",
+    "capacitySubtitle": "{total} में से {occupied} बिस्तर ({percent}%)",
+    "bedsOccupied": "बिस्तर भरे हुए"
+  },
+  "financials": {
+    "title": "वित्तीय सारांश",
+    "monthlyRevenue": "मासिक राजस्व",
+    "outstandingDues": "बकाया राशि",
+    "securityDeposits": "सुरक्षा जमा"
+  },
+  "issues": {
+    "title": "सक्रिय समस्याएं",
+    "highPriority": "{count} उच्च प्राथमिकता",
+    "allClear": "सब ठीक है",
+    "unit": "यूनिट",
+    "issue": "समस्या",
+    "status": "स्थिति",
+    "noIssues": "अभी कोई सक्रिय समस्या नहीं है।",
+    "viewAllComplaints": "सभी शिकायतें देखें →"
+  },
+  "quickActions": {
+    "addResident": "निवासी जोड़ें",
+    "generateInvoices": "चालान उत्पन्न करें"
+  },
+  "activity": {
+    "title": "आज की गतिविधि",
+    "noActivity": "आज कोई गतिविधि दर्ज नहीं की गई।"
+  }
+}

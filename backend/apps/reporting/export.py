@@ -23,13 +23,13 @@ def _csv_response(filename, columns, rows):
 
 
 def _xlsx_response(filename, columns, rows):
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.append(columns)
+    wb = Workbook()
+    ws = wb.active
+    ws.append(columns)
     for row in rows:
-        sheet.append(row)
+        ws.append(row)
     buffer = BytesIO()
-    workbook.save(buffer)
+    wb.save(buffer)
     response = HttpResponse(
         buffer.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

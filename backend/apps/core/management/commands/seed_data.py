@@ -26,8 +26,22 @@ from apps.subscriptions.models import Subscription
 class Command(BaseCommand):
     help = 'Idempotently seeds test data (users, tenant, properties, residents, complaints, financials, etc.)'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--noinput', '--no-input',
+            action='store_true',
+            help='Do not prompt for confirmation or user input.',
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
+        noinput = options.get('noinput', False)
+        if not noinput and hasattr(self.stdin, 'isatty') and self.stdin.isatty():
+            confirm = input('Are you sure you want to seed test data? (y/N): ')
+            if confirm.lower() != 'y':
+                self.stdout.write(self.style.WARNING('Seeding cancelled.'))
+                return
+
         self.stdout.write(self.style.MIGRATE_HEADING('Starting idempotent test data seeding...'))
 
         # 1. Platform Config & Admin User

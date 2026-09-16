@@ -13,9 +13,14 @@
     "more": "अधिक"
   },
   "sideNav": {
-    "ownerPortal": "मालिक पोर्टल",
-    "premiumPlan": "प्रीमियम प्लान",
     "signOut": "साइन आउट"
+  },
+  "roles": {
+    "owner": "मालिक",
+    "manager": "मैनेजर",
+    "receptionist": "रिसेप्शनिस्ट",
+    "resident": "निवासी",
+    "super_admin": "सुपर एडमिन"
   },
   "actions": {
     "save": "सहेजें",

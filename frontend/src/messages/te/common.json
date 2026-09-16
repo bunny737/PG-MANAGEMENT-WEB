@@ -13,9 +13,14 @@
     "more": "మరిన్ని"
   },
   "sideNav": {
-    "ownerPortal": "ఓనర్ పోర్టల్",
-    "premiumPlan": "ప్రీమియం ప్లాన్",
     "signOut": "సైన్ అవుట్"
+  },
+  "roles": {
+    "owner": "ఓనర్",
+    "manager": "మేనేజర్",
+    "receptionist": "రిసెప్షనిస్ట్",
+    "resident": "నివాసి",
+    "super_admin": "సూపర్ అడ్మిన్"
   },
   "actions": {
     "save": "సేవ్ చేయండి",

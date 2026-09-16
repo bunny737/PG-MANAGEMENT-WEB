@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Mail, Lock, Phone, KeyRound, Eye, EyeOff, CheckCircle2, ArrowLeft, Loader2, Building2 } from "lucide-react";
 import { ApiError, login } from "@/lib/api";
+import { roleHome } from "@/lib/roleHome";
 
 type LoginTab = "password" | "otp";
 type FlowState = "login" | "forgot_password";
@@ -89,11 +90,11 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      const me = await login(email, password);
       setIsLoading(false);
       setIsSuccess(true);
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push(roleHome(me.role));
       }, 800);
     } catch (err) {
       setIsLoading(false);
@@ -149,7 +150,7 @@ export function LoginForm() {
       localStorage.setItem("userRole", "owner");
       localStorage.setItem("userName", "Vikram Malhotra");
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push(roleHome("owner"));
       }, 800);
     }, 1500);
   };

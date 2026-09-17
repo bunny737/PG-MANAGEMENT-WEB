@@ -7,7 +7,9 @@ by a temporary allocation), then the active discount as its own negative line
 as more line items. Management has full manual control while the invoice is a
 draft.
 """
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.utils.translation import gettext_lazy as _
+from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.notifications.tasks import send_payment_receipt_email_task
@@ -52,12 +54,21 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
         base_amount = allocation.contracted_rent
         partial_note = ''
 
-    invoice = Invoice.objects.create(
-        tenant_id=resident.tenant_id, resident=resident,
-        period_start=period_start, period_end=period_end,
-        billing_mode=billing_mode, due_date=due_date,
-        status=Invoice.Status.DRAFT, created_by=actor,
-    )
+    try:
+        with transaction.atomic():
+            invoice = Invoice.objects.create(
+                tenant_id=resident.tenant_id, resident=resident,
+                period_start=period_start, period_end=period_end,
+                billing_mode=billing_mode, due_date=due_date,
+                status=Invoice.Status.DRAFT, created_by=actor,
+            )
+    except IntegrityError:
+        # unique_invoice_per_resident_period — another request generated this
+        # period's invoice first (the serializer's .exists() pre-check raced).
+        raise ValidationError(
+            {'period_start': _('This resident already has an invoice for this period.')},
+            code='duplicate_invoice',
+        )
 
     with_food = admission.food_preference == Admission.FoodPreference.WITH_FOOD
     InvoiceLineItem.objects.create(
@@ -95,8 +106,31 @@ def resident_has_invoice_for_period(resident, period_start):
 def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
                    actor, request=None):
     """Record a manual payment (PRD Module 10) and recompute the invoice status
-    (issued -> partially_paid -> paid). Validation (draft/overpayment) is the
-    serializer's job."""
+    (issued -> partially_paid -> paid).
+
+    The serializer pre-checks draft/fully-paid/overpayment for a friendly error,
+    but that check is not held under a lock — two concurrent payments each
+    within the balance can together overpay. Lock the invoice row here and
+    re-check the balance authoritatively before inserting."""
+    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
+    if invoice.status == Invoice.Status.DRAFT:
+        raise ValidationError(
+            {'invoice': _('Payments can only be recorded against an issued invoice.')},
+            code='invoice_not_issued',
+        )
+    balance = invoice.balance_due
+    if balance <= 0:
+        raise ValidationError(
+            {'invoice': _('This invoice is already fully paid.')}, code='invoice_fully_paid',
+        )
+    if amount > balance:
+        raise ValidationError(
+            {'amount': _('Payment exceeds the outstanding balance of %(balance)s.')
+             % {'balance': balance}},
+            code='overpayment',
+        )
+
     payment = Payment.objects.create(
         tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
         payment_date=payment_date, payment_mode=payment_mode,
@@ -118,7 +152,9 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
 def delete_payment(*, payment, actor, request=None):
     """Delete a payment (a correction) and recompute the invoice status back
     down (paid -> partially_paid -> issued)."""
-    invoice = payment.invoice
+    # Lock the invoice so a concurrent record_payment / delete_payment can't
+    # recompute status off a stale payment set (lost update).
+    invoice = Invoice.objects.select_for_update().get(pk=payment.invoice_id)
     audit_log.record(
         action='payment.deleted', actor=actor, obj=payment,
         before={'invoice': str(invoice.id), 'amount': str(payment.amount),

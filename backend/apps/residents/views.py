@@ -71,23 +71,26 @@ class ResidentViewSet(viewsets.ModelViewSet):
     # exception handling for the whole viewset.
     @action(detail=True, methods=['patch'], url_path='status', url_name='status')
     def change_status(self, request, pk=None):
-        resident = self.get_object()
-        before_status = resident.status
-        serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        new_status = serializer.validated_data['status']
-        # Plan limit (Module 13) — only re-check when this transition is what
-        # would newly count the resident (e.g. Reserved -> Active bypassing
-        # Admission's own check); Active <-> Notice Period never changes the count.
-        if (new_status in Resident.COUNTS_TOWARD_PLAN_LIMIT
-                and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
-            check_resident_limit(resident.property)
-        instance = serializer.save()
-        audit_log.record(
-            action='resident.status_changed', actor=request.user, obj=instance,
-            before={'status': before_status}, after={'status': instance.status},
-            request=request,
-        )
+        with transaction.atomic():
+            resident = self.get_object()
+            before_status = resident.status
+            serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            new_status = serializer.validated_data['status']
+            # Plan limit (Module 13) — only re-check when this transition is what
+            # would newly count the resident (e.g. Reserved -> Active bypassing
+            # Admission's own check); Active <-> Notice Period never changes the
+            # count. Inside the transaction so check_resident_limit can row-lock
+            # the subscription and the count-then-save can't race a parallel one.
+            if (new_status in Resident.COUNTS_TOWARD_PLAN_LIMIT
+                    and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
+                check_resident_limit(resident.property)
+            instance = serializer.save()
+            audit_log.record(
+                action='resident.status_changed', actor=request.user, obj=instance,
+                before={'status': before_status}, after={'status': instance.status},
+                request=request,
+            )
         return Response(ResidentSerializer(instance).data)
 
     @action(detail=True, methods=['get'])
@@ -124,6 +127,21 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         bed = serializer.validated_data['bed']
         resident = serializer.validated_data['resident']
         with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        # Lock the bed row for the rest of the check-in. The serializer already
+        # checked `bed.status == AVAILABLE`, but that read is not held under a
+        # lock — two concurrent admissions targeting the same available bed
+        # would both pass validation and both occupy it (double-booking). Re-read
+        # and re-check the status now that the row is locked.
+        bed = (
+            Bed.objects.select_for_update(of=('self',))
+            .select_related('room__floor__building__property')
+            .get(pk=bed.pk)
+        )
+        if bed.status != Bed.Status.AVAILABLE:
+            raise ValidationError(
+                {'bed': _('This bed is not available.')}, code='bed_not_available'
+            )
 
         # Plan limit (PRD §4: checked per property) — Module 13's concern;
         # fail-open when no plan is configured. Checked before any side

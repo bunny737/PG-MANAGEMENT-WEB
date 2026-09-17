@@ -155,6 +155,13 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - [DECISION 2026-07-04] Module 14 hooked the "Invoice generated notification
   to resident" (PRD Module 18) onto the `issue` action, not `create` — a
   draft has no obligation for the resident to be told about.
+- [DECISION 2026-09-10] **`unique_invoice_per_resident_period` DB constraint
+  added** (`Invoice(resident, period_start)`). The generate / bulk-generate
+  `.exists()` pre-checks race — two concurrent "generate" requests would bill
+  the resident twice. `generate_invoice` now creates the row in a savepoint
+  and maps the resulting `IntegrityError` to the existing `duplicate_invoice`
+  validation error; `bulk_generate` swallows it and skips. Mirrors
+  `SubscriptionInvoice.unique_invoice_per_cycle` (Module 13).
 
 ## Changelog
 - 2026-06-xx  Created stub.

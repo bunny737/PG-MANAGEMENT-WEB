@@ -1,3 +1,5 @@
+from django.db.models import Count, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +11,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import Tenant
 from apps.core.permissions import IsSuperAdmin, require_permission
 from apps.core.roles import Role
+from apps.properties.models import Bed, Property
 
 from . import razorpay_client, services
 from .models import Plan, Subscription
@@ -16,6 +19,7 @@ from .serializers import (
     OverrideLimitsSerializer,
     PlanSerializer,
     SelectPlanSerializer,
+    SubscriptionInvoiceSerializer,
     SubscriptionSerializer,
 )
 
@@ -39,8 +43,8 @@ class PlanViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Plan.objects.none()
         if self.request.user.role == Role.SUPER_ADMIN:
-            return Plan.objects.all()
-        return Plan.objects.filter(is_active=True)
+            return Plan.objects.prefetch_related('bed_tiers').all()
+        return Plan.objects.prefetch_related('bed_tiers').filter(is_active=True)
 
     def perform_destroy(self, instance):
         if instance.subscriptions.exists():
@@ -66,7 +70,24 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Subscription.objects.none()
-        queryset = Subscription.objects.select_related('plan', 'tenant')
+
+        bed_count_subquery = Bed.objects.filter(
+            tenant_id=OuterRef('tenant_id')
+        ).values('tenant_id').annotate(cnt=Count('id')).values('cnt')
+
+        property_count_subquery = Property.objects.filter(
+            tenant_id=OuterRef('tenant_id')
+        ).values('tenant_id').annotate(cnt=Count('id')).values('cnt')
+
+        queryset = (
+            Subscription.objects
+            .select_related('plan', 'tenant')
+            .prefetch_related('plan__bed_tiers')
+            .annotate(
+                annotated_bed_count=Coalesce(Subquery(bed_count_subquery), 0),
+                annotated_properties_used=Coalesce(Subquery(property_count_subquery), 0),
+            )
+        )
         if self.request.user.role == Role.SUPER_ADMIN:
             return queryset
         return queryset.filter(tenant_id=self.request.user.tenant_id)
@@ -76,11 +97,31 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
         subscription = self.get_object()
         serializer = SelectPlanSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        subscription = services.select_plan(
+        services.select_plan(
             subscription=subscription, plan=serializer.validated_data['plan'],
             actor=request.user, request=request,
         )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
+
+    @action(detail=True, methods=['get'], url_path='price-preview', url_name='price-preview')
+    def price_preview(self, request, tenant_id=None):
+        """Live PER_BED_MONTHLY breakdown at the tenant's current bed count
+        (PRD §4 pricing preview) — an estimate; the actual invoice is
+        computed by `generate_invoice_for_subscription` from the bed-day
+        ledger across the whole cycle, not a single snapshot."""
+        subscription = self.get_object()
+        return Response({
+            'bed_count': services.get_total_beds(subscription.tenant_id),
+            'current_cycle_estimate': services.estimate_current_cycle(subscription),
+        })
+
+    @action(detail=True, methods=['get'])
+    def invoices(self, request, tenant_id=None):
+        """Platform billing history for PER_BED_MONTHLY subscriptions (PRD
+        Module 20 'Billing history and invoices from platform')."""
+        subscription = self.get_object()
+        queryset = subscription.invoices.prefetch_related('lines')
+        return Response(SubscriptionInvoiceSerializer(queryset, many=True).data)
 
     @action(
         detail=True, methods=['patch'], url_path='override-limits', url_name='override-limits',
@@ -91,13 +132,13 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = OverrideLimitsSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        subscription = services.override_limits(
+        services.override_limits(
             subscription=subscription,
             max_properties_override=data.get('max_properties_override', subscription.max_properties_override),
             max_residents_override=data.get('max_residents_override', subscription.max_residents_override),
             actor=request.user, request=request,
         )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdmin])
     def suspend(self, request, tenant_id=None):
@@ -108,8 +149,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 {'detail': _('This tenant is already suspended.')}, code='already_suspended'
             )
         services.suspend_tenant(tenant=tenant, actor=request.user, request=request)
-        subscription.refresh_from_db()
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdmin])
     def reactivate(self, request, tenant_id=None):
@@ -120,8 +160,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 {'detail': _('This tenant is not suspended.')}, code='tenant_not_suspended'
             )
         services.reactivate_tenant(tenant=tenant, actor=request.user, request=request)
-        subscription.refresh_from_db()
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(self.get_object()).data)
 
 
 class RazorpayWebhookView(APIView):

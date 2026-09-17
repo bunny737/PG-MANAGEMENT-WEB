@@ -45,6 +45,10 @@ class PlatformConfig(models.Model):
     # reminder schedule keeps working if a Super Admin edits trial_days.
     trial_reminder_first_days_before = models.PositiveIntegerField(default=15)
     trial_reminder_second_days_before = models.PositiveIntegerField(default=5)
+    # Below this, a PER_BED_MONTHLY cycle is issued as a ₹0 invoice and never
+    # sent to Razorpay at all (invariant 10 — Razorpay's minimum chargeable
+    # amount is a platform config value, not a literal in services.py).
+    min_billable_amount = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -142,6 +142,14 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   (`check_resident_limit`, checked per property per PRD §4) to
   `perform_create`, before any bed/resident mutation — a blocked check-in
   leaves the bed/resident untouched. Fail-open when no plan is configured.
+- [DECISION 2026-09-10] **Check-in locks the bed row and re-checks
+  availability.** The serializer's `bed_not_available` check is a bare read;
+  two concurrent admissions (or an admission racing a transfer) could both
+  see the bed AVAILABLE and double-book it. `perform_create` now re-fetches
+  the bed `select_for_update(of=('self',))` inside the transaction and
+  re-validates status before the limit check and any mutation. The same
+  transaction now also carries `check_resident_limit`'s subscription row
+  lock (Module 13), closing the count-then-create window on the plan cap.
 
 ## Changelog
 - 2026-06-xx  Created stub.

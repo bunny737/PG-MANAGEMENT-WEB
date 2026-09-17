@@ -118,6 +118,13 @@ Module 08.
   receipt action above) — fires from `services.record_payment`, after the
   payment row and audit log are written, deferred via `transaction.on_commit`
   + Celery.
+- [DECISION 2026-09-10] **Overpayment/status checks are authoritative in the
+  service under a row lock, not just the serializer.** The serializer keeps a
+  friendly pre-check, but two concurrent payments each within `balance_due`
+  could together overpay it (and flip status to `paid`) because that read was
+  not held under a lock. `record_payment` and `delete_payment` now
+  `select_for_update()` the invoice and re-check draft/fully-paid/overpayment
+  before writing, so the balance check and the payment insert are atomic.
 
 ## Changelog
 - 2026-06-xx  Created stub.

@@ -85,3 +85,19 @@ class RazorpayWebhookTests(SubscriptionAPITestCase):
         self.assertEqual(response.status_code, 200)
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.status, 'trial')
+
+    def test_empty_payment_id_idempotency_prevents_duplicate_payments(self):
+        # First call with empty payment_id
+        payload = webhook_payload('subscription.activated', 'sub_test123', payment_id='')
+        res1 = self._post(payload)
+        self.assertEqual(res1.status_code, 200)
+
+        with tenant_context(self.tenant.id):
+            self.assertEqual(SubscriptionPayment.objects.filter(subscription=self.subscription).count(), 1)
+
+        # Replayed call with empty payment_id
+        res2 = self._post(payload)
+        self.assertEqual(res2.status_code, 200)
+
+        with tenant_context(self.tenant.id):
+            self.assertEqual(SubscriptionPayment.objects.filter(subscription=self.subscription).count(), 1)

@@ -12,46 +12,15 @@ import {
   Layers,
   Home,
   Lock,
-  Globe,
-  Award,
-  Zap,
-  Download
+  Globe
 } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
 
 export function GlobalSettings() {
-  const locale = useLocale();
   const t = useTranslations("settings");
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat(locale === "en" ? "en-IN" : locale, {
-      style: "currency",
-      currency: "INR",
-      minimumFractionDigits: 2,
-    }).format(amount);
-
-  const formatMonthlyRate = (amount: number) =>
-    new Intl.NumberFormat(locale === "en" ? "en-IN" : locale, {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount) + "/mo";
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }).format(d);
-  };
-
-  const formatPeriod = (startStr: string, endStr: string) => {
-    const start = new Date(startStr);
-    const end = new Date(endStr);
-    const fmt = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" });
-    const fmtYear = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" });
-    return `${fmt.format(start)} - ${fmtYear.format(end)}`;
-  };
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
@@ -445,135 +414,19 @@ export function GlobalSettings() {
       )}
 
       {/* 3. Plan & Subscription Tab */}
+      {/* Not yet wired to the Subscriptions API (FE-13, not started) — this
+          used to show fabricated plan/pricing/invoice data that didn't match
+          any real plan or backend record. Placeholder until that ships. */}
       {activeTab === "subscription" && (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 items-start animate-fade-in">
-          {/* Left Column: Plan summary details */}
-          <div className="md:col-span-7 space-y-6">
-            {/* Current plan card */}
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-accent border border-accent/25 bg-accent-soft px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                    {t("subscription.premiumTag")}
-                  </span>
-                  <h3 className="text-lg font-bold text-ink">{t("subscription.proTitle")}</h3>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-extrabold text-ink">{formatCurrency(49)}</p>
-                  <p className="text-[10px] text-ink-muted">{t("subscription.perMonth")}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-ink-muted">{t("subscription.paymentMethod")}</span>
-                  <p className="font-semibold text-ink">{t("subscription.mastercardEnding")}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-ink-muted">{t("subscription.renewalDate")}</span>
-                  <p className="font-semibold text-ink">{formatDate("2024-10-01")}</p>
-                </div>
-              </div>
-
-              {/* Usage stats bar */}
-              <div className="space-y-1.5 pt-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-ink-muted">{t("subscription.activeAllocations")}</span>
-                  <span className="font-bold text-ink">{t("subscription.bedsUsed", { used: 348, total: 500 })}</span>
-                </div>
-                <div className="h-2 w-full bg-surface-page rounded-full overflow-hidden border border-border">
-                  <div className="h-full bg-accent rounded-full" style={{ width: "70%" }} />
-                </div>
-              </div>
-
-              {/* Upgrade Plan button */}
-              <button className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-xs font-bold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 transition-all cursor-pointer">
-                <Zap className="size-3.5" /> {t("subscription.upgradeCapacity")}
-              </button>
+        <div className="grid grid-cols-1 gap-6 animate-fade-in">
+          <div className="bg-surface-card border border-border rounded-2xl p-8 shadow-sm text-center space-y-3">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted">
+              <CreditCard className="size-6" />
             </div>
-
-            {/* Invoices List */}
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink border-b border-border pb-3">{t("subscription.invoicesTitle")}</h3>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                      <th className="px-4 py-2.5">{t("subscription.billingPeriod")}</th>
-                      <th className="px-4 py-2.5">{t("subscription.invoiceNumber")}</th>
-                      <th className="px-4 py-2.5">{t("subscription.amount")}</th>
-                      <th className="px-4 py-2.5 text-right font-medium">{t("subscription.download")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-ink">
-                    <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{formatPeriod("2024-08-01", "2024-08-31")}</td>
-                      <td className="px-4 py-3 font-mono">#INV-SUB-842</td>
-                      <td className="px-4 py-3 font-semibold">{formatCurrency(49)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{formatPeriod("2024-07-01", "2024-07-31")}</td>
-                      <td className="px-4 py-3 font-mono">#INV-SUB-710</td>
-                      <td className="px-4 py-3 font-semibold">{formatCurrency(49)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Upgrade Plan lists */}
-          <div className="md:col-span-5 space-y-6">
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
-                <Award className="size-4.5 text-ink-muted" />
-                {t("subscription.availablePlans")}
-              </h3>
-
-              <div className="space-y-3.5">
-                {/* Plan 1 */}
-                <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.starterPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(19)}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.starterSub")}
-                  </p>
-                </div>
-
-                {/* Plan 2 */}
-                <div className="border-2 border-accent rounded-xl p-3.5 bg-accent-soft/10 space-y-2 relative">
-                  <span className="absolute -top-2.5 right-4 bg-accent text-ink-inverse text-[8px] font-extrabold uppercase px-2 py-0.5 rounded-full tracking-wider shadow-sm">
-                    {t("subscription.currentPlanBadge")}
-                  </span>
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.proPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(49)}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.proSub")}
-                  </p>
-                </div>
-
-                {/* Plan 3 */}
-                <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.enterprisePlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{formatMonthlyRate(99)}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.enterpriseSub")}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <h3 className="text-sm font-bold text-ink">{t("subscription.comingSoonTitle")}</h3>
+            <p className="text-xs text-ink-muted max-w-md mx-auto leading-relaxed">
+              {t("subscription.comingSoonBody")}
+            </p>
           </div>
         </div>
       )}

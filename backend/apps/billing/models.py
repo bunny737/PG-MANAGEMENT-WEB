@@ -97,6 +97,14 @@ class Invoice(TenantModelMixin):
     class Meta:
         db_table = 'invoices'
         ordering = ['-period_start', '-created_at']
+        constraints = [
+            # One invoice per resident per billing period. The generate/bulk-
+            # generate `.exists()` pre-checks race without this backstop
+            # (concurrent "generate" clicks would bill the resident twice).
+            models.UniqueConstraint(
+                fields=['resident', 'period_start'], name='unique_invoice_per_resident_period',
+            ),
+        ]
 
     def __str__(self):
         return f'Invoice {self.resident} {self.period_start}'

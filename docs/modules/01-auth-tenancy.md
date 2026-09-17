@@ -131,6 +131,19 @@ serialized on `/auth/me/` as `permissions: [...]`.
   when set because OTP login resolves the user by phone alone.
 - [DECISION 2026-07-02] OTP delivery is a stub (`accounts/otp.py:_deliver`,
   logs the code; console email backend in dev). SMS provider is V2 (PRD 18).
+- [DECISION 2026-09-10] **`otp.verify` runs in a transaction and
+  `select_for_update()` the OTP row.** The failed-attempt counter was a
+  read-modify-write with no lock: N concurrent verify requests all read
+  `attempts=0` and all get a guess, so the `OTP_MAX_ATTEMPTS` lockout on a
+  6-digit code was defeated by parallelism. The lock serializes verifies for
+  one user.
+- [DECISION 2026-09-10] **DRF throttle state uses a shared Redis cache in
+  prod.** With no `CACHES` configured it fell back to per-process
+  `LocMemCache`, so `login` / `otp_verify` / `password_reset` / `signup`
+  limits (a PRD Module 1 security requirement) were multiplied by worker count
+  and reset every deploy. `base.py` now points `default` at Redis (DB 1);
+  `dev.py` keeps `LocMemCache` (single-process, and `manage.py test` has no
+  Redis).
 - [DECISION 2026-07-02] Staff invites reuse the password-reset token; the
   confirm endpoint marks email verified since possession is proven.
 - [DECISION 2026-07-02] AuditLog model created now (invariant 9 applies from

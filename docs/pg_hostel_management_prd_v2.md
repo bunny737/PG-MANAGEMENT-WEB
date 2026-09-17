@@ -88,6 +88,31 @@ Pricing is based on two dimensions — **number of properties** and **number of 
 
 > **Limits are TBD** — actual resident caps per plan will be decided during marketing. The system stores these as configurable values in the Super Admin panel, not hardcoded in the application. Changing a limit requires no code deployment — only a config update.
 
+## Per-Bed Pricing Model (added 2026-08-11)
+
+Alongside the flat-tier model above, a plan may instead be priced **per
+provisioned bed, per month** (Google Workspace–style: free to start, then
+billed per seat, cheaper above a volume threshold) — owner decision to
+support a usage-based option for operators who don't map cleanly onto the
+property/resident-count tiers. A plan is one or the other, never both.
+
+- **Billable unit:** every bed the tenant has provisioned (capacity), not
+  occupied beds — consistent with charging for what's set up, independent
+  of how full it currently is.
+- **Pricing ladder, Super-Admin-configurable, no fixed numbers in this
+  document:** an ordered list of `(bed count ceiling, rate per bed)` steps —
+  e.g. a free allowance up to some bed count, a per-bed rate above that,
+  and a cheaper per-bed rate above a higher volume threshold. Each bed is
+  charged at the rate of the tier it falls into (like income tax brackets),
+  not a flat percentage discount — a percentage-off design has a defect
+  this doesn't: it can make the bill *drop* when a bed is added.
+- **Billing is in arrears, not in advance.** Beds can be added at any time;
+  at the end of each monthly cycle an invoice is generated for exactly how
+  many beds existed and for how long (prorated by day), and one payment is
+  collected per month — not a fixed amount charged up front.
+- **No property/resident caps apply** to a per-bed plan — billing is
+  already usage-based, so those limits don't additionally apply.
+
 ## What Counts as an Active Resident
 
 For the purpose of plan limit enforcement, **active residents** are those with status:
@@ -124,6 +149,13 @@ This means limits can be adjusted as part of marketing campaigns, promotional of
 ## Subscription Billing
 - Razorpay handles all subscription billing (recurring)
 - Razorpay is used **only for platform subscription payments** — not for resident rent collection
+- Flat-tier plans: charged in advance via Razorpay's Subscriptions API,
+  confirmed by webhook before the tenant is marked active
+- Per-bed plans: charged in arrears via a Razorpay Invoice issued once each
+  billing cycle closes (Razorpay's Add-ons feature — the more obvious fit
+  for a variable recurring amount — is deprecated, so this uses Invoices
+  instead); the tenant activates immediately on plan selection rather than
+  waiting on a webhook, since there is no advance charge to confirm
 - Payment failure grace period: 5 days before account suspension
 - Suspended accounts: login blocked, data preserved
 - Deleted accounts: data retained for 30 days before permanent deletion

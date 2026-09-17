@@ -213,6 +213,12 @@ discipline; corrections happen via the dedicated actions (`finalize`,
   wired into the resident-creation UI) are frontend/Module 17 concerns —
   this module only provides the data (`/absconded-records/`,
   `/blacklist-entries/check/`).
+- [DECISION 2026-09-10] **`finalize_vacate` re-checks settlement under a row
+  lock.** The view's `already_settled` guard runs outside any lock, so two
+  concurrent `finalize` calls could both pass it and double-run the
+  settlement (double refund audit, double bed release). The service now
+  `select_for_update()` the `Vacate` row and re-raises `already_settled`
+  before doing any work.
 
 ## Changelog
 - 2026-06-xx  Created stub.

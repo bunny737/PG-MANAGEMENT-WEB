@@ -47,28 +47,8 @@
     "errConfirmMatch": "Passwords do not match"
   },
   "subscription": {
-    "premiumTag": "Premium SaaS Plan",
-    "proTitle": "PropManager Pro",
-    "perMonth": "per month billing",
-    "paymentMethod": "Payment Method",
-    "mastercardEnding": "Mastercard ending in 4921",
-    "renewalDate": "Renewal Date",
-    "activeAllocations": "Active Bed Allocations",
-    "bedsUsed": "{used} / {total} Beds used",
-    "upgradeCapacity": "Upgrade Plan Capacity",
-    "invoicesTitle": "Subscription Invoices",
-    "billingPeriod": "Billing Period",
-    "invoiceNumber": "Invoice #",
-    "amount": "Amount",
-    "download": "Download",
-    "availablePlans": "Available Plans",
-    "starterPlan": "Starter Plan",
-    "starterSub": "Up to 100 beds, basic tenant registration, and manual billing.",
-    "proPlan": "Pro Plan",
-    "proSub": "Up to 500 beds, auto late penalty triggers, and custom tenant contracts.",
-    "enterprisePlan": "Enterprise Plan",
-    "enterpriseSub": "Unlimited beds, custom roles & permissions matrix, API webhooks, and 24/7 priority support.",
-    "currentPlanBadge": "Current Plan"
+    "comingSoonTitle": "Plan & billing management is coming soon",
+    "comingSoonBody": "Your current plan, usage, and billing history will appear here once subscription management is available for your account."
   },
   "propertySettings": {
     "title": "Property Settings",

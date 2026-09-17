@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
 from django.utils import timezone
 
 from .models import OtpCode
@@ -28,11 +29,17 @@ def _deliver(user, code):
     logger.info('OTP for %s: %s', user.phone, code)
 
 
+@transaction.atomic
 def verify(user, code):
     """True if `code` matches the user's latest active OTP. Consumes the OTP
-    on success; counts an attempt (and locks after OTP_MAX_ATTEMPTS) on failure."""
+    on success; counts an attempt (and locks after OTP_MAX_ATTEMPTS) on failure.
+
+    The row is locked for the duration: without it, N concurrent verify calls
+    all read attempts=0, all get a guess, and the failed-attempt counter barely
+    moves — defeating the OTP_MAX_ATTEMPTS lockout for a 6-digit code."""
     otp = (
-        OtpCode.objects.filter(user=user, used=False, expires_at__gt=timezone.now())
+        OtpCode.objects.select_for_update()
+        .filter(user=user, used=False, expires_at__gt=timezone.now())
         .order_by('-created_at')
         .first()
     )

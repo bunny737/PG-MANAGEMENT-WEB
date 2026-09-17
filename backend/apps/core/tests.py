@@ -78,7 +78,10 @@ class PermissionMatrixTests(TestCase):
     def test_receptionist_is_front_desk_only(self):
         self.assertEqual(
             permissions_for(Role.RECEPTIONIST),
-            sorted(['manage_visitors', 'view_resident_profile']),
+            sorted([
+                'manage_visitors', 'view_resident_profile',
+                'view_own_notifications', 'manage_notification_preferences',
+            ]),
         )
 
     def test_manager_cannot_touch_subscription_or_staff(self):
@@ -90,5 +93,8 @@ class PermissionMatrixTests(TestCase):
     def test_resident_permissions_are_self_service_only(self):
         self.assertEqual(
             permissions_for(Role.RESIDENT),
-            sorted(['view_own_profile', 'view_own_invoices', 'raise_complaint', 'request_visitor']),
+            sorted([
+                'view_own_profile', 'view_own_invoices', 'raise_complaint', 'request_visitor',
+                'view_own_notifications', 'manage_notification_preferences',
+            ]),
         )

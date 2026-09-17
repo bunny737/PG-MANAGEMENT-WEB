@@ -57,6 +57,13 @@ PERMISSION_MATRIX = {
     'view_own_invoices': (Role.RESIDENT,),
     'raise_complaint': (Role.RESIDENT,),
     'request_visitor': (Role.RESIDENT,),
+    # Self-scoped by request.user (Module 14 V2) — every tenant role receives
+    # some notification type today (Owner: trial reminders; all staff roles
+    # are reachable via future types), so this isn't Resident-only like the
+    # rows above. Same "no resident login yet" caveat as raise_complaint /
+    # request_visitor applies until Module 04 adds one.
+    'view_own_notifications': TENANT_ROLES,
+    'manage_notification_preferences': TENANT_ROLES,
 }
 
 

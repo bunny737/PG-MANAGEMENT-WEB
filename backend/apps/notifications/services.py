@@ -1,50 +1,112 @@
-"""Low-level send+log helper, and the trial-expiry-reminder scan (PRD Module
-18 MVP; Module 20's trial state). Actual dispatch happens in tasks.py so it
-runs off the request/command thread via Celery."""
-from django.conf import settings
-from django.core.mail import send_mail
+"""Generic notification dispatch (PRD Module 18; V2 channels/templates/
+scheduling). `notify()` is the one entry point every trigger site and
+Celery task calls — it resolves which channels apply, renders each
+channel's `NotificationTemplate`, sends, and logs one `NotificationLog` row
+per channel attempt. Never raises: a broken channel must not fail the
+request/task that triggered it (invoice issuance, payment recording, ...)."""
+from django.template import Context, Template
 from django.utils import timezone
 
-from .models import NotificationLog
+
+def _render(text, context):
+    if not text:
+        return ''
+    return Template(text).render(Context(context, autoescape=False))
 
 
-def send_and_log(*, tenant_id, notification_type, recipient_email, subject, body, reference=''):
-    """Sends one email and records the outcome. Never raises — a broken SMTP
-    server must not fail the request/task that triggered the notification
-    (invoice issuance, payment recording, ...); the failure is captured in
-    NotificationLog instead (visible via Django admin)."""
-    if not recipient_email:
-        return NotificationLog.objects.create(
-            tenant_id=tenant_id, notification_type=notification_type,
-            status=NotificationLog.Status.SKIPPED, reference=reference,
-            note='No email address on file.',
+def render_template(*, notification_type, channel, language, context):
+    """Resolves the best-match NotificationTemplate for
+    (notification_type, channel, language), falling back to 'en' if that
+    language has no active template yet (invariant 7 — a missing
+    translation must degrade to English, never crash or send nothing).
+    Returns (subject, body) or (None, None) if no template exists in either
+    language (channel/type not configured at all)."""
+    from .models import NotificationTemplate
+
+    template = NotificationTemplate.objects.filter(
+        notification_type=notification_type, channel=channel,
+        language=language, is_active=True,
+    ).first()
+    if template is None and language != 'en':
+        template = NotificationTemplate.objects.filter(
+            notification_type=notification_type, channel=channel,
+            language='en', is_active=True,
+        ).first()
+    if template is None:
+        return None, None
+    return _render(template.subject, context), _render(template.body, context)
+
+
+def notify(*, tenant_id, notification_type, recipient_user, context, channels=None, reference=''):
+    """Sends `notification_type` to `recipient_user` (an `accounts.User` or
+    an `apps.residents.models.Resident` — anything with `.email` and
+    optionally `.language_code`) across its applicable channels, logging one
+    NotificationLog row per channel attempt. `channels`, if given, overrides
+    the registry's default channel list for this call."""
+    from django.contrib.auth import get_user_model
+
+    from . import channels as channel_registry
+    from .models import NotificationLog, NotificationPreference
+    from .registry import channels_for, is_optional
+
+    user_model = get_user_model()
+    recipient_user_fk = recipient_user if isinstance(recipient_user, user_model) else None
+
+    language = getattr(recipient_user, 'language_code', None) or 'en'
+    candidate_channels = list(channels) if channels is not None else channels_for(notification_type)
+
+    if is_optional(notification_type) and recipient_user_fk is not None:
+        disabled = set(
+            NotificationPreference.objects.filter(
+                user=recipient_user_fk, notification_type=notification_type, enabled=False,
+            ).values_list('channel', flat=True)
         )
-    try:
-        send_mail(
-            subject=subject, message=body, from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient_email], fail_silently=False,
+        candidate_channels = [c for c in candidate_channels if c not in disabled]
+
+    results = []
+    for channel in candidate_channels:
+        handler = channel_registry.get(channel)
+        if handler is None:
+            continue  # channel not wired up yet — not an error, just not built
+
+        subject, body = render_template(
+            notification_type=notification_type, channel=channel,
+            language=language, context=context,
         )
-    except Exception as exc:
-        return NotificationLog.objects.create(
-            tenant_id=tenant_id, notification_type=notification_type,
-            recipient_email=recipient_email, subject=subject,
-            status=NotificationLog.Status.FAILED, reference=reference, note=str(exc),
+        if body is None:
+            results.append(NotificationLog.objects.create(
+                tenant_id=tenant_id, notification_type=notification_type, channel=channel,
+                recipient_user=recipient_user_fk,
+                status=NotificationLog.Status.SKIPPED, reference=reference,
+                note='No active template configured for this type/channel/language.',
+            ))
+            continue
+
+        recipient_email = getattr(recipient_user, 'email', '') if channel == 'email' else ''
+        status, note = handler.send(
+            recipient_email=recipient_email,
+            recipient_user=recipient_user, subject=subject, body=body,
         )
-    return NotificationLog.objects.create(
-        tenant_id=tenant_id, notification_type=notification_type,
-        recipient_email=recipient_email, subject=subject,
-        status=NotificationLog.Status.SENT, reference=reference, sent_at=timezone.now(),
-    )
+        results.append(NotificationLog.objects.create(
+            tenant_id=tenant_id, notification_type=notification_type, channel=channel,
+            recipient_email=recipient_email, recipient_user=recipient_user_fk,
+            subject=subject, status=status, reference=reference, note=note,
+            sent_at=timezone.now() if status == NotificationLog.Status.SENT else None,
+        ))
+    return results
 
 
-def record_sent(*, tenant_id, notification_type, recipient_email, subject, reference=''):
+def record_sent(*, tenant_id, notification_type, recipient_email, subject, reference='', channel='email', recipient_user=None):
     """Logs a notification that was already sent by other means (e.g. the
     signup welcome notification, fulfilled by apps.accounts.emails'
-    send_verification_email — see apps.accounts.tasks). Does NOT send mail
-    itself; use send_and_log when this module should own the actual send."""
+    send_verification_email — see apps.accounts.tasks). Does NOT send
+    anything itself; use notify() when this module should own the actual
+    send."""
+    from .models import NotificationLog
+
     return NotificationLog.objects.create(
-        tenant_id=tenant_id, notification_type=notification_type,
-        recipient_email=recipient_email, subject=subject,
+        tenant_id=tenant_id, notification_type=notification_type, channel=channel,
+        recipient_email=recipient_email, recipient_user=recipient_user, subject=subject,
         status=NotificationLog.Status.SENT, reference=reference, sent_at=timezone.now(),
     )
 

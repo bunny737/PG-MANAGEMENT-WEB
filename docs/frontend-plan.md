@@ -284,7 +284,12 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
 ### 5.2 V2
 
 - Web Push notifications (invoice issued, payment receipt, complaint updates) — aligns
-  with PRD Module 18 V2. Requires a `push_subscriptions` endpoint backend-side.
+  with PRD Module 18 V2. Backend is ready: `POST/GET /api/v1/notifications/push-subscriptions/`
+  and `DELETE .../push-subscriptions/{id}/` register/unregister an FCM device token
+  (see `docs/modules/14-notifications.md`); the channel itself sends via Firebase
+  Cloud Messaging. Still needed on the frontend: the Firebase JS SDK + VAPID key
+  wired into `sw.ts`, the permission-prompt UX, and calling this endpoint on
+  subscribe/logout.
 - Background Sync for non-money mutations (complaints, visitor requests).
 - Periodic background refresh of the resident's own invoice list.
 
@@ -412,7 +417,8 @@ Small additions to note in the relevant module specs when built:
 3. Machine-readable error codes (e.g., `PLAN_LIMIT_REACHED`, `SUBSCRIPTION_SUSPENDED`,
    `BLACKLIST_MATCH`) on 4xx responses (module 01/13) — invariant F4 and suspension UX.
 4. S3 presigned upload endpoints (module 04) — document uploads go browser→S3 direct.
-5. V2: `push_subscriptions` endpoint for Web Push (module 14).
+5. ~~V2: `push_subscriptions` endpoint for Web Push (module 14).~~ Done —
+   see `docs/modules/14-notifications.md` (2026-09-17).
 
 ---
 

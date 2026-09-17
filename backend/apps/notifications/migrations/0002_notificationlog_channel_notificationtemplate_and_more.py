@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ('fcm_token', models.CharField(max_length=255, unique=True)),
-                ('device_type', models.CharField(choices=[('web', 'Web'), ('android', 'Android'), ('iOS', 'iOS')], max_length=10)),
+                ('device_type', models.CharField(choices=[('web', 'Web'), ('android', 'Android'), ('ios', 'iOS')], max_length=10)),
                 ('last_seen_at', models.DateTimeField(auto_now=True)),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='push_subscriptions', to=settings.AUTH_USER_MODEL)),
             ],

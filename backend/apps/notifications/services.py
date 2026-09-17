@@ -86,6 +86,7 @@ def notify(*, tenant_id, notification_type, recipient_user, context, channels=No
         status, note = handler.send(
             recipient_email=recipient_email,
             recipient_user=recipient_user, subject=subject, body=body,
+            notification_type=notification_type, reference=reference,
         )
         results.append(NotificationLog.objects.create(
             tenant_id=tenant_id, notification_type=notification_type, channel=channel,

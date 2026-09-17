@@ -50,7 +50,8 @@ def _get_firebase_app():
 
 
 class PushChannel(NotificationChannel):
-    def send(self, *, recipient_email='', recipient_user=None, subject='', body=''):
+    def send(self, *, recipient_email='', recipient_user=None, subject='', body='',
+              notification_type='', reference=''):
         from django.contrib.auth import get_user_model
 
         from apps.notifications.models import NotificationLog, PushSubscription
@@ -77,9 +78,14 @@ class PushChannel(NotificationChannel):
         sent_count = 0
         invalid_tokens = []
         errors = []
+        # data payload lets the client deep-link on tap (e.g. open the
+        # invoice a push is about) — see docs/push-notifications-integration.md.
+        # FCM requires every data value to be a string.
+        data = {'notification_type': notification_type, 'reference': reference}
         for token in tokens:
             message = messaging.Message(
                 notification=messaging.Notification(title=subject, body=body),
+                data=data,
                 token=token,
             )
             try:

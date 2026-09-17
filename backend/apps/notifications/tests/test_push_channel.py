@@ -67,6 +67,21 @@ class PushChannelTests(AuthAPITestCase):
             self.assertEqual(status, NotificationLog.Status.SKIPPED)
             self.assertFalse(PushSubscription.objects.filter(fcm_token='stale-token').exists())
 
+    def test_includes_notification_type_and_reference_as_data_for_deep_linking(self):
+        with tenant_context(self.tenant.id):
+            PushSubscription.objects.create(
+                tenant_id=self.tenant.id, user=self.owner, fcm_token='token-a', device_type='web',
+            )
+            with patch('apps.notifications.channels.push._get_firebase_app', return_value=object()):
+                with patch('firebase_admin.messaging.send') as mock_send:
+                    PushChannel().send(
+                        recipient_user=self.owner, subject='Hi', body='Body',
+                        notification_type='invoice_issued', reference='invoice:abc-123',
+                    )
+
+        sent_message = mock_send.call_args[0][0]
+        self.assertEqual(sent_message.data, {'notification_type': 'invoice_issued', 'reference': 'invoice:abc-123'})
+
     def test_provider_error_reports_failed(self):
         with tenant_context(self.tenant.id):
             PushSubscription.objects.create(

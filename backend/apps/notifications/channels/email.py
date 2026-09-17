@@ -9,7 +9,8 @@ class EmailChannel(NotificationChannel):
     (`services.send_and_log`, now folded into this handler) — never raises,
     a broken SMTP server is reported back as (FAILED, str(exc))."""
 
-    def send(self, *, recipient_email='', recipient_user=None, subject='', body=''):
+    def send(self, *, recipient_email='', recipient_user=None, subject='', body='',
+              notification_type='', reference=''):
         from apps.notifications.models import NotificationLog
 
         if not recipient_email:

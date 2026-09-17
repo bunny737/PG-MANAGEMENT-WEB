@@ -79,9 +79,10 @@ class NotificationPreferenceViewSet(viewsets.ViewSet):
 
 class PushSubscriptionViewSet(viewsets.ModelViewSet):
     """Register/unregister an FCM device token for the current user (web via
-    the Serwist service worker, or a native app later). No special
-    permission beyond authentication — registering a device is a per-user
-    action, not a business permission, same as editing your own profile."""
+    the Serwist service worker, or the Flutter app on Android/iOS — see
+    docs/push-notifications-integration.md). No special permission beyond
+    authentication — registering a device is a per-user action, not a
+    business permission, same as editing your own profile."""
 
     serializer_class = PushSubscriptionSerializer
     permission_classes = [IsAuthenticated]

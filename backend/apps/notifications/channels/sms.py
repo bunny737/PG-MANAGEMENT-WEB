@@ -9,7 +9,8 @@ from .base import NotificationChannel
 
 
 class SMSChannel(NotificationChannel):
-    def send(self, *, recipient_email='', recipient_user=None, subject='', body=''):
+    def send(self, *, recipient_email='', recipient_user=None, subject='', body='',
+              notification_type='', reference=''):
         from apps.notifications.models import NotificationLog
 
         return NotificationLog.Status.SKIPPED, 'SMS not configured — no provider selected yet (V2).'

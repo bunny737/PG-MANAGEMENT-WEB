@@ -85,7 +85,7 @@ Table: push_subscriptions                        (RLS enforced, app: apps.notifi
   tenant_id             uuid              (RLS)
   user                   FK -> accounts.User
   fcm_token               varchar(255), unique
-  device_type             web | android | iOS
+  device_type             web | android | ios
   last_seen_at            datetime, auto_now
 
 Table: scheduled_notifications                    (RLS enforced, app: apps.notifications)  [V2]
@@ -337,3 +337,14 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   `view_own_notifications`/`manage_notification_preferences` permissions;
   removed `apps/notifications/emails.py` (superseded). 34 new tests (45
   total in this app). Full suite (507) green. ERD regenerated.
+- 2026-09-17  **V2 follow-up**: mobile stack pivoted from native
+  Android/iOS to Flutter (owner decision — see `CLAUDE.md` and
+  `docs/frontend-plan.md` §1/§3.1a); `PushSubscription.DeviceType.IOS`
+  value corrected from `'iOS'` to `'ios'` (consistency with the other
+  lowercase choices, fixed before any client shipped against it);
+  `channels/push.py` now sends `notification_type`/`reference` as the FCM
+  message's `data` payload so a client can deep-link on tap (channel
+  interface extended with matching, currently-unused kwargs on
+  email/sms/whatsapp for a consistent polymorphic signature); added
+  `docs/push-notifications-integration.md` (web + Flutter FCM setup guide).
+  1 new test. Full suite still green.

@@ -131,10 +131,11 @@ class NotificationPreference(TenantModelMixin):
 
 class PushSubscription(TenantModelMixin):
     """One registered FCM device token for a user (web browser via the
-    Serwist service worker, or a native Android/iOS app later — see
-    `channels/push.py`). `user` is an `accounts.User`, not a `Resident`:
-    residents have no login account yet, so they can't register a device
-    (see that limitation documented in `channels/push.py`)."""
+    Serwist service worker, or the Flutter app on Android/iOS — see
+    `channels/push.py` and `docs/push-notifications-integration.md`).
+    `user` is an `accounts.User`, not a `Resident`: residents have no login
+    account yet, so they can't register a device (see that limitation
+    documented in `channels/push.py`)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='push_subscriptions')
@@ -142,7 +143,7 @@ class PushSubscription(TenantModelMixin):
     class DeviceType(models.TextChoices):
         WEB = 'web', _('Web')
         ANDROID = 'android', _('Android')
-        IOS = 'iOS', _('iOS')
+        IOS = 'ios', _('iOS')
 
     fcm_token = models.CharField(max_length=255, unique=True)
     device_type = models.CharField(max_length=10, choices=DeviceType.choices)

@@ -8,6 +8,8 @@ from apps.core.roles import Role
 from apps.core.tenancy import tenant_context
 from apps.residents.models import Admission, Resident
 
+from apps.billing.models import Payment
+
 from .base import BillingAPITestCase
 
 PERIOD = {'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10'}
@@ -301,3 +303,126 @@ class InvoiceBulkAndPermissionTests(BillingAPITestCase):
         self.authenticate(other_owner)
         response = self.client.get(reverse('invoice-detail', args=[invoice['id']]))
         self.assertEqual(response.status_code, 404)
+
+
+class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.floor = self.create_floor(self.property)
+        self.room = self.create_room(self.floor, rack_rate_with_food=Decimal('7000.00'))
+        self.bed = self.create_bed(self.room)
+        self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.authenticate(self.owner)
+
+    def _admit(self, advance):
+        self.check_in(
+            self.resident, self.bed, advance_amount=Decimal(advance),
+            advance_collected_date=date(2026, 7, 1), advance_mode=Admission.AdvanceMode.UPI,
+        )
+
+    def _generate_and_issue(self, **period):
+        payload = {'resident': str(self.resident.id), **{**PERIOD, **period}}
+        invoice = self.client.post(reverse('invoice-list'), payload).data
+        return self.client.post(reverse('invoice-issue', args=[invoice['id']])).data
+
+    def _refresh_admission(self):
+        with tenant_context(self.tenant.id):
+            return Admission.objects.get(resident=self.resident)
+
+    def test_advance_equal_to_rent_pays_the_first_invoice(self):
+        self._admit('7000.00')
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'paid')
+        with tenant_context(self.tenant.id):
+            payment = Payment.objects.get(invoice_id=invoice['id'])
+        self.assertEqual(payment.amount, Decimal('7000.00'))
+        self.assertEqual(payment.payment_mode, 'upi')
+        self.assertEqual(payment.payment_date, date(2026, 7, 1))
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+
+    def test_smaller_advance_leaves_invoice_partially_paid(self):
+        self._admit('3000.00')
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'partially_paid')
+        self.assertEqual(self._refresh_admission().advance_refundable, Decimal('0.00'))
+
+    def test_surplus_advance_is_capped_and_kept_for_refund(self):
+        self._admit('14000.00')  # two months upfront
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'paid')
+        admission = self._refresh_admission()
+        self.assertEqual(admission.advance_applied_amount, Decimal('7000.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
+
+    def test_second_invoice_gets_no_advance(self):
+        self._admit('14000.00')
+        self._generate_and_issue()
+
+        second = self._generate_and_issue(
+            period_start='2026-08-01', period_end='2026-08-31', due_date='2026-08-10',
+        )
+
+        self.assertEqual(second['status'], 'issued')
+        with tenant_context(self.tenant.id):
+            self.assertFalse(Payment.objects.filter(invoice_id=second['id']).exists())
+
+    def test_no_advance_means_no_payment(self):
+        self._admit('0.00')
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'issued')
+        with tenant_context(self.tenant.id):
+            self.assertFalse(Payment.objects.filter(invoice_id=invoice['id']).exists())
+
+    def test_advance_is_not_applied_a_second_time(self):
+        from apps.billing.models import Invoice
+        from apps.billing.services import apply_advance_to_first_invoice
+
+        self._admit('14000.00')
+        invoice = self._generate_and_issue()
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+
+        # e.g. a racing second `issue` that got past the "first issued" check.
+        with tenant_context(self.tenant.id):
+            again = apply_advance_to_first_invoice(
+                invoice=Invoice.objects.get(pk=invoice['id']), actor=self.owner,
+            )
+            self.assertEqual(Payment.objects.filter(invoice_id=invoice['id']).count(), 1)
+        self.assertIsNone(again)
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+
+    def test_deleting_the_advance_payment_releases_the_advance(self):
+        self._admit('7000.00')
+        invoice = self._generate_and_issue()
+        with tenant_context(self.tenant.id):
+            payment = Payment.objects.get(invoice_id=invoice['id'])
+
+        response = self.client.delete(reverse('payment-detail', args=[payment.id]))
+
+        self.assertEqual(response.status_code, 204)
+        admission = self._refresh_admission()
+        self.assertEqual(admission.advance_applied_amount, Decimal('0.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
+
+    def test_deleting_an_ordinary_payment_leaves_the_advance_alone(self):
+        self._admit('3000.00')
+        invoice = self._generate_and_issue()
+        ordinary = self.client.post(reverse('payment-list'), {
+            'invoice': invoice['id'], 'amount': '1000.00',
+            'payment_date': '2026-07-05', 'payment_mode': 'cash',
+        })
+        self.assertEqual(ordinary.status_code, 201, ordinary.data)
+
+        self.client.delete(reverse('payment-detail', args=[ordinary.data['id']]))
+
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('3000.00'))

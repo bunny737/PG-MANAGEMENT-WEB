@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'django_filters',
     'drf_spectacular',
+    'django_celery_beat',
     # local apps
     'apps.core',
     'apps.accounts',
@@ -180,6 +181,23 @@ CELERY_BROKER_URL = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://redis:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+# Module 14 V2: recurring notification sweeps (trial reminders, etc.) are
+# django-celery-beat PeriodicTask rows — DB-editable cadence, no code
+# deploy to change "run daily at 9am" to "run at 6am". The scheduler itself
+# runs as a separate `celery-beat` process (docker-compose.yml); this
+# setting only names which scheduler class `manage.py` management commands
+# and the beat process use to read schedules from the DB.
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Firebase Cloud Messaging (Module 14 V2 push channel — web push via the
+# frontend's Serwist service worker, and native Android/iOS later). Blank in
+# dev/test: apps.notifications.channels.push falls back to logging
+# status=skipped, same fail-open discipline as every other channel. Prefer
+# FIREBASE_CREDENTIALS_PATH (a mounted service-account JSON file) in
+# production; FIREBASE_CREDENTIALS_JSON (the raw JSON as an env var) is the
+# simpler option for platforms without file mounts.
+FIREBASE_CREDENTIALS_PATH = env('FIREBASE_CREDENTIALS_PATH', default='')
+FIREBASE_CREDENTIALS_JSON = env('FIREBASE_CREDENTIALS_JSON', default='')
 
 # Razorpay (locked stack — platform subscription billing ONLY, never resident
 # rent). Blank in dev/test falls back to a local stub client (see

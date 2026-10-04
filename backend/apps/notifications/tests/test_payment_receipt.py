@@ -20,7 +20,9 @@ class PaymentReceiptNotificationTests(NotificationAPITestCase):
         self.assertIn(self.resident.email, mail.outbox[0].to)
         self.assertIn('2000.00', mail.outbox[0].body)
 
-        logs = self.notifications_for(self.tenant.id, notification_type='payment_receipt')
+        # payment_receipt also attempts a push channel (registry.py) — skipped
+        # here since Resident has no linked login account (channels/push.py).
+        logs = self.notifications_for(self.tenant.id, notification_type='payment_receipt', channel='email')
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].status, 'sent')
         self.assertEqual(logs[0].reference, f'payment:{response.data["id"]}')

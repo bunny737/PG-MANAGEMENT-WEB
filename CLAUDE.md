@@ -15,12 +15,14 @@ residents, billing, and operations through a single system.
 - Web Frontend: Next.js 15 (App Router) + TypeScript + Tailwind CSS, installable PWA
   Confirmed by owner 2026-07-02. All frontend work follows docs/frontend-plan.md
   (route map, invariants F1–F8, FE build order, PWA strategy).
-- Mobile: build order is Web/PWA -> native Android -> native iOS.
-  Android: Kotlin + Jetpack Compose (Retrofit + OkHttp). iOS: Swift + SwiftUI
-  (later still; only start once Android ships). The PWA covers the mobile
-  resident experience until Android exists. All clients (web, Android, iOS)
+- Mobile: build order is Web/PWA -> Flutter (Android + iOS together).
+  Flutter (Dart) with a single codebase targeting both platforms — owner
+  decision 2026-09-17, superseding the earlier native-Android-then-native-iOS
+  plan (Kotlin/Compose, Swift/SwiftUI). The PWA covers the mobile resident
+  experience until the Flutter app exists. All clients (web, Flutter)
   consume the same Django REST API — no per-client API — see
-  docs/frontend-plan.md §3.1a for how non-browser clients authenticate.
+  docs/frontend-plan.md §3.1a and docs/push-notifications-integration.md
+  for how non-browser clients authenticate and integrate push.
 
 ## 10 Non-negotiable invariants
 

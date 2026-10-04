@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.urls import reverse
@@ -5,7 +6,7 @@ from django.urls import reverse
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Room
-from apps.residents.models import Resident
+from apps.residents.models import Admission, Resident
 
 from .base import ResidentAPITestCase
 
@@ -17,7 +18,12 @@ def admission_payload(resident, bed, **overrides):
         'joining_date': '2026-07-01',
         'billing_mode': 'monthly',
         'food_preference': 'with_food',
-        'advance_amount': '1500.00',
+        'advance_amount': '8500.00',
+        'advance_collected_date': '2026-07-01',
+        'advance_mode': 'upi',
+        'security_deposit_amount': '1500.00',
+        'security_deposit_collected_date': '2026-07-01',
+        'security_deposit_mode': 'cash',
     }
     payload.update(overrides)
     return payload
@@ -173,3 +179,74 @@ class AdmissionTests(ResidentAPITestCase):
             )
         self.assertEqual(status_entry.before['status'], 'reserved')
         self.assertEqual(status_entry.after['status'], 'active')
+
+    def test_security_deposit_and_advance_are_stored_separately(self):
+        self.authenticate(self.owner)
+
+        response = self.client.post(reverse('admission-list'), admission_payload(self.resident, self.bed))
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['advance_amount'], '8500.00')
+        self.assertEqual(response.data['security_deposit_amount'], '1500.00')
+        self.assertEqual(response.data['security_deposit_mode'], 'cash')
+        self.assertEqual(response.data['advance_applied_amount'], '0.00')
+        self.assertEqual(response.data['advance_refundable'], '8500.00')
+
+    def test_collected_amount_requires_date_and_mode(self):
+        self.authenticate(self.owner)
+        for prefix in ('advance', 'security_deposit'):
+            for missing in ('collected_date', 'mode'):
+                payload = admission_payload(self.resident, self.bed)
+                del payload[f'{prefix}_{missing}']
+                response = self.client.post(reverse('admission-list'), payload)
+                self.assertEqual(response.status_code, 400, (prefix, missing))
+                self.assertIn(f'{prefix}_{missing}', response.data)
+
+    def test_negative_amounts_are_rejected(self):
+        self.authenticate(self.owner)
+        for field in ('advance_amount', 'security_deposit_amount'):
+            response = self.client.post(
+                reverse('admission-list'), admission_payload(self.resident, self.bed, **{field: '-1.00'})
+            )
+            self.assertEqual(response.status_code, 400, field)
+            self.assertIn(field, response.data)
+
+    def test_zero_amounts_need_no_date_or_mode(self):
+        self.authenticate(self.owner)
+        payload = {k: v for k, v in admission_payload(self.resident, self.bed).items()
+                   if not k.startswith(('advance', 'security_deposit'))}
+
+        response = self.client.post(reverse('admission-list'), payload)
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['security_deposit_amount'], '0.00')
+
+
+class DepositMigrationTests(ResidentAPITestCase):
+    """0007 must move existing advance values into the deposit fields even
+    though `admissions` is FORCE-RLS and the migration runs with no tenant
+    context (it silently updated zero rows before the super-admin GUC)."""
+
+    def test_data_move_sql_updates_rows_under_force_rls(self):
+        import importlib
+
+        from django.db import connection
+
+        migration = importlib.import_module('apps.residents.migrations.0007_security_deposit_and_deposit_forfeit')
+        tenant = self.create_tenant()
+        prop = self.create_property(tenant)
+        bed = self.create_bed(self.create_room(self.create_floor(prop)))
+        resident = self.create_resident(prop, status=Resident.Status.RESERVED)
+        self.create_admission(
+            resident, bed, advance_amount=Decimal('1500.00'),
+            advance_collected_date=date(2026, 7, 1), advance_mode='upi',
+        )
+
+        with connection.cursor() as cursor:  # no tenant context, like a migration
+            cursor.execute(migration.MOVE_ADVANCE_TO_DEPOSIT_SQL)
+
+        with tenant_context(tenant.id):
+            admission = Admission.objects.get(resident=resident)
+        self.assertEqual(admission.security_deposit_amount, Decimal('1500.00'))
+        self.assertEqual(admission.security_deposit_mode, 'upi')
+        self.assertEqual(admission.advance_amount, Decimal('0.00'))

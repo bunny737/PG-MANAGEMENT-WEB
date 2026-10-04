@@ -130,12 +130,20 @@ class Admission(TenantModelMixin):
     food_preference = models.CharField(max_length=15, choices=FoodPreference.choices)
     contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
 
+    # Advance = rent paid upfront for the first billing period (e.g. 30 days
+    # on a monthly contract). Billing applies it as a payment against the
+    # resident's first issued invoice (billing.services.apply_advance_to_first_invoice).
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
-    # Added by Module 10 (Security Deposit & Advance Management) — advance_amount
-    # already existed (snapshotted at admission); these two siblings complete the
-    # PRD's `advance_amount`/`advance_collected_date`/`advance_mode` trio.
     advance_collected_date = models.DateField(null=True, blank=True)
     advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
+    # Portion of the advance actually paid against the first invoice. Any
+    # remainder (e.g. 2 months paid upfront) is refunded at vacate.
+    advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # Security deposit: separate from rent, never invoiced. Refunded on vacate
+    # (minus any maintenance deduction) or forfeited against dues on absconded.
+    security_deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    security_deposit_collected_date = models.DateField(null=True, blank=True)
+    security_deposit_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
     # Partial first-month adjustment set manually by management (PRD: "amount
     # set manually") — null means bill the first month at the normal
     # contracted_rent; Module 08 (Billing) is what actually reads this.
@@ -160,6 +168,11 @@ class Admission(TenantModelMixin):
 
     def __str__(self):
         return f'Admission: {self.resident}'
+
+    @property
+    def advance_refundable(self):
+        """Advance not consumed by the first invoice — refunded at vacate."""
+        return self.advance_amount - self.advance_applied_amount
 
 
 class Allocation(TenantModelMixin):
@@ -240,8 +253,9 @@ class Vacate(TenantModelMixin):
     """Notice-to-vacate + move-out settlement (PRD Module 11 'Vacating
     Workflow'). One row per resident: created when notice is given
     (Active -> Notice Period), then completed at move-out
-    (Notice Period -> Vacated) with the maintenance deduction and advance
-    refund. `refund_amount` is computed from the admission's advance_amount,
+    (Notice Period -> Vacated) with the maintenance deduction and security
+    deposit refund. `refund_amount` is computed from the admission's security_deposit_amount
+    (minus the deduction) plus any unapplied advance,
     never stored, so it can't drift if the deduction is corrected before
     settlement."""
 
@@ -283,15 +297,16 @@ class Vacate(TenantModelMixin):
     def refund_amount(self):
         if self.maintenance_deduction is None:
             return None
-        return self.resident.admission.advance_amount - self.maintenance_deduction
+        admission = self.resident.admission
+        return admission.security_deposit_amount - self.maintenance_deduction + admission.advance_refundable
 
 
 class AbscondedRecord(TenantModelMixin):
     """A resident who left without notice, without settling dues, and without
     returning access (PRD Module 11 'Absconded Resident Workflow') — distinct
     from a normal vacate. The bed is freed immediately on marking (not on a
-    future vacate date), and the advance is forfeited and applied against
-    outstanding dues rather than refunded. `advance_applied_to_dues` and
+    future vacate date), and the security deposit is forfeited and applied against
+    outstanding dues rather than refunded. `deposit_applied_to_dues` and
     `remaining_dues` are snapshotted at marking time — a settled financial
     event, not recomputed later even if the resident's invoices change."""
 
@@ -307,11 +322,11 @@ class AbscondedRecord(TenantModelMixin):
     last_seen_date = models.DateField(null=True, blank=True)
     absconded_note = models.TextField(blank=True)
 
-    # The advance is always forfeited per the PRD workflow (no partial-forfeit
+    # The deposit is always forfeited per the PRD workflow (no partial-forfeit
     # option is described) — the field is kept for parity with the PRD's
     # explicit field list and to make the outcome an explicit, queryable fact.
-    advance_forfeited = models.BooleanField(default=True)
-    advance_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
+    deposit_forfeited = models.BooleanField(default=True)
+    deposit_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
     remaining_dues = models.DecimalField(max_digits=12, decimal_places=2)
 
     dues_recovery_status = models.CharField(

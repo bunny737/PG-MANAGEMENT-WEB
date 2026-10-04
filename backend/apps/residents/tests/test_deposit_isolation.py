@@ -37,7 +37,7 @@ class DepositRowLevelSecurityTests(TestCase):
             )
             self.absconded_a = AbscondedRecord.objects.create(
                 tenant_id=self.tenant_a.id, resident=self.resident_a, absconded_date=date(2026, 7, 1),
-                advance_applied_to_dues='0.00', remaining_dues='0.00',
+                deposit_applied_to_dues='0.00', remaining_dues='0.00',
             )
             self.blacklist_a = BlacklistEntry.objects.create(
                 tenant_id=self.tenant_a.id, resident=self.resident_a, phone=self.resident_a.phone,
@@ -49,7 +49,7 @@ class DepositRowLevelSecurityTests(TestCase):
             )
             AbscondedRecord.objects.create(
                 tenant_id=self.tenant_b.id, resident=self.resident_b, absconded_date=date(2026, 7, 1),
-                advance_applied_to_dues='0.00', remaining_dues='0.00',
+                deposit_applied_to_dues='0.00', remaining_dues='0.00',
             )
             BlacklistEntry.objects.create(
                 tenant_id=self.tenant_b.id, resident=self.resident_b, phone=self.resident_b.phone,

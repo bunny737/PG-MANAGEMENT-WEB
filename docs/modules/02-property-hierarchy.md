@@ -109,6 +109,8 @@ GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (
 GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds
 GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
 GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
+                                                            (create accepts write-only `auto_create_beds` to
+                                                            generate `sharing_type` beds — see Decisions)
 GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds
 GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds
 GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds
@@ -155,6 +157,12 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
     (0–100, default 0) and auto-creates that many Floors in the same
     request, named "Ground Floor", "1st Floor", "2nd Floor", ... — so an
     owner adding a second block doesn't have to add each floor by hand.
+14. `RoomSerializer.create()` accepts a write-only boolean `auto_create_beds`
+    (default false). When true it creates exactly `sharing_type` beds in the
+    same transaction, named "<room_number>-A", "-B", ... with no per-bed
+    rate overrides (they inherit the room's rates). Room number must be
+    <= 18 chars when used. A free "number of beds" field was rejected: it
+    would duplicate `sharing_type` (= bed capacity) and could contradict it.
 
 ## Permissions
 - `manage_properties` (Super Admin, Owner): create/update properties.

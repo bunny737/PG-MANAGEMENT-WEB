@@ -173,7 +173,7 @@ class CoreLifecycleTimelineTests(ActivityTimelineTestCase):
 class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
     def test_vacate_timeline_shows_notice_and_settlement(self):
         resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(resident, self.bed_a, advance_amount=Decimal('1000.00'))
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('1000.00'))
         self.client.post(reverse('vacate-list'), {
             'resident': str(resident.id), 'notice_given_date': TODAY.isoformat(),
         })
@@ -192,7 +192,7 @@ class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
 
     def test_absconded_lifecycle_shows_forfeit_writeoff_and_blacklist(self):
         resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(resident, self.bed_a, advance_amount=Decimal('2000.00'))
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('2000.00'))
         self._generate_and_issue_invoice(resident)  # outstanding dues to forfeit against
 
         self.client.post(reverse('absconded-record-list'), {
@@ -209,11 +209,11 @@ class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
 
         labels = [e['event'] for e in self._timeline(resident).data]
         self.assertIn('Marked Absconded', labels)
-        self.assertIn('Advance Forfeited', labels)
+        self.assertIn('Security Deposit Forfeited', labels)
         self.assertIn('Dues Written Off', labels)
         self.assertIn('Blacklisted', labels)
-        self.assertLess(labels.index('Marked Absconded'), labels.index('Advance Forfeited'))
-        self.assertLessEqual(labels.index('Advance Forfeited'), labels.index('Dues Written Off'))
+        self.assertLess(labels.index('Marked Absconded'), labels.index('Security Deposit Forfeited'))
+        self.assertLessEqual(labels.index('Security Deposit Forfeited'), labels.index('Dues Written Off'))
         self.assertLessEqual(labels.index('Dues Written Off'), labels.index('Blacklisted'))
 
 

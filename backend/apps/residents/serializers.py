@@ -21,6 +21,18 @@ class ResidentSerializer(serializers.ModelSerializer):
     unit = serializers.SerializerMethodField()
     block = serializers.SerializerMethodField()
     move_in_date = serializers.SerializerMethodField()
+    # Read-only snapshot of the resident's admission + current allocation;
+    # all null until the resident is admitted. contracted_rent comes from the
+    # allocation (not the admission) so it reflects a permanent transfer.
+    contracted_rent = serializers.SerializerMethodField()
+    food_preference = serializers.SerializerMethodField()
+    billing_mode = serializers.SerializerMethodField()
+    joining_date = serializers.SerializerMethodField()
+    security_deposit_amount = serializers.SerializerMethodField()
+    advance_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
+    room_number = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Resident
@@ -32,9 +44,55 @@ class ResidentSerializer(serializers.ModelSerializer):
             'aadhaar_number', 'aadhaar_document', 'pan_number', 'pan_document',
             'passport_number', 'employee_id', 'student_id',
             'unit', 'block', 'move_in_date',
+            'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
+            'security_deposit_amount', 'advance_amount', 'advance_refundable',
+            'room_number', 'bed_number',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+
+    @staticmethod
+    def _related(obj, name):
+        # Reverse one-to-one access raises RelatedObjectDoesNotExist when absent.
+        return getattr(obj, name, None)
+
+    def _admission_value(self, obj, field, as_str=False):
+        admission = self._related(obj, 'admission')
+        if admission is None:
+            return None
+        value = getattr(admission, field)
+        return str(value) if as_str else value
+
+    def get_contracted_rent(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return str(allocation.contracted_rent) if allocation else None
+
+    def get_food_preference(self, obj) -> str | None:
+        return self._admission_value(obj, 'food_preference')
+
+    def get_billing_mode(self, obj) -> str | None:
+        return self._admission_value(obj, 'billing_mode')
+
+    def get_joining_date(self, obj) -> str | None:
+        value = self._admission_value(obj, 'joining_date')
+        return value.isoformat() if value else None
+
+    def get_security_deposit_amount(self, obj) -> str | None:
+        return self._admission_value(obj, 'security_deposit_amount', as_str=True)
+
+    def get_advance_amount(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_amount', as_str=True)
+
+    def get_advance_refundable(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_refundable', as_str=True)
+
+    def get_room_number(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return allocation.allocated_bed.room.room_number if allocation else None
+
+    def get_bed_number(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return allocation.allocated_bed.bed_number if allocation else None
 
     def get_unit(self, obj) -> str:
         if hasattr(obj, 'allocation') and obj.allocation:
@@ -78,21 +136,30 @@ class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
 
 
 class AdmissionSerializer(serializers.ModelSerializer):
+    advance_refundable = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
     class Meta:
         model = Admission
         fields = [
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
             'advance_amount', 'advance_collected_date', 'advance_mode',
+            'security_deposit_amount', 'security_deposit_collected_date', 'security_deposit_mode',
             'first_month_billing_amount', 'first_month_billing_note',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
         # contracted_* fields are snapshotted server-side in the view
         # (invariant 2/3) — never accepted as client input.
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
+        extra_kwargs = {
+            'advance_amount': {'min_value': Decimal('0.00')},
+            'security_deposit_amount': {'min_value': Decimal('0.00')},
+        }
 
     def validate(self, attrs):
         resident = attrs['resident']
@@ -122,6 +189,17 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 {'resident': _('You are not assigned to this property.')},
                 code='property_not_assigned',
             )
+
+        # A collected amount needs its date and mode (the advance is recorded
+        # as a payment against the first invoice, which requires both).
+        for prefix in ('advance', 'security_deposit'):
+            if attrs.get(f'{prefix}_amount', Decimal('0.00')) > 0:
+                for suffix in ('collected_date', 'mode'):
+                    if not attrs.get(f'{prefix}_{suffix}'):
+                        raise serializers.ValidationError(
+                            {f'{prefix}_{suffix}': _('This field is required when an amount is collected.')},
+                            code='required',
+                        )
         return attrs
 
 
@@ -214,6 +292,9 @@ class TransferCreateSerializer(serializers.Serializer):
 class VacateSerializer(serializers.ModelSerializer):
     refund_amount = serializers.SerializerMethodField()
     is_settled = serializers.BooleanField(read_only=True)
+    # Breakdown of refund_amount: deposit - deduction + unapplied advance.
+    security_deposit_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
 
     class Meta:
         model = Vacate
@@ -221,9 +302,16 @@ class VacateSerializer(serializers.ModelSerializer):
             'id', 'resident', 'notice_given_date', 'expected_vacate_date', 'actual_vacate_date',
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
+            'security_deposit_amount', 'advance_refundable',
             'settled_by', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_security_deposit_amount(self, obj) -> str:
+        return str(obj.resident.admission.security_deposit_amount)
+
+    def get_advance_refundable(self, obj) -> str:
+        return str(obj.resident.admission.advance_refundable)
 
     def get_refund_amount(self, obj) -> str | None:
         amount = obj.refund_amount
@@ -258,7 +346,7 @@ class VacateGiveNoticeSerializer(serializers.Serializer):
 
 class VacateFinalizeSerializer(serializers.Serializer):
     """Step 2 of the vacating workflow (PRD Module 11): the move-out
-    settlement — maintenance deduction and advance refund."""
+    settlement — maintenance deduction and security deposit refund."""
 
     actual_vacate_date = serializers.DateField()
     maintenance_deduction = serializers.DecimalField(
@@ -278,13 +366,13 @@ class VacateFinalizeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         vacate = self.context['vacate']
-        advance = vacate.resident.admission.advance_amount
-        if attrs['maintenance_deduction'] > advance:
+        deposit = vacate.resident.admission.security_deposit_amount
+        if attrs['maintenance_deduction'] > deposit:
             raise serializers.ValidationError(
                 {'maintenance_deduction': _(
-                    'Deduction cannot exceed the advance amount of %(advance)s.'
-                ) % {'advance': advance}},
-                code='deduction_exceeds_advance',
+                    'Deduction cannot exceed the security deposit of %(deposit)s.'
+                ) % {'deposit': deposit}},
+                code='deduction_exceeds_deposit',
             )
         return attrs
 
@@ -294,7 +382,7 @@ class AbscondedRecordSerializer(serializers.ModelSerializer):
         model = AbscondedRecord
         fields = [
             'id', 'resident', 'absconded_date', 'last_seen_date', 'absconded_note',
-            'advance_forfeited', 'advance_applied_to_dues', 'remaining_dues',
+            'deposit_forfeited', 'deposit_applied_to_dues', 'remaining_dues',
             'dues_recovery_status', 'dues_written_off_by', 'dues_written_off_note',
             'marked_by', 'created_at', 'updated_at',
         ]

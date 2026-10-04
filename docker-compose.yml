@@ -59,6 +59,22 @@ services:
       redis:
         condition: service_healthy
 
+  celery-beat:
+    build: ./backend
+    restart: unless-stopped
+    # DatabaseScheduler (django_celery_beat) so PeriodicTask schedules are
+    # Super-Admin-editable via Django admin — no deploy to change cadence
+    # (see Module 14 spec: recurring notification sweeps).
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./backend:/app
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     build: ./frontend
     restart: unless-stopped

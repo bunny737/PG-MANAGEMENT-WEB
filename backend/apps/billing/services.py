@@ -7,6 +7,8 @@ by a temporary allocation), then the active discount as its own negative line
 as more line items. Management has full manual control while the invoice is a
 draft.
 """
+from decimal import Decimal
+
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -16,6 +18,11 @@ from apps.notifications.tasks import send_payment_receipt_email_task
 from apps.residents.models import Admission
 
 from .models import Invoice, InvoiceLineItem, Payment
+
+
+# Marks the Payment created from the admission advance, so deleting it can
+# release the advance again (see delete_payment).
+ADVANCE_PAYMENT_REFERENCE = 'Advance collected at admission'
 
 
 def active_discount(resident, on_date):
@@ -98,6 +105,41 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     return invoice
 
 
+@transaction.atomic
+def apply_advance_to_first_invoice(*, invoice, actor, request=None):
+    """The advance is rent paid upfront for the first period, so when a
+    resident's first invoice is issued it is recorded as a payment against
+    that invoice (capped at the invoice total; the surplus is refunded at vacate). Only the first issued invoice
+    qualifies — an earlier issued invoice means the advance was already used.
+    Returns the Payment, or None when nothing applies."""
+    # Serialize per admission: two concurrent `issue` calls on different draft
+    # invoices of the same resident each see the other as still draft (the
+    # status flips are uncommitted), so the "first issued invoice" check alone
+    # can't stop a double application. Take the row lock first, then re-read.
+    admission = Admission.objects.select_for_update().get(resident=invoice.resident)
+    if admission.advance_amount <= 0 or admission.advance_applied_amount > 0:
+        return None
+    other_issued = (
+        Invoice.objects.filter(resident=invoice.resident).exclude(pk=invoice.pk)
+        .exclude(status=Invoice.Status.DRAFT).exists()
+    )
+    if other_issued:
+        return None
+    amount = min(admission.advance_amount - admission.advance_applied_amount, invoice.balance_due)
+    if amount <= 0:
+        return None
+    payment = record_payment(
+        invoice=invoice, amount=amount, payment_date=admission.advance_collected_date,
+        payment_mode=admission.advance_mode, reference=ADVANCE_PAYMENT_REFERENCE,
+        actor=actor, request=request,
+    )
+    # Anything beyond the invoice (e.g. 2 months paid upfront) stays on the
+    # admission as advance_refundable and is refunded at vacate.
+    admission.advance_applied_amount += amount
+    admission.save(update_fields=['advance_applied_amount', 'updated_at'])
+    return payment
+
+
 def resident_has_invoice_for_period(resident, period_start):
     return resident.invoices.filter(period_start=period_start).exists()
 
@@ -155,6 +197,14 @@ def delete_payment(*, payment, actor, request=None):
     # Lock the invoice so a concurrent record_payment / delete_payment can't
     # recompute status off a stale payment set (lost update).
     invoice = Invoice.objects.select_for_update().get(pk=payment.invoice_id)
+    if payment.reference == ADVANCE_PAYMENT_REFERENCE:
+        # Deleting the advance payment un-applies the advance, otherwise
+        # advance_refundable stays understated and the vacate refund is short.
+        admission = Admission.objects.select_for_update().get(resident_id=invoice.resident_id)
+        admission.advance_applied_amount = max(
+            admission.advance_applied_amount - payment.amount, Decimal('0.00')
+        )
+        admission.save(update_fields=['advance_applied_amount', 'updated_at'])
     audit_log.record(
         action='payment.deleted', actor=actor, obj=payment,
         before={'invoice': str(invoice.id), 'amount': str(payment.amount),

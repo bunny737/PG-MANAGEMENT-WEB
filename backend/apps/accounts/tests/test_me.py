@@ -29,7 +29,10 @@ class MeEndpointTests(AuthAPITestCase):
 
         self.assertEqual(
             response.data['permissions'],
-            sorted(['manage_visitors', 'view_resident_profile']),
+            sorted([
+                'manage_visitors', 'view_resident_profile',
+                'view_own_notifications', 'manage_notification_preferences',
+            ]),
         )
 
     def test_patch_updates_language_preference(self):

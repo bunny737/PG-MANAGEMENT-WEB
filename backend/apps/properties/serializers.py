@@ -276,13 +276,18 @@ class RoomSerializer(serializers.ModelSerializer):
     current_occupancy = serializers.SerializerMethodField()
     bed_capacity = serializers.SerializerMethodField()
     beds = BedSerializer(many=True, read_only=True)
+    # Write-only convenience: creates `sharing_type` beds ("201-A", "201-B", ...)
+    # in the same transaction. Off by default so existing callers that add
+    # beds one by one are unaffected.
+    auto_create_beds = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = Room
         fields = [
             'id', 'floor', 'room_number', 'sharing_type', 'category',
             'rack_rate_with_food', 'rack_rate_without_food', 'status',
-            'current_occupancy', 'bed_capacity', 'beds', 'created_at', 'updated_at',
+            'auto_create_beds', 'current_occupancy', 'bed_capacity', 'beds',
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -299,6 +304,35 @@ class RoomSerializer(serializers.ModelSerializer):
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
         return value
+
+    def validate(self, attrs):
+        # Bed.bed_number is max 20 chars: "<room_number>-<letter>".
+        bed_max = Bed._meta.get_field('bed_number').max_length
+        if (
+            self.instance is None and attrs.get('auto_create_beds')
+            and len(attrs['room_number']) + 2 > bed_max
+        ):
+            raise serializers.ValidationError(
+                {'room_number': _('Room number is too long to auto-create beds.')},
+                code='room_number_too_long',
+            )
+        return attrs
+
+    def create(self, validated_data):
+        auto_create_beds = validated_data.pop('auto_create_beds', False)
+        with transaction.atomic():
+            room = super().create(validated_data)
+            if auto_create_beds:
+                for i in range(room.sharing_type):
+                    Bed.objects.create(
+                        tenant_id=room.tenant_id, room=room,
+                        bed_number=f'{room.room_number}-{chr(ord("A") + i)}',
+                    )
+        return room
+
+    def update(self, instance, validated_data):
+        validated_data.pop('auto_create_beds', None)
+        return super().update(instance, validated_data)
 
 
 class PropertyStaffAssignmentSerializer(serializers.ModelSerializer):

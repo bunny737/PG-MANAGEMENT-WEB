@@ -182,7 +182,7 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
                     refund_date, refund_mode, refund_note, actor, request=None):
     """Step 2 of the vacating workflow (PRD Module 11): move-out settlement —
     Notice Period -> Vacated, bed freed immediately, refund computed from the
-    admission's advance minus the maintenance deduction."""
+    admission's security deposit minus the maintenance deduction."""
     # Lock the vacate row and re-check settlement: the view's is_settled guard
     # runs outside any lock, so two concurrent finalize calls could both pass it
     # and double-run the settlement (double refund audit, double bed-free).
@@ -241,18 +241,20 @@ def outstanding_dues_for(resident):
 @transaction.atomic
 def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, actor, request=None):
     """PRD Module 11 'Absconded Resident Workflow': bed freed immediately (no
-    notice period), advance forfeited and applied against outstanding dues,
+    notice period), security deposit forfeited and applied against outstanding dues,
     any remainder recorded as outstanding (owner can write it off later)."""
     before_status = resident.status
-    advance = resident.admission.advance_amount
+    admission = resident.admission
+    # An unapplied advance surplus is forfeited together with the deposit.
+    deposit = admission.security_deposit_amount + admission.advance_refundable
     outstanding = outstanding_dues_for(resident)
-    applied = min(advance, outstanding)
+    applied = min(deposit, outstanding)
     remaining = outstanding - applied
 
     record = AbscondedRecord.objects.create(
         tenant_id=resident.tenant_id, resident=resident,
         absconded_date=absconded_date, last_seen_date=last_seen_date, absconded_note=absconded_note,
-        advance_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
+        deposit_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
     )
 
     bed = resident.allocation.allocated_bed
@@ -264,7 +266,7 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     audit_log.record(
         action='resident.absconded', actor=actor, obj=record,
-        after={'absconded_date': absconded_date.isoformat(), 'advance_applied_to_dues': str(applied),
+        after={'absconded_date': absconded_date.isoformat(), 'deposit_applied_to_dues': str(applied),
                'remaining_dues': str(remaining)},
         request=request,
     )
@@ -414,10 +416,10 @@ def build_activity_timeline(resident):
             seen = _('Last seen %(date)s') % {'date': absconded.last_seen_date.isoformat()}
             note = f'{seen} — {note}' if note else seen
         add(absconded.absconded_date, 10, _('Marked Absconded'), note)
-        if absconded.advance_applied_to_dues > 0:
+        if absconded.deposit_applied_to_dues > 0:
             add(
-                absconded.absconded_date, 11, _('Advance Forfeited'),
-                _('₹%(amount)s applied against dues') % {'amount': absconded.advance_applied_to_dues},
+                absconded.absconded_date, 11, _('Security Deposit Forfeited'),
+                _('₹%(amount)s applied against dues') % {'amount': absconded.deposit_applied_to_dues},
             )
         if absconded.dues_recovery_status == AbscondedRecord.DuesRecoveryStatus.WRITTEN_OFF:
             add(

@@ -11,11 +11,12 @@ A single Next.js web application serving all five roles (Super Admin, Owner, Man
 Receptionist, Resident), installable as a PWA on Android/iOS/desktop. This is the primary
 UI for MVP.
 
-Client build order: **Web/PWA (this doc) -> native Android -> native iOS.** The PWA
-covers the mobile-first resident experience until native Android ships; native iOS is a
-further later phase, started only once Android is out (owner decision 2026-07-05).
-Android and iOS are both clients of the same Django REST API described here — see §3.1a
-— so no backend or API redesign is needed to add either.
+Client build order: **Web/PWA (this doc) -> Flutter (Android + iOS together).** The PWA
+covers the mobile-first resident experience until the Flutter app ships. Flutter targets
+both platforms from one codebase — owner decision 2026-09-17, superseding the earlier
+native-Android-then-native-iOS plan (2026-07-05; see the Decisions table). The Flutter
+app is a client of the same Django REST API described here — see §3.1a — so no backend
+or API redesign is needed to add it.
 
 The frontend is a pure API client. All business rules (billing math, status transitions,
 plan limits, penalties) live in the Django backend. The frontend renders, validates input
@@ -150,19 +151,20 @@ not a chart requiring palette validation.
 - Same-origin API calls mean no CORS config and the service worker can apply cache
   strategies uniformly.
 
-### 3.1a Mobile clients (Android now-planned, iOS later)
+### 3.1a Mobile client (Flutter, Android + iOS)
 
 The BFF proxy above is a **browser-only** mitigation (keeps JWTs out of reach of
-in-page JS/XSS). It does not apply to native Android/iOS — they call
+in-page JS/XSS). It does not apply to the Flutter app — it calls
 `/api/v1/...` on Django directly, the same endpoints and serializers the web
 app uses, with no proxy layer:
 
 - Auth: same `POST /api/v1/auth/login/` -> `{access, refresh}` and
   `POST /api/v1/auth/token/refresh/` flow as the web temporary client
-  (`frontend/src/lib/api.ts`), just called from Retrofit/OkHttp (Android) or
-  `URLSession` (iOS) instead of `fetch`.
-- Token storage: Android Keystore-backed `EncryptedSharedPreferences`; iOS
-  Keychain. Never plain `SharedPreferences`/`UserDefaults` — that's the mobile
+  (`frontend/src/lib/api.ts`), just called from Dart (`dio`/`http`) instead
+  of `fetch`.
+- Token storage: `flutter_secure_storage` (Android Keystore-backed on
+  Android, Keychain-backed on iOS — one API, platform-correct storage on
+  both). Never plain `SharedPreferences`/local files — that's the mobile
   equivalent of the `localStorage` shortcut the web client uses temporarily
   and must not be repeated on a permanent mobile client.
 - No CORS concerns (native HTTP clients aren't subject to browser CORS), so
@@ -171,9 +173,13 @@ app uses, with no proxy layer:
   already used by web work unchanged for mobile. If a mobile-only response
   shape is ever needed, version it (`/api/v2/`) rather than branching
   behavior in existing serializers — not needed yet.
-- Push notifications, biometric unlock, and offline write queues are mobile-app
-  concerns to design when Android work actually starts — not addressed by this
-  doc, which scopes web only.
+- Push notifications: the backend (`POST/GET/DELETE
+  /api/v1/notifications/push-subscriptions/`, Module 14 V2) and the Flutter
+  side (`firebase_messaging` setup, permissions, token lifecycle) are both
+  covered in `docs/push-notifications-integration.md`.
+- Biometric unlock and offline write queues remain mobile-app concerns to
+  design when Flutter work actually starts — not addressed by this doc,
+  which scopes web only.
 
 ### 3.2 Route map (App Router route groups)
 
@@ -284,7 +290,12 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
 ### 5.2 V2
 
 - Web Push notifications (invoice issued, payment receipt, complaint updates) — aligns
-  with PRD Module 18 V2. Requires a `push_subscriptions` endpoint backend-side.
+  with PRD Module 18 V2. Backend is ready: `POST/GET /api/v1/notifications/push-subscriptions/`
+  and `DELETE .../push-subscriptions/{id}/` register/unregister an FCM device token
+  (see `docs/modules/14-notifications.md`); the channel itself sends via Firebase
+  Cloud Messaging. Still needed on the frontend: the Firebase JS SDK + VAPID key
+  wired into `sw.ts`, the permission-prompt UX, and calling this endpoint on
+  subscribe/logout.
 - Background Sync for non-money mutations (complaints, visitor requests).
 - Periodic background refresh of the resident's own invoice list.
 
@@ -412,7 +423,8 @@ Small additions to note in the relevant module specs when built:
 3. Machine-readable error codes (e.g., `PLAN_LIMIT_REACHED`, `SUBSCRIPTION_SUSPENDED`,
    `BLACKLIST_MATCH`) on 4xx responses (module 01/13) — invariant F4 and suspension UX.
 4. S3 presigned upload endpoints (module 04) — document uploads go browser→S3 direct.
-5. V2: `push_subscriptions` endpoint for Web Push (module 14).
+5. ~~V2: `push_subscriptions` endpoint for Web Push (module 14).~~ Done —
+   see `docs/modules/14-notifications.md` (2026-09-17).
 
 ---
 
@@ -427,6 +439,7 @@ Small additions to note in the relevant module specs when built:
 | Token storage | httpOnly cookies via BFF proxy | Keeps JWTs out of JS (XSS), avoids CORS, lets the service worker treat API as same-origin |
 | Locale in URL | No — cookie/profile based | Authed dashboard, no SEO need; PRD stores `language_code` per user |
 | Offline writes | None in MVP | Money mutations must not replay/conflict; PRD has no offline requirement. Read-only offline + V2 Background Sync for non-money modules |
-| Mobile app | PWA covers residents for MVP; native Android next, native iOS after that | PRD lists mobile apps as V2; PWA delivers "mobile-first resident experience" (PRD §2) now |
+| Mobile app | PWA covers residents for MVP; Flutter next (Android + iOS together) | PRD lists mobile apps as V2; PWA delivers "mobile-first resident experience" (PRD §2) now |
 | Mobile client build order (2026-07-05) | Web/PWA -> Android -> iOS, all as clients of one Django API | Owner confirmed sequencing; avoids building two native apps in parallel and confirms the API needs no per-client redesign (§3.1a) |
+| Mobile client tech (2026-09-17) | Flutter (Dart), one codebase for Android + iOS — supersedes the 2026-07-05 native-Android-then-native-iOS plan (Kotlin/Compose, Swift/SwiftUI) | Owner decision; keeps the "one Django API, no per-client redesign" principle from the row above (§3.1a) — only the client implementation technology changes, not the sequencing or API contract |
 | Auth for Add Property (2026-07-05) | Temporary direct-to-Django client (`lib/api.ts`): real login, JWT in `localStorage`, dev-only CORS — not the §3.1 BFF proxy | The BFF proxy (FE-01) didn't exist yet and nothing in the app called the real backend; owner approved a minimal unblock to get the Add Property form (module 02) working now rather than building the full proxy first. **Still needs replacing** with the httpOnly-cookie proxy before this app leaves a developer's machine — see `docs/modules/02-property-hierarchy.md` Decisions. |

@@ -16,7 +16,9 @@ class InvoiceIssuedNotificationTests(NotificationAPITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.resident.email, mail.outbox[0].to)
 
-        logs = self.notifications_for(self.tenant.id, notification_type='invoice_issued')
+        # invoice_issued also attempts a push channel (registry.py) — skipped
+        # here since Resident has no linked login account (channels/push.py).
+        logs = self.notifications_for(self.tenant.id, notification_type='invoice_issued', channel='email')
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].status, 'sent')
         self.assertEqual(logs[0].reference, f'invoice:{invoice["id"]}')
@@ -41,6 +43,6 @@ class InvoiceIssuedNotificationTests(NotificationAPITestCase):
             self.issue_invoice(invoice['id'])
 
         self.assertEqual(len(mail.outbox), 0)
-        logs = self.notifications_for(self.tenant.id, notification_type='invoice_issued')
+        logs = self.notifications_for(self.tenant.id, notification_type='invoice_issued', channel='email')
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].status, 'skipped')

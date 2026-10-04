@@ -1,8 +1,18 @@
 from django.contrib import admin
 
-from .models import Bed, Building, Floor, Property, PropertySettings, PropertyStaffAssignment, Room
+from .models import (
+    Bed,
+    Building,
+    Floor,
+    Property,
+    PropertyImage,
+    PropertySettings,
+    PropertyStaffAssignment,
+    Room,
+)
 
 admin.site.register(Property)
+admin.site.register(PropertyImage)
 admin.site.register(Building)
 admin.site.register(Floor)
 admin.site.register(Room)

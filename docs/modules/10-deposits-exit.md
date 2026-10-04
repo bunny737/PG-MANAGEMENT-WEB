@@ -35,7 +35,8 @@ Table: vacates                                  (RLS enforced, app: apps.residen
   refund_note           text, blank
   settled_by            FK -> users, null (SET_NULL)
   created_at / updated_at
-  -- refund_amount = advance_amount - maintenance_deduction, computed, never stored.
+  -- refund_amount = security_deposit_amount - maintenance_deduction + advance_refundable,
+  -- computed, never stored.
 
 Table: absconded_records                        (RLS enforced, app: apps.residents)
   id                    uuid PK
@@ -44,8 +45,8 @@ Table: absconded_records                        (RLS enforced, app: apps.residen
   absconded_date        date
   last_seen_date        date, null
   absconded_note        text, blank
-  advance_forfeited     boolean, default True
-  advance_applied_to_dues  decimal(12,2)  (snapshotted at marking time)
+  deposit_forfeited     boolean, default True        (renamed from advance_forfeited, 2026-10-04)
+  deposit_applied_to_dues  decimal(12,2)             (renamed from advance_applied_to_dues)  (snapshotted at marking time)
   remaining_dues           decimal(12,2)  (snapshotted at marking time)
   dues_recovery_status  outstanding | partially_recovered | written_off (default outstanding)
   dues_written_off_by   FK -> users, null (SET_NULL)
@@ -104,17 +105,18 @@ discipline; corrections happen via the dedicated actions (`finalize`,
    and moves the resident to `Vacated`. Rejected once already settled
    (`already_settled`).
 4. `maintenance_deduction` cannot be negative or exceed the admission's
-   `advance_amount` (`deduction_exceeds_advance`) — "management can choose
-   to refund the full advance" (zero deduction) is the floor.
-5. `refund_amount` = `advance_amount - maintenance_deduction`, computed on
+   `security_deposit_amount` (`deduction_exceeds_deposit`) — zero deduction
+   (full refund) is the floor. The deduction never comes out of the advance.
+5. `refund_amount` = `security_deposit_amount - maintenance_deduction +
+   advance_refundable` (advance not consumed by the first invoice), computed on
    the fly (invariant 5: Decimal, never stored, can't drift).
 6. **Mark absconded** (`POST /absconded-records/`) requires `Active`
    (`resident_not_active`); frees the bed **immediately** (no notice
    period, unlike a normal vacate); computes outstanding dues as the sum of
    `balance_due` across the resident's `issued`/`partially_paid` invoices
-   (Module 08/09); the advance is always forfeited and applied against
-   those dues up to the advance amount
-   (`advance_applied_to_dues = min(advance_amount, outstanding_dues)`);
+   (Module 08/09); the security deposit plus any unapplied advance is always forfeited and
+   applied against those dues
+   (`deposit_applied_to_dues = min(deposit + advance_refundable, outstanding_dues)`);
    any remainder is `remaining_dues`, recorded `outstanding`. Moves the
    resident to `Absconded`.
 7. **Write off** (`POST /absconded-records/{id}/write-off/`) requires a
@@ -231,3 +233,21 @@ discipline; corrections happen via the dedicated actions (`finalize`,
   math, absconded dues calculation, write-off, blacklist confirm + tenant-
   wide check, permission scoping, RLS isolation); full suite (257) green.
   Spec written to as-built.
+
+## Update 2026-10-04 — security deposit vs advance rent (owner decision)
+- [DECISION] **Two separate amounts at admission.** `security_deposit_amount`
+  (+ `_collected_date`, `_mode`) is the refundable deposit: never invoiced,
+  refunded on vacate minus `maintenance_deduction`, forfeited against dues on
+  absconded. `advance_amount` is rent paid upfront for the first period (~30
+  days on a monthly contract); Module 08 applies it to the first issued
+  invoice. Before this change `advance_amount` played the deposit role.
+- [DECISION] **Surplus advance is refunded at leaving.** If the resident paid
+  more than the first invoice (e.g. 2 months), the unapplied part
+  (`advance_refundable = advance_amount - advance_applied_amount`) is added
+  to `refund_amount` at vacate finalize. It is not credited to later invoices.
+  On absconded it is forfeited with the deposit (assumed; confirm with owner).
+- [DECISION] Migration 0007 moved existing `advance_*` values into the deposit
+  fields (their old meaning) and zeroed the advance; renamed absconded record
+  fields `advance_*` -> `deposit_*` (API break for clients reading them).
+  `VacateSerializer` now also returns `security_deposit_amount` and
+  `advance_refundable` as the refund breakdown.

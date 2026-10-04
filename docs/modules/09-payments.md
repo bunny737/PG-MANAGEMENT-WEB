@@ -138,3 +138,6 @@ Module 08.
   isolation); full suite (216) green. Spec written to as-built.
 - 2026-07-04  Build-order Module 14 added an email-receipt dispatch to
   `services.record_payment` — no other change to payment recording itself.
+- 2026-10-04  The admission advance now appears as an auto-recorded Payment on
+  the resident's first issued invoice (see Module 08 changelog); security
+  deposits are never payments.

@@ -37,9 +37,14 @@ Table: admissions                               (RLS enforced, app: apps.residen
   food_preference           with_food | without_food
   contracted_rent            decimal(12,2)
 
-  advance_amount              decimal(12,2), default 0
+  advance_amount              decimal(12,2), default 0   (rent paid upfront for the first period; min 0)
   advance_collected_date      date, null            (added by Module 10)
   advance_mode                upi | cash | bank_transfer, blank   (added by Module 10)
+  advance_applied_amount      decimal(12,2), default 0   (read-only; set when applied to the first invoice)
+  security_deposit_amount     decimal(12,2), default 0   (refundable deposit; min 0)
+  security_deposit_collected_date  date, null
+  security_deposit_mode       upi | cash | bank_transfer, blank
+  -- advance_refundable = advance_amount - advance_applied_amount (read-only property)
   first_month_billing_amount  decimal(12,2), null   (manual partial-month override)
   first_month_billing_note    text, blank
   addons                      jsonb, default []     (reserved; added by Module 08)
@@ -169,3 +174,7 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   `advance_amount`. No behaviour change to Check-In itself.
 - 2026-07-04  Module 13 added a per-property plan-limit check to Check-In
   (see Decisions).
+- 2026-10-04  Admission gained `security_deposit_*` (separate from the
+  advance, see Module 10 update). A collected amount (advance or deposit > 0)
+  requires its date and mode (400 otherwise); negatives rejected. Response adds
+  read-only `advance_applied_amount` and `advance_refundable`.

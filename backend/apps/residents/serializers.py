@@ -30,6 +30,7 @@ class ResidentSerializer(serializers.ModelSerializer):
     joining_date = serializers.SerializerMethodField()
     security_deposit_amount = serializers.SerializerMethodField()
     advance_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
     room_number = serializers.SerializerMethodField()
     bed_number = serializers.SerializerMethodField()
 
@@ -44,7 +45,8 @@ class ResidentSerializer(serializers.ModelSerializer):
             'passport_number', 'employee_id', 'student_id',
             'unit', 'block', 'move_in_date',
             'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
-            'security_deposit_amount', 'advance_amount', 'room_number', 'bed_number',
+            'security_deposit_amount', 'advance_amount', 'advance_refundable',
+            'room_number', 'bed_number',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
@@ -80,6 +82,9 @@ class ResidentSerializer(serializers.ModelSerializer):
 
     def get_advance_amount(self, obj) -> str | None:
         return self._admission_value(obj, 'advance_amount', as_str=True)
+
+    def get_advance_refundable(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_refundable', as_str=True)
 
     def get_room_number(self, obj) -> str | None:
         allocation = self._related(obj, 'allocation')
@@ -131,6 +136,8 @@ class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
 
 
 class AdmissionSerializer(serializers.ModelSerializer):
+    advance_refundable = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
     class Meta:
         model = Admission
         fields = [
@@ -139,12 +146,14 @@ class AdmissionSerializer(serializers.ModelSerializer):
             'advance_amount', 'advance_collected_date', 'advance_mode',
             'security_deposit_amount', 'security_deposit_collected_date', 'security_deposit_mode',
             'first_month_billing_amount', 'first_month_billing_note',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
         # contracted_* fields are snapshotted server-side in the view
         # (invariant 2/3) — never accepted as client input.
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
         extra_kwargs = {
@@ -283,6 +292,9 @@ class TransferCreateSerializer(serializers.Serializer):
 class VacateSerializer(serializers.ModelSerializer):
     refund_amount = serializers.SerializerMethodField()
     is_settled = serializers.BooleanField(read_only=True)
+    # Breakdown of refund_amount: deposit - deduction + unapplied advance.
+    security_deposit_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
 
     class Meta:
         model = Vacate
@@ -290,9 +302,16 @@ class VacateSerializer(serializers.ModelSerializer):
             'id', 'resident', 'notice_given_date', 'expected_vacate_date', 'actual_vacate_date',
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
+            'security_deposit_amount', 'advance_refundable',
             'settled_by', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_security_deposit_amount(self, obj) -> str:
+        return str(obj.resident.admission.security_deposit_amount)
+
+    def get_advance_refundable(self, obj) -> str:
+        return str(obj.resident.admission.advance_refundable)
 
     def get_refund_amount(self, obj) -> str | None:
         amount = obj.refund_amount

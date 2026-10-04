@@ -244,7 +244,9 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
     notice period), security deposit forfeited and applied against outstanding dues,
     any remainder recorded as outstanding (owner can write it off later)."""
     before_status = resident.status
-    deposit = resident.admission.security_deposit_amount
+    admission = resident.admission
+    # An unapplied advance surplus is forfeited together with the deposit.
+    deposit = admission.security_deposit_amount + admission.advance_refundable
     outstanding = outstanding_dues_for(resident)
     applied = min(deposit, outstanding)
     remaining = outstanding - applied

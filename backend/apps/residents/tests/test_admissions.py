@@ -178,3 +178,44 @@ class AdmissionTests(ResidentAPITestCase):
             )
         self.assertEqual(status_entry.before['status'], 'reserved')
         self.assertEqual(status_entry.after['status'], 'active')
+
+    def test_security_deposit_and_advance_are_stored_separately(self):
+        self.authenticate(self.owner)
+
+        response = self.client.post(reverse('admission-list'), admission_payload(self.resident, self.bed))
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['advance_amount'], '8500.00')
+        self.assertEqual(response.data['security_deposit_amount'], '1500.00')
+        self.assertEqual(response.data['security_deposit_mode'], 'cash')
+        self.assertEqual(response.data['advance_applied_amount'], '0.00')
+        self.assertEqual(response.data['advance_refundable'], '8500.00')
+
+    def test_collected_amount_requires_date_and_mode(self):
+        self.authenticate(self.owner)
+        for prefix in ('advance', 'security_deposit'):
+            for missing in ('collected_date', 'mode'):
+                payload = admission_payload(self.resident, self.bed)
+                del payload[f'{prefix}_{missing}']
+                response = self.client.post(reverse('admission-list'), payload)
+                self.assertEqual(response.status_code, 400, (prefix, missing))
+                self.assertIn(f'{prefix}_{missing}', response.data)
+
+    def test_negative_amounts_are_rejected(self):
+        self.authenticate(self.owner)
+        for field in ('advance_amount', 'security_deposit_amount'):
+            response = self.client.post(
+                reverse('admission-list'), admission_payload(self.resident, self.bed, **{field: '-1.00'})
+            )
+            self.assertEqual(response.status_code, 400, field)
+            self.assertIn(field, response.data)
+
+    def test_zero_amounts_need_no_date_or_mode(self):
+        self.authenticate(self.owner)
+        payload = {k: v for k, v in admission_payload(self.resident, self.bed).items()
+                   if not k.startswith(('advance', 'security_deposit'))}
+
+        response = self.client.post(reverse('admission-list'), payload)
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['security_deposit_amount'], '0.00')

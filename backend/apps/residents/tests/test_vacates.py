@@ -101,6 +101,20 @@ class VacateFinalizeTests(ResidentAPITestCase):
         response = self._finalize(maintenance_deduction='500.00', maintenance_deduction_note='Wall damage')
         self.assertEqual(response.data['refund_amount'], '1000.00')
 
+    def test_unapplied_advance_surplus_is_refunded_with_the_deposit(self):
+        with tenant_context(self.tenant.id):
+            admission = self.resident.admission
+            admission.advance_amount = Decimal('7000.00')
+            admission.advance_applied_amount = Decimal('3500.00')  # first invoice used half
+            admission.save(update_fields=['advance_amount', 'advance_applied_amount'])
+
+        response = self._finalize(maintenance_deduction='500.00')
+
+        # 1500 deposit - 500 deduction + 3500 unapplied advance
+        self.assertEqual(response.data['advance_refundable'], '3500.00')
+        self.assertEqual(response.data['security_deposit_amount'], '1500.00')
+        self.assertEqual(response.data['refund_amount'], '4500.00')
+
     def test_deduction_cannot_exceed_deposit(self):
         response = self._finalize(maintenance_deduction='2000.00')
         self.assertEqual(response.status_code, 400)

@@ -156,3 +156,10 @@ lifecycle (`vacated`/`blacklisted`) instead.
 - 2026-07-04  Module 16 added a `timeline` action + `view_activity_timeline`
   permission to `ResidentViewSet` (see Permissions) — no other change to
   this viewset.
+- 2026-10-04  `ResidentSerializer` gained read-only admission/allocation
+  fields for the mobile app: `contracted_rent` (from the current Allocation, so
+  it follows a permanent transfer), `food_preference`, `billing_mode`,
+  `joining_date`, `security_deposit_amount`, `advance_amount`,
+  `advance_refundable`, `room_number`, `bed_number`. All null for a resident
+  with no admission. The queryset `select_related`s admission/allocation so
+  the list adds no per-row queries.

@@ -172,6 +172,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         )
         # The advance (rent paid upfront at admission) settles the first invoice.
         services.apply_advance_to_first_invoice(invoice=invoice, actor=request.user, request=request)
+        invoice.refresh_from_db()  # the payment may have changed its status
         # Module 14: "Invoice generated notification to resident" (PRD).
         # Issuing (not the draft) is when it becomes a real obligation the
         # resident should be told about — see the Module 14 spec's Decisions.

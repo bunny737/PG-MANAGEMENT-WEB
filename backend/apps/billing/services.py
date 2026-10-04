@@ -102,7 +102,7 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
 def apply_advance_to_first_invoice(*, invoice, actor, request=None):
     """The advance is rent paid upfront for the first period, so when a
     resident's first invoice is issued it is recorded as a payment against
-    that invoice (capped at the invoice total). Only the first issued invoice
+    that invoice (capped at the invoice total; the surplus is refunded at vacate). Only the first issued invoice
     qualifies — an earlier issued invoice means the advance was already used.
     Returns the Payment, or None when nothing applies."""
     admission = invoice.resident.admission
@@ -117,11 +117,16 @@ def apply_advance_to_first_invoice(*, invoice, actor, request=None):
     amount = min(admission.advance_amount, invoice.balance_due)
     if amount <= 0:
         return None
-    return record_payment(
+    payment = record_payment(
         invoice=invoice, amount=amount, payment_date=admission.advance_collected_date,
         payment_mode=admission.advance_mode, reference='Advance collected at admission',
         actor=actor, request=request,
     )
+    # Anything beyond the invoice (e.g. 2 months paid upfront) stays on the
+    # admission as advance_refundable and is refunded at vacate.
+    admission.advance_applied_amount = amount
+    admission.save(update_fields=['advance_applied_amount', 'updated_at'])
+    return payment
 
 
 def resident_has_invoice_for_period(resident, period_start):

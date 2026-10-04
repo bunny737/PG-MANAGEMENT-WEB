@@ -209,11 +209,11 @@ class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
 
         labels = [e['event'] for e in self._timeline(resident).data]
         self.assertIn('Marked Absconded', labels)
-        self.assertIn('Advance Forfeited', labels)
+        self.assertIn('Security Deposit Forfeited', labels)
         self.assertIn('Dues Written Off', labels)
         self.assertIn('Blacklisted', labels)
-        self.assertLess(labels.index('Marked Absconded'), labels.index('Advance Forfeited'))
-        self.assertLessEqual(labels.index('Advance Forfeited'), labels.index('Dues Written Off'))
+        self.assertLess(labels.index('Marked Absconded'), labels.index('Security Deposit Forfeited'))
+        self.assertLessEqual(labels.index('Security Deposit Forfeited'), labels.index('Dues Written Off'))
         self.assertLessEqual(labels.index('Dues Written Off'), labels.index('Blacklisted'))
 
 

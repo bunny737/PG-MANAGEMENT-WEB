@@ -33,6 +33,11 @@ class Migration(migrations.Migration):
                 choices=[('upi', 'UPI'), ('cash', 'Cash'), ('bank_transfer', 'Bank Transfer')],
             ),
         ),
+        migrations.AddField(
+            model_name='admission',
+            name='advance_applied_amount',
+            field=models.DecimalField(decimal_places=2, default=Decimal('0.00'), max_digits=12),
+        ),
         # Existing rows: their advance_amount was the deposit under the old rule.
         migrations.RunSQL(
             sql="""

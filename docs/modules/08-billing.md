@@ -173,3 +173,12 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - 2026-07-04  Module 14 added an email-notification dispatch (via
   `transaction.on_commit` + Celery) to the `issue` action — no other change
   to invoice issuance itself.
+- 2026-10-04  `issue` now applies the resident's advance
+  (`apply_advance_to_first_invoice`): when the FIRST issued invoice for a
+  resident is issued, a Payment of `min(advance_amount, balance_due)` is
+  recorded (mode/date from the admission, reference "Advance collected at
+  admission") via `record_payment`, so the invoice becomes paid/partially_paid
+  and a receipt email is sent. `Admission.advance_applied_amount` records the
+  amount; any surplus stays refundable at vacate (Module 10). Later invoices
+  get nothing. Decision: only the first issued invoice qualifies; an advance of
+  0 does nothing.

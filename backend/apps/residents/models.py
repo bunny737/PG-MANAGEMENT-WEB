@@ -136,6 +136,9 @@ class Admission(TenantModelMixin):
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     advance_collected_date = models.DateField(null=True, blank=True)
     advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
+    # Portion of the advance actually paid against the first invoice. Any
+    # remainder (e.g. 2 months paid upfront) is refunded at vacate.
+    advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
     security_deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -165,6 +168,11 @@ class Admission(TenantModelMixin):
 
     def __str__(self):
         return f'Admission: {self.resident}'
+
+    @property
+    def advance_refundable(self):
+        """Advance not consumed by the first invoice — refunded at vacate."""
+        return self.advance_amount - self.advance_applied_amount
 
 
 class Allocation(TenantModelMixin):
@@ -246,7 +254,8 @@ class Vacate(TenantModelMixin):
     Workflow'). One row per resident: created when notice is given
     (Active -> Notice Period), then completed at move-out
     (Notice Period -> Vacated) with the maintenance deduction and security
-    deposit refund. `refund_amount` is computed from the admission's security_deposit_amount,
+    deposit refund. `refund_amount` is computed from the admission's security_deposit_amount
+    (minus the deduction) plus any unapplied advance,
     never stored, so it can't drift if the deduction is corrected before
     settlement."""
 
@@ -288,7 +297,8 @@ class Vacate(TenantModelMixin):
     def refund_amount(self):
         if self.maintenance_deduction is None:
             return None
-        return self.resident.admission.security_deposit_amount - self.maintenance_deduction
+        admission = self.resident.admission
+        return admission.security_deposit_amount - self.maintenance_deduction + admission.advance_refundable
 
 
 class AbscondedRecord(TenantModelMixin):

@@ -8,12 +8,17 @@ calls back into `services.record_sent` here.
 Models referenced by task bodies are imported locally (not at module top) so
 this module — imported by apps.billing and apps.accounts at their call sites
 — never becomes the other side of a circular import."""
+import logging
+
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.tenancy import tenant_context
 
 from . import services
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -134,18 +139,26 @@ def dispatch_scheduled_notifications():
             ).values_list('id', 'tenant_id')
         )
     for scheduled_id, tenant_id in due_ids:
-        _dispatch_one_scheduled_notification(scheduled_id, tenant_id)
+        # One bad row must not abort the sweep (and so block every row after it,
+        # retried forever every minute).
+        try:
+            _dispatch_one_scheduled_notification(scheduled_id, tenant_id)
+        except Exception:
+            logger.exception('Scheduled notification %s failed', scheduled_id)
+            _mark_scheduled_failed(scheduled_id, tenant_id)
 
 
 def _dispatch_one_scheduled_notification(scheduled_id, tenant_id):
     from .models import ScheduledNotification
 
-    with tenant_context(tenant_id):
+    with tenant_context(tenant_id), transaction.atomic():
+        # Claim the row: a second worker (or an overlapping run when sending is
+        # slow) skips a locked row instead of double-sending it.
         scheduled = ScheduledNotification.objects.filter(
             pk=scheduled_id, status=ScheduledNotification.Status.PENDING,
-        ).select_related('recipient_user').first()
+        ).select_related('recipient_user').select_for_update(skip_locked=True, of=('self',)).first()
         if scheduled is None:
-            return  # already sent/cancelled by a concurrent run
+            return  # already sent/cancelled/claimed by a concurrent run
         services.notify(
             tenant_id=tenant_id, notification_type=scheduled.notification_type,
             recipient_user=scheduled.recipient_user, context=scheduled.context,
@@ -154,3 +167,12 @@ def _dispatch_one_scheduled_notification(scheduled_id, tenant_id):
         )
         scheduled.status = ScheduledNotification.Status.SENT
         scheduled.save(update_fields=['status', 'updated_at'])
+
+
+def _mark_scheduled_failed(scheduled_id, tenant_id):
+    from .models import ScheduledNotification
+
+    with tenant_context(tenant_id):
+        ScheduledNotification.objects.filter(
+            pk=scheduled_id, status=ScheduledNotification.Status.PENDING,
+        ).update(status=ScheduledNotification.Status.FAILED, updated_at=timezone.now())

@@ -251,3 +251,7 @@ discipline; corrections happen via the dedicated actions (`finalize`,
   fields `advance_*` -> `deposit_*` (API break for clients reading them).
   `VacateSerializer` now also returns `security_deposit_amount` and
   `advance_refundable` as the refund breakdown.
+- 2026-10-04  Migration 0007's advance->deposit data move now sets
+  `app.is_super_admin` for its transaction. `admissions` is FORCE-RLS and the
+  app role is not a superuser, so the first version updated zero rows without
+  error. Covered by `DepositMigrationTests`.

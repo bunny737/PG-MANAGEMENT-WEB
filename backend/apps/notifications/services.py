@@ -69,10 +69,18 @@ def notify(*, tenant_id, notification_type, recipient_user, context, channels=No
         if handler is None:
             continue  # channel not wired up yet — not an error, just not built
 
-        subject, body = render_template(
-            notification_type=notification_type, channel=channel,
-            language=language, context=context,
-        )
+        try:
+            subject, body = render_template(
+                notification_type=notification_type, channel=channel,
+                language=language, context=context,
+            )
+        except Exception as exc:  # bad template wording must not break the caller
+            results.append(NotificationLog.objects.create(
+                tenant_id=tenant_id, notification_type=notification_type, channel=channel,
+                recipient_user=recipient_user_fk, status=NotificationLog.Status.FAILED,
+                reference=reference, note=f'Template render failed: {exc}',
+            ))
+            continue
         if body is None:
             results.append(NotificationLog.objects.create(
                 tenant_id=tenant_id, notification_type=notification_type, channel=channel,

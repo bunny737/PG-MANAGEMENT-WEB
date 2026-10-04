@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core.permissions import require_permission
+from apps.core.tenancy import tenant_context
 
 from .models import NotificationLog, NotificationPreference, PushSubscription
 from .registry import NOTIFICATION_TYPES
@@ -97,6 +98,14 @@ class PushSubscriptionViewSet(viewsets.ModelViewSet):
         # A device re-registering (app reinstall, token refresh) upserts
         # rather than erroring on the unique fcm_token constraint.
         token = request.data.get('fcm_token')
+        if token:
+            # fcm_token is globally unique but RLS hides other tenants' rows, so
+            # a device last used under another tenant (or user) would make the
+            # insert hit the unique constraint (500) — and keep delivering the
+            # previous owner's notifications to this device. A token identifies
+            # a device, so the latest login owns it: drop stale rows first.
+            with tenant_context(is_super_admin=True):
+                PushSubscription.objects.filter(fcm_token=token).exclude(user=request.user).delete()
         existing = PushSubscription.objects.filter(fcm_token=token).first() if token else None
         if existing is not None:
             serializer = self.get_serializer(existing, data=request.data, partial=True)

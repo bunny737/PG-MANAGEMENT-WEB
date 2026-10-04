@@ -182,3 +182,9 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
   amount; any surplus stays refundable at vacate (Module 10). Later invoices
   get nothing. Decision: only the first issued invoice qualifies; an advance of
   0 does nothing.
+- 2026-10-04  Review fixes for the advance application: it now row-locks the
+  Admission and re-checks `advance_applied_amount` so two concurrent `issue`
+  calls can't both apply it, and `advance_applied_amount` accumulates instead
+  of being overwritten. Deleting the advance Payment (identified by
+  `ADVANCE_PAYMENT_REFERENCE`) subtracts it from `advance_applied_amount`, so
+  `advance_refundable` stays correct for the vacate refund.

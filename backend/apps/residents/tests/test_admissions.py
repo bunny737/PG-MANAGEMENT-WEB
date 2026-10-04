@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.urls import reverse
@@ -5,7 +6,7 @@ from django.urls import reverse
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Room
-from apps.residents.models import Resident
+from apps.residents.models import Admission, Resident
 
 from .base import ResidentAPITestCase
 
@@ -219,3 +220,33 @@ class AdmissionTests(ResidentAPITestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['security_deposit_amount'], '0.00')
+
+
+class DepositMigrationTests(ResidentAPITestCase):
+    """0007 must move existing advance values into the deposit fields even
+    though `admissions` is FORCE-RLS and the migration runs with no tenant
+    context (it silently updated zero rows before the super-admin GUC)."""
+
+    def test_data_move_sql_updates_rows_under_force_rls(self):
+        import importlib
+
+        from django.db import connection
+
+        migration = importlib.import_module('apps.residents.migrations.0007_security_deposit_and_deposit_forfeit')
+        tenant = self.create_tenant()
+        prop = self.create_property(tenant)
+        bed = self.create_bed(self.create_room(self.create_floor(prop)))
+        resident = self.create_resident(prop, status=Resident.Status.RESERVED)
+        self.create_admission(
+            resident, bed, advance_amount=Decimal('1500.00'),
+            advance_collected_date=date(2026, 7, 1), advance_mode='upi',
+        )
+
+        with connection.cursor() as cursor:  # no tenant context, like a migration
+            cursor.execute(migration.MOVE_ADVANCE_TO_DEPOSIT_SQL)
+
+        with tenant_context(tenant.id):
+            admission = Admission.objects.get(resident=resident)
+        self.assertEqual(admission.security_deposit_amount, Decimal('1500.00'))
+        self.assertEqual(admission.security_deposit_mode, 'upi')
+        self.assertEqual(admission.advance_amount, Decimal('0.00'))

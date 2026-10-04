@@ -383,3 +383,46 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.assertEqual(invoice['status'], 'issued')
         with tenant_context(self.tenant.id):
             self.assertFalse(Payment.objects.filter(invoice_id=invoice['id']).exists())
+
+    def test_advance_is_not_applied_a_second_time(self):
+        from apps.billing.models import Invoice
+        from apps.billing.services import apply_advance_to_first_invoice
+
+        self._admit('14000.00')
+        invoice = self._generate_and_issue()
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+
+        # e.g. a racing second `issue` that got past the "first issued" check.
+        with tenant_context(self.tenant.id):
+            again = apply_advance_to_first_invoice(
+                invoice=Invoice.objects.get(pk=invoice['id']), actor=self.owner,
+            )
+            self.assertEqual(Payment.objects.filter(invoice_id=invoice['id']).count(), 1)
+        self.assertIsNone(again)
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+
+    def test_deleting_the_advance_payment_releases_the_advance(self):
+        self._admit('7000.00')
+        invoice = self._generate_and_issue()
+        with tenant_context(self.tenant.id):
+            payment = Payment.objects.get(invoice_id=invoice['id'])
+
+        response = self.client.delete(reverse('payment-detail', args=[payment.id]))
+
+        self.assertEqual(response.status_code, 204)
+        admission = self._refresh_admission()
+        self.assertEqual(admission.advance_applied_amount, Decimal('0.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
+
+    def test_deleting_an_ordinary_payment_leaves_the_advance_alone(self):
+        self._admit('3000.00')
+        invoice = self._generate_and_issue()
+        ordinary = self.client.post(reverse('payment-list'), {
+            'invoice': invoice['id'], 'amount': '1000.00',
+            'payment_date': '2026-07-05', 'payment_mode': 'cash',
+        })
+        self.assertEqual(ordinary.status_code, 201, ordinary.data)
+
+        self.client.delete(reverse('payment-detail', args=[ordinary.data['id']]))
+
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('3000.00'))

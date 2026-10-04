@@ -348,3 +348,15 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   email/sms/whatsapp for a consistent polymorphic signature); added
   `docs/push-notifications-integration.md` (web + Flutter FCM setup guide).
   1 new test. Full suite still green.
+- 2026-10-04  Review fixes. (1) `PushSubscriptionViewSet.create` now deletes
+  stale rows for the same `fcm_token` (as super admin, since RLS hides other
+  tenants') before upserting — a device last used under another tenant/user
+  used to hit the global unique constraint (500) and kept receiving the
+  previous owner's pushes; the latest login owns the token. (2)
+  `notify()` catches template render errors and logs a FAILED
+  NotificationLog instead of raising; `NotificationTemplate.clean()` rejects
+  invalid template syntax in the admin. (3) `dispatch_scheduled_notifications`
+  isolates each row (try/except; a raising row becomes the new
+  `ScheduledNotification.Status.FAILED`, migration 0006) and claims each row
+  with `select_for_update(skip_locked=True)` so overlapping runs can't
+  double-send. Tests added for each.

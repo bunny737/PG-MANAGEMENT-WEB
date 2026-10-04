@@ -1,7 +1,9 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.template import Template, TemplateSyntaxError
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
@@ -101,6 +103,19 @@ class NotificationTemplate(models.Model):
     def __str__(self):
         return f'{self.notification_type} [{self.channel}/{self.language}]'
 
+    def clean(self):
+        # A syntax error here would otherwise only surface when a notification
+        # is rendered at send time. Reject it in the admin form instead.
+        super().clean()
+        errors = {}
+        for field in ('subject', 'body'):
+            try:
+                Template(getattr(self, field) or '')
+            except TemplateSyntaxError as exc:
+                errors[field] = _('Invalid template syntax: %(error)s') % {'error': exc}
+        if errors:
+            raise ValidationError(errors)
+
 
 class NotificationPreference(TenantModelMixin):
     """A recipient's opt-out of one (notification_type, channel) pair. Only
@@ -168,6 +183,7 @@ class ScheduledNotification(TenantModelMixin):
         PENDING = 'pending', _('Pending')
         SENT = 'sent', _('Sent')
         CANCELLED = 'cancelled', _('Cancelled')
+        FAILED = 'failed', _('Failed')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notification_type = models.CharField(max_length=50)

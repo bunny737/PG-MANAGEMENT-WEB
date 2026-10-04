@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    BedLedgerEntry,
     Plan,
     PlanBedTier,
     Subscription,
@@ -32,10 +33,22 @@ class PlanAdmin(admin.ModelAdmin):
     inlines = [PlanBedTierInline]
 
 
+@admin.register(PlanBedTier)
+class PlanBedTierAdmin(admin.ModelAdmin):
+    list_display = ['plan', 'up_to_beds', 'rate_per_bed']
+
+
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = ['tenant', 'plan', 'razorpay_subscription_id']
     inlines = [SubscriptionPaymentInline]
+
+
+@admin.register(SubscriptionPayment)
+class SubscriptionPaymentAdmin(admin.ModelAdmin):
+    list_display = ['subscription', 'amount', 'status', 'razorpay_payment_id', 'paid_at', 'created_at']
+    list_filter = ['status']
+    search_fields = ['subscription__tenant__name', 'razorpay_payment_id']
 
 
 class SubscriptionInvoiceLineInline(admin.TabularInline):
@@ -48,3 +61,21 @@ class SubscriptionInvoiceAdmin(admin.ModelAdmin):
     list_display = ['subscription', 'period_start', 'period_end', 'status', 'total_amount']
     list_filter = ['status']
     inlines = [SubscriptionInvoiceLineInline]
+
+
+@admin.register(SubscriptionInvoiceLine)
+class SubscriptionInvoiceLineAdmin(admin.ModelAdmin):
+    list_display = ['invoice', 'description', 'quantity', 'unit_rate', 'amount']
+
+
+@admin.register(BedLedgerEntry)
+class BedLedgerEntryAdmin(admin.ModelAdmin):
+    list_display = ['tenant_id', 'bed_id', 'event', 'occurred_at']
+    list_filter = ['event']
+    readonly_fields = [f.name for f in BedLedgerEntry._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

@@ -17,7 +17,12 @@ def admission_payload(resident, bed, **overrides):
         'joining_date': '2026-07-01',
         'billing_mode': 'monthly',
         'food_preference': 'with_food',
-        'advance_amount': '1500.00',
+        'advance_amount': '8500.00',
+        'advance_collected_date': '2026-07-01',
+        'advance_mode': 'upi',
+        'security_deposit_amount': '1500.00',
+        'security_deposit_collected_date': '2026-07-01',
+        'security_deposit_mode': 'cash',
     }
     payload.update(overrides)
     return payload

@@ -55,7 +55,9 @@ class ResidentViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Resident.objects.none()
         ids = visible_property_ids(self.request.user)
-        return Resident.objects.filter(property_id__in=ids).select_related('property')
+        return Resident.objects.filter(property_id__in=ids).select_related(
+            'property', 'admission', 'allocation__allocated_bed__room__floor__building',
+        )
 
     def perform_create(self, serializer):
         instance = serializer.save(tenant_id=self.request.user.tenant_id)

@@ -63,7 +63,7 @@ class ResidentAPITestCase(PropertyAPITestCase):
     def create_absconded_record(resident, absconded_date=None, **kwargs):
         if absconded_date is None:
             absconded_date = date(2026, 7, 1)
-        kwargs.setdefault('advance_applied_to_dues', 0)
+        kwargs.setdefault('deposit_applied_to_dues', 0)
         kwargs.setdefault('remaining_dues', 0)
         with tenant_context(resident.tenant_id):
             return AbscondedRecord.objects.create(

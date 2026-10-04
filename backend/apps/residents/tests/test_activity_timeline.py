@@ -173,7 +173,7 @@ class CoreLifecycleTimelineTests(ActivityTimelineTestCase):
 class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
     def test_vacate_timeline_shows_notice_and_settlement(self):
         resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(resident, self.bed_a, advance_amount=Decimal('1000.00'))
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('1000.00'))
         self.client.post(reverse('vacate-list'), {
             'resident': str(resident.id), 'notice_given_date': TODAY.isoformat(),
         })
@@ -192,7 +192,7 @@ class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
 
     def test_absconded_lifecycle_shows_forfeit_writeoff_and_blacklist(self):
         resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(resident, self.bed_a, advance_amount=Decimal('2000.00'))
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('2000.00'))
         self._generate_and_issue_invoice(resident)  # outstanding dues to forfeit against
 
         self.client.post(reverse('absconded-record-list'), {

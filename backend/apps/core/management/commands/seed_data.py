@@ -333,6 +333,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('10000.00'),
                     'advance_collected_date': thirty_days_ago,
                     'advance_mode': Admission.AdvanceMode.UPI,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': thirty_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -387,6 +390,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('12000.00'),
                     'advance_collected_date': fortyfive_days_ago,
                     'advance_mode': Admission.AdvanceMode.BANK_TRANSFER,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': fortyfive_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -441,6 +447,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('8500.00'),
                     'advance_collected_date': sixty_days_ago,
                     'advance_mode': Admission.AdvanceMode.CASH,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': sixty_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': manager,
                 },
             )

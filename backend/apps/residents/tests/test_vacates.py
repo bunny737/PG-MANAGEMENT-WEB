@@ -20,7 +20,7 @@ class VacateTests(ResidentAPITestCase):
         self.room = self.create_room(self.floor)
         self.bed = self.create_bed(self.room, bed_number='101-A')
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(self.resident, self.bed, advance_amount=Decimal('1500.00'))
+        self.check_in(self.resident, self.bed, security_deposit_amount=Decimal('1500.00'))
         self.authenticate(self.owner)
 
     def _give_notice(self, **overrides):
@@ -73,7 +73,7 @@ class VacateFinalizeTests(ResidentAPITestCase):
         self.room = self.create_room(self.floor)
         self.bed = self.create_bed(self.room, bed_number='101-A')
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(self.resident, self.bed, advance_amount=Decimal('1500.00'))
+        self.check_in(self.resident, self.bed, security_deposit_amount=Decimal('1500.00'))
         self.authenticate(self.owner)
         self.vacate = self.client.post(reverse('vacate-list'), {
             'resident': str(self.resident.id), 'notice_given_date': '2026-07-01',
@@ -84,7 +84,7 @@ class VacateFinalizeTests(ResidentAPITestCase):
         payload.update(overrides)
         return self.client.post(reverse('vacate-finalize', args=[self.vacate['id']]), payload)
 
-    def test_finalize_with_zero_deduction_refunds_full_advance(self):
+    def test_finalize_with_zero_deduction_refunds_full_deposit(self):
         response = self._finalize()
 
         self.assertEqual(response.status_code, 200, response.data)
@@ -101,7 +101,7 @@ class VacateFinalizeTests(ResidentAPITestCase):
         response = self._finalize(maintenance_deduction='500.00', maintenance_deduction_note='Wall damage')
         self.assertEqual(response.data['refund_amount'], '1000.00')
 
-    def test_deduction_cannot_exceed_advance(self):
+    def test_deduction_cannot_exceed_deposit(self):
         response = self._finalize(maintenance_deduction='2000.00')
         self.assertEqual(response.status_code, 400)
         self.assertIn('maintenance_deduction', response.data)

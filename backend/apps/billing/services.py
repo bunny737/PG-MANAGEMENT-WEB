@@ -98,6 +98,32 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     return invoice
 
 
+@transaction.atomic
+def apply_advance_to_first_invoice(*, invoice, actor, request=None):
+    """The advance is rent paid upfront for the first period, so when a
+    resident's first invoice is issued it is recorded as a payment against
+    that invoice (capped at the invoice total). Only the first issued invoice
+    qualifies — an earlier issued invoice means the advance was already used.
+    Returns the Payment, or None when nothing applies."""
+    admission = invoice.resident.admission
+    if admission.advance_amount <= 0:
+        return None
+    other_issued = (
+        Invoice.objects.filter(resident=invoice.resident).exclude(pk=invoice.pk)
+        .exclude(status=Invoice.Status.DRAFT).exists()
+    )
+    if other_issued:
+        return None
+    amount = min(admission.advance_amount, invoice.balance_due)
+    if amount <= 0:
+        return None
+    return record_payment(
+        invoice=invoice, amount=amount, payment_date=admission.advance_collected_date,
+        payment_mode=admission.advance_mode, reference='Advance collected at admission',
+        actor=actor, request=request,
+    )
+
+
 def resident_has_invoice_for_period(resident, period_start):
     return resident.invoices.filter(period_start=period_start).exists()
 

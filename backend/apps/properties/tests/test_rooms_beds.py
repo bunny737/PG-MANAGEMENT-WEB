@@ -40,6 +40,62 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
         self.assertEqual(bed_resp.status_code, 201)
         self.assertEqual(bed_resp.data['effective_rate_with_food'], '7000.00')
 
+    def _room_payload(self, floor, **extra):
+        return {
+            'floor': str(floor.id), 'room_number': '301', 'sharing_type': 3,
+            'category': 'non_ac', 'rack_rate_with_food': '6000.00',
+            'rack_rate_without_food': '4500.00', **extra,
+        }
+
+    def test_auto_create_beds_creates_sharing_type_beds(self):
+        floor = self.create_floor(self.property)
+        self.authenticate(self.owner)
+
+        response = self.client.post(
+            reverse('room-list'), self._room_payload(floor, auto_create_beds=True)
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual([b['bed_number'] for b in response.data['beds']], ['301-A', '301-B', '301-C'])
+        self.assertEqual(response.data['bed_capacity'], 3)
+        self.assertEqual(response.data['beds'][0]['effective_rate_with_food'], '6000.00')
+        self.assertNotIn('auto_create_beds', response.data)
+
+    def test_auto_created_beds_are_tenant_isolated(self):
+        floor = self.create_floor(self.property)
+        self.authenticate(self.owner)
+        self.client.post(reverse('room-list'), self._room_payload(floor, auto_create_beds=True))
+        other_tenant = self.create_tenant('Other PG Co')
+        other_owner = self.create_owner(other_tenant, email='other-owner@example.com')
+
+        self.authenticate(other_owner)
+        response = self.client.get(reverse('bed-list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results'] if 'results' in response.data else response.data), 0)
+
+    def test_room_without_auto_create_beds_has_no_beds(self):
+        floor = self.create_floor(self.property)
+        self.authenticate(self.owner)
+
+        response = self.client.post(reverse('room-list'), self._room_payload(floor))
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['beds'], [])
+
+    def test_auto_create_beds_rejects_overlong_room_number(self):
+        floor = self.create_floor(self.property)
+        self.authenticate(self.owner)
+
+        response = self.client.post(
+            reverse('room-list'), self._room_payload(floor, room_number='9' * 19, auto_create_beds=True)
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('room_number', response.data)
+        with tenant_context(self.tenant.id):
+            self.assertFalse(Room.objects.filter(room_number='9' * 19).exists())
+
     def test_bed_count_cannot_exceed_room_sharing_type(self):
         floor = self.create_floor(self.property)
         room = self.create_room(floor, sharing_type=Room.SharingType.TWO)

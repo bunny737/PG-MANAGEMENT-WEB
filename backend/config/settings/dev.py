@@ -6,10 +6,22 @@ MIDDLEWARE = ['corsheaders.middleware.CorsMiddleware'] + MIDDLEWARE
 MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
 INTERNAL_IPS = ['127.0.0.1']
 
-# Dev-only: the Next.js dev server calls Django directly from the browser
-# (no BFF proxy yet — see docs/frontend-plan.md §3.1, still to be built).
-# Not needed in prod, where the proxy makes API calls same-origin.
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000']
+# Dev-only: allow all origins for local Next.js, ngrok tunnels, and cloud preview tools.
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'https://handrail-outwit-craftwork.ngrok-free.dev',
+]
+
+if 'handrail-outwit-craftwork.ngrok-free.dev' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('handrail-outwit-craftwork.ngrok-free.dev')
+
+for origin in [
+    'https://handrail-outwit-craftwork.ngrok-free.dev',
+    'http://handrail-outwit-craftwork.ngrok-free.dev',
+]:
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Auth emails (verification, OTP fallback, resets) print to the console in dev.
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

@@ -80,6 +80,14 @@ LANGUAGES = [
 ]
 LOCALE_PATHS = [BASE_DIR / 'locale']
 
+# Single-timezone product (PG/hostel management in India). Left unset, Django
+# falls back to its own global default ('America/Chicago'), which silently
+# shifted every `timezone.localdate()` / `localtime().date()` — notification
+# day-boundaries and activity-timeline event dates landed on the previous day
+# for anything happening before ~10:30 IST.
+TIME_ZONE = 'Asia/Kolkata'
+USE_TZ = True
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

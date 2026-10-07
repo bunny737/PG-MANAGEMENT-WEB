@@ -4,8 +4,10 @@ audit_logs is the first table under RLS, so it doubles as the fixture here.
 Every future business table gets the same policy via apps.core.rls.enable_rls()
 in its migration, plus its own isolation test.
 """
-from datetime import timedelta
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db import connection, transaction
 from django.db.utils import DatabaseError
 from django.test import TestCase
@@ -99,3 +101,25 @@ class PermissionMatrixTests(TestCase):
                 'view_own_notifications', 'manage_notification_preferences',
             ]),
         )
+
+
+class TimezoneTests(TestCase):
+    """Left unset, TIME_ZONE falls back to Django's global default
+    ('America/Chicago'), which silently moved every date derived from the
+    server clock — notification day-boundaries and activity-timeline event
+    dates — onto the previous day for anything before ~10:30 IST."""
+
+    def test_server_runs_on_ist(self):
+        self.assertEqual(settings.TIME_ZONE, 'Asia/Kolkata')
+        self.assertTrue(settings.USE_TZ)
+
+    def test_localdate_follows_ist_not_utc(self):
+        # 2026-10-07 20:00 UTC is already 2026-10-08 in IST (+05:30). Under the
+        # old default (America/Chicago, -05:00) it would still read 2026-10-07.
+        moment = datetime(2026, 10, 7, 20, 0, tzinfo=dt_timezone.utc)
+        self.assertEqual(timezone.localdate(moment), date(2026, 10, 8))
+
+    def test_localtime_date_does_not_slip_to_previous_day_in_the_morning(self):
+        # 09:00 IST — the window that was previously mis-dated as "yesterday".
+        moment = datetime(2026, 10, 7, 3, 30, tzinfo=dt_timezone.utc)
+        self.assertEqual(timezone.localtime(moment).date(), date(2026, 10, 7))

@@ -29,7 +29,6 @@ export interface Room {
   rent: string;
   occupiedBeds: number;
   totalBeds: number;
-  amenities: string[];
   beds: Bed[];
 }
 
@@ -90,7 +89,6 @@ export const mockProperties: Property[] = [
             rent: "₹1200.00",
             occupiedBeds: 1,
             totalBeds: 1,
-            amenities: ["Wi-Fi", "Cleaning", "Laundry"],
             beds: [
               {
                 id: "A",
@@ -146,7 +144,6 @@ export const mockProperties: Property[] = [
             rent: "₹850.00",
             occupiedBeds: 1,
             totalBeds: 2,
-            amenities: ["Wi-Fi", "Cleaning", "Laundry"],
             beds: [
               {
                 id: "A",

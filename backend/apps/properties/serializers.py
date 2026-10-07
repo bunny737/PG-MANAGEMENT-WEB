@@ -5,8 +5,21 @@ from rest_framework import serializers
 from apps.accounts.models import User
 from apps.core.roles import STAFF_ROLES
 
-from . import services
-from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from . import feature_services, services
+from .feature_catalog import CUSTOM_CATEGORY_LABEL, label_for
+from .models import (
+    Bed,
+    Building,
+    FeatureCatalog,
+    Floor,
+    Property,
+    PropertyFeature,
+    PropertyImage,
+    PropertySettings,
+    PropertyStaffAssignment,
+    Room,
+    TenantFeature,
+)
 
 
 def _ordinal_floor_name(index):
@@ -391,3 +404,84 @@ class PropertySettingsSerializer(serializers.ModelSerializer):
                 code='invalid_percentage',
             )
         return attrs
+
+
+class FeatureCatalogSerializer(serializers.ModelSerializer):
+    label = serializers.SerializerMethodField()
+    category_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FeatureCatalog
+        fields = ['id', 'code', 'category', 'category_label', 'label', 'display_order', 'is_popular', 'is_active']
+
+    def get_label(self, obj) -> str:
+        return str(label_for(obj.code))
+
+    def get_category_label(self, obj) -> str:
+        return str(FeatureCatalog.Category(obj.category).label)
+
+
+class TenantFeatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantFeature
+        fields = ['id', 'label', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class PropertyFeatureSerializer(serializers.ModelSerializer):
+    """Read shape for one selected feature. `source` says which scope the
+    row lives at — 'property' rows are inherited when viewing a building."""
+
+    source = serializers.SerializerMethodField()
+    feature_type = serializers.SerializerMethodField()
+    code = serializers.SerializerMethodField()
+    label = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
+    category_label = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PropertyFeature
+        fields = [
+            'id', 'source', 'building', 'feature_type', 'code', 'tenant_feature',
+            'label', 'category', 'category_label', 'is_paid', 'is_active',
+        ]
+
+    def get_source(self, obj) -> str:
+        return 'building' if obj.building_id else 'property'
+
+    def get_feature_type(self, obj) -> str:
+        return 'catalog' if obj.catalog_feature_id else 'custom'
+
+    def get_code(self, obj) -> str | None:
+        return obj.catalog_feature.code if obj.catalog_feature_id else None
+
+    def get_label(self, obj) -> str:
+        if obj.catalog_feature_id:
+            return str(label_for(obj.catalog_feature.code))
+        return obj.tenant_feature.label
+
+    def get_category(self, obj) -> str:
+        return feature_services.category_of(obj)
+
+    def get_category_label(self, obj) -> str:
+        if obj.catalog_feature_id:
+            return str(FeatureCatalog.Category(obj.catalog_feature.category).label)
+        return str(CUSTOM_CATEGORY_LABEL)
+
+    def get_is_active(self, obj) -> bool:
+        return (obj.catalog_feature or obj.tenant_feature).is_active
+
+
+class _FeatureRefSerializer(serializers.Serializer):
+    code = serializers.CharField(required=False, allow_blank=True)
+    tenant_feature = serializers.UUIDField(required=False, allow_null=True)
+    is_paid = serializers.BooleanField(required=False, default=False)
+
+
+class PropertyFeaturesWriteSerializer(serializers.Serializer):
+    """Bulk replace of one scope — see feature_services.replace_features."""
+
+    building = serializers.UUIDField(required=False, allow_null=True)
+    items = _FeatureRefSerializer(many=True, required=False)
+    excluded = _FeatureRefSerializer(many=True, required=False)

@@ -64,6 +64,7 @@ residents, billing, and operations through a single system.
 → 05 admissions → 06 allocations → 07 discounts → 08 billing → 09 payments
 → 10 deposits-exit → 11 complaints → 12 visitors → 13 subscription
 → 14 notifications → 15 audit-logs → 16 activity-timeline → 17 export
+→ 18 pg-features (owner request 2026-10-06, not in PRD v2; depends on 02 only)
 
 ## Per-task workflow
 1. Read this file + the relevant docs/modules/<nn>.md spec

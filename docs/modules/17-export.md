@@ -118,3 +118,4 @@ everything the caller can see.
   content correctness, permission gating per export, Manager property
   scoping, overdue/fully-paid dues filtering, occupancy bed-status
   counting). Full suite (410) green. Spec written to as-built.
+- 2026-10-06  Module 18 (PG Features) is deliberately not exported in this pass.

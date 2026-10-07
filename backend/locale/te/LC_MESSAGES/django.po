@@ -2,13 +2,13 @@
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the PACKAGE package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
-#
+# 
 #, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-10 21:17-0500\n"
+"POT-Creation-Date: 2026-10-06 12:22-0500\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,719 +18,1433 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: apps/accounts/emails.py:32
 msgid "Verify your email address"
 msgstr "మీ ఇమెయిల్ చిరునామాను ధృవీకరించండి"
 
+#: apps/accounts/emails.py:33
 #, python-format
 msgid "Welcome, %(name)s! Verify your email to activate your account: %(url)s"
-msgstr ""
-"స్వాగతం, %(name)s! మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్‌ను ధృవీకరించండి: "
-"%(url)s"
+msgstr "స్వాగతం, %(name)s! మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్‌ను ధృవీకరించండి: %(url)s"
 
+#: apps/accounts/emails.py:46
 msgid "Reset your password"
 msgstr "మీ పాస్‌వర్డ్‌ను రీసెట్ చేయండి"
 
+#: apps/accounts/emails.py:47
 #, python-format
 msgid "Use this link to reset your password: %(url)s"
 msgstr "మీ పాస్‌వర్డ్‌ను రీసెట్ చేయడానికి ఈ లింక్‌ను ఉపయోగించండి: %(url)s"
 
+#: apps/accounts/emails.py:61
 #, python-format
 msgid "You have been invited to %(business)s"
 msgstr "మిమ్మల్ని %(business)sకి ఆహ్వానించారు"
 
+#: apps/accounts/emails.py:62
 #, python-format
 msgid ""
 "%(name)s, an account was created for you at %(business)s. Set your password "
 "to get started: %(url)s"
 msgstr ""
-"%(name)s, %(business)s వద్ద మీ కోసం ఒక ఖాతా సృష్టించబడింది. ప్రారంభించడానికి"
-" మీ పాస్‌వర్డ్‌ను సెట్ చేయండి: %(url)s"
+"%(name)s, %(business)s వద్ద మీ కోసం ఒక ఖాతా సృష్టించబడింది. ప్రారంభించడానికి మీ పాస్‌వర్డ్‌ను సెట్ "
+"చేయండి: %(url)s"
 
+#: apps/accounts/models.py:19
 msgid "Trial"
 msgstr "ట్రయల్"
 
+#: apps/accounts/models.py:20 apps/properties/models.py:23
+#: apps/residents/models.py:30
 msgid "Active"
 msgstr "క్రియాశీలం"
 
+#: apps/accounts/models.py:21
 msgid "Payment Failed"
 msgstr "చెల్లింపు విఫలమైంది"
 
+#: apps/accounts/models.py:22
 msgid "Suspended"
 msgstr "సస్పెండ్ చేయబడింది"
 
+#: apps/accounts/models.py:23 apps/notifications/models.py:185
 msgid "Cancelled"
 msgstr "రద్దు చేయబడింది"
 
+#: apps/accounts/models.py:26
 msgid "business name"
 msgstr "వ్యాపార పేరు"
 
+#: apps/accounts/models.py:75
 msgid "email address"
 msgstr "ఇమెయిల్ చిరునామా"
 
+#: apps/accounts/serializers.py:39
 msgid "Verify your email address to log in."
 msgstr "లాగిన్ చేయడానికి మీ ఇమెయిల్ చిరునామాను ధృవీకరించండి."
 
+#: apps/accounts/serializers.py:43 apps/accounts/serializers.py:171
+#: apps/core/authentication.py:26
 msgid "This account is suspended."
 msgstr "ఈ ఖాతా సస్పెండ్ చేయబడింది."
 
+#: apps/accounts/serializers.py:64 apps/accounts/serializers.py:319
 msgid "An account with this email already exists."
 msgstr "ఈ ఇమెయిల్‌తో ఖాతా ఇప్పటికే ఉంది."
 
+#: apps/accounts/serializers.py:71 apps/accounts/serializers.py:284
+#: apps/accounts/serializers.py:326 apps/accounts/serializers.py:365
 msgid "An account with this phone number already exists."
 msgstr "ఈ ఫోన్ నంబర్‌తో ఖాతా ఇప్పటికే ఉంది."
 
+#: apps/accounts/serializers.py:118
 msgid "This verification link is invalid or has expired."
 msgstr "ఈ ధృవీకరణ లింక్ చెల్లదు లేదా గడువు ముగిసింది."
 
+#: apps/accounts/serializers.py:167
 msgid "No active account found."
 msgstr "క్రియాశీల ఖాతా కనుగొనబడలేదు."
 
+#: apps/accounts/serializers.py:198
 msgid "The code is incorrect or has expired."
 msgstr "కోడ్ తప్పు లేదా గడువు ముగిసింది."
 
+#: apps/accounts/serializers.py:232
 msgid "This reset link is invalid or has expired."
 msgstr "ఈ రీసెట్ లింక్ చెల్లదు లేదా గడువు ముగిసింది."
 
+#: apps/accounts/serializers.py:312 apps/accounts/serializers.py:358
 msgid "Staff accounts must be Manager or Receptionist."
 msgstr "సిబ్బంది ఖాతాలు మేనేజర్ లేదా రిసెప్షనిస్ట్‌గా ఉండాలి."
 
+#: apps/accounts/views.py:44
 msgid "OK"
 msgstr "సరే"
 
+#: apps/accounts/views.py:56
 msgid "Account created. Check your email to verify your address."
-msgstr ""
-"ఖాతా సృష్టించబడింది. మీ చిరునామాను ధృవీకరించడానికి మీ ఇమెయిల్‌ను తనిఖీ "
-"చేయండి."
+msgstr "ఖాతా సృష్టించబడింది. మీ చిరునామాను ధృవీకరించడానికి మీ ఇమెయిల్‌ను తనిఖీ చేయండి."
 
+#: apps/accounts/views.py:67
 msgid "Email verified. You can log in now."
 msgstr "ఇమెయిల్ ధృవీకరించబడింది. మీరు ఇప్పుడు లాగిన్ చేయవచ్చు."
 
+#: apps/accounts/views.py:73
 msgid "If that email is registered, a verification link has been sent."
 msgstr "ఆ ఇమెయిల్ నమోదు చేయబడితే, ధృవీకరణ లింక్ పంపబడింది."
 
+#: apps/accounts/views.py:89
 msgid "If that phone number is registered, a code has been sent."
 msgstr "ఆ ఫోన్ నంబర్ నమోదు చేయబడితే, ఒక కోడ్ పంపబడింది."
 
+#: apps/accounts/views.py:112
 msgid "If that email is registered, a reset link has been sent."
 msgstr "ఆ ఇమెయిల్ నమోదు చేయబడితే, రీసెట్ లింక్ పంపబడింది."
 
+#: apps/accounts/views.py:118
 msgid "Password updated. You can log in now."
 msgstr "పాస్‌వర్డ్ నవీకరించబడింది. మీరు ఇప్పుడు లాగిన్ చేయవచ్చు."
 
+#: apps/billing/models.py:22 apps/properties/models.py:252
 msgid "Fixed Amount"
 msgstr "నిర్ణీత మొత్తం"
 
+#: apps/billing/models.py:23 apps/properties/models.py:253
 msgid "Percentage"
 msgstr "శాతం"
 
+#: apps/billing/models.py:26
 msgid "Loyalty"
 msgstr "లాయల్టీ"
 
+#: apps/billing/models.py:27
 msgid "Referral"
 msgstr "రెఫరల్"
 
+#: apps/billing/models.py:28
 msgid "Corporate"
 msgstr "కార్పొరేట్"
 
+#: apps/billing/models.py:29
 msgid "Negotiated"
 msgstr "చర్చించిన"
 
+#: apps/billing/models.py:30
 msgid "Seasonal"
 msgstr "సీజనల్"
 
+#: apps/billing/models.py:31 apps/operations/models.py:29
+#: apps/residents/models.py:25
 msgid "Other"
 msgstr "ఇతర"
 
+#: apps/billing/models.py:77 apps/subscriptions/models.py:264
 msgid "Draft"
 msgstr "డ్రాఫ్ట్"
 
+#: apps/billing/models.py:78 apps/subscriptions/models.py:265
 msgid "Issued"
 msgstr "జారీ చేయబడింది"
 
+#: apps/billing/models.py:79
 msgid "Partially Paid"
 msgstr "పాక్షికంగా చెల్లించబడింది"
 
+#: apps/billing/models.py:80 apps/subscriptions/models.py:266
 msgid "Paid"
 msgstr "చెల్లించబడింది"
 
+#: apps/billing/models.py:161
 msgid "Accommodation"
 msgstr "వసతి"
 
+#: apps/billing/models.py:162
 msgid "Food"
 msgstr "ఆహారం"
 
+#: apps/billing/models.py:163
 msgid "Electricity"
 msgstr "విద్యుత్"
 
+#: apps/billing/models.py:164
 msgid "Water"
 msgstr "నీరు"
 
+#: apps/billing/models.py:165
 msgid "Laundry"
 msgstr "లాండ్రీ"
 
+#: apps/billing/models.py:166
 msgid "Add-on Service"
 msgstr "అదనపు సేవ"
 
+#: apps/billing/models.py:167
 msgid "Additional"
 msgstr "అదనపు"
 
+#: apps/billing/models.py:168
 msgid "Discount"
 msgstr "డిస్కౌంట్"
 
+#: apps/billing/models.py:169
 msgid "Late Payment Penalty"
 msgstr "ఆలస్య చెల్లింపు జరిమానా"
 
+#: apps/billing/models.py:194 apps/residents/models.py:114
+#: apps/residents/models.py:263
 msgid "UPI"
 msgstr "యూపీఐ"
 
+#: apps/billing/models.py:195 apps/residents/models.py:115
+#: apps/residents/models.py:264
 msgid "Cash"
 msgstr "నగదు"
 
+#: apps/billing/models.py:196 apps/residents/models.py:116
+#: apps/residents/models.py:265
 msgid "Bank Transfer"
 msgstr "బ్యాంక్ బదిలీ"
 
+#: apps/billing/models.py:197
 msgid "Card"
 msgstr "కార్డ్"
 
+#: apps/billing/models.py:198
 msgid "Cheque"
 msgstr "చెక్కు"
 
+#: apps/billing/serializers.py:38 apps/billing/serializers.py:146
+#: apps/billing/serializers.py:182 apps/billing/serializers.py:225
+#: apps/operations/serializers.py:54 apps/operations/serializers.py:173
+#: apps/properties/serializers.py:103 apps/properties/serializers.py:161
+#: apps/properties/serializers.py:272 apps/properties/serializers.py:317
+#: apps/residents/serializers.py:116 apps/residents/serializers.py:189
+#: apps/residents/serializers.py:257 apps/residents/serializers.py:332
+#: apps/residents/serializers.py:407 apps/residents/serializers.py:448
 msgid "You are not assigned to this property."
 msgstr "మీరు ఈ ప్రాపర్టీకి కేటాయించబడలేదు."
 
+#: apps/billing/serializers.py:56
 msgid "Discount value must be greater than zero."
 msgstr "డిస్కౌంట్ విలువ సున్నా కంటే ఎక్కువగా ఉండాలి."
 
+#: apps/billing/serializers.py:61
 msgid "A percentage discount cannot exceed 100."
 msgstr "శాతం డిస్కౌంట్ 100ని మించకూడదు."
 
+#: apps/billing/serializers.py:66
 msgid "valid_until cannot be before valid_from."
 msgstr "valid_until, valid_from కంటే ముందు ఉండకూడదు."
 
+#: apps/billing/serializers.py:79
 msgid "This resident already has a discount active in this period."
 msgstr "ఈ నివాసికి ఈ కాలంలో ఇప్పటికే క్రియాశీల డిస్కౌంట్ ఉంది."
 
+#: apps/billing/serializers.py:151
 msgid "Only active residents can be invoiced."
 msgstr "క్రియాశీల నివాసులకు మాత్రమే ఇన్‌వాయిస్ చేయవచ్చు."
 
+#: apps/billing/serializers.py:156
 msgid "This resident is not allocated to a bed."
 msgstr "ఈ నివాసికి బెడ్ కేటాయించబడలేదు."
 
+#: apps/billing/serializers.py:161 apps/billing/serializers.py:187
 msgid "period_end cannot be before period_start."
 msgstr "period_end, period_start కంటే ముందు ఉండకూడదు."
 
+#: apps/billing/serializers.py:166 apps/billing/services.py:76
 msgid "This resident already has an invoice for this period."
 msgstr "ఈ నివాసికి ఈ కాలానికి ఇప్పటికే ఇన్‌వాయిస్ ఉంది."
 
+#: apps/billing/serializers.py:232
 msgid "Payment amount must be greater than zero."
 msgstr "చెల్లింపు మొత్తం సున్నా కంటే ఎక్కువగా ఉండాలి."
 
+#: apps/billing/serializers.py:241 apps/billing/services.py:161
 msgid "Payments can only be recorded against an issued invoice."
 msgstr "జారీ చేయబడిన ఇన్‌వాయిస్‌కు మాత్రమే చెల్లింపులు నమోదు చేయవచ్చు."
 
+#: apps/billing/serializers.py:247 apps/billing/services.py:167
 msgid "This invoice is already fully paid."
 msgstr "ఈ ఇన్‌వాయిస్ ఇప్పటికే పూర్తిగా చెల్లించబడింది."
 
+#: apps/billing/serializers.py:255 apps/billing/services.py:171
 #, python-format
 msgid "Payment exceeds the outstanding balance of %(balance)s."
 msgstr "చెల్లింపు %(balance)s బాకీ మిగులును మించిపోయింది."
 
+#: apps/billing/views.py:127
 msgid "Only draft invoices can be modified."
 msgstr "డ్రాఫ్ట్ ఇన్‌వాయిస్‌లను మాత్రమే సవరించవచ్చు."
 
+#: apps/billing/views.py:247
 msgid "Line item not found."
 msgstr "లైన్ ఐటెమ్ కనుగొనబడలేదు."
 
+#: apps/core/permissions.py:14
 msgid "You do not have permission to perform this action."
 msgstr "ఈ చర్యను చేయడానికి మీకు అనుమతి లేదు."
 
+#: apps/core/permissions.py:30
 msgid "Only platform administrators can perform this action."
 msgstr "ప్లాట్‌ఫారమ్ నిర్వాహకులు మాత్రమే ఈ చర్యను చేయగలరు."
 
+#: apps/core/roles.py:11
 msgid "Super Admin"
 msgstr "సూపర్ అడ్మిన్"
 
+#: apps/core/roles.py:12
 msgid "Owner"
 msgstr "యజమాని"
 
+#: apps/core/roles.py:13
 msgid "Manager"
 msgstr "మేనేజర్"
 
+#: apps/core/roles.py:14
 msgid "Receptionist"
 msgstr "రిసెప్షనిస్ట్"
 
+#: apps/core/roles.py:15
 msgid "Resident"
 msgstr "నివాసి"
 
-#, python-format
-msgid "Invoice for %(period)s"
-msgstr "%(period)s కోసం ఇన్‌వాయిస్"
-
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"Your invoice for the period %(start)s to %(end)s has been issued.\n"
-"Amount due: %(total)s\n"
-"Due date: %(due)s\n"
-"\n"
-"Thank you."
+#: apps/notifications/models.py:13
+msgid "Email"
 msgstr ""
-"ప్రియమైన %(name)s,\n"
-"\n"
-"%(start)s నుండి %(end)s వరకు కాలానికి మీ ఇన్‌వాయిస్ జారీ చేయబడింది.\n"
-"చెల్లించవలసిన మొత్తం: %(total)s\n"
-"చెల్లించవలసిన తేదీ: %(due)s\n"
-"\n"
-"ధన్యవాదాలు."
 
-#, python-format
-msgid "Payment receipt — %(amount)s received"
-msgstr "చెల్లింపు రసీదు — %(amount)s అందుకోబడింది"
-
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"We have received your payment of %(amount)s on %(date)s via %(mode)s.\n"
-"Remaining balance on this invoice: %(balance)s\n"
-"\n"
-"Thank you."
+#: apps/notifications/models.py:14
+msgid "SMS"
 msgstr ""
-"ప్రియమైన %(name)s,\n"
-"\n"
-"%(date)s న %(mode)s ద్వారా మీ %(amount)s చెల్లింపును మేము అందుకున్నాము.\n"
-"ఈ ఇన్‌వాయిస్‌పై మిగిలిన బాకీ: %(balance)s\n"
-"\n"
-"ధన్యవాదాలు."
 
-#, python-format
-msgid "Your trial ends in %(days)s day(s)"
-msgstr "మీ ట్రయల్ %(days)s రోజు(ల)లో ముగుస్తుంది"
-
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"Your free trial of the platform for %(business)s ends in %(days)s day(s), on %(end_date)s. Choose a plan to keep using the platform without interruption.\n"
-"\n"
-"Thank you."
+#: apps/notifications/models.py:15
+msgid "WhatsApp"
 msgstr ""
-"ప్రియమైన %(name)s,\n"
-"\n"
-"%(business)s కోసం ప్లాట్‌ఫారమ్ యొక్క మీ ఉచిత ట్రయల్ %(days)s రోజు(ల)లో, %(end_date)s న ముగుస్తుంది. అంతరాయం లేకుండా ప్లాట్‌ఫారమ్‌ను ఉపయోగించడం కొనసాగించడానికి ఒక ప్లాన్‌ను ఎంచుకోండి.\n"
-"\n"
-"ధన్యవాదాలు."
 
+#: apps/notifications/models.py:16
+msgid "Push"
+msgstr ""
+
+#: apps/notifications/models.py:28
 msgid "Welcome"
 msgstr "స్వాగతం"
 
+#: apps/notifications/models.py:29
 msgid "Trial Expiry Reminder"
 msgstr "ట్రయల్ గడువు ముగింపు రిమైండర్"
 
+#: apps/notifications/models.py:30
 msgid "Invoice Issued"
 msgstr "ఇన్‌వాయిస్ జారీ చేయబడింది"
 
+#: apps/notifications/models.py:31
 msgid "Payment Receipt"
 msgstr "చెల్లింపు రసీదు"
 
+#: apps/notifications/models.py:34 apps/notifications/models.py:184
 msgid "Sent"
 msgstr "పంపబడింది"
 
+#: apps/notifications/models.py:35 apps/notifications/models.py:186
+#: apps/subscriptions/models.py:192 apps/subscriptions/models.py:267
 msgid "Failed"
 msgstr "విఫలమైంది"
 
+#: apps/notifications/models.py:36
 msgid "Skipped"
 msgstr "దాటవేయబడింది"
 
+#: apps/notifications/models.py:115
+#, python-format
+msgid "Invalid template syntax: %(error)s"
+msgstr ""
+
+#: apps/notifications/models.py:159
+msgid "Web"
+msgstr ""
+
+#: apps/notifications/models.py:160
+msgid "Android"
+msgstr ""
+
+#: apps/notifications/models.py:161
+msgid "iOS"
+msgstr ""
+
+#: apps/notifications/models.py:183
+msgid "Pending"
+msgstr ""
+
+#: apps/operations/models.py:23
 msgid "Electrical"
 msgstr "విద్యుత్ సంబంధిత"
 
+#: apps/operations/models.py:24
 msgid "Plumbing"
 msgstr "ప్లంబింగ్"
 
+#: apps/operations/models.py:25
 msgid "Internet / WiFi"
 msgstr "ఇంటర్నెట్ / వైఫై"
 
+#: apps/operations/models.py:26
 msgid "Housekeeping"
 msgstr "హౌస్‌కీపింగ్"
 
+#: apps/operations/models.py:27
 msgid "Security"
 msgstr "భద్రత"
 
+#: apps/operations/models.py:28
 msgid "Furniture"
 msgstr "ఫర్నిచర్"
 
+#: apps/operations/models.py:32
 msgid "Low"
 msgstr "తక్కువ"
 
+#: apps/operations/models.py:33
 msgid "Medium"
 msgstr "మధ్యస్థం"
 
+#: apps/operations/models.py:34
 msgid "High"
 msgstr "అధికం"
 
+#: apps/operations/models.py:35
 msgid "Urgent"
 msgstr "అత్యవసరం"
 
+#: apps/operations/models.py:38
 msgid "Open"
 msgstr "తెరిచి ఉంది"
 
+#: apps/operations/models.py:39
 msgid "Assigned"
 msgstr "కేటాయించబడింది"
 
+#: apps/operations/models.py:40
 msgid "In Progress"
 msgstr "పురోగతిలో ఉంది"
 
+#: apps/operations/models.py:41
 msgid "Resolved"
 msgstr "పరిష్కరించబడింది"
 
+#: apps/operations/models.py:42
 msgid "Closed"
 msgstr "మూసివేయబడింది"
 
+#: apps/operations/serializers.py:119
 msgid "Use the assign action to move a complaint to Assigned."
-msgstr ""
-"ఫిర్యాదును కేటాయించబడింది స్థితికి మార్చడానికి కేటాయింపు చర్యను ఉపయోగించండి."
+msgstr "ఫిర్యాదును కేటాయించబడింది స్థితికి మార్చడానికి కేటాయింపు చర్యను ఉపయోగించండి."
 
+#: apps/operations/serializers.py:123
 #, python-format
 msgid "Cannot move a complaint from %(current)s to %(new)s."
 msgstr "ఫిర్యాదును %(current)s నుండి %(new)sకి మార్చడం సాధ్యం కాదు."
 
+#: apps/operations/serializers.py:141
 msgid "This user is not in your tenant."
 msgstr "ఈ వినియోగదారు మీ టెనెంట్‌లో లేరు."
 
+#: apps/operations/serializers.py:144
 msgid "This user does not have complaint-management access."
 msgstr "ఈ వినియోగదారుకు ఫిర్యాదు-నిర్వహణ యాక్సెస్ లేదు."
 
+#: apps/operations/serializers.py:148
 msgid "This user is not assigned to the resident's property."
 msgstr "ఈ వినియోగదారు నివాసి యొక్క ప్రాపర్టీకి కేటాయించబడలేదు."
 
+#: apps/operations/serializers.py:193
 msgid "Exit time cannot be before entry time."
 msgstr "నిష్క్రమణ సమయం ప్రవేశ సమయానికి ముందు ఉండకూడదు."
 
+#: apps/operations/views.py:55
 msgid "Only an open complaint can be edited or assigned."
 msgstr "తెరిచి ఉన్న ఫిర్యాదును మాత్రమే సవరించవచ్చు లేదా కేటాయించవచ్చు."
 
+#: apps/operations/views.py:176
 msgid "This visitor has already checked out."
 msgstr "ఈ సందర్శకుడు ఇప్పటికే చెక్-అవుట్ చేశారు."
 
+#: apps/operations/views.py:200
 msgid "This visitor has already been confirmed."
 msgstr "ఈ సందర్శకుడు ఇప్పటికే నిర్ధారించబడ్డారు."
 
+#: apps/properties/feature_catalog.py:19
+msgid "Furnished rooms"
+msgstr "ఫర్నిష్డ్ గదులు"
+
+#: apps/properties/feature_catalog.py:20
+msgid "Cot with mattress"
+msgstr "పరుపుతో మంచం"
+
+#: apps/properties/feature_catalog.py:21
+msgid "Pillow & bed linen"
+msgstr "దిండు & దుప్పట్లు"
+
+#: apps/properties/feature_catalog.py:22
+msgid "Cupboard / wardrobe"
+msgstr "అల్మారా / వార్డ్‌రోబ్"
+
+#: apps/properties/feature_catalog.py:23
+msgid "Study table & chair"
+msgstr "స్టడీ టేబుల్ & కుర్చీ"
+
+#: apps/properties/feature_catalog.py:24
+msgid "Shoe rack"
+msgstr "షూ ర్యాక్"
+
+#: apps/properties/feature_catalog.py:25
+msgid "Curtains"
+msgstr "కర్టెన్లు"
+
+#: apps/properties/feature_catalog.py:26
+msgid "Attached bathroom"
+msgstr "అటాచ్డ్ బాత్రూమ్"
+
+#: apps/properties/feature_catalog.py:27
+msgid "Common bathroom"
+msgstr "కామన్ బాత్రూమ్"
+
+#: apps/properties/feature_catalog.py:29
+msgid "Food / mess provided"
+msgstr "భోజనం / మెస్ సౌకర్యం"
+
+#: apps/properties/feature_catalog.py:30
+msgid "Breakfast"
+msgstr "అల్పాహారం"
+
+#: apps/properties/feature_catalog.py:31
+msgid "Lunch"
+msgstr "మధ్యాహ్న భోజనం"
+
+#: apps/properties/feature_catalog.py:32
+msgid "Dinner"
+msgstr "రాత్రి భోజనం"
+
+#: apps/properties/feature_catalog.py:33
+msgid "Vegetarian food"
+msgstr "శాకాహార భోజనం"
+
+#: apps/properties/feature_catalog.py:34
+msgid "Non-vegetarian food"
+msgstr "మాంసాహార భోజనం"
+
+#: apps/properties/feature_catalog.py:35
+msgid "Special / diet food"
+msgstr "ప్రత్యేక / డైట్ భోజనం"
+
+#: apps/properties/feature_catalog.py:36
+msgid "Common dining hall"
+msgstr "కామన్ డైనింగ్ హాల్"
+
+#: apps/properties/feature_catalog.py:37
+msgid "RO drinking water"
+msgstr "RO తాగునీరు"
+
+#: apps/properties/feature_catalog.py:38
+msgid "Water cooler"
+msgstr "వాటర్ కూలర్"
+
+#: apps/properties/feature_catalog.py:39
+msgid "24x7 tea & coffee"
+msgstr "24x7 టీ & కాఫీ"
+
+#: apps/properties/feature_catalog.py:40
+msgid "Common kitchen"
+msgstr "కామన్ కిచెన్"
+
+#: apps/properties/feature_catalog.py:41
+msgid "Refrigerator"
+msgstr "రిఫ్రిజిరేటర్"
+
+#: apps/properties/feature_catalog.py:42
+msgid "Microwave / induction"
+msgstr "మైక్రోవేవ్ / ఇండక్షన్"
+
+#: apps/properties/feature_catalog.py:44
+msgid "Daily room cleaning"
+msgstr "రోజువారీ గది శుభ్రత"
+
+#: apps/properties/feature_catalog.py:45
+msgid "Weekly room cleaning"
+msgstr "వారానికోసారి గది శుభ్రత"
+
+#: apps/properties/feature_catalog.py:46
+msgid "Common-area cleaning"
+msgstr "కామన్ ఏరియా శుభ్రత"
+
+#: apps/properties/feature_catalog.py:47
+msgid "Bathroom cleaning"
+msgstr "బాత్రూమ్ శుభ్రత"
+
+#: apps/properties/feature_catalog.py:48
+msgid "Laundry service"
+msgstr "లాండ్రీ సేవ"
+
+#: apps/properties/feature_catalog.py:49
+msgid "Washing machine"
+msgstr "వాషింగ్ మెషీన్"
+
+#: apps/properties/feature_catalog.py:50
+msgid "Ironing"
+msgstr "ఇస్త్రీ"
+
+#: apps/properties/feature_catalog.py:51
+msgid "Pest control"
+msgstr "పెస్ట్ కంట్రోల్"
+
+#: apps/properties/feature_catalog.py:53
+msgid "Wi-Fi"
+msgstr "వై-ఫై"
+
+#: apps/properties/feature_catalog.py:54
+msgid "Common TV"
+msgstr "కామన్ టీవీ"
+
+#: apps/properties/feature_catalog.py:55
+msgid "Intercom"
+msgstr "ఇంటర్‌కామ్"
+
+#: apps/properties/feature_catalog.py:57
+msgid "Power backup"
+msgstr "పవర్ బ్యాకప్"
+
+#: apps/properties/feature_catalog.py:58
+msgid "Hot water / geyser"
+msgstr "వేడి నీరు / గీజర్"
+
+#: apps/properties/feature_catalog.py:59
+msgid "24x7 water supply"
+msgstr "24x7 నీటి సరఫరా"
+
+#: apps/properties/feature_catalog.py:60
+msgid "Lift"
+msgstr "లిఫ్ట్"
+
+#: apps/properties/feature_catalog.py:61
+msgid "Solar water heater"
+msgstr "సోలార్ వాటర్ హీటర్"
+
+#: apps/properties/feature_catalog.py:63
+msgid "CCTV surveillance"
+msgstr "సీసీటీవీ నిఘా"
+
+#: apps/properties/feature_catalog.py:64
+msgid "Security guard"
+msgstr "సెక్యూరిటీ గార్డ్"
+
+#: apps/properties/feature_catalog.py:65
+msgid "Biometric / smart access"
+msgstr "బయోమెట్రిక్ / స్మార్ట్ యాక్సెస్"
+
+#: apps/properties/feature_catalog.py:66
+msgid "Visitor entry management"
+msgstr "సందర్శకుల ప్రవేశ నిర్వహణ"
+
+#: apps/properties/feature_catalog.py:67
+msgid "Gated premises"
+msgstr "గేటెడ్ ప్రాంగణం"
+
+#: apps/properties/feature_catalog.py:68
+msgid "Fire extinguisher"
+msgstr "అగ్నిమాపక యంత్రం"
+
+#: apps/properties/feature_catalog.py:69
+msgid "Smoke detector"
+msgstr "స్మోక్ డిటెక్టర్"
+
+#: apps/properties/feature_catalog.py:70
+msgid "First-aid kit"
+msgstr "ప్రథమ చికిత్స కిట్"
+
+#: apps/properties/feature_catalog.py:71
+msgid "Warden on premises"
+msgstr "ప్రాంగణంలో వార్డెన్"
+
+#: apps/properties/feature_catalog.py:73
+msgid "Gym"
+msgstr "జిమ్"
+
+#: apps/properties/feature_catalog.py:74
+msgid "Terrace access"
+msgstr "టెర్రస్ యాక్సెస్"
+
+#: apps/properties/feature_catalog.py:75
+msgid "Common lounge"
+msgstr "కామన్ లాంజ్"
+
+#: apps/properties/feature_catalog.py:76
+msgid "Indoor games"
+msgstr "ఇండోర్ గేమ్స్"
+
+#: apps/properties/feature_catalog.py:77
+msgid "Reading room"
+msgstr "రీడింగ్ రూమ్"
+
+#: apps/properties/feature_catalog.py:78
+msgid "Garden / open space"
+msgstr "తోట / ఖాళీ స్థలం"
+
+#: apps/properties/feature_catalog.py:79
+msgid "Swimming pool"
+msgstr "స్విమ్మింగ్ పూల్"
+
+#: apps/properties/feature_catalog.py:81
+msgid "Two-wheeler parking"
+msgstr "ద్విచక్ర వాహన పార్కింగ్"
+
+#: apps/properties/feature_catalog.py:82
+msgid "Car parking"
+msgstr "కార్ పార్కింగ్"
+
+#: apps/properties/feature_catalog.py:83
+msgid "Covered parking"
+msgstr "కవర్డ్ పార్కింగ్"
+
+#: apps/properties/feature_catalog.py:84
+msgid "Visitor parking"
+msgstr "సందర్శకుల పార్కింగ్"
+
+#: apps/properties/feature_catalog.py:85
+msgid "EV charging point"
+msgstr "EV ఛార్జింగ్ పాయింట్"
+
+#: apps/properties/feature_catalog.py:87
+msgid "Maintenance / repair service"
+msgstr "మెయింటెనెన్స్ / మరమ్మతు సేవ"
+
+#: apps/properties/feature_catalog.py:88
+msgid "Parcel collection"
+msgstr "పార్శిల్ స్వీకరణ"
+
+#: apps/properties/feature_catalog.py:89
+msgid "24x7 front desk"
+msgstr "24x7 ఫ్రంట్ డెస్క్"
+
+#: apps/properties/feature_catalog.py:90
+msgid "Caretaker on premises"
+msgstr "ప్రాంగణంలో కేర్‌టేకర్"
+
+#: apps/properties/feature_catalog.py:91
+msgid "Doctor on call"
+msgstr "కాల్‌పై డాక్టర్"
+
+#: apps/properties/feature_catalog.py:92
+msgid "Tuck shop / provision store"
+msgstr "టక్ షాప్ / కిరాణా దుకాణం"
+
+#: apps/properties/feature_catalog.py:93
+msgid "Shuttle / drop service"
+msgstr "షటిల్ / డ్రాప్ సేవ"
+
+#: apps/properties/feature_catalog.py:95
+msgid "Wheelchair accessible"
+msgstr "వీల్‌చైర్ సౌలభ్యం"
+
+#: apps/properties/feature_catalog.py:96
+msgid "Ramp access"
+msgstr "ర్యాంప్ సౌకర్యం"
+
+#: apps/properties/feature_catalog.py:98
+msgid "No curfew"
+msgstr "కర్ఫ్యూ లేదు"
+
+#: apps/properties/feature_catalog.py:99
+msgid "Flexible entry timings"
+msgstr "సౌకర్యవంతమైన ప్రవేశ సమయాలు"
+
+#: apps/properties/feature_catalog.py:100
+msgid "Short-term stay"
+msgstr "స్వల్పకాలిక బస"
+
+#: apps/properties/feature_catalog.py:141
+msgid "Your features"
+msgstr "మీ ఫీచర్లు"
+
+#: apps/properties/feature_services.py:62 apps/properties/models.py:411
+msgid "This building does not belong to the property."
+msgstr "ఈ భవనం ఈ ప్రాపర్టీకి చెందినది కాదు."
+
+#: apps/properties/feature_services.py:120
+msgid "Give either a feature code or a custom feature, not both."
+msgstr "ఫీచర్ కోడ్ లేదా కస్టమ్ ఫీచర్‌లో ఒకటి మాత్రమే ఇవ్వండి."
+
+#: apps/properties/feature_services.py:122
+msgid "Each feature needs a code or a custom feature."
+msgstr "ప్రతి ఫీచర్‌కు కోడ్ లేదా కస్టమ్ ఫీచర్ అవసరం."
+
+#: apps/properties/feature_services.py:125
+msgid "Unknown feature."
+msgstr "తెలియని ఫీచర్."
+
+#: apps/properties/feature_services.py:128
+msgid "The same feature is listed more than once."
+msgstr "ఒకే ఫీచర్ ఒకటి కంటే ఎక్కువసార్లు ఉంది."
+
+#: apps/properties/feature_services.py:145
+msgid "A feature can only be marked unavailable for a specific building."
+msgstr "ఒక ఫీచర్‌ను నిర్దిష్ట భవనానికి మాత్రమే అందుబాటులో లేదని గుర్తించవచ్చు."
+
+#: apps/properties/feature_services.py:149
+msgid "Too many features."
+msgstr "చాలా ఎక్కువ ఫీచర్లు ఉన్నాయి."
+
+#: apps/properties/feature_services.py:165
+msgid "This feature is no longer available."
+msgstr "ఈ ఫీచర్ ఇకపై అందుబాటులో లేదు."
+
+#: apps/properties/feature_services.py:168
+msgid ""
+"Only a feature offered by the whole PG can be marked unavailable for a "
+"building."
+msgstr "మొత్తం PG అందించే ఫీచర్‌ను మాత్రమే ఒక భవనానికి అందుబాటులో లేదని గుర్తించవచ్చు."
+
+#: apps/properties/feature_services.py:210
+msgid "Enter a feature name."
+msgstr "ఫీచర్ పేరు నమోదు చేయండి."
+
+#: apps/properties/feature_services.py:212
+msgid "Feature name is too long."
+msgstr "ఫీచర్ పేరు చాలా పొడవుగా ఉంది."
+
+#: apps/properties/feature_services.py:216
+msgid "This feature is already in the standard list."
+msgstr "ఈ ఫీచర్ ఇప్పటికే ప్రామాణిక జాబితాలో ఉంది."
+
+#: apps/properties/feature_services.py:247
+#: apps/properties/feature_services.py:255
+msgid "You already have a feature with this name."
+msgstr "ఈ పేరుతో మీకు ఇప్పటికే ఒక ఫీచర్ ఉంది."
+
+#: apps/properties/feature_services.py:269
+msgid "Remove this feature from your properties before deleting it."
+msgstr "తొలగించే ముందు ఈ ఫీచర్‌ను మీ ప్రాపర్టీల నుండి తీసివేయండి."
+
+#: apps/properties/models.py:17
 msgid "Boys Hostel"
 msgstr "బాయ్స్ హాస్టల్"
 
+#: apps/properties/models.py:18
 msgid "Girls Hostel"
 msgstr "గర్ల్స్ హాస్టల్"
 
+#: apps/properties/models.py:19
 msgid "PG"
 msgstr "పీజీ"
 
+#: apps/properties/models.py:20
 msgid "Co-Living Space"
 msgstr "కో-లివింగ్ స్పేస్"
 
+#: apps/properties/models.py:24
 msgid "Inactive"
 msgstr "నిష్క్రియం"
 
+#: apps/properties/models.py:111
 msgid "1-sharing"
 msgstr "1-షేరింగ్"
 
+#: apps/properties/models.py:112
 msgid "2-sharing"
 msgstr "2-షేరింగ్"
 
+#: apps/properties/models.py:113
 msgid "3-sharing"
 msgstr "3-షేరింగ్"
 
+#: apps/properties/models.py:114
 msgid "4-sharing"
 msgstr "4-షేరింగ్"
 
+#: apps/properties/models.py:115
 msgid "5-sharing"
 msgstr "5-షేరింగ్"
 
+#: apps/properties/models.py:116
 msgid "6-sharing"
 msgstr "6-షేరింగ్"
 
+#: apps/properties/models.py:117
 msgid "7-sharing"
 msgstr "7-షేరింగ్"
 
+#: apps/properties/models.py:118
 msgid "8-sharing"
 msgstr "8-షేరింగ్"
 
+#: apps/properties/models.py:121
 msgid "AC"
 msgstr "ఏసీ"
 
+#: apps/properties/models.py:122
 msgid "Non-AC"
 msgstr "నాన్-ఏసీ"
 
+#: apps/properties/models.py:125 apps/properties/models.py:176
 msgid "Available"
 msgstr "అందుబాటులో ఉంది"
 
+#: apps/properties/models.py:126 apps/properties/models.py:177
 msgid "Occupied"
 msgstr "ఆక్రమించబడింది"
 
+#: apps/properties/models.py:127 apps/properties/models.py:178
+#: apps/residents/models.py:29
 msgid "Reserved"
 msgstr "రిజర్వ్ చేయబడింది"
 
+#: apps/properties/models.py:128 apps/properties/models.py:179
 msgid "Maintenance"
 msgstr "నిర్వహణ"
 
+#: apps/properties/models.py:247
 msgid "Immediately"
 msgstr "వెంటనే"
 
+#: apps/properties/models.py:248
 msgid "Next Billing Cycle"
 msgstr "తదుపరి బిల్లింగ్ చక్రం"
 
+#: apps/properties/models.py:251
 msgid "No Penalty"
 msgstr "జరిమానా లేదు"
 
+#: apps/properties/models.py:256
 msgid "Full Invoice Amount"
 msgstr "పూర్తి ఇన్‌వాయిస్ మొత్తం"
 
+#: apps/properties/models.py:257
 msgid "Outstanding Balance Only"
 msgstr "బాకీ మిగులు మాత్రమే"
 
+#: apps/properties/models.py:260
 msgid "One-time"
 msgstr "ఒకసారి"
 
+#: apps/properties/models.py:261 apps/residents/models.py:105
 msgid "Monthly"
 msgstr "నెలవారీ"
 
+#: apps/properties/models.py:299
+msgid "Rooms & Furnishing"
+msgstr "గదులు & ఫర్నిషింగ్"
+
+#: apps/properties/models.py:300
+msgid "Food & Kitchen"
+msgstr "భోజనం & వంటగది"
+
+#: apps/properties/models.py:301
+msgid "Housekeeping & Laundry"
+msgstr "హౌస్‌కీపింగ్ & లాండ్రీ"
+
+#: apps/properties/models.py:302
+msgid "Internet & Entertainment"
+msgstr "ఇంటర్నెట్ & వినోదం"
+
+#: apps/properties/models.py:303
+msgid "Utilities & Comfort"
+msgstr "సదుపాయాలు & సౌకర్యం"
+
+#: apps/properties/models.py:304
+msgid "Safety & Security"
+msgstr "భద్రత & రక్షణ"
+
+#: apps/properties/models.py:305
+msgid "Recreation & Common Areas"
+msgstr "వినోదం & కామన్ ఏరియాలు"
+
+#: apps/properties/models.py:306
+msgid "Parking & Transport"
+msgstr "పార్కింగ్ & రవాణా"
+
+#: apps/properties/models.py:307
+msgid "Services & Support"
+msgstr "సేవలు & సహాయం"
+
+#: apps/properties/models.py:308
+msgid "Accessibility"
+msgstr "యాక్సెసిబిలిటీ"
+
+#: apps/properties/models.py:309
+msgid "Stay Policies"
+msgstr "బస నియమాలు"
+
+#: apps/properties/models.py:420
+msgid "All related records must belong to the same tenant."
+msgstr "సంబంధిత రికార్డులన్నీ ఒకే టెనెంట్‌కు చెందాలి."
+
+#: apps/properties/serializers.py:282
 msgid "This room already has its full sharing-type capacity of beds."
 msgstr "ఈ గదికి ఇప్పటికే దాని పూర్తి షేరింగ్-రకం బెడ్ సామర్థ్యం ఉంది."
 
+#: apps/properties/serializers.py:329
+msgid "Room number is too long to auto-create beds."
+msgstr ""
+
+#: apps/properties/serializers.py:398
 msgid "A penalty value is required when a penalty type is set."
 msgstr "జరిమానా రకం సెట్ చేసినప్పుడు జరిమానా విలువ అవసరం."
 
+#: apps/properties/serializers.py:403
 msgid "A percentage penalty must be between 0 and 100."
 msgstr "శాతం జరిమానా 0 మరియు 100 మధ్య ఉండాలి."
 
+#: apps/properties/views.py:52
 msgid "You do not have access to properties."
 msgstr "మీకు ప్రాపర్టీలకు యాక్సెస్ లేదు."
 
+#: apps/properties/views.py:136
 msgid "An image file is required."
 msgstr "చిత్రం ఫైల్ అవసరం."
 
+#: apps/properties/views.py:288
 msgid "Cannot delete a building that still has floors."
 msgstr "ఇంకా అంతస్తులు ఉన్న భవనాన్ని తొలగించడం సాధ్యం కాదు."
 
+#: apps/properties/views.py:312
 msgid "Cannot delete a floor that still has rooms."
 msgstr "ఇంకా గదులు ఉన్న అంతస్తును తొలగించడం సాధ్యం కాదు."
 
+#: apps/properties/views.py:336
 msgid "Cannot delete a room that still has beds."
 msgstr "ఇంకా బెడ్‌లు ఉన్న గదిని తొలగించడం సాధ్యం కాదు."
 
+#: apps/properties/views.py:360
 msgid "Cannot delete a bed that is occupied or reserved."
 msgstr "ఆక్రమించబడిన లేదా రిజర్వ్ చేయబడిన బెడ్‌ను తొలగించడం సాధ్యం కాదు."
 
+#: apps/reporting/views.py:20
 #, python-format
 msgid "filetype must be one of: %(formats)s."
 msgstr "ఫైల్ రకం తప్పనిసరిగా వీటిలో ఒకటి అయి ఉండాలి: %(formats)s."
 
+#: apps/reporting/views.py:37
 msgid "Resident List"
 msgstr "నివాసుల జాబితా"
 
+#: apps/reporting/views.py:51
 msgid "Payment History"
 msgstr "చెల్లింపు చరిత్ర"
 
+#: apps/reporting/views.py:65
 msgid "Outstanding Dues"
 msgstr "బాకీ మొత్తాలు"
 
+#: apps/reporting/views.py:79
 msgid "Occupancy Report"
 msgstr "ఆక్యుపెన్సీ నివేదిక"
 
+#: apps/residents/models.py:23
 msgid "Male"
 msgstr "పురుషుడు"
 
+#: apps/residents/models.py:24
 msgid "Female"
 msgstr "స్త్రీ"
 
+#: apps/residents/models.py:28
 msgid "Inquiry"
 msgstr "విచారణ"
 
+#: apps/residents/models.py:31
 msgid "Notice Period"
 msgstr "నోటీసు వ్యవధి"
 
+#: apps/residents/models.py:32 apps/residents/services.py:410
 msgid "Vacated"
 msgstr "ఖాళీ చేయబడింది"
 
+#: apps/residents/models.py:33
 msgid "Absconded"
 msgstr "పరారీలో ఉన్నారు"
 
+#: apps/residents/models.py:34 apps/residents/services.py:433
 msgid "Blacklisted"
 msgstr "బ్లాక్‌లిస్ట్ చేయబడింది"
 
+#: apps/residents/models.py:106
 msgid "Weekly"
 msgstr "వారానికి"
 
+#: apps/residents/models.py:107
 msgid "Daily"
 msgstr "రోజువారీ"
 
+#: apps/residents/models.py:110
 msgid "With Food"
 msgstr "ఆహారంతో"
 
+#: apps/residents/models.py:111
 msgid "Without Food"
 msgstr "ఆహారం లేకుండా"
 
+#: apps/residents/models.py:314
 msgid "Outstanding"
 msgstr "బాకీ"
 
+#: apps/residents/models.py:315
 msgid "Partially Recovered"
 msgstr "పాక్షికంగా రికవర్ చేయబడింది"
 
+#: apps/residents/models.py:316
 msgid "Written Off"
 msgstr "రద్దు చేయబడింది (రైట్-ఆఫ్)"
 
+#: apps/residents/serializers.py:129
 #, python-format
 msgid "Cannot move a resident from %(current)s to %(new)s."
 msgstr "నివాసిని %(current)s నుండి %(new)sకి మార్చడం సాధ్యం కాదు."
 
+#: apps/residents/serializers.py:171
 msgid "This resident is not ready for check-in — they must be Reserved first."
-msgstr ""
-"ఈ నివాసి చెక్-ఇన్‌కు సిద్ధంగా లేరు — వారు ముందుగా రిజర్వ్ చేయబడి ఉండాలి."
+msgstr "ఈ నివాసి చెక్-ఇన్‌కు సిద్ధంగా లేరు — వారు ముందుగా రిజర్వ్ చేయబడి ఉండాలి."
 
+#: apps/residents/serializers.py:177 apps/residents/serializers.py:274
 msgid "This bed is not in the same property as the resident."
 msgstr "ఈ బెడ్ నివాసి ఉన్న అదే ప్రాపర్టీలో లేదు."
 
+#: apps/residents/serializers.py:182 apps/residents/serializers.py:284
+#: apps/residents/services.py:66 apps/residents/views.py:145
 msgid "This bed is not available."
 msgstr "ఈ బెడ్ అందుబాటులో లేదు."
 
+#: apps/residents/serializers.py:200
+#, fuzzy
+#| msgid "A penalty value is required when a penalty type is set."
+msgid "This field is required when an amount is collected."
+msgstr "జరిమానా రకం సెట్ చేసినప్పుడు జరిమానా విలువ అవసరం."
+
+#: apps/residents/serializers.py:264
 msgid "This resident is not currently allocated to a bed."
 msgstr "ఈ నివాసికి ప్రస్తుతం బెడ్ కేటాయించబడలేదు."
 
+#: apps/residents/serializers.py:269
 msgid "Only active residents can be transferred."
 msgstr "క్రియాశీల నివాసులను మాత్రమే బదిలీ చేయవచ్చు."
 
+#: apps/residents/serializers.py:279
 msgid "The resident is already in this bed."
 msgstr "నివాసి ఇప్పటికే ఈ బెడ్‌లో ఉన్నారు."
 
+#: apps/residents/serializers.py:336
 msgid "Only an active resident can give notice to vacate."
 msgstr "క్రియాశీల నివాసి మాత్రమే ఖాళీ చేసే నోటీసు ఇవ్వగలరు."
 
+#: apps/residents/serializers.py:341
 msgid "This resident already has a vacate record."
 msgstr "ఈ నివాసికి ఇప్పటికే ఖాళీ చేసే రికార్డు ఉంది."
 
+#: apps/residents/serializers.py:364
 msgid "Deduction cannot be negative."
 msgstr "తగ్గింపు ప్రతికూలంగా ఉండకూడదు."
 
-#, python-format
-msgid "Deduction cannot exceed the advance amount of %(advance)s."
+#: apps/residents/serializers.py:373
+#, fuzzy, python-format
+#| msgid "Deduction cannot exceed the advance amount of %(advance)s."
+msgid "Deduction cannot exceed the security deposit of %(deposit)s."
 msgstr "తగ్గింపు %(advance)s అడ్వాన్స్ మొత్తాన్ని మించకూడదు."
 
+#: apps/residents/serializers.py:411
 msgid "Only an active resident can be marked absconded."
 msgstr "క్రియాశీల నివాసిని మాత్రమే పరారీగా గుర్తించవచ్చు."
 
+#: apps/residents/serializers.py:425
 msgid "A note is required to write off dues."
 msgstr "బాకీలను రద్దు చేయడానికి ఒక గమనిక అవసరం."
 
+#: apps/residents/serializers.py:452
 msgid "This resident cannot be blacklisted from their current status."
 msgstr "ప్రస్తుత స్థితి నుండి ఈ నివాసిని బ్లాక్‌లిస్ట్ చేయడం సాధ్యం కాదు."
 
+#: apps/residents/services.py:192 apps/residents/views.py:274
+msgid "This vacate has already been settled."
+msgstr "ఈ ఖాళీ ఇప్పటికే పరిష్కరించబడింది."
+
+#: apps/residents/services.py:344
 msgid "Inquiry Received"
 msgstr "విచారణ స్వీకరించబడింది"
 
+#: apps/residents/services.py:351
 msgid "Room Reserved"
 msgstr "గది రిజర్వ్ చేయబడింది"
 
+#: apps/residents/services.py:358
 msgid "Admission Completed — Checked In"
 msgstr "ప్రవేశం పూర్తయింది — చెక్-ఇన్ చేయబడింది"
 
+#: apps/residents/services.py:359 apps/residents/services.py:392
 #, python-format
 msgid "Room %(room)s (%(bed)s)"
 msgstr "గది %(room)s (%(bed)s)"
 
+#: apps/residents/services.py:366
 msgid "Invoice Generated"
 msgstr "ఇన్‌వాయిస్ రూపొందించబడింది"
 
+#: apps/residents/services.py:366
 #, python-format
 msgid "Total ₹%(total)s"
 msgstr "మొత్తం ₹%(total)s"
 
+#: apps/residents/services.py:369
 msgid "Invoice Overdue"
 msgstr "ఇన్‌వాయిస్ గడువు ముగిసింది"
 
+#: apps/residents/services.py:370
 #, python-format
 msgid "Balance due ₹%(balance)s"
 msgstr "బాకీ ₹%(balance)s"
 
+#: apps/residents/services.py:378
 msgid "Partial Payment"
 msgstr "పాక్షిక చెల్లింపు"
 
+#: apps/residents/services.py:380
 msgid "Payment Received"
 msgstr "చెల్లింపు స్వీకరించబడింది"
 
+#: apps/residents/services.py:382
 msgid "Remaining Paid"
 msgstr "మిగిలినది చెల్లించబడింది"
 
+#: apps/residents/services.py:385
 #, python-format
 msgid "₹%(amount)s via %(mode)s"
 msgstr "%(mode)s ద్వారా ₹%(amount)s"
 
+#: apps/residents/services.py:391
 msgid "Transferred"
 msgstr "బదిలీ చేయబడింది"
 
+#: apps/residents/services.py:397
 msgid "Complaint Raised"
 msgstr "ఫిర్యాదు లేవనెత్తబడింది"
 
+#: apps/residents/services.py:402
 msgid "Notice Given"
 msgstr "నోటీసు ఇవ్వబడింది"
 
+#: apps/residents/services.py:403
 #, python-format
 msgid "Expected vacate %(date)s"
 msgstr "ఖాళీ చేయాల్సిన అంచనా తేదీ %(date)s"
 
+#: apps/residents/services.py:407
 #, python-format
 msgid "Refund ₹%(amount)s"
 msgstr "వాపసు ₹%(amount)s"
 
+#: apps/residents/services.py:416
 #, python-format
 msgid "Last seen %(date)s"
 msgstr "చివరిసారి కనిపించింది %(date)s"
 
+#: apps/residents/services.py:418
 msgid "Marked Absconded"
 msgstr "పరారీగా గుర్తించబడింది"
 
-msgid "Advance Forfeited"
-msgstr "అడ్వాన్స్ జప్తు చేయబడింది"
+#: apps/residents/services.py:421
+msgid "Security Deposit Forfeited"
+msgstr ""
 
+#: apps/residents/services.py:422
 #, python-format
 msgid "₹%(amount)s applied against dues"
 msgstr "బాకీలకు వ్యతిరేకంగా ₹%(amount)s వర్తింపజేయబడింది"
 
+#: apps/residents/services.py:426
 msgid "Dues Written Off"
 msgstr "బాకీలు రద్దు చేయబడ్డాయి"
 
+#: apps/residents/services.py:427
 #, python-format
 msgid "₹%(amount)s — %(note)s"
 msgstr "₹%(amount)s — %(note)s"
 
-msgid "This vacate has already been settled."
-msgstr "ఈ ఖాళీ ఇప్పటికే పరిష్కరించబడింది."
-
+#: apps/residents/views.py:316
 msgid "Dues have already been written off."
 msgstr "బాకీలు ఇప్పటికే రద్దు చేయబడ్డాయి."
 
+#: apps/subscriptions/models.py:30
+#, fuzzy
+#| msgid "Monthly"
+msgid "Flat monthly"
+msgstr "నెలవారీ"
+
+#: apps/subscriptions/models.py:31
+msgid "Per bed monthly"
+msgstr ""
+
+#: apps/subscriptions/models.py:63
+msgid "Flat-monthly plans require a price_per_month."
+msgstr ""
+
+#: apps/subscriptions/models.py:70 apps/subscriptions/models.py:124
+msgid "Flat-monthly plans cannot have bed tiers."
+msgstr ""
+
+#: apps/subscriptions/models.py:76
+msgid ""
+"Per-bed plans cannot also cap properties or residents — billing is already "
+"usage-based."
+msgstr ""
+
+#: apps/subscriptions/models.py:83
+msgid "Per-bed plans require at least one bed tier."
+msgstr ""
+
+#: apps/subscriptions/models.py:87
+msgid "Per-bed plans must have exactly one open-ended tier (up_to_beds=None)."
+msgstr ""
+
+#: apps/subscriptions/models.py:191
 msgid "Success"
 msgstr "విజయం"
 
+#: apps/subscriptions/models.py:236
+msgid "Added"
+msgstr ""
+
+#: apps/subscriptions/models.py:237
+msgid "Removed"
+msgstr ""
+
+#: apps/subscriptions/services.py:61
 #, python-format
 msgid "Your plan allows a maximum of %(max)s properties. Upgrade to add more."
-msgstr ""
-"మీ ప్లాన్ గరిష్టంగా %(max)s ప్రాపర్టీలను అనుమతిస్తుంది. మరిన్ని జోడించడానికి"
-" అప్‌గ్రేడ్ చేయండి."
+msgstr "మీ ప్లాన్ గరిష్టంగా %(max)s ప్రాపర్టీలను అనుమతిస్తుంది. మరిన్ని జోడించడానికి అప్‌గ్రేడ్ చేయండి."
 
+#: apps/subscriptions/services.py:119
 #, python-format
 msgid ""
-"Your plan allows a maximum of %(max)s active residents per property. Upgrade"
-" to add more."
+"Your plan allows a maximum of %(max)s active residents per property. Upgrade "
+"to add more."
 msgstr ""
-"మీ ప్లాన్ ప్రతి ప్రాపర్టీకి గరిష్టంగా %(max)s క్రియాశీల నివాసులను "
-"అనుమతిస్తుంది. మరిన్ని జోడించడానికి అప్‌గ్రేడ్ చేయండి."
+"మీ ప్లాన్ ప్రతి ప్రాపర్టీకి గరిష్టంగా %(max)s క్రియాశీల నివాసులను అనుమతిస్తుంది. మరిన్ని జోడించడానికి అప్‌గ్రేడ్ "
+"చేయండి."
 
+#: apps/subscriptions/services.py:478
+#, python-format
+msgid "%(beds)s beds @ ₹%(rate)s (%(from)s–%(to)s)"
+msgstr ""
+
+#: apps/subscriptions/views.py:52
 msgid "Cannot delete a plan that tenants are subscribed to."
 msgstr "టెనెంట్లు సభ్యత్వం పొందిన ప్లాన్‌ను తొలగించడం సాధ్యం కాదు."
 
+#: apps/subscriptions/views.py:149
 msgid "This tenant is already suspended."
 msgstr "ఈ టెనెంట్ ఇప్పటికే సస్పెండ్ చేయబడింది."
 
+#: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr "ఈ టెనెంట్ సస్పెండ్ చేయబడలేదు."
+
+#, python-format
+#~ msgid "Invoice for %(period)s"
+#~ msgstr "%(period)s కోసం ఇన్‌వాయిస్"
+
+#, python-format
+#~ msgid ""
+#~ "Dear %(name)s,\n"
+#~ "\n"
+#~ "Your invoice for the period %(start)s to %(end)s has been issued.\n"
+#~ "Amount due: %(total)s\n"
+#~ "Due date: %(due)s\n"
+#~ "\n"
+#~ "Thank you."
+#~ msgstr ""
+#~ "ప్రియమైన %(name)s,\n"
+#~ "\n"
+#~ "%(start)s నుండి %(end)s వరకు కాలానికి మీ ఇన్‌వాయిస్ జారీ చేయబడింది.\n"
+#~ "చెల్లించవలసిన మొత్తం: %(total)s\n"
+#~ "చెల్లించవలసిన తేదీ: %(due)s\n"
+#~ "\n"
+#~ "ధన్యవాదాలు."
+
+#, python-format
+#~ msgid "Payment receipt — %(amount)s received"
+#~ msgstr "చెల్లింపు రసీదు — %(amount)s అందుకోబడింది"
+
+#, python-format
+#~ msgid ""
+#~ "Dear %(name)s,\n"
+#~ "\n"
+#~ "We have received your payment of %(amount)s on %(date)s via %(mode)s.\n"
+#~ "Remaining balance on this invoice: %(balance)s\n"
+#~ "\n"
+#~ "Thank you."
+#~ msgstr ""
+#~ "ప్రియమైన %(name)s,\n"
+#~ "\n"
+#~ "%(date)s న %(mode)s ద్వారా మీ %(amount)s చెల్లింపును మేము అందుకున్నాము.\n"
+#~ "ఈ ఇన్‌వాయిస్‌పై మిగిలిన బాకీ: %(balance)s\n"
+#~ "\n"
+#~ "ధన్యవాదాలు."
+
+#, python-format
+#~ msgid "Your trial ends in %(days)s day(s)"
+#~ msgstr "మీ ట్రయల్ %(days)s రోజు(ల)లో ముగుస్తుంది"
+
+#, python-format
+#~ msgid ""
+#~ "Dear %(name)s,\n"
+#~ "\n"
+#~ "Your free trial of the platform for %(business)s ends in %(days)s day(s), "
+#~ "on %(end_date)s. Choose a plan to keep using the platform without "
+#~ "interruption.\n"
+#~ "\n"
+#~ "Thank you."
+#~ msgstr ""
+#~ "ప్రియమైన %(name)s,\n"
+#~ "\n"
+#~ "%(business)s కోసం ప్లాట్‌ఫారమ్ యొక్క మీ ఉచిత ట్రయల్ %(days)s రోజు(ల)లో, %(end_date)s న "
+#~ "ముగుస్తుంది. అంతరాయం లేకుండా ప్లాట్‌ఫారమ్‌ను ఉపయోగించడం కొనసాగించడానికి ఒక ప్లాన్‌ను ఎంచుకోండి.\n"
+#~ "\n"
+#~ "ధన్యవాదాలు."
+
+#~ msgid "Advance Forfeited"
+#~ msgstr "అడ్వాన్స్ జప్తు చేయబడింది"

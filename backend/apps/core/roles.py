@@ -32,6 +32,10 @@ PERMISSION_MATRIX = {
     'manage_staff_accounts': (Role.SUPER_ADMIN, Role.OWNER),
     'assign_staff_to_properties': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_rooms_beds': _OPS,
+    # Module 18. Read is wider than write: a Receptionist fields "do you have
+    # parking?" at the desk but doesn't decide what the PG offers.
+    'view_property_features': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
+    'manage_property_features': _OPS,
     'manage_residents': _OPS,
     'manage_admissions': _OPS,
     'manage_allocations': _OPS,

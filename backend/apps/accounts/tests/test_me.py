@@ -32,6 +32,7 @@ class MeEndpointTests(AuthAPITestCase):
             sorted([
                 'manage_visitors', 'view_resident_profile',
                 'view_own_notifications', 'manage_notification_preferences',
+                'view_property_features',
             ]),
         )
 

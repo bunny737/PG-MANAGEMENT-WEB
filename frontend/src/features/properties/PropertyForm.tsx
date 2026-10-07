@@ -7,13 +7,21 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ApiError,
+  FEATURE_DRAFT_PREFIX,
   createProperty,
+  createTenantFeature,
   deletePropertyImage,
   getProperty,
+  listFeatureCatalog,
+  listTenantFeatures,
+  replacePropertyFeatures,
   updateProperty,
   uploadPropertyImage,
+  type FeatureCatalogItem,
   type PropertyImage,
+  type TenantFeature,
 } from "@/lib/api";
+import { FeaturePicker, toFeatureRefs, type FeatureSelection } from "./FeaturePicker";
 
 const PROPERTY_TYPES = [
   { value: "pg", key: "pg" },
@@ -55,6 +63,35 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
   const [showSuccess, setShowSuccess] = useState(false);
   const [imageWarning, setImageWarning] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Features offered (create mode only — editing happens on the Features page).
+  const [catalog, setCatalog] = useState<FeatureCatalogItem[]>([]);
+  const [customFeatures, setCustomFeatures] = useState<TenantFeature[]>([]);
+  const [features, setFeatures] = useState<FeatureSelection>({});
+  const [featuresWarning, setFeaturesWarning] = useState("");
+  const [savedPropertyId, setSavedPropertyId] = useState(propertyId ?? "");
+
+  useEffect(() => {
+    if (isEditMode) return;
+    let cancelled = false;
+    // Optional section: if the lists can't load, the form simply goes without it.
+    Promise.all([listFeatureCatalog(), listTenantFeatures()])
+      .then(([catalogData, customData]) => {
+        if (cancelled) return;
+        setCatalog(catalogData);
+        setCustomFeatures(customData);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode]);
+
+  const handleCreateCustomFeature = async (label: string) => {
+    const feature = await createTenantFeature(label);
+    setCustomFeatures((prev) => (prev.some((f) => f.id === feature.id) ? prev : [...prev, feature]));
+    return feature;
+  };
 
   useEffect(() => {
     if (!propertyId) return;
@@ -125,6 +162,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
 
     setErrors({});
     setImageWarning("");
+    setFeaturesWarning("");
     setIsLoading(true);
 
     try {
@@ -150,6 +188,17 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         setImageWarning(
           t("form.errPhotosPartial", { count: failedCount, total: images.length })
         );
+      }
+
+      setSavedPropertyId(property.id);
+      if (!isEditMode && Object.keys(features).length > 0) {
+        try {
+          await replacePropertyFeatures(property.id, { building: null, items: toFeatureRefs(features) });
+        } catch {
+          // The PG exists; keep the selection so the Features page can pick it up.
+          sessionStorage.setItem(FEATURE_DRAFT_PREFIX + property.id, JSON.stringify(features));
+          setFeaturesWarning(t("features.createPartialWarning"));
+        }
       }
 
       setIsLoading(false);
@@ -216,6 +265,14 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             </p>
             {imageWarning && (
               <p className="text-xs text-status-critical mb-6 leading-relaxed">{imageWarning}</p>
+            )}
+            {featuresWarning && (
+              <p className="text-xs text-status-critical mb-2 leading-relaxed">
+                {featuresWarning}{" "}
+                <Link href={`/properties/${savedPropertyId}/features`} className="font-semibold underline">
+                  {t("features.setUpNow")}
+                </Link>
+              </p>
             )}
             <button
               onClick={handleCloseModal}
@@ -399,6 +456,42 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               </div>
             </div>
           </div>
+
+          {isEditMode && propertyId ? (
+            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-ink-faint">{t("features.createSectionTitle")}</h2>
+                <p className="text-xs text-ink-muted mt-1">{t("features.manageFromPageHint")}</p>
+              </div>
+              <Link
+                href={`/properties/${propertyId}/features`}
+                className="rounded-xl border border-border bg-surface-page px-4 py-2 text-xs font-bold text-ink hover:bg-surface-card transition-colors"
+              >
+                {t("features.manageFromPage")}
+              </Link>
+            </div>
+          ) : (
+            catalog.length > 0 && (
+              <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="border-b border-border pb-2.5">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-ink-faint">
+                    {t("features.createSectionTitle")}{" "}
+                    <span className="normal-case text-ink-faint font-normal">{t("form.optionalText")}</span>
+                  </h2>
+                  <p className="text-xs text-ink-muted mt-1">{t("features.createSectionHint")}</p>
+                </div>
+                <FeaturePicker
+                  catalog={catalog}
+                  customFeatures={customFeatures}
+                  value={features}
+                  onChange={setFeatures}
+                  onCreateCustom={handleCreateCustomFeature}
+                  disabled={isLoading}
+                  variant="compact"
+                />
+              </div>
+            )
+          )}
         </div>
 
         {/* Right Column: Image uploads */}

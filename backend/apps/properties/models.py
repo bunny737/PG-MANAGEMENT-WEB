@@ -1,8 +1,10 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
@@ -284,3 +286,135 @@ class PropertySettings(TenantModelMixin):
 
     def __str__(self):
         return f'Settings for {self.property.name}'
+
+
+class FeatureCatalog(models.Model):
+    """Platform-curated list of features a PG can offer (Module 18). Global
+    (no RLS), same shape as NotificationTemplate — every tenant sees the same
+    catalogue. Retire a feature with is_active=False; never delete (rows are
+    referenced). Display labels live in `feature_catalog.FEATURE_LABELS`,
+    keyed by `code`. Tenant-specific additions live in TenantFeature."""
+
+    class Category(models.TextChoices):
+        ROOMS = 'rooms', _('Rooms & Furnishing')
+        FOOD = 'food', _('Food & Kitchen')
+        HOUSEKEEPING = 'housekeeping', _('Housekeeping & Laundry')
+        CONNECTIVITY = 'connectivity', _('Internet & Entertainment')
+        UTILITIES = 'utilities', _('Utilities & Comfort')
+        SAFETY = 'safety', _('Safety & Security')
+        RECREATION = 'recreation', _('Recreation & Common Areas')
+        PARKING = 'parking', _('Parking & Transport')
+        SERVICES = 'services', _('Services & Support')
+        ACCESSIBILITY = 'accessibility', _('Accessibility')
+        POLICIES = 'policies', _('Stay Policies')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.SlugField(max_length=50, unique=True)
+    category = models.CharField(max_length=20, choices=Category.choices, db_index=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    # Shortlist shown first in the create-property form.
+    is_popular = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'feature_catalog'
+        ordering = ['category', 'display_order', 'code']
+
+    def __str__(self):
+        return f'{self.code} ({self.category})'
+
+
+class TenantFeature(TenantModelMixin):
+    """A feature the owner typed because it wasn't in FeatureCatalog.
+    Tenant-wide, so it appears as an option on every property of that tenant.
+    `label` is stored as typed — invariant 7 governs UI chrome, not
+    owner-entered data."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    label = models.CharField(max_length=60)
+    # Dedupe key: feature_catalog.normalise(label). Deliberately not a
+    # SlugField/slugify() — slugify(allow_unicode=True) strips Indic vowel
+    # signs, so distinct Telugu labels would collide.
+    slug = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'tenant_features'
+        ordering = ['label']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant_id', 'slug'], name='unique_tenant_feature_slug'),
+        ]
+
+    def __str__(self):
+        return self.label
+
+
+class PropertyFeature(TenantModelMixin):
+    """One selected feature, for the whole PG (building NULL) or for one of
+    its buildings. Exactly one of catalog_feature/tenant_feature is set.
+    All writes go through `feature_services` — the DB can't check that the
+    building belongs to the property or that every FK shares the tenant."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='features')
+    building = models.ForeignKey(
+        Building, on_delete=models.CASCADE, null=True, blank=True, related_name='features',
+    )
+    catalog_feature = models.ForeignKey(
+        FeatureCatalog, on_delete=models.PROTECT, null=True, blank=True, related_name='property_features',
+    )
+    tenant_feature = models.ForeignKey(
+        TenantFeature, on_delete=models.CASCADE, null=True, blank=True, related_name='property_features',
+    )
+    # False only on a building row, where it suppresses the feature inherited
+    # from the property ("Wi-Fi everywhere except Block B").
+    is_available = models.BooleanField(default=True)
+    # Informational only ("Included" vs "Available at extra cost") — never
+    # read by billing; chargeable add-ons go through Admission.addons
+    # (invariant 6).
+    is_paid = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'property_features'
+        ordering = ['created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(catalog_feature__isnull=False, tenant_feature__isnull=True)
+                    | Q(catalog_feature__isnull=True, tenant_feature__isnull=False)
+                ),
+                name='property_feature_catalog_xor_tenant',
+            ),
+            models.CheckConstraint(
+                condition=Q(is_available=True) | Q(building__isnull=False),
+                name='property_feature_suppression_requires_building',
+            ),
+            # nulls_distinct=False so rows with building NULL (and the unused
+            # feature FK NULL) still dedupe — needs Postgres 15+.
+            models.UniqueConstraint(
+                fields=['property', 'building', 'catalog_feature', 'tenant_feature'],
+                nulls_distinct=False,
+                name='unique_property_feature_assignment',
+            ),
+        ]
+
+    def __str__(self):
+        feature = self.catalog_feature.code if self.catalog_feature_id else str(self.tenant_feature)
+        return f'{self.property.name}: {feature}'
+
+    def clean(self):
+        super().clean()
+        if self.building_id and self.building.property_id != self.property_id:
+            raise ValidationError(
+                {'building': _('This building does not belong to the property.')},
+                code='building_not_in_property',
+            )
+        tenant_ids = {self.property.tenant_id}
+        if self.building_id:
+            tenant_ids.add(self.building.tenant_id)
+        if self.tenant_feature_id:
+            tenant_ids.add(self.tenant_feature.tenant_id)
+        if tenant_ids != {self.tenant_id}:
+            raise ValidationError(_('All related records must belong to the same tenant.'))

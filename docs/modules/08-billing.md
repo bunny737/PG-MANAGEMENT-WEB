@@ -188,3 +188,6 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
   of being overwritten. Deleting the advance Payment (identified by
   `ADVANCE_PAYMENT_REFERENCE`) subtracts it from `advance_applied_amount`, so
   `advance_refundable` stays correct for the vacate refund.
+- 2026-10-06  Note for Module 18: `property_features.is_paid` is informational
+  ("Included" vs "Extra cost") and is never read by the invoice engine. Chargeable
+  add-ons still go through invoice line items / the reserved `addons` JSON (invariant 6).

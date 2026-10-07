@@ -4,7 +4,18 @@ from apps.accounts.tests.base import AuthAPITestCase
 from apps.core.roles import Role
 from apps.core.tenancy import tenant_context
 
-from apps.properties.models import Bed, Building, Floor, Property, PropertyStaffAssignment, Room
+from apps.properties.feature_catalog import normalise
+from apps.properties.models import (
+    Bed,
+    Building,
+    FeatureCatalog,
+    Floor,
+    Property,
+    PropertyFeature,
+    PropertyStaffAssignment,
+    Room,
+    TenantFeature,
+)
 
 
 class PropertyAPITestCase(AuthAPITestCase):
@@ -77,4 +88,20 @@ class PropertyAPITestCase(AuthAPITestCase):
         with tenant_context(prop.tenant_id):
             return PropertyStaffAssignment.objects.create(
                 tenant_id=prop.tenant_id, staff=staff, property=prop,
+            )
+
+    @staticmethod
+    def create_tenant_feature(tenant, label='Table tennis', **kwargs):
+        with tenant_context(tenant.id):
+            return TenantFeature.objects.create(
+                tenant_id=tenant.id, label=label, slug=normalise(label), **kwargs,
+            )
+
+    @staticmethod
+    def create_property_feature(prop, code=None, tenant_feature=None, building=None, **kwargs):
+        with tenant_context(prop.tenant_id):
+            return PropertyFeature.objects.create(
+                tenant_id=prop.tenant_id, property=prop, building=building,
+                catalog_feature=FeatureCatalog.objects.get(code=code) if code else None,
+                tenant_feature=tenant_feature, **kwargs,
             )

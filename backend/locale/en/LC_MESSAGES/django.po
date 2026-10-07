@@ -5,696 +5,1363 @@
 msgid ""
 msgstr ""
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-10 21:15-0500\n"
+"POT-Creation-Date: 2026-10-06 12:22-0500\n"
 "Language: en\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: apps/accounts/emails.py:32
 msgid "Verify your email address"
 msgstr ""
 
+#: apps/accounts/emails.py:33
 #, python-format
 msgid "Welcome, %(name)s! Verify your email to activate your account: %(url)s"
 msgstr ""
 
+#: apps/accounts/emails.py:46
 msgid "Reset your password"
 msgstr ""
 
+#: apps/accounts/emails.py:47
 #, python-format
 msgid "Use this link to reset your password: %(url)s"
 msgstr ""
 
+#: apps/accounts/emails.py:61
 #, python-format
 msgid "You have been invited to %(business)s"
 msgstr ""
 
+#: apps/accounts/emails.py:62
 #, python-format
 msgid ""
 "%(name)s, an account was created for you at %(business)s. Set your password "
 "to get started: %(url)s"
 msgstr ""
 
+#: apps/accounts/models.py:19
 msgid "Trial"
 msgstr ""
 
+#: apps/accounts/models.py:20 apps/properties/models.py:23
+#: apps/residents/models.py:30
 msgid "Active"
 msgstr ""
 
+#: apps/accounts/models.py:21
 msgid "Payment Failed"
 msgstr ""
 
+#: apps/accounts/models.py:22
 msgid "Suspended"
 msgstr ""
 
+#: apps/accounts/models.py:23 apps/notifications/models.py:185
 msgid "Cancelled"
 msgstr ""
 
+#: apps/accounts/models.py:26
 msgid "business name"
 msgstr ""
 
+#: apps/accounts/models.py:75
 msgid "email address"
 msgstr ""
 
+#: apps/accounts/serializers.py:39
 msgid "Verify your email address to log in."
 msgstr ""
 
+#: apps/accounts/serializers.py:43 apps/accounts/serializers.py:171
+#: apps/core/authentication.py:26
 msgid "This account is suspended."
 msgstr ""
 
+#: apps/accounts/serializers.py:64 apps/accounts/serializers.py:319
 msgid "An account with this email already exists."
 msgstr ""
 
+#: apps/accounts/serializers.py:71 apps/accounts/serializers.py:284
+#: apps/accounts/serializers.py:326 apps/accounts/serializers.py:365
 msgid "An account with this phone number already exists."
 msgstr ""
 
+#: apps/accounts/serializers.py:118
 msgid "This verification link is invalid or has expired."
 msgstr ""
 
+#: apps/accounts/serializers.py:167
 msgid "No active account found."
 msgstr ""
 
+#: apps/accounts/serializers.py:198
 msgid "The code is incorrect or has expired."
 msgstr ""
 
+#: apps/accounts/serializers.py:232
 msgid "This reset link is invalid or has expired."
 msgstr ""
 
+#: apps/accounts/serializers.py:312 apps/accounts/serializers.py:358
 msgid "Staff accounts must be Manager or Receptionist."
 msgstr ""
 
+#: apps/accounts/views.py:44
 msgid "OK"
 msgstr ""
 
+#: apps/accounts/views.py:56
 msgid "Account created. Check your email to verify your address."
 msgstr ""
 
+#: apps/accounts/views.py:67
 msgid "Email verified. You can log in now."
 msgstr ""
 
+#: apps/accounts/views.py:73
 msgid "If that email is registered, a verification link has been sent."
 msgstr ""
 
+#: apps/accounts/views.py:89
 msgid "If that phone number is registered, a code has been sent."
 msgstr ""
 
+#: apps/accounts/views.py:112
 msgid "If that email is registered, a reset link has been sent."
 msgstr ""
 
+#: apps/accounts/views.py:118
 msgid "Password updated. You can log in now."
 msgstr ""
 
+#: apps/billing/models.py:22 apps/properties/models.py:252
 msgid "Fixed Amount"
 msgstr ""
 
+#: apps/billing/models.py:23 apps/properties/models.py:253
 msgid "Percentage"
 msgstr ""
 
+#: apps/billing/models.py:26
 msgid "Loyalty"
 msgstr ""
 
+#: apps/billing/models.py:27
 msgid "Referral"
 msgstr ""
 
+#: apps/billing/models.py:28
 msgid "Corporate"
 msgstr ""
 
+#: apps/billing/models.py:29
 msgid "Negotiated"
 msgstr ""
 
+#: apps/billing/models.py:30
 msgid "Seasonal"
 msgstr ""
 
+#: apps/billing/models.py:31 apps/operations/models.py:29
+#: apps/residents/models.py:25
 msgid "Other"
 msgstr ""
 
+#: apps/billing/models.py:77 apps/subscriptions/models.py:264
 msgid "Draft"
 msgstr ""
 
+#: apps/billing/models.py:78 apps/subscriptions/models.py:265
 msgid "Issued"
 msgstr ""
 
+#: apps/billing/models.py:79
 msgid "Partially Paid"
 msgstr ""
 
+#: apps/billing/models.py:80 apps/subscriptions/models.py:266
 msgid "Paid"
 msgstr ""
 
+#: apps/billing/models.py:161
 msgid "Accommodation"
 msgstr ""
 
+#: apps/billing/models.py:162
 msgid "Food"
 msgstr ""
 
+#: apps/billing/models.py:163
 msgid "Electricity"
 msgstr ""
 
+#: apps/billing/models.py:164
 msgid "Water"
 msgstr ""
 
+#: apps/billing/models.py:165
 msgid "Laundry"
 msgstr ""
 
+#: apps/billing/models.py:166
 msgid "Add-on Service"
 msgstr ""
 
+#: apps/billing/models.py:167
 msgid "Additional"
 msgstr ""
 
+#: apps/billing/models.py:168
 msgid "Discount"
 msgstr ""
 
+#: apps/billing/models.py:169
 msgid "Late Payment Penalty"
 msgstr ""
 
+#: apps/billing/models.py:194 apps/residents/models.py:114
+#: apps/residents/models.py:263
 msgid "UPI"
 msgstr ""
 
+#: apps/billing/models.py:195 apps/residents/models.py:115
+#: apps/residents/models.py:264
 msgid "Cash"
 msgstr ""
 
+#: apps/billing/models.py:196 apps/residents/models.py:116
+#: apps/residents/models.py:265
 msgid "Bank Transfer"
 msgstr ""
 
+#: apps/billing/models.py:197
 msgid "Card"
 msgstr ""
 
+#: apps/billing/models.py:198
 msgid "Cheque"
 msgstr ""
 
+#: apps/billing/serializers.py:38 apps/billing/serializers.py:146
+#: apps/billing/serializers.py:182 apps/billing/serializers.py:225
+#: apps/operations/serializers.py:54 apps/operations/serializers.py:173
+#: apps/properties/serializers.py:103 apps/properties/serializers.py:161
+#: apps/properties/serializers.py:272 apps/properties/serializers.py:317
+#: apps/residents/serializers.py:116 apps/residents/serializers.py:189
+#: apps/residents/serializers.py:257 apps/residents/serializers.py:332
+#: apps/residents/serializers.py:407 apps/residents/serializers.py:448
 msgid "You are not assigned to this property."
 msgstr ""
 
+#: apps/billing/serializers.py:56
 msgid "Discount value must be greater than zero."
 msgstr ""
 
+#: apps/billing/serializers.py:61
 msgid "A percentage discount cannot exceed 100."
 msgstr ""
 
+#: apps/billing/serializers.py:66
 msgid "valid_until cannot be before valid_from."
 msgstr ""
 
+#: apps/billing/serializers.py:79
 msgid "This resident already has a discount active in this period."
 msgstr ""
 
+#: apps/billing/serializers.py:151
 msgid "Only active residents can be invoiced."
 msgstr ""
 
+#: apps/billing/serializers.py:156
 msgid "This resident is not allocated to a bed."
 msgstr ""
 
+#: apps/billing/serializers.py:161 apps/billing/serializers.py:187
 msgid "period_end cannot be before period_start."
 msgstr ""
 
+#: apps/billing/serializers.py:166 apps/billing/services.py:76
 msgid "This resident already has an invoice for this period."
 msgstr ""
 
+#: apps/billing/serializers.py:232
 msgid "Payment amount must be greater than zero."
 msgstr ""
 
+#: apps/billing/serializers.py:241 apps/billing/services.py:161
 msgid "Payments can only be recorded against an issued invoice."
 msgstr ""
 
+#: apps/billing/serializers.py:247 apps/billing/services.py:167
 msgid "This invoice is already fully paid."
 msgstr ""
 
+#: apps/billing/serializers.py:255 apps/billing/services.py:171
 #, python-format
 msgid "Payment exceeds the outstanding balance of %(balance)s."
 msgstr ""
 
+#: apps/billing/views.py:127
 msgid "Only draft invoices can be modified."
 msgstr ""
 
+#: apps/billing/views.py:247
 msgid "Line item not found."
 msgstr ""
 
+#: apps/core/permissions.py:14
 msgid "You do not have permission to perform this action."
 msgstr ""
 
+#: apps/core/permissions.py:30
 msgid "Only platform administrators can perform this action."
 msgstr ""
 
+#: apps/core/roles.py:11
 msgid "Super Admin"
 msgstr ""
 
+#: apps/core/roles.py:12
 msgid "Owner"
 msgstr ""
 
+#: apps/core/roles.py:13
 msgid "Manager"
 msgstr ""
 
+#: apps/core/roles.py:14
 msgid "Receptionist"
 msgstr ""
 
+#: apps/core/roles.py:15
 msgid "Resident"
 msgstr ""
 
-#, python-format
-msgid "Invoice for %(period)s"
+#: apps/notifications/models.py:13
+msgid "Email"
 msgstr ""
 
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"Your invoice for the period %(start)s to %(end)s has been issued.\n"
-"Amount due: %(total)s\n"
-"Due date: %(due)s\n"
-"\n"
-"Thank you."
+#: apps/notifications/models.py:14
+msgid "SMS"
 msgstr ""
 
-#, python-format
-msgid "Payment receipt — %(amount)s received"
+#: apps/notifications/models.py:15
+msgid "WhatsApp"
 msgstr ""
 
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"We have received your payment of %(amount)s on %(date)s via %(mode)s.\n"
-"Remaining balance on this invoice: %(balance)s\n"
-"\n"
-"Thank you."
+#: apps/notifications/models.py:16
+msgid "Push"
 msgstr ""
 
-#, python-format
-msgid "Your trial ends in %(days)s day(s)"
-msgstr ""
-
-#, python-format
-msgid ""
-"Dear %(name)s,\n"
-"\n"
-"Your free trial of the platform for %(business)s ends in %(days)s day(s), on "
-"%(end_date)s. Choose a plan to keep using the platform without "
-"interruption.\n"
-"\n"
-"Thank you."
-msgstr ""
-
+#: apps/notifications/models.py:28
 msgid "Welcome"
 msgstr ""
 
+#: apps/notifications/models.py:29
 msgid "Trial Expiry Reminder"
 msgstr ""
 
+#: apps/notifications/models.py:30
 msgid "Invoice Issued"
 msgstr ""
 
+#: apps/notifications/models.py:31
 msgid "Payment Receipt"
 msgstr ""
 
+#: apps/notifications/models.py:34 apps/notifications/models.py:184
 msgid "Sent"
 msgstr ""
 
+#: apps/notifications/models.py:35 apps/notifications/models.py:186
+#: apps/subscriptions/models.py:192 apps/subscriptions/models.py:267
 msgid "Failed"
 msgstr ""
 
+#: apps/notifications/models.py:36
 msgid "Skipped"
 msgstr ""
 
+#: apps/notifications/models.py:115
+#, python-format
+msgid "Invalid template syntax: %(error)s"
+msgstr ""
+
+#: apps/notifications/models.py:159
+msgid "Web"
+msgstr ""
+
+#: apps/notifications/models.py:160
+msgid "Android"
+msgstr ""
+
+#: apps/notifications/models.py:161
+msgid "iOS"
+msgstr ""
+
+#: apps/notifications/models.py:183
+msgid "Pending"
+msgstr ""
+
+#: apps/operations/models.py:23
 msgid "Electrical"
 msgstr ""
 
+#: apps/operations/models.py:24
 msgid "Plumbing"
 msgstr ""
 
+#: apps/operations/models.py:25
 msgid "Internet / WiFi"
 msgstr ""
 
+#: apps/operations/models.py:26
 msgid "Housekeeping"
 msgstr ""
 
+#: apps/operations/models.py:27
 msgid "Security"
 msgstr ""
 
+#: apps/operations/models.py:28
 msgid "Furniture"
 msgstr ""
 
+#: apps/operations/models.py:32
 msgid "Low"
 msgstr ""
 
+#: apps/operations/models.py:33
 msgid "Medium"
 msgstr ""
 
+#: apps/operations/models.py:34
 msgid "High"
 msgstr ""
 
+#: apps/operations/models.py:35
 msgid "Urgent"
 msgstr ""
 
+#: apps/operations/models.py:38
 msgid "Open"
 msgstr ""
 
+#: apps/operations/models.py:39
 msgid "Assigned"
 msgstr ""
 
+#: apps/operations/models.py:40
 msgid "In Progress"
 msgstr ""
 
+#: apps/operations/models.py:41
 msgid "Resolved"
 msgstr ""
 
+#: apps/operations/models.py:42
 msgid "Closed"
 msgstr ""
 
+#: apps/operations/serializers.py:119
 msgid "Use the assign action to move a complaint to Assigned."
 msgstr ""
 
+#: apps/operations/serializers.py:123
 #, python-format
 msgid "Cannot move a complaint from %(current)s to %(new)s."
 msgstr ""
 
+#: apps/operations/serializers.py:141
 msgid "This user is not in your tenant."
 msgstr ""
 
+#: apps/operations/serializers.py:144
 msgid "This user does not have complaint-management access."
 msgstr ""
 
+#: apps/operations/serializers.py:148
 msgid "This user is not assigned to the resident's property."
 msgstr ""
 
+#: apps/operations/serializers.py:193
 msgid "Exit time cannot be before entry time."
 msgstr ""
 
+#: apps/operations/views.py:55
 msgid "Only an open complaint can be edited or assigned."
 msgstr ""
 
+#: apps/operations/views.py:176
 msgid "This visitor has already checked out."
 msgstr ""
 
+#: apps/operations/views.py:200
 msgid "This visitor has already been confirmed."
 msgstr ""
 
+#: apps/properties/feature_catalog.py:19
+msgid "Furnished rooms"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:20
+msgid "Cot with mattress"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:21
+msgid "Pillow & bed linen"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:22
+msgid "Cupboard / wardrobe"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:23
+msgid "Study table & chair"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:24
+msgid "Shoe rack"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:25
+msgid "Curtains"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:26
+msgid "Attached bathroom"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:27
+msgid "Common bathroom"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:29
+msgid "Food / mess provided"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:30
+msgid "Breakfast"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:31
+msgid "Lunch"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:32
+msgid "Dinner"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:33
+msgid "Vegetarian food"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:34
+msgid "Non-vegetarian food"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:35
+msgid "Special / diet food"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:36
+msgid "Common dining hall"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:37
+msgid "RO drinking water"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:38
+msgid "Water cooler"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:39
+msgid "24x7 tea & coffee"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:40
+msgid "Common kitchen"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:41
+msgid "Refrigerator"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:42
+msgid "Microwave / induction"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:44
+msgid "Daily room cleaning"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:45
+msgid "Weekly room cleaning"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:46
+msgid "Common-area cleaning"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:47
+msgid "Bathroom cleaning"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:48
+msgid "Laundry service"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:49
+msgid "Washing machine"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:50
+msgid "Ironing"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:51
+msgid "Pest control"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:53
+msgid "Wi-Fi"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:54
+msgid "Common TV"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:55
+msgid "Intercom"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:57
+msgid "Power backup"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:58
+msgid "Hot water / geyser"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:59
+msgid "24x7 water supply"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:60
+msgid "Lift"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:61
+msgid "Solar water heater"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:63
+msgid "CCTV surveillance"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:64
+msgid "Security guard"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:65
+msgid "Biometric / smart access"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:66
+msgid "Visitor entry management"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:67
+msgid "Gated premises"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:68
+msgid "Fire extinguisher"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:69
+msgid "Smoke detector"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:70
+msgid "First-aid kit"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:71
+msgid "Warden on premises"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:73
+msgid "Gym"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:74
+msgid "Terrace access"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:75
+msgid "Common lounge"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:76
+msgid "Indoor games"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:77
+msgid "Reading room"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:78
+msgid "Garden / open space"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:79
+msgid "Swimming pool"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:81
+msgid "Two-wheeler parking"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:82
+msgid "Car parking"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:83
+msgid "Covered parking"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:84
+msgid "Visitor parking"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:85
+msgid "EV charging point"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:87
+msgid "Maintenance / repair service"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:88
+msgid "Parcel collection"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:89
+msgid "24x7 front desk"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:90
+msgid "Caretaker on premises"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:91
+msgid "Doctor on call"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:92
+msgid "Tuck shop / provision store"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:93
+msgid "Shuttle / drop service"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:95
+msgid "Wheelchair accessible"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:96
+msgid "Ramp access"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:98
+msgid "No curfew"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:99
+msgid "Flexible entry timings"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:100
+msgid "Short-term stay"
+msgstr ""
+
+#: apps/properties/feature_catalog.py:141
+msgid "Your features"
+msgstr ""
+
+#: apps/properties/feature_services.py:62 apps/properties/models.py:411
+msgid "This building does not belong to the property."
+msgstr ""
+
+#: apps/properties/feature_services.py:120
+msgid "Give either a feature code or a custom feature, not both."
+msgstr ""
+
+#: apps/properties/feature_services.py:122
+msgid "Each feature needs a code or a custom feature."
+msgstr ""
+
+#: apps/properties/feature_services.py:125
+msgid "Unknown feature."
+msgstr ""
+
+#: apps/properties/feature_services.py:128
+msgid "The same feature is listed more than once."
+msgstr ""
+
+#: apps/properties/feature_services.py:145
+msgid "A feature can only be marked unavailable for a specific building."
+msgstr ""
+
+#: apps/properties/feature_services.py:149
+msgid "Too many features."
+msgstr ""
+
+#: apps/properties/feature_services.py:165
+msgid "This feature is no longer available."
+msgstr ""
+
+#: apps/properties/feature_services.py:168
+msgid ""
+"Only a feature offered by the whole PG can be marked unavailable for a "
+"building."
+msgstr ""
+
+#: apps/properties/feature_services.py:210
+msgid "Enter a feature name."
+msgstr ""
+
+#: apps/properties/feature_services.py:212
+msgid "Feature name is too long."
+msgstr ""
+
+#: apps/properties/feature_services.py:216
+msgid "This feature is already in the standard list."
+msgstr ""
+
+#: apps/properties/feature_services.py:247
+#: apps/properties/feature_services.py:255
+msgid "You already have a feature with this name."
+msgstr ""
+
+#: apps/properties/feature_services.py:269
+msgid "Remove this feature from your properties before deleting it."
+msgstr ""
+
+#: apps/properties/models.py:17
 msgid "Boys Hostel"
 msgstr ""
 
+#: apps/properties/models.py:18
 msgid "Girls Hostel"
 msgstr ""
 
+#: apps/properties/models.py:19
 msgid "PG"
 msgstr ""
 
+#: apps/properties/models.py:20
 msgid "Co-Living Space"
 msgstr ""
 
+#: apps/properties/models.py:24
 msgid "Inactive"
 msgstr ""
 
+#: apps/properties/models.py:111
 msgid "1-sharing"
 msgstr ""
 
+#: apps/properties/models.py:112
 msgid "2-sharing"
 msgstr ""
 
+#: apps/properties/models.py:113
 msgid "3-sharing"
 msgstr ""
 
+#: apps/properties/models.py:114
 msgid "4-sharing"
 msgstr ""
 
+#: apps/properties/models.py:115
 msgid "5-sharing"
 msgstr ""
 
+#: apps/properties/models.py:116
 msgid "6-sharing"
 msgstr ""
 
+#: apps/properties/models.py:117
 msgid "7-sharing"
 msgstr ""
 
+#: apps/properties/models.py:118
 msgid "8-sharing"
 msgstr ""
 
+#: apps/properties/models.py:121
 msgid "AC"
 msgstr ""
 
+#: apps/properties/models.py:122
 msgid "Non-AC"
 msgstr ""
 
+#: apps/properties/models.py:125 apps/properties/models.py:176
 msgid "Available"
 msgstr ""
 
+#: apps/properties/models.py:126 apps/properties/models.py:177
 msgid "Occupied"
 msgstr ""
 
+#: apps/properties/models.py:127 apps/properties/models.py:178
+#: apps/residents/models.py:29
 msgid "Reserved"
 msgstr ""
 
+#: apps/properties/models.py:128 apps/properties/models.py:179
 msgid "Maintenance"
 msgstr ""
 
+#: apps/properties/models.py:247
 msgid "Immediately"
 msgstr ""
 
+#: apps/properties/models.py:248
 msgid "Next Billing Cycle"
 msgstr ""
 
+#: apps/properties/models.py:251
 msgid "No Penalty"
 msgstr ""
 
+#: apps/properties/models.py:256
 msgid "Full Invoice Amount"
 msgstr ""
 
+#: apps/properties/models.py:257
 msgid "Outstanding Balance Only"
 msgstr ""
 
+#: apps/properties/models.py:260
 msgid "One-time"
 msgstr ""
 
+#: apps/properties/models.py:261 apps/residents/models.py:105
 msgid "Monthly"
 msgstr ""
 
+#: apps/properties/models.py:299
+msgid "Rooms & Furnishing"
+msgstr ""
+
+#: apps/properties/models.py:300
+msgid "Food & Kitchen"
+msgstr ""
+
+#: apps/properties/models.py:301
+msgid "Housekeeping & Laundry"
+msgstr ""
+
+#: apps/properties/models.py:302
+msgid "Internet & Entertainment"
+msgstr ""
+
+#: apps/properties/models.py:303
+msgid "Utilities & Comfort"
+msgstr ""
+
+#: apps/properties/models.py:304
+msgid "Safety & Security"
+msgstr ""
+
+#: apps/properties/models.py:305
+msgid "Recreation & Common Areas"
+msgstr ""
+
+#: apps/properties/models.py:306
+msgid "Parking & Transport"
+msgstr ""
+
+#: apps/properties/models.py:307
+msgid "Services & Support"
+msgstr ""
+
+#: apps/properties/models.py:308
+msgid "Accessibility"
+msgstr ""
+
+#: apps/properties/models.py:309
+msgid "Stay Policies"
+msgstr ""
+
+#: apps/properties/models.py:420
+msgid "All related records must belong to the same tenant."
+msgstr ""
+
+#: apps/properties/serializers.py:282
 msgid "This room already has its full sharing-type capacity of beds."
 msgstr ""
 
+#: apps/properties/serializers.py:329
+msgid "Room number is too long to auto-create beds."
+msgstr ""
+
+#: apps/properties/serializers.py:398
 msgid "A penalty value is required when a penalty type is set."
 msgstr ""
 
+#: apps/properties/serializers.py:403
 msgid "A percentage penalty must be between 0 and 100."
 msgstr ""
 
+#: apps/properties/views.py:52
 msgid "You do not have access to properties."
 msgstr ""
 
+#: apps/properties/views.py:136
 msgid "An image file is required."
 msgstr ""
 
+#: apps/properties/views.py:288
 msgid "Cannot delete a building that still has floors."
 msgstr ""
 
+#: apps/properties/views.py:312
 msgid "Cannot delete a floor that still has rooms."
 msgstr ""
 
+#: apps/properties/views.py:336
 msgid "Cannot delete a room that still has beds."
 msgstr ""
 
+#: apps/properties/views.py:360
 msgid "Cannot delete a bed that is occupied or reserved."
 msgstr ""
 
+#: apps/reporting/views.py:20
 #, python-format
 msgid "filetype must be one of: %(formats)s."
 msgstr ""
 
+#: apps/reporting/views.py:37
 msgid "Resident List"
 msgstr ""
 
+#: apps/reporting/views.py:51
 msgid "Payment History"
 msgstr ""
 
+#: apps/reporting/views.py:65
 msgid "Outstanding Dues"
 msgstr ""
 
+#: apps/reporting/views.py:79
 msgid "Occupancy Report"
 msgstr ""
 
+#: apps/residents/models.py:23
 msgid "Male"
 msgstr ""
 
+#: apps/residents/models.py:24
 msgid "Female"
 msgstr ""
 
+#: apps/residents/models.py:28
 msgid "Inquiry"
 msgstr ""
 
+#: apps/residents/models.py:31
 msgid "Notice Period"
 msgstr ""
 
+#: apps/residents/models.py:32 apps/residents/services.py:410
 msgid "Vacated"
 msgstr ""
 
+#: apps/residents/models.py:33
 msgid "Absconded"
 msgstr ""
 
+#: apps/residents/models.py:34 apps/residents/services.py:433
 msgid "Blacklisted"
 msgstr ""
 
+#: apps/residents/models.py:106
 msgid "Weekly"
 msgstr ""
 
+#: apps/residents/models.py:107
 msgid "Daily"
 msgstr ""
 
+#: apps/residents/models.py:110
 msgid "With Food"
 msgstr ""
 
+#: apps/residents/models.py:111
 msgid "Without Food"
 msgstr ""
 
+#: apps/residents/models.py:314
 msgid "Outstanding"
 msgstr ""
 
+#: apps/residents/models.py:315
 msgid "Partially Recovered"
 msgstr ""
 
+#: apps/residents/models.py:316
 msgid "Written Off"
 msgstr ""
 
+#: apps/residents/serializers.py:129
 #, python-format
 msgid "Cannot move a resident from %(current)s to %(new)s."
 msgstr ""
 
+#: apps/residents/serializers.py:171
 msgid "This resident is not ready for check-in — they must be Reserved first."
 msgstr ""
 
+#: apps/residents/serializers.py:177 apps/residents/serializers.py:274
 msgid "This bed is not in the same property as the resident."
 msgstr ""
 
+#: apps/residents/serializers.py:182 apps/residents/serializers.py:284
+#: apps/residents/services.py:66 apps/residents/views.py:145
 msgid "This bed is not available."
 msgstr ""
 
+#: apps/residents/serializers.py:200
+msgid "This field is required when an amount is collected."
+msgstr ""
+
+#: apps/residents/serializers.py:264
 msgid "This resident is not currently allocated to a bed."
 msgstr ""
 
+#: apps/residents/serializers.py:269
 msgid "Only active residents can be transferred."
 msgstr ""
 
+#: apps/residents/serializers.py:279
 msgid "The resident is already in this bed."
 msgstr ""
 
+#: apps/residents/serializers.py:336
 msgid "Only an active resident can give notice to vacate."
 msgstr ""
 
+#: apps/residents/serializers.py:341
 msgid "This resident already has a vacate record."
 msgstr ""
 
+#: apps/residents/serializers.py:364
 msgid "Deduction cannot be negative."
 msgstr ""
 
+#: apps/residents/serializers.py:373
 #, python-format
-msgid "Deduction cannot exceed the advance amount of %(advance)s."
+msgid "Deduction cannot exceed the security deposit of %(deposit)s."
 msgstr ""
 
+#: apps/residents/serializers.py:411
 msgid "Only an active resident can be marked absconded."
 msgstr ""
 
+#: apps/residents/serializers.py:425
 msgid "A note is required to write off dues."
 msgstr ""
 
+#: apps/residents/serializers.py:452
 msgid "This resident cannot be blacklisted from their current status."
 msgstr ""
 
+#: apps/residents/services.py:192 apps/residents/views.py:274
+msgid "This vacate has already been settled."
+msgstr ""
+
+#: apps/residents/services.py:344
 msgid "Inquiry Received"
 msgstr ""
 
+#: apps/residents/services.py:351
 msgid "Room Reserved"
 msgstr ""
 
+#: apps/residents/services.py:358
 msgid "Admission Completed — Checked In"
 msgstr ""
 
+#: apps/residents/services.py:359 apps/residents/services.py:392
 #, python-format
 msgid "Room %(room)s (%(bed)s)"
 msgstr ""
 
+#: apps/residents/services.py:366
 msgid "Invoice Generated"
 msgstr ""
 
+#: apps/residents/services.py:366
 #, python-format
 msgid "Total ₹%(total)s"
 msgstr ""
 
+#: apps/residents/services.py:369
 msgid "Invoice Overdue"
 msgstr ""
 
+#: apps/residents/services.py:370
 #, python-format
 msgid "Balance due ₹%(balance)s"
 msgstr ""
 
+#: apps/residents/services.py:378
 msgid "Partial Payment"
 msgstr ""
 
+#: apps/residents/services.py:380
 msgid "Payment Received"
 msgstr ""
 
+#: apps/residents/services.py:382
 msgid "Remaining Paid"
 msgstr ""
 
+#: apps/residents/services.py:385
 #, python-format
 msgid "₹%(amount)s via %(mode)s"
 msgstr ""
 
+#: apps/residents/services.py:391
 msgid "Transferred"
 msgstr ""
 
+#: apps/residents/services.py:397
 msgid "Complaint Raised"
 msgstr ""
 
+#: apps/residents/services.py:402
 msgid "Notice Given"
 msgstr ""
 
+#: apps/residents/services.py:403
 #, python-format
 msgid "Expected vacate %(date)s"
 msgstr ""
 
+#: apps/residents/services.py:407
 #, python-format
 msgid "Refund ₹%(amount)s"
 msgstr ""
 
+#: apps/residents/services.py:416
 #, python-format
 msgid "Last seen %(date)s"
 msgstr ""
 
+#: apps/residents/services.py:418
 msgid "Marked Absconded"
 msgstr ""
 
-msgid "Advance Forfeited"
+#: apps/residents/services.py:421
+msgid "Security Deposit Forfeited"
 msgstr ""
 
+#: apps/residents/services.py:422
 #, python-format
 msgid "₹%(amount)s applied against dues"
 msgstr ""
 
+#: apps/residents/services.py:426
 msgid "Dues Written Off"
 msgstr ""
 
+#: apps/residents/services.py:427
 #, python-format
 msgid "₹%(amount)s — %(note)s"
 msgstr ""
 
-msgid "This vacate has already been settled."
-msgstr ""
-
+#: apps/residents/views.py:316
 msgid "Dues have already been written off."
 msgstr ""
 
+#: apps/subscriptions/models.py:30
+msgid "Flat monthly"
+msgstr ""
+
+#: apps/subscriptions/models.py:31
+msgid "Per bed monthly"
+msgstr ""
+
+#: apps/subscriptions/models.py:63
+msgid "Flat-monthly plans require a price_per_month."
+msgstr ""
+
+#: apps/subscriptions/models.py:70 apps/subscriptions/models.py:124
+msgid "Flat-monthly plans cannot have bed tiers."
+msgstr ""
+
+#: apps/subscriptions/models.py:76
+msgid ""
+"Per-bed plans cannot also cap properties or residents — billing is already "
+"usage-based."
+msgstr ""
+
+#: apps/subscriptions/models.py:83
+msgid "Per-bed plans require at least one bed tier."
+msgstr ""
+
+#: apps/subscriptions/models.py:87
+msgid "Per-bed plans must have exactly one open-ended tier (up_to_beds=None)."
+msgstr ""
+
+#: apps/subscriptions/models.py:191
 msgid "Success"
 msgstr ""
 
+#: apps/subscriptions/models.py:236
+msgid "Added"
+msgstr ""
+
+#: apps/subscriptions/models.py:237
+msgid "Removed"
+msgstr ""
+
+#: apps/subscriptions/services.py:61
 #, python-format
 msgid "Your plan allows a maximum of %(max)s properties. Upgrade to add more."
 msgstr ""
 
+#: apps/subscriptions/services.py:119
 #, python-format
 msgid ""
 "Your plan allows a maximum of %(max)s active residents per property. Upgrade "
 "to add more."
 msgstr ""
 
+#: apps/subscriptions/services.py:478
+#, python-format
+msgid "%(beds)s beds @ ₹%(rate)s (%(from)s–%(to)s)"
+msgstr ""
+
+#: apps/subscriptions/views.py:52
 msgid "Cannot delete a plan that tenants are subscribed to."
 msgstr ""
 
+#: apps/subscriptions/views.py:149
 msgid "This tenant is already suspended."
 msgstr ""
 
+#: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr ""

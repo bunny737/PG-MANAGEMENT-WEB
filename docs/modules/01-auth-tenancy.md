@@ -178,3 +178,5 @@ serialized on `/auth/me/` as `permissions: [...]`.
   Super Admin) to `PERMISSION_MATRIX` and built the read-only query API over
   `AuditLog` (this module's model + write path are unchanged). See Module
   15's spec.
+- 2026-10-06  Module 18 added `view_property_features` (Owner, Manager, Receptionist) and
+  `manage_property_features` (Owner, Manager) to `PERMISSION_MATRIX`.

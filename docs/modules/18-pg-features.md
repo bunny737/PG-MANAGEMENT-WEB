@@ -181,6 +181,13 @@ Derived facts, lifecycle, access
 46. That 404 comes before any feature validation, so nothing leaks.
 47. `PropertyFeature.clean()` rejects a building from another property.
 
+Platform admin and migrations
+48. A Super Admin (no tenant) gets 403 `tenant_context_required` on every
+    tenant-feature endpoint, and 404 for a PG's features (no visible PGs);
+    nothing reaches the database with a NULL tenant. The catalogue stays readable.
+49. Reversing migration `0007` succeeds and keeps seeded rows and their
+    assignments once a property has selected a seeded feature.
+
 Isolation: the 4-assertion RLS proof for `tenant_features` and
 `property_features`, plus a check that `feature_catalog` is readable with no
 tenant context.
@@ -263,6 +270,16 @@ retire) and seed migrations (add).
 - [DECISION 2026-10-06] Daily and weekly room cleaning are not mutually
   exclusive in the DB or the UI.
 - [DECISION 2026-10-06] Features are not part of Module 17 exports.
+- [DECISION 2026-10-07] Reversing seed migration `0007` is a no-op.
+  `property_features.catalog_feature` is PROTECT, so deleting the seeded rows
+  failed as soon as one property picked a feature, blocking the rollback.
+  Reversing `0006` afterwards drops the tables anyway.
+- [DECISION 2026-10-07] Tenant-feature endpoints require a tenant
+  (`HasTenantContext`). Super Admin stays in `PERMISSION_MATRIX` like every
+  other tenant permission, but has no tenant, so those endpoints answer 403
+  `tenant_context_required` instead of inserting a NULL `tenant_id`. If
+  platform staff ever need to act on a tenant's features, that needs an
+  explicit tenant selector, not an implicit one.
 - [OPEN] Lock-in period has no model anywhere; it is an agreement term with a
   duration, not a feature.
 - [OPEN] "Electricity included in rent" — no property-level model exists and
@@ -284,7 +301,10 @@ retire) and seed migrations (add).
   codes; RLS on the two tenant tables), `feature_catalog.py`,
   `feature_services.py`, catalogue / tenant-feature viewsets, nested
   `/properties/{id}/features/`, two permission codes, hardened admin, Telugu
-  catalogue translations, 45 tests + 9 isolation tests. Frontend:
+  catalogue translations, 49 tests + 9 isolation tests. Frontend:
   `FeaturePicker`, Features page (`/properties/[id]/features`), optional
   section in the Add Property form, `usePermissions()`, removal of the mock
   room `amenities`. Regenerated `docs/erd.png`.
+- 2026-10-07  Review fixes: seed migration reversal is a no-op; tenant-feature endpoints
+  return 403 `tenant_context_required` for Super Admin instead of failing on a NULL
+  tenant. 4 new tests.

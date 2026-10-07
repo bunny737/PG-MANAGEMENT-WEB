@@ -62,12 +62,6 @@ def seed(apps, schema_editor):
             )
 
 
-def unseed(apps, schema_editor):
-    FeatureCatalog = apps.get_model('properties', 'FeatureCatalog')
-    codes = [code for features in FEATURES.values() for code, _popular in features]
-    FeatureCatalog.objects.filter(code__in=codes).delete()
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -75,5 +69,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(seed, unseed),
+        # Reversing is a deliberate no-op: property_features.catalog_feature is
+        # PROTECT, so deleting the seeded rows would fail (and, if forced, wipe
+        # tenants' selections) once any property has picked a feature. Reversing
+        # 0006 afterwards drops the table anyway.
+        migrations.RunPython(seed, migrations.RunPython.noop),
     ]

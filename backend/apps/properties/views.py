@@ -56,6 +56,18 @@ class CanViewProperties(BasePermission):
         return bool(user and user.is_authenticated and user.role in _PROPERTY_VIEW_ROLES)
 
 
+class HasTenantContext(BasePermission):
+    """Tenant-owned endpoints need a tenant. A Super Admin has none (users with
+    that role must have tenant=NULL), so they get a clear 403 instead of a
+    NULL tenant_id reaching a NOT NULL column."""
+
+    message = _('This action needs a tenant account. Platform administrators have none.')
+    code = 'tenant_context_required'
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.tenant_id)
+
+
 def _features_permission(request):
     """Module 18: read is wider than write (a Receptionist answers "do you
     have parking?" but doesn't decide what the PG offers)."""
@@ -231,7 +243,7 @@ class TenantFeatureViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        return [IsAuthenticated(), _features_permission(self.request)()]
+        return [IsAuthenticated(), HasTenantContext(), _features_permission(self.request)()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

@@ -567,3 +567,71 @@ class FeatureConcurrencyTests(TransactionTestCase):
                     .values_list('catalog_feature__code', flat=True)
                 )
             self.assertIn(final, [sorted(codes) for codes in sets])
+
+
+class SuperAdminFeatureTests(FeatureTestCase):
+    """A Super Admin has no tenant, so the tenant-owned feature endpoints have
+    nothing to act on. They must say so (403) rather than crash on a NULL
+    tenant_id."""
+
+    def setUp(self):
+        super().setUp()
+        self.authenticate(self.create_super_admin())
+
+    def assertNoTenantContext(self, response):
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data['code'], 'TENANT_CONTEXT_REQUIRED')
+
+    def test_super_admin_cannot_use_tenant_feature_endpoints(self):
+        feature = self.create_tenant_feature(self.tenant)
+        detail = reverse('tenant-feature-detail', args=[feature.id])
+
+        self.assertNoTenantContext(self.client.get(reverse('tenant-feature-list')))
+        self.assertNoTenantContext(
+            self.client.post(reverse('tenant-feature-list'), {'label': 'Sauna'}, format='json')
+        )
+        self.assertNoTenantContext(self.client.patch(detail, {'label': 'TT'}, format='json'))
+        self.assertNoTenantContext(self.client.delete(detail))
+        with tenant_context(self.tenant.id):
+            self.assertEqual(TenantFeature.objects.get(pk=feature.pk).label, 'Table tennis')
+
+    def test_super_admin_gets_404_for_a_pgs_features(self):
+        # No tenant means no visible properties — same as every other
+        # property endpoint for a Super Admin.
+        self.assertEqual(self.client.get(features_url(self.property)).status_code, 404)
+        self.assertEqual(self.replace([{'code': 'wifi'}]).status_code, 404)
+
+    def test_super_admin_can_still_read_the_catalogue(self):
+        self.assertEqual(self.client.get(reverse('feature-catalog-list')).status_code, 200)
+
+
+class SeedMigrationRollbackTests(TransactionTestCase):
+    """Reversing 0007 must not fail — or delete anything — once a property
+    has selected a seeded feature (the FK is PROTECT)."""
+
+    def _fixture_teardown(self):
+        # Keep migration-seeded tables (feature_catalog, plans, ...) intact.
+        pass
+
+    def setUp(self):
+        self.tenant = PropertyAPITestCase.create_tenant('Rollback Tenant')
+        self.property = PropertyAPITestCase.create_property(self.tenant)
+        PropertyAPITestCase.create_property_feature(self.property, code='wifi')
+
+    def tearDown(self):
+        with tenant_context(is_super_admin=True):
+            Property.objects.filter(pk=self.property.pk).delete()
+        self.tenant.delete()
+
+    def test_reversing_the_seed_migration_keeps_assigned_features(self):
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        executor.migrate([('properties', '0006_feature_catalog_tenant_feature_property_feature')])
+        try:
+            self.assertTrue(FeatureCatalog.objects.filter(code='wifi').exists())
+            with tenant_context(self.tenant.id):
+                self.assertEqual(PropertyFeature.objects.count(), 1)
+        finally:
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())

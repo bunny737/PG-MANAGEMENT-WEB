@@ -14,6 +14,10 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const ACCESS_TOKEN_KEY = "accessToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
+/** Permission codes from /auth/me/ — read through `usePermissions()`. */
+export const PERMISSIONS_KEY = "userPermissions";
+/** sessionStorage prefix for a feature selection that failed to save after a property was created. */
+export const FEATURE_DRAFT_PREFIX = "featureDraft:";
 
 export type ApiErrorBody = Record<string, unknown>;
 
@@ -87,6 +91,11 @@ export function clearSession() {
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");
   localStorage.removeItem("userName");
+  localStorage.removeItem(PERMISSIONS_KEY);
+  // Invariant F7: no tenant data survives logout.
+  for (const key of Object.keys(sessionStorage)) {
+    if (key.startsWith(FEATURE_DRAFT_PREFIX)) sessionStorage.removeItem(key);
+  }
 }
 
 async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
@@ -170,6 +179,7 @@ export async function login(email: string, password: string) {
   const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
   localStorage.setItem("isLoggedIn", "true");
   localStorage.setItem("userRole", me.role);
+  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
   localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
   const effectiveLang = me.language_code || me.tenant?.default_language || "en";
   writeLocaleCookie(effectiveLang);
@@ -853,4 +863,92 @@ export function listAllBeds() {
   return apiFetch<Bed[] | { results: Bed[] }>("/api/v1/beds/").then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+// --- PG features (Module 18) ---
+
+export interface FeatureCatalogItem {
+  id: string;
+  code: string;
+  category: string;
+  category_label: string;
+  label: string;
+  display_order: number;
+  is_popular: boolean;
+  is_active: boolean;
+}
+
+export interface TenantFeature {
+  id: string;
+  label: string;
+  is_active: boolean;
+}
+
+export interface PropertyFeature {
+  id: string;
+  source: "property" | "building";
+  building: string | null;
+  feature_type: "catalog" | "custom";
+  code: string | null;
+  tenant_feature: string | null;
+  label: string;
+  category: string;
+  category_label: string;
+  is_paid: boolean;
+  is_active: boolean;
+}
+
+export interface PropertyFeaturesState {
+  property: string;
+  building: string | null;
+  items: PropertyFeature[];
+  /** Building scope only: inherited features this building does not offer. */
+  excluded: PropertyFeature[];
+  /** Facts already known from the room setup — shown read-only, never edited here. */
+  derived: { sharing_types: number[]; room_categories: string[] };
+}
+
+/** One feature in a save payload: a platform `code` or one of the tenant's own features. */
+export interface FeatureRef {
+  code?: string;
+  tenant_feature?: string;
+  is_paid?: boolean;
+}
+
+export function listFeatureCatalog() {
+  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/").then(
+    (data) => (Array.isArray(data) ? data : data.results)
+  );
+}
+
+export function listTenantFeatures() {
+  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+/** Idempotent: returns the existing feature when one with the same name already exists. */
+export function createTenantFeature(label: string) {
+  return apiFetch<TenantFeature>("/api/v1/tenant-features/", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+}
+
+export function listPropertyFeatures(propertyId: string, buildingId?: string | null) {
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  const query = buildingId ? `?building=${buildingId}` : "";
+  return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/${query}`);
+}
+
+/** Replaces the whole feature set at one scope (the PG, or one building). */
+export function replacePropertyFeatures(
+  propertyId: string,
+  payload: { building: string | null; items: FeatureRef[]; excluded?: FeatureRef[] }
+) {
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

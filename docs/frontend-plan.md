@@ -190,7 +190,8 @@ app/
 ├── (owner)/                    Owner + Manager portal (nav filtered by permission matrix)
 │   ├── dashboard/              occupancy + financial dashboards
 │   ├── properties/[id]/        floors / rooms / beds setup, bed grid
-│   │   └── settings/           Module 2B: transfer rent timing, penalty config
+│   │   ├── settings/           Module 2B: transfer rent timing, penalty config
+│   │   └── features/           Module 18: what the PG offers (catalogue + own features)
 │   ├── residents/[id]/         profile, documents, timeline, discounts
 │   ├── admissions/             pipeline: Inquiry → Visit → Reserved → Admission → Check-in
 │   ├── allocations/            bed board, temporary-allocation list, transfers
@@ -258,6 +259,8 @@ F6. **Invoices render a list of line items.** The invoice detail component itera
     Admission form includes an "Add-on Services" section, hidden in MVP (PRD Module 9).
 F7. **Tenant data never leaks across sessions.** On logout or tenant/user switch: clear
     TanStack Query cache, Zustand stores, service-worker runtime caches, and IndexedDB.
+    Today that also means the cached permission list and any `featureDraft:*`
+    sessionStorage entries (Module 18) — both cleared in `clearSession()`.
 F8. **The frontend never invents transitions.** Action buttons (vacate, abscond, blacklist,
     waive penalty) appear only when the API's serialized `allowed_actions` / permission
     matrix says so.
@@ -369,7 +372,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 |
 | FE-01 | Auth & shell | 🟨 (password login wired to real JWT login, temporary non-BFF client — see Decisions; OTP/signup/reset/BFF proxy/permission-matrix nav still mock) |
-| FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; floor/room/bed builder + bed grid still mock) |
+| FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; floor/room/bed builder + bed grid still mock; Module 18 Features page + optional features section in Add Property wired to real API, gated by `usePermissions()` reading `/auth/me/` permissions) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | ⬜ |
 | FE-05 | Admissions | ⬜ |

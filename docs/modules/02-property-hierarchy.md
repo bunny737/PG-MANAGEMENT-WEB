@@ -9,7 +9,7 @@
 billing/penalty fields deferred to Module 03), Module 3 (Room Management),
 Module 4 (Bed Management), PRD §6 (Property Assignment Rules)
 **Depends on:** 01
-**Blocks:** 03, 04, 13
+**Blocks:** 03, 04, 13, 18
 
 ## Purpose
 Owner builds the Property → Building → Floor → Room → Bed hierarchy for each
@@ -338,3 +338,8 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   Building tests + existing Floor tests updated (51 tests in this app's
   suite; 424 across the whole backend, all passing). Regenerated
   `docs/erd.png`.
+- 2026-10-06  Module 18 (PG Features) hangs `property_features` rows off Property and,
+  optionally, Building. Deleting a Building cascades its own feature rows; they never
+  block the delete (the `building_not_empty` guard still counts floors only). Removed
+  the mock-only room `amenities` field from `frontend/.../mock-properties.ts` — what a
+  PG offers is now real data, see `18-pg-features.md`.

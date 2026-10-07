@@ -5,7 +5,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
@@ -13,17 +13,32 @@ from apps.core.permissions import require_permission
 from apps.core.roles import Role
 from apps.subscriptions.services import check_property_limit
 
-from . import services
-from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from . import feature_services, services
+from .models import (
+    Bed,
+    Building,
+    FeatureCatalog,
+    Floor,
+    Property,
+    PropertyImage,
+    PropertySettings,
+    PropertyStaffAssignment,
+    Room,
+    TenantFeature,
+)
 from .serializers import (
     BedSerializer,
     BuildingSerializer,
+    FeatureCatalogSerializer,
     FloorSerializer,
+    PropertyFeatureSerializer,
+    PropertyFeaturesWriteSerializer,
     PropertyImageSerializer,
     PropertySerializer,
     PropertySettingsSerializer,
     PropertyStaffAssignmentSerializer,
     RoomSerializer,
+    TenantFeatureSerializer,
 )
 
 # manage_properties (PRD §6) only covers Owner/Super Admin, but Manager and
@@ -39,6 +54,26 @@ class CanViewProperties(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         return bool(user and user.is_authenticated and user.role in _PROPERTY_VIEW_ROLES)
+
+
+class HasTenantContext(BasePermission):
+    """Tenant-owned endpoints need a tenant. A Super Admin has none (users with
+    that role must have tenant=NULL), so they get a clear 403 instead of a
+    NULL tenant_id reaching a NOT NULL column."""
+
+    message = _('This action needs a tenant account. Platform administrators have none.')
+    code = 'tenant_context_required'
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.tenant_id)
+
+
+def _features_permission(request):
+    """Module 18: read is wider than write (a Receptionist answers "do you
+    have parking?" but doesn't decide what the PG offers)."""
+    return require_permission(
+        'view_property_features' if request.method in SAFE_METHODS else 'manage_property_features'
+    )
 
 
 class PropertyViewSet(viewsets.ModelViewSet):
@@ -59,6 +94,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), require_permission('manage_properties')()]
         if self.action == 'property_settings':
             return [IsAuthenticated(), require_permission('manage_property_settings')()]
+        if self.action == 'property_features':
+            return [IsAuthenticated(), _features_permission(self.request)()]
         return [CanViewProperties()]
 
     def get_queryset(self):
@@ -150,6 +187,91 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 before=before, after=after, request=request,
             )
         return Response(after)
+
+    @action(detail=True, methods=['get', 'post'], url_path='features', url_name='features')
+    def property_features(self, request, pk=None):
+        """Module 18 — what this PG offers. GET returns every row of the PG,
+        or with ?building=<id> the effective set for that building. POST
+        replaces the whole set at one scope (PUT semantics; this app doesn't
+        route PUT)."""
+        prop = self.get_object()
+        if request.method == 'GET':
+            building = feature_services.get_building(prop, request.query_params.get('building'))
+        else:
+            payload = PropertyFeaturesWriteSerializer(data=request.data)
+            payload.is_valid(raise_exception=True)
+            building = feature_services.replace_features(
+                prop=prop,
+                building_id=payload.validated_data.get('building'),
+                items=payload.validated_data.get('items', []),
+                excluded=payload.validated_data.get('excluded', []),
+                actor=request.user, request=request,
+            )
+        items, excluded, derived = feature_services.feature_state(prop, building)
+        return Response({
+            'property': str(prop.id),
+            'building': str(building.id) if building else None,
+            'items': PropertyFeatureSerializer(items, many=True).data,
+            'excluded': PropertyFeatureSerializer(excluded, many=True).data,
+            'derived': derived,
+        })
+
+
+class FeatureCatalogViewSet(viewsets.ReadOnlyModelViewSet):
+    """The platform's list of features a PG can offer. Not tenant data —
+    managed through Django admin and seed migrations only."""
+
+    serializer_class = FeatureCatalogSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    filterset_fields = ['category', 'is_active']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return FeatureCatalog.objects.none()
+        if self.request.user.role == Role.SUPER_ADMIN:
+            return FeatureCatalog.objects.all()
+        return FeatureCatalog.objects.filter(is_active=True)
+
+
+class TenantFeatureViewSet(viewsets.ModelViewSet):
+    """Features the owner added themselves, reusable across all of the
+    tenant's properties."""
+
+    serializer_class = TenantFeatureSerializer
+    http_method_names = ['get', 'post', 'patch', 'delete']
+    pagination_class = None
+
+    def get_permissions(self):
+        return [IsAuthenticated(), HasTenantContext(), _features_permission(self.request)()]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return TenantFeature.objects.none()
+        return TenantFeature.objects.filter(tenant_id=self.request.user.tenant_id)
+
+    def create(self, request, *args, **kwargs):
+        # 200 (not 201) when the feature already existed: type-to-add is
+        # idempotent so a double-click or stale list can't create a duplicate.
+        feature, created = feature_services.create_tenant_feature(
+            tenant_id=request.user.tenant_id, label=request.data.get('label'),
+            actor=request.user, request=request,
+        )
+        return Response(self.get_serializer(feature).data, status=201 if created else 200)
+
+    def partial_update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        feature = feature_services.update_tenant_feature(
+            serializer.instance,
+            label=serializer.validated_data.get('label'),
+            is_active=serializer.validated_data.get('is_active'),
+            actor=request.user, request=request,
+        )
+        return Response(self.get_serializer(feature).data)
+
+    def perform_destroy(self, instance):
+        feature_services.delete_tenant_feature(instance, actor=self.request.user, request=self.request)
 
 
 class BuildingViewSet(viewsets.ModelViewSet):

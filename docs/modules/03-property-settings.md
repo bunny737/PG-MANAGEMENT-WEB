@@ -108,3 +108,6 @@ Nested action on `PropertyViewSet` (not a standalone router) since it's a
   penalty validation rules, nested `/properties/{id}/settings/` endpoint,
   audit logging, 10 tests. Also widened `manage_property_settings` to
   include Manager (Module 01 correction). Spec rewritten to as-built.
+- 2026-10-06  See also `18-pg-features.md`: Settings are billing *behaviour* (one row per
+  property); Features are *facts* about what the PG offers (0..n rows). Both are nested
+  actions on `PropertyViewSet` — `/settings/` and `/features/`.

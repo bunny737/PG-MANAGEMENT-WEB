@@ -1,0 +1,15 @@
+[
+  {"input": "Wi-Fi", "expected": "wifi"},
+  {"input": "  WIFI  ", "expected": "wifi"},
+  {"input": "wi fi", "expected": "wifi"},
+  {"input": "Table  TENNIS ", "expected": "tabletennis"},
+  {"input": "24x7 Tea & Coffee", "expected": "24x7teacoffee"},
+  {"input": "Non-Veg (paid)", "expected": "nonvegpaid"},
+  {"input": "ＷｉＦｉ", "expected": "wifi"},
+  {"input": "వై-ఫై", "expected": "వైఫై"},
+  {"input": "కిటికీ", "expected": "కిటికీ"},
+  {"input": "కటక", "expected": "కటక"},
+  {"input": "जिम / योग", "expected": "जिमयोग"},
+  {"input": "!!! ---", "expected": ""},
+  {"input": "", "expected": ""}
+]

@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.devices.models import AppInstallation
+
 from .models import NotificationLog, PushSubscription
 from .registry import NOTIFICATION_TYPES, is_optional
 
@@ -45,7 +47,21 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
 
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):
+    # Optional: the mobile app's install UUID (apps.devices). Links the
+    # subscription to that install when it exists; an unknown id is ignored.
+    installation_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = PushSubscription
-        fields = ['id', 'fcm_token', 'device_type', 'last_seen_at']
+        fields = ['id', 'fcm_token', 'device_type', 'installation_id', 'last_seen_at']
         read_only_fields = ['id', 'last_seen_at']
+
+    def validate(self, attrs):
+        # `installation_id` is also the FK attname on the model (an int pk),
+        # so it must be swapped for the resolved instance before save().
+        install_uuid = attrs.pop('installation_id', None)
+        if install_uuid:
+            installation = AppInstallation.objects.filter(installation_id=install_uuid).first()
+            if installation is not None:
+                attrs['installation'] = installation
+        return attrs

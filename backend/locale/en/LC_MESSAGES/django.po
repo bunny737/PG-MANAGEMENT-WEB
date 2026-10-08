@@ -5,7 +5,7 @@
 msgid ""
 msgstr ""
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-06 12:22-0500\n"
+"POT-Creation-Date: 2026-10-08 06:51+0530\n"
 "Language: en\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -45,7 +45,7 @@ msgid "Trial"
 msgstr ""
 
 #: apps/accounts/models.py:20 apps/properties/models.py:23
-#: apps/residents/models.py:30
+#: apps/residents/models.py:31
 msgid "Active"
 msgstr ""
 
@@ -164,7 +164,7 @@ msgid "Seasonal"
 msgstr ""
 
 #: apps/billing/models.py:31 apps/operations/models.py:29
-#: apps/residents/models.py:25
+#: apps/residents/models.py:26
 msgid "Other"
 msgstr ""
 
@@ -220,18 +220,18 @@ msgstr ""
 msgid "Late Payment Penalty"
 msgstr ""
 
-#: apps/billing/models.py:194 apps/residents/models.py:114
-#: apps/residents/models.py:263
+#: apps/billing/models.py:194 apps/residents/models.py:149
+#: apps/residents/models.py:305
 msgid "UPI"
 msgstr ""
 
-#: apps/billing/models.py:195 apps/residents/models.py:115
-#: apps/residents/models.py:264
+#: apps/billing/models.py:195 apps/residents/models.py:150
+#: apps/residents/models.py:306
 msgid "Cash"
 msgstr ""
 
-#: apps/billing/models.py:196 apps/residents/models.py:116
-#: apps/residents/models.py:265
+#: apps/billing/models.py:196 apps/residents/models.py:151
+#: apps/residents/models.py:307
 msgid "Bank Transfer"
 msgstr ""
 
@@ -247,10 +247,10 @@ msgstr ""
 #: apps/billing/serializers.py:182 apps/billing/serializers.py:225
 #: apps/operations/serializers.py:54 apps/operations/serializers.py:173
 #: apps/properties/serializers.py:103 apps/properties/serializers.py:161
-#: apps/properties/serializers.py:272 apps/properties/serializers.py:317
-#: apps/residents/serializers.py:116 apps/residents/serializers.py:189
-#: apps/residents/serializers.py:257 apps/residents/serializers.py:332
-#: apps/residents/serializers.py:407 apps/residents/serializers.py:448
+#: apps/properties/serializers.py:285 apps/properties/serializers.py:330
+#: apps/residents/serializers.py:117 apps/residents/serializers.py:190
+#: apps/residents/serializers.py:258 apps/residents/serializers.py:336
+#: apps/residents/serializers.py:453 apps/residents/serializers.py:494
 msgid "You are not assigned to this property."
 msgstr ""
 
@@ -922,7 +922,7 @@ msgid "Occupied"
 msgstr ""
 
 #: apps/properties/models.py:127 apps/properties/models.py:178
-#: apps/residents/models.py:29
+#: apps/residents/models.py:30
 msgid "Reserved"
 msgstr ""
 
@@ -954,7 +954,7 @@ msgstr ""
 msgid "One-time"
 msgstr ""
 
-#: apps/properties/models.py:261 apps/residents/models.py:105
+#: apps/properties/models.py:261 apps/residents/models.py:140
 msgid "Monthly"
 msgstr ""
 
@@ -1006,19 +1006,19 @@ msgstr ""
 msgid "All related records must belong to the same tenant."
 msgstr ""
 
-#: apps/properties/serializers.py:282
+#: apps/properties/serializers.py:295
 msgid "This room already has its full sharing-type capacity of beds."
 msgstr ""
 
-#: apps/properties/serializers.py:329
+#: apps/properties/serializers.py:342
 msgid "Room number is too long to auto-create beds."
 msgstr ""
 
-#: apps/properties/serializers.py:398
+#: apps/properties/serializers.py:411
 msgid "A penalty value is required when a penalty type is set."
 msgstr ""
 
-#: apps/properties/serializers.py:403
+#: apps/properties/serializers.py:416
 msgid "A percentage penalty must be between 0 and 100."
 msgstr ""
 
@@ -1026,23 +1026,27 @@ msgstr ""
 msgid "You do not have access to properties."
 msgstr ""
 
-#: apps/properties/views.py:136
+#: apps/properties/views.py:64
+msgid "This action needs a tenant account. Platform administrators have none."
+msgstr ""
+
+#: apps/properties/views.py:148
 msgid "An image file is required."
 msgstr ""
 
-#: apps/properties/views.py:288
+#: apps/properties/views.py:300
 msgid "Cannot delete a building that still has floors."
 msgstr ""
 
-#: apps/properties/views.py:312
+#: apps/properties/views.py:324
 msgid "Cannot delete a floor that still has rooms."
 msgstr ""
 
-#: apps/properties/views.py:336
+#: apps/properties/views.py:348
 msgid "Cannot delete a room that still has beds."
 msgstr ""
 
-#: apps/properties/views.py:360
+#: apps/properties/views.py:372
 msgid "Cannot delete a bed that is occupied or reserved."
 msgstr ""
 
@@ -1067,231 +1071,268 @@ msgstr ""
 msgid "Occupancy Report"
 msgstr ""
 
-#: apps/residents/models.py:23
+#: apps/residents/models.py:24
 msgid "Male"
 msgstr ""
 
-#: apps/residents/models.py:24
+#: apps/residents/models.py:25
 msgid "Female"
 msgstr ""
 
-#: apps/residents/models.py:28
+#: apps/residents/models.py:29
 msgid "Inquiry"
 msgstr ""
 
-#: apps/residents/models.py:31
+#: apps/residents/models.py:32
 msgid "Notice Period"
 msgstr ""
 
-#: apps/residents/models.py:32 apps/residents/services.py:410
+#: apps/residents/models.py:33 apps/residents/services.py:581
 msgid "Vacated"
 msgstr ""
 
-#: apps/residents/models.py:33
+#: apps/residents/models.py:34
 msgid "Absconded"
 msgstr ""
 
-#: apps/residents/models.py:34 apps/residents/services.py:433
+#: apps/residents/models.py:35 apps/residents/services.py:604
 msgid "Blacklisted"
 msgstr ""
 
-#: apps/residents/models.py:106
+#: apps/residents/models.py:141
 msgid "Weekly"
 msgstr ""
 
-#: apps/residents/models.py:107
+#: apps/residents/models.py:142
 msgid "Daily"
 msgstr ""
 
-#: apps/residents/models.py:110
+#: apps/residents/models.py:145
 msgid "With Food"
 msgstr ""
 
-#: apps/residents/models.py:111
+#: apps/residents/models.py:146
 msgid "Without Food"
 msgstr ""
 
-#: apps/residents/models.py:314
+#: apps/residents/models.py:397
 msgid "Outstanding"
 msgstr ""
 
-#: apps/residents/models.py:315
+#: apps/residents/models.py:398
 msgid "Partially Recovered"
 msgstr ""
 
-#: apps/residents/models.py:316
+#: apps/residents/models.py:399
 msgid "Written Off"
 msgstr ""
 
-#: apps/residents/serializers.py:129
+#: apps/residents/serializers.py:130
 #, python-format
 msgid "Cannot move a resident from %(current)s to %(new)s."
 msgstr ""
 
-#: apps/residents/serializers.py:171
+#: apps/residents/serializers.py:172
 msgid "This resident is not ready for check-in — they must be Reserved first."
 msgstr ""
 
-#: apps/residents/serializers.py:177 apps/residents/serializers.py:274
+#: apps/residents/serializers.py:178 apps/residents/serializers.py:275
 msgid "This bed is not in the same property as the resident."
 msgstr ""
 
-#: apps/residents/serializers.py:182 apps/residents/serializers.py:284
-#: apps/residents/services.py:66 apps/residents/views.py:145
+#: apps/residents/serializers.py:183 apps/residents/serializers.py:285
+#: apps/residents/services.py:66 apps/residents/views.py:166
 msgid "This bed is not available."
 msgstr ""
 
-#: apps/residents/serializers.py:200
+#: apps/residents/serializers.py:201
 msgid "This field is required when an amount is collected."
 msgstr ""
 
-#: apps/residents/serializers.py:264
+#: apps/residents/serializers.py:265
 msgid "This resident is not currently allocated to a bed."
 msgstr ""
 
-#: apps/residents/serializers.py:269
+#: apps/residents/serializers.py:270
 msgid "Only active residents can be transferred."
 msgstr ""
 
-#: apps/residents/serializers.py:279
+#: apps/residents/serializers.py:280
 msgid "The resident is already in this bed."
 msgstr ""
 
-#: apps/residents/serializers.py:336
+#: apps/residents/serializers.py:340 apps/residents/services.py:189
 msgid "Only an active resident can give notice to vacate."
 msgstr ""
 
-#: apps/residents/serializers.py:341
+#: apps/residents/serializers.py:351 apps/residents/services.py:194
 msgid "This resident already has a vacate record."
 msgstr ""
 
-#: apps/residents/serializers.py:364
+#: apps/residents/serializers.py:374
 msgid "Deduction cannot be negative."
 msgstr ""
 
-#: apps/residents/serializers.py:373
+#: apps/residents/serializers.py:383
 #, python-format
 msgid "Deduction cannot exceed the security deposit of %(deposit)s."
 msgstr ""
 
-#: apps/residents/serializers.py:411
+#: apps/residents/serializers.py:404 apps/residents/services.py:331
+msgid "Cancellation date cannot be in the future."
+msgstr ""
+
+#: apps/residents/serializers.py:411 apps/residents/services.py:336
+msgid "A reason is required to cancel notice."
+msgstr ""
+
+#: apps/residents/serializers.py:420 apps/residents/services.py:326
+msgid "Cancellation cannot predate the notice."
+msgstr ""
+
+#: apps/residents/serializers.py:457 apps/residents/services.py:391
 msgid "Only an active resident can be marked absconded."
 msgstr ""
 
-#: apps/residents/serializers.py:425
+#: apps/residents/serializers.py:471
 msgid "A note is required to write off dues."
 msgstr ""
 
-#: apps/residents/serializers.py:452
+#: apps/residents/serializers.py:498 apps/residents/services.py:460
 msgid "This resident cannot be blacklisted from their current status."
 msgstr ""
 
-#: apps/residents/services.py:192 apps/residents/views.py:274
+#: apps/residents/services.py:236 apps/residents/services.py:311
+#: apps/residents/views.py:322
 msgid "This vacate has already been settled."
 msgstr ""
 
-#: apps/residents/services.py:344
+#: apps/residents/services.py:240
+msgid "This notice was cancelled and cannot be settled."
+msgstr ""
+
+#: apps/residents/services.py:248
+msgid "Only a resident in their notice period can be settled."
+msgstr ""
+
+#: apps/residents/services.py:315 apps/residents/views.py:326
+msgid "This notice has already been cancelled."
+msgstr ""
+
+#: apps/residents/services.py:319
+msgid "Only a resident in their notice period can cancel notice."
+msgstr ""
+
+#: apps/residents/services.py:509
 msgid "Inquiry Received"
 msgstr ""
 
-#: apps/residents/services.py:351
+#: apps/residents/services.py:516
 msgid "Room Reserved"
 msgstr ""
 
-#: apps/residents/services.py:358
+#: apps/residents/services.py:523
 msgid "Admission Completed — Checked In"
 msgstr ""
 
-#: apps/residents/services.py:359 apps/residents/services.py:392
+#: apps/residents/services.py:524 apps/residents/services.py:557
 #, python-format
 msgid "Room %(room)s (%(bed)s)"
 msgstr ""
 
-#: apps/residents/services.py:366
+#: apps/residents/services.py:531
 msgid "Invoice Generated"
 msgstr ""
 
-#: apps/residents/services.py:366
+#: apps/residents/services.py:531
 #, python-format
 msgid "Total ₹%(total)s"
 msgstr ""
 
-#: apps/residents/services.py:369
+#: apps/residents/services.py:534
 msgid "Invoice Overdue"
 msgstr ""
 
-#: apps/residents/services.py:370
+#: apps/residents/services.py:535
 #, python-format
 msgid "Balance due ₹%(balance)s"
 msgstr ""
 
-#: apps/residents/services.py:378
+#: apps/residents/services.py:543
 msgid "Partial Payment"
 msgstr ""
 
-#: apps/residents/services.py:380
+#: apps/residents/services.py:545
 msgid "Payment Received"
 msgstr ""
 
-#: apps/residents/services.py:382
+#: apps/residents/services.py:547
 msgid "Remaining Paid"
 msgstr ""
 
-#: apps/residents/services.py:385
+#: apps/residents/services.py:550
 #, python-format
 msgid "₹%(amount)s via %(mode)s"
 msgstr ""
 
-#: apps/residents/services.py:391
+#: apps/residents/services.py:556
 msgid "Transferred"
 msgstr ""
 
-#: apps/residents/services.py:397
+#: apps/residents/services.py:562
 msgid "Complaint Raised"
 msgstr ""
 
-#: apps/residents/services.py:402
+#: apps/residents/services.py:568
 msgid "Notice Given"
 msgstr ""
 
-#: apps/residents/services.py:403
+#: apps/residents/services.py:569
 #, python-format
 msgid "Expected vacate %(date)s"
 msgstr ""
 
-#: apps/residents/services.py:407
+#: apps/residents/services.py:573
+msgid "Notice Cancelled"
+msgstr ""
+
+#: apps/residents/services.py:578
 #, python-format
 msgid "Refund ₹%(amount)s"
 msgstr ""
 
-#: apps/residents/services.py:416
+#: apps/residents/services.py:587
 #, python-format
 msgid "Last seen %(date)s"
 msgstr ""
 
-#: apps/residents/services.py:418
+#: apps/residents/services.py:589
 msgid "Marked Absconded"
 msgstr ""
 
-#: apps/residents/services.py:421
+#: apps/residents/services.py:592
 msgid "Security Deposit Forfeited"
 msgstr ""
 
-#: apps/residents/services.py:422
+#: apps/residents/services.py:593
 #, python-format
 msgid "₹%(amount)s applied against dues"
 msgstr ""
 
-#: apps/residents/services.py:426
+#: apps/residents/services.py:597
 msgid "Dues Written Off"
 msgstr ""
 
-#: apps/residents/services.py:427
+#: apps/residents/services.py:598
 #, python-format
 msgid "₹%(amount)s — %(note)s"
 msgstr ""
 
-#: apps/residents/views.py:316
+#: apps/residents/views.py:100
+msgid "Cancel the notice via the vacate record instead."
+msgstr ""
+
+#: apps/residents/views.py:362
 msgid "Dues have already been written off."
 msgstr ""
 

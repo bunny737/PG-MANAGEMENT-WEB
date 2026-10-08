@@ -27,6 +27,7 @@ from .serializers import (
     ResidentStatusUpdateSerializer,
     TransferCreateSerializer,
     TransferSerializer,
+    VacateCancelSerializer,
     VacateFinalizeSerializer,
     VacateGiveNoticeSerializer,
     VacateSerializer,
@@ -74,11 +75,31 @@ class ResidentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_path='status', url_name='status')
     def change_status(self, request, pk=None):
         with transaction.atomic():
-            resident = self.get_object()
+            # get_object() for the 404 / property scoping / permission checks,
+            # then re-read under a row lock — get_object() locks nothing, and
+            # select_for_update() on this viewset's queryset would fail anyway:
+            # it select_relateds the nullable admission/allocation joins and
+            # PostgreSQL refuses FOR UPDATE on the nullable side of an outer
+            # join. Same lock as services.lock_resident, so a bare status flip
+            # can't interleave with the vacate/absconded workflows.
+            resident = services.lock_resident(self.get_object())
             before_status = resident.status
             serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             new_status = serializer.validated_data['status']
+            # Notice Period -> Active exists so a resident can withdraw their
+            # notice, but that has to go through /vacates/{id}/cancel/ so the
+            # Vacate row is actually closed. A bare flip here would leave an
+            # open vacate attached to an Active resident, which the give-notice
+            # check then reads as "already has a vacate record". Allowed when
+            # there is no open vacate (a data-fix path).
+            if (before_status == Resident.Status.NOTICE_PERIOD
+                    and new_status == Resident.Status.ACTIVE
+                    and resident.open_vacate is not None):
+                raise ValidationError(
+                    {'status': _('Cancel the notice via the vacate record instead.')},
+                    code='open_vacate_exists',
+                )
             # Plan limit (Module 13) — only re-check when this transition is what
             # would newly count the resident (e.g. Reserved -> Active bypassing
             # Admission's own check); Active <-> Notice Period never changes the
@@ -127,8 +148,28 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         bed = serializer.validated_data['bed']
-        resident = serializer.validated_data['resident']
         with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        # Lock order is Resident -> Bed -> Subscription, the same as every other
+        # workflow that writes Resident.status (services.lock_resident). The
+        # resident goes FIRST: change_status takes Resident then Subscription,
+        # so locking Bed -> Subscription here and only touching the resident at
+        # the end let the two deadlock (PATCH holds Resident and waits for
+        # Subscription; this holds Subscription and waits to update Resident).
+        # PostgreSQL aborts one of them with an untranslated error: a 500.
+        #
+        # Re-check the status under the lock too. The serializer's
+        # `resident_not_ready_for_checkin` check ran outside any lock, so a
+        # concurrent PATCH /status/ could activate the resident in between and
+        # both requests would then report success.
+        resident = services.lock_resident(serializer.validated_data['resident'])
+        if not resident.can_transition_to(Resident.Status.ACTIVE):
+            raise ValidationError(
+                {'resident': _(
+                    'This resident is not ready for check-in — they must be Reserved first.'
+                )},
+                code='resident_not_ready_for_checkin',
+            )
 
         # Lock the bed row for the rest of the check-in. The serializer already
         # checked `bed.status == AVAILABLE`, but that read is not held under a
@@ -269,16 +310,41 @@ class VacateViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def finalize(self, request, pk=None):
         vacate = self.get_object()
-        if vacate.is_settled:
-            raise ValidationError(
-                {'detail': _('This vacate has already been settled.')}, code='already_settled'
-            )
+        self._reject_unless_open(vacate)
         serializer = VacateFinalizeSerializer(data=request.data, context={'vacate': vacate})
         serializer.is_valid(raise_exception=True)
         vacate = services.finalize_vacate(
             vacate=vacate, actor=request.user, request=request, **serializer.validated_data
         )
         return Response(VacateSerializer(vacate).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Withdraw the notice — Notice Period -> Active (owner request
+        2026-10-07). The bed, allocation and contracted rent are untouched;
+        see services.cancel_notice."""
+        vacate = self.get_object()
+        self._reject_unless_open(vacate)
+        serializer = VacateCancelSerializer(data=request.data, context={'vacate': vacate})
+        serializer.is_valid(raise_exception=True)
+        vacate = services.cancel_notice(
+            vacate=vacate, actor=request.user, request=request, **serializer.validated_data
+        )
+        return Response(VacateSerializer(vacate).data)
+
+    @staticmethod
+    def _reject_unless_open(vacate):
+        """Fail fast on a closed notice before any payload validation. Both
+        services re-check under a row lock — this is only so the caller gets a
+        400 that names the reason rather than a validation error about dates."""
+        if vacate.is_settled:
+            raise ValidationError(
+                {'detail': _('This vacate has already been settled.')}, code='already_settled'
+            )
+        if vacate.is_cancelled:
+            raise ValidationError(
+                {'detail': _('This notice has already been cancelled.')}, code='already_cancelled'
+            )
 
 
 class AbscondedRecordViewSet(viewsets.ModelViewSet):

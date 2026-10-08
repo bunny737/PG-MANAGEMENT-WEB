@@ -63,12 +63,17 @@ lifecycle (`vacated`/`blacklisted`) instead.
 1. Creating a resident defaults `status=inquiry`; profile PATCH cannot
    change `status` (it's read-only on `ResidentSerializer` by design —
    must go through `/status/`).
-2. Status transitions follow the PRD Module 5 diagram exactly
-   (invariant 8) — `Resident.TRANSITIONS`:
+2. Status transitions follow the PRD Module 5 diagram, plus one owner-added
+   edge (invariant 8) — `Resident.TRANSITIONS`:
    `inquiry→reserved→active→{notice_period, absconded}`,
-   `notice_period→{vacated, blacklisted}`, `absconded→blacklisted`.
+   `notice_period→{vacated, blacklisted, active}`, `absconded→blacklisted`.
    Any other transition (including skipping stages) is rejected with
    `invalid_status_transition`. `vacated`/`blacklisted` are terminal.
+   `notice_period→active` is the cancel-notice edge (owner request
+   2026-10-07, Module 10); on this generic endpoint it is **rejected**
+   (`open_vacate_exists`) while the resident has an open `Vacate`, so the
+   withdrawal goes through `POST /vacates/{id}/cancel/` and the row is
+   actually closed. Allowed here only when there is no open vacate to close.
 3. Only `active` and `notice_period` residents count toward a tenant's
    plan resident limit (invariant 8) — `Resident.COUNTS_TOWARD_PLAN_LIMIT`.
    Nothing enforces the cap itself yet; that's Module 13 (no Plan model
@@ -106,6 +111,15 @@ lifecycle (`vacated`/`blacklisted`) instead.
   transition, including back to `active`.
 - `notice_period → blacklisted` is a valid shortcut (misconduct during
   notice) distinct from the normal `notice_period → vacated` exit.
+- `notice_period → active` (cancel notice) re-checks no plan limit: both
+  statuses are in `COUNTS_TOWARD_PLAN_LIMIT`, so the round trip never changes
+  the tally.
+- `change_status` now takes a `select_for_update(of=('self',))` row lock on the
+  resident (via `residents.services.lock_resident`) so a bare status flip can't
+  interleave with the Module 10 exit workflows. It re-queries by pk after
+  `get_object()` rather than locking this viewset's queryset, which
+  `select_related`s nullable admission/allocation joins — PostgreSQL refuses
+  `FOR UPDATE` on the nullable side of an outer join.
 
 ## Open questions / Decisions
 - [DECISION 2026-07-03] **Confirmed with the product owner:** Resident
@@ -163,3 +177,9 @@ lifecycle (`vacated`/`blacklisted`) instead.
   `advance_refundable`, `room_number`, `bed_number`. All null for a resident
   with no admission. The queryset `select_related`s admission/allocation so
   the list adds no per-row queries.
+- 2026-10-07  Module 10 added the `notice_period -> active` edge (cancel
+  notice, owner request), a row lock on `change_status` via
+  `residents.services.lock_resident`, and a guard rejecting that transition on
+  this generic endpoint while the resident has an open `Vacate` — see that
+  module's 2026-10-07 update for the reasoning and the lock order, which
+  admission (Module 05) now follows too.

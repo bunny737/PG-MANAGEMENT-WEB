@@ -190,6 +190,56 @@ class ExitLifecycleTimelineTests(ActivityTimelineTestCase):
         self.assertIn('Vacated', labels)
         self.assertLess(labels.index('Notice Given'), labels.index('Vacated'))
 
+    def test_repeated_notice_cancel_cycles_all_appear_chronologically(self):
+        """Cancelling a notice returns the resident to Active, so the
+        notice sequence can repeat — the feed shows every cycle, not just the
+        last one."""
+        resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('1000.00'))
+
+        # Cycle 1: notice given, then withdrawn.
+        first = self.client.post(reverse('vacate-list'), {
+            'resident': str(resident.id), 'notice_given_date': (TODAY - timedelta(days=40)).isoformat(),
+        })
+        self.assertEqual(first.status_code, 201, first.data)
+        cancel = self.client.post(reverse('vacate-cancel', args=[first.data['id']]), {
+            'cancelled_date': (TODAY - timedelta(days=35)).isoformat(),
+            'cancellation_reason': 'Changed their mind',
+        })
+        self.assertEqual(cancel.status_code, 200, cancel.data)
+
+        # Cycle 2: notice given again, and this time settled.
+        second = self.client.post(reverse('vacate-list'), {
+            'resident': str(resident.id), 'notice_given_date': (TODAY - timedelta(days=30)).isoformat(),
+        })
+        self.assertEqual(second.status_code, 201, second.data)
+        settle = self.client.post(reverse('vacate-finalize', args=[second.data['id']]), {
+            'actual_vacate_date': TODAY.isoformat(), 'maintenance_deduction': '0.00',
+        })
+        self.assertEqual(settle.status_code, 200, settle.data)
+
+        labels = [e['event'] for e in self._timeline(resident).data]
+        self.assertEqual(labels.count('Notice Given'), 2)
+        self.assertEqual(labels.count('Notice Cancelled'), 1)
+        self.assertEqual(labels.count('Vacated'), 1)
+        # Narrative order: given -> cancelled -> given -> vacated.
+        self.assertLess(labels.index('Notice Cancelled'), labels.index('Vacated'))
+        self.assertLess(labels.index('Notice Given'), labels.index('Notice Cancelled'))
+
+    def test_notice_cancelled_detail_carries_the_reason(self):
+        resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('1000.00'))
+        vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(resident.id), 'notice_given_date': TODAY.isoformat(),
+        }).data
+        self.client.post(reverse('vacate-cancel', args=[vacate['id']]), {
+            'cancellation_reason': 'Job transfer fell through',
+        })
+
+        events = self._timeline(resident).data
+        cancelled = next(e for e in events if e['event'] == 'Notice Cancelled')
+        self.assertEqual(cancelled['detail'], 'Job transfer fell through')
+
     def test_absconded_lifecycle_shows_forfeit_writeoff_and_blacklist(self):
         resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
         self.check_in(resident, self.bed_a, security_deposit_amount=Decimal('2000.00'))

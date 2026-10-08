@@ -426,3 +426,76 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.client.delete(reverse('payment-detail', args=[ordinary.data['id']]))
 
         self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('3000.00'))
+
+
+class BillingAcrossNoticeCancellationTests(BillingAPITestCase):
+    """Cancelling a notice (Module 10) must be invisible to billing. Notice
+    Period is already billable, so the resident is invoiceable before and
+    after, at the same contracted rent — invariant 2, never re-derived from the
+    room's rack rate."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.room = self.create_room(
+            self.create_floor(self.property), room_number='101', sharing_type=4, category='ac',
+            rack_rate_with_food=Decimal('7000.00'), rack_rate_without_food=Decimal('5500.00'),
+        )
+        self.bed = self.create_bed(self.room, bed_number='101-A')
+        self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.check_in(self.resident, self.bed)  # contracted 7000, with food
+        self.authenticate(self.owner)
+
+    def _generate(self, **period):
+        payload = {'resident': str(self.resident.id), **PERIOD}
+        payload.update(period)
+        return self.client.post(reverse('invoice-list'), payload)
+
+    def test_resident_is_billable_at_the_same_rent_before_and_after_cancelling(self):
+        vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-07-01',
+        })
+        self.assertEqual(vacate.status_code, 201, vacate.data)
+
+        during_notice = self._generate()
+        self.assertEqual(during_notice.status_code, 201, during_notice.data)
+
+        cancel = self.client.post(reverse('vacate-cancel', args=[vacate.data['id']]), {
+            'cancellation_reason': 'Resident is staying on',
+        })
+        self.assertEqual(cancel.status_code, 200, cancel.data)
+
+        after_cancel = self._generate(
+            period_start='2026-08-01', period_end='2026-08-31', due_date='2026-08-10',
+        )
+
+        self.assertEqual(after_cancel.status_code, 201, after_cancel.data)
+        # Same contracted rent on both sides of the cancellation.
+        self.assertEqual(during_notice.data['total'], '7000.00')
+        self.assertEqual(after_cancel.data['total'], '7000.00')
+        self.assertEqual(
+            _lines_by_type(after_cancel.data)['accommodation']['amount'], '7000.00'
+        )
+
+    def test_cancelling_does_not_change_the_plan_resident_count(self):
+        """Active and Notice Period both count toward the plan limit, so the
+        round trip must leave the tally untouched."""
+        def counted():
+            with tenant_context(self.tenant.id):
+                return Resident.objects.filter(
+                    property=self.property, status__in=Resident.COUNTS_TOWARD_PLAN_LIMIT,
+                ).count()
+
+        before = counted()
+        vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-07-01',
+        })
+        self.assertEqual(counted(), before)
+
+        self.client.post(reverse('vacate-cancel', args=[vacate.data['id']]), {
+            'cancellation_reason': 'Resident is staying on',
+        })
+
+        self.assertEqual(counted(), before)

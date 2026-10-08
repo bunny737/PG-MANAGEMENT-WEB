@@ -56,10 +56,15 @@ Response: a JSON array, oldest first, each item
    outright.
 6. A `Transfer` names its destination room + bed.
 7. `Complaint Raised` fires once per complaint, at creation.
-8. Exactly one of two exit sequences can appear (Module 04's status machine
-   only allows one): `Notice Given` → `Vacated` (with refund amount), or
-   `Marked Absconded` (+ `Advance Forfeited` if any advance was applied) →
-   optionally `Dues Written Off` → optionally `Blacklisted`.
+8. The exit sequence is either the notice path or the absconded path, never
+   both: `Notice Given` → optionally `Notice Cancelled` → `Vacated` (with
+   refund amount), or `Marked Absconded` (+ `Advance Forfeited` if any advance
+   was applied) → optionally `Dues Written Off` → optionally `Blacklisted`.
+   The notice path can **repeat** (updated 2026-10-07): cancelling a notice
+   returns the resident to Active, so a resident may have several `Vacate` rows
+   and the feed shows every `Notice Given` (→ `Notice Cancelled`) pair before
+   whichever notice finally settles. `Notice Cancelled` carries the
+   cancellation reason as its detail.
 9. Same-day events are ordered by a fixed per-kind weight (assigned in
    narrative order inside `build_activity_timeline`), not insertion order —
    so a day with several events (e.g. Absconded + Advance Forfeited, both
@@ -135,3 +140,10 @@ Response: a JSON array, oldest first, each item
   same-day tie-breaks, both exit-path branches, permission scoping incl.
   Manager property-assignment 404). Full suite (394) green. Spec written to
   as-built.
+- 2026-10-07  Added the `Notice Cancelled` event (Module 10's cancel-notice
+  action) and made the builder iterate **all** of a resident's `Vacate` rows,
+  since the notice sequence can now repeat. Weights renumbered to fit it in:
+  notice_given 8, notice_cancelled 9, vacated 10, absconded 11,
+  deposit_forfeited 12, dues_written_off 13, blacklisted 14 (blacklisted had
+  collided with dues_written_off at 13). Rule 8 rewritten — the "exactly one
+  exit sequence" assumption no longer holds. 2 new tests.

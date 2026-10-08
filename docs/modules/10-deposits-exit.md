@@ -24,7 +24,7 @@ any property under the tenant if the same phone/Aadhaar tries to re-register.
 Table: vacates                                  (RLS enforced, app: apps.residents)
   id                    uuid PK
   tenant_id             uuid              (RLS)
-  resident              OneToOne -> residents.Resident (PROTECT)
+  resident              FK -> residents.Resident (PROTECT, related_name='vacates')
   notice_given_date     date
   expected_vacate_date  date              (notice_given_date + 1 month, auto-calculated)
   actual_vacate_date    date, null        (set when settlement is finalized)
@@ -33,10 +33,19 @@ Table: vacates                                  (RLS enforced, app: apps.residen
   refund_date           date, null
   refund_mode           upi | cash | bank_transfer, blank
   refund_note           text, blank
+  cancelled_date        date, null        (set when the notice is withdrawn)
+  cancellation_reason   text, blank       (mandatory on the cancel action)
+  cancelled_by          FK -> users, null (SET_NULL)
   settled_by            FK -> users, null (SET_NULL)
   created_at / updated_at
+  ordering: notice_given_date, created_at           -- oldest-first
+  constraint unique_open_vacate_per_resident:
+      UNIQUE (resident) WHERE cancelled_date IS NULL AND actual_vacate_date IS NULL
+  constraint vacate_not_both_cancelled_and_settled:
+      CHECK NOT (cancelled_date IS NOT NULL AND actual_vacate_date IS NOT NULL)
   -- refund_amount = security_deposit_amount - maintenance_deduction + advance_refundable,
   -- computed, never stored.
+  -- is_settled / is_cancelled / is_open are computed properties.
 
 Table: absconded_records                        (RLS enforced, app: apps.residents)
   id                    uuid PK
@@ -64,6 +73,18 @@ Table: blacklist_entries                        (RLS enforced, app: apps.residen
   confirmed_by          FK -> users, null (SET_NULL)
   created_at / updated_at
 ```
+**Several rows per resident** (changed 2026-10-07, was OneToOne): cancelling a
+notice closes that row and returns the resident to Active, so a later notice is
+a new row and the withdrawn one stays in history. At most one may be *open*.
+
+`Resident` gained three accessors for reading them, all of which prefer a
+`prefetched_vacates` attribute when the caller supplied one via
+`vacate_prefetch()`:
+- `open_vacate` — the row that is neither cancelled nor settled, or None.
+- `latest_vacate` — the last row, whatever its state.
+- `latest_settled_vacate` — the last **settled** row; what a Vacated resident's
+  move-out date must come from, since `latest_vacate` could be a cancelled one.
+
 Also added this module — two fields on `residents.Admission` (Module 05),
 completing the PRD's advance trio alongside the already-existing
 `advance_amount`:
@@ -77,6 +98,7 @@ completing the PRD's advance trio alongside the already-existing
 GET|POST   /api/v1/vacates/                      list / give notice (Active -> Notice Period)   manage_deposits
 GET        /api/v1/vacates/{id}/                 retrieve
 POST       /api/v1/vacates/{id}/finalize/        move-out settlement (Notice Period -> Vacated) manage_deposits
+POST       /api/v1/vacates/{id}/cancel/          withdraw notice (Notice Period -> Active)      manage_deposits
 
 GET|POST   /api/v1/absconded-records/            list / mark absconded (Active -> Absconded)     manage_deposits
 GET        /api/v1/absconded-records/{id}/       retrieve
@@ -97,13 +119,37 @@ discipline; corrections happen via the dedicated actions (`finalize`,
    resident to `Notice Period`. `expected_vacate_date` is auto-calculated as
    `notice_given_date + 1 month` (PRD "Standard notice period: 1 month"),
    clamped to the last valid day of a shorter month (31 Jan → 28/29 Feb).
-2. A resident can only have **one** `Vacate` row (`vacate_already_exists`).
+2. A resident can only have one **open** `Vacate` row
+   (`vacate_already_exists`) — changed 2026-10-07, was one row ever. Enforced
+   both in the serializer and, under the resident lock, by
+   `unique_open_vacate_per_resident`.
+2a. **Cancel notice** (`POST /vacates/{id}/cancel/`) withdraws the notice:
+   `Notice Period -> Active`, so the resident stays on (owner request
+   2026-10-07). Requires the resident to be in `Notice Period`
+   (`resident_not_in_notice_period`) and the vacate to be open
+   (`already_settled` / `already_cancelled`); `cancellation_reason` is
+   mandatory (`reason_required`, same discipline as `write-off`).
+   `cancelled_date` is caller-supplied, defaults to today, and must be
+   `>= notice_given_date` (`cancelled_before_notice`) and not in the future
+   (`cancelled_date_in_future`) — all re-validated in the service, not only
+   the serializer.
+
+   It deliberately touches **nothing else**: the bed was never released (only
+   `finalize` does that), the `Allocation` and `contracted_rent` are untouched
+   (invariant 2 — never re-derived from the room's rack rate), billing already
+   treats Notice Period exactly like Active so no invoice/proration work
+   applies, and the deposit/advance are only paid out at finalize. The row is
+   kept as history rather than deleted, and a later notice creates a new one.
 3. **Finalize** (`POST /vacates/{id}/finalize/`) is the move-out settlement:
    records `actual_vacate_date`, `maintenance_deduction` (management's
    entry, no fixed formula), frees the bed **immediately** on finalize
    (invariant: bed status flip cascades to Module 02's room-status sync),
    and moves the resident to `Vacated`. Rejected once already settled
-   (`already_settled`).
+   (`already_settled`), once cancelled (`already_cancelled`), or if the
+   resident is no longer in their notice period
+   (`resident_not_in_notice_period`) — the last two added 2026-10-07, without
+   which settling a withdrawn notice would re-vacate an Active resident and
+   free their bed.
 4. `maintenance_deduction` cannot be negative or exceed the admission's
    `security_deposit_amount` (`deduction_exceeds_deposit`) — zero deduction
    (full refund) is the floor. The deduction never comes out of the advance.
@@ -136,9 +182,11 @@ discipline; corrections happen via the dedicated actions (`finalize`,
    Resident. Deliberately not property-scoped, so a Manager assigned only to
    Property B is still warned about a blacklist entry created from Property A
    (PRD: "Blacklist flag is visible across all properties of the tenant").
-10. Give-notice/mark-absconded/finalize/write-off/confirm-blacklist are all
-    audit logged (the specific action plus, where the resident's `status`
-    changes, a paired `resident.status_changed` entry).
+10. Give-notice/cancel-notice/mark-absconded/finalize/write-off/
+    confirm-blacklist are all audit logged (the specific action plus, where the
+    resident's `status` changes, a paired `resident.status_changed` entry).
+    `resident.notice_cancelled` carries `cancelled_date` and
+    `cancellation_reason` in `after`, and the notice's dates in `before`.
 11. `manage_deposits` (Super Admin, Owner, Manager) gates every
     `Vacate`/`AbscondedRecord`/`BlacklistEntry` endpoint; Receptionist gets
     403. `Vacate`/`AbscondedRecord` are scoped to the actor's assigned
@@ -255,3 +303,92 @@ discipline; corrections happen via the dedicated actions (`finalize`,
   `app.is_super_admin` for its transaction. `admissions` is FORCE-RLS and the
   app role is not a superuser, so the first version updated zero rows without
   error. Covered by `DepositMigrationTests`.
+
+## Update 2026-10-07 — cancel notice period (owner request)
+A resident in Notice Period may ask to withdraw their notice and stay on. There
+was no way back: `notice_period` only led to `vacated` or `blacklisted`, so this
+needed a support data-fix.
+
+- [DECISION] **`Vacate` is now a ForeignKey, not a OneToOne, with a partial
+  unique index.** A resident who cancels will realistically give notice again
+  months later, which a OneToOne forbids. The alternatives were deleting the row
+  (destroys the record, against this module's append-only discipline) or keeping
+  the OneToOne and blocking re-notice forever (unacceptable). `cancelled_date` /
+  `cancellation_reason` / `cancelled_by` close a row, and
+  `unique_open_vacate_per_resident` keeps at most one open per resident.
+  `give_notice`'s `vacate_already_exists` check changed meaning accordingly
+  (any row -> any *open* row); without that change no resident could ever give
+  notice twice, which would have silently defeated the whole feature.
+- [DECISION] **No cancellation deadline.** Allowed any time the resident is
+  still in Notice Period and the vacate is unsettled, including after
+  `expected_vacate_date` has passed. Nothing auto-vacates on that date, so an
+  overstaying resident who decides to stay is a real case; blocking it would
+  force a support data-fix, which is what this feature exists to remove.
+- [DECISION] **`cancelled_date` is caller-supplied, defaulting to today.**
+  Matches every other date in this module (`notice_given_date`,
+  `actual_vacate_date`, `absconded_date`, `refund_date`). Backdating is open to
+  any `manage_deposits` user — the same latitude `finalize` already gives on
+  `actual_vacate_date`; no finer-grained date permission exists anywhere in the
+  codebase. Future dates are rejected.
+- [DECISION] **`cancellation_reason` is mandatory**, following the
+  `write-off`/`note_required` precedent: this reverses a lifecycle event, so the
+  audit trail is worth more than the convenience.
+- [BUG FOUND] **`finalize_vacate` would have settled a cancelled notice.** It
+  only checked `is_settled`, and set `resident.status = VACATED` with no
+  transition check at all — so finalizing a withdrawn notice would have
+  re-vacated an Active resident and freed their occupied bed. It now rejects
+  `already_cancelled` and asserts the resident is still in their notice period,
+  both inside the row lock.
+- [DECISION] **One lock order for the exit/status workflows: `Resident` ->
+  `Vacate` -> `Bed`** (`services.lock_resident`). No service locked the resident
+  row before this, so `give_notice`, `cancel_notice`, `finalize_vacate`,
+  `mark_absconded`, `confirm_blacklist` and Module 04's `change_status` all
+  read-then-wrote `status` unguarded. Each now takes
+  `select_for_update(of=('self',))` on the resident first and re-validates
+  inside the lock. `of=('self',)` is required, not cosmetic: the callers'
+  querysets `select_related` the nullable admission/allocation joins and
+  PostgreSQL refuses `FOR UPDATE` on the nullable side of an outer join.
+  This also closes a **pre-existing** race in `give_notice`, where two
+  concurrent calls both passed the unlocked `exists()` check and the loser hit
+  the unique index as an uncaught `IntegrityError` (a 500) instead of a 400.
+- [KNOWN DEVIATION] **`AdmissionViewSet.perform_create` is the one place that
+  does not follow that order.** It locks the `Bed` first, then the Subscription
+  via `check_resident_limit`, then writes `resident.status = ACTIVE` with a bare
+  `save()` (which still takes an implicit row lock) — i.e. `Bed -> Subscription
+  -> Resident`. A latent `Bed <-> Resident` cycle therefore already exists
+  between admission and finalize/mark-absconded; it is narrow in practice (it
+  needs the same resident *and* bed, and `Admission` is OneToOne per resident)
+  but re-admission would widen it. **If a resident lock is ever added there it
+  must be taken before the bed lock.** `Subscription` closes no cycle: it is
+  only ever taken by `change_status` (`Resident -> Subscription`) and admission
+  (`Bed -> Subscription`), never before `Resident` or `Bed`.
+- [DECISION] **Module 04's generic `PATCH /residents/{id}/status/` is guarded
+  for this one transition** (`open_vacate_exists`), unlike the other gaps that
+  module documents as accepted debt. A bare `notice_period -> active` flip would
+  leave an open `Vacate` on an Active resident, which `give_notice` then reads
+  as "already has a vacate record" — locking that resident out of ever giving
+  notice again. Precedent: Module 13 added the plan-limit check to the same
+  method for the same "consequential enough to guard" reason. Still allowed when
+  there is no open vacate (a harmless data-fix path).
+- Cancelling touches **nothing else**, and there are tests asserting so: the bed
+  stays `OCCUPIED` (only `finalize` releases it), the `Allocation` and
+  `contracted_rent` are unchanged (invariant 2 — never re-derived from the
+  room's current rack rate), billing already treats Notice Period exactly like
+  Active so the resident is invoiceable at the same rent on both sides, the
+  deposit/advance are only paid out at finalize, and the plan-limit tally is
+  unchanged (both statuses are in `COUNTS_TOWARD_PLAN_LIMIT`).
+- `BedSerializer.history` (Module 02) now picks the vacate **by state** —
+  `open_vacate` for a Notice Period resident, `latest_settled_vacate` for a
+  Vacated one — because the newest row may be a cancelled notice whose dates
+  must never read as a move-out. It prefetches via `vacate_prefetch()`, and a
+  test asserts the query count does not grow with the number of occupants.
+- 2026-10-07  Built: migration `0008_vacate_cancellation`,
+  `POST /vacates/{id}/cancel/`, `services.cancel_notice`,
+  `services.lock_resident`, the `finalize`/`give_notice` guards, the
+  `change_status` guard, the `Notice Cancelled` timeline event and Telugu
+  strings. 30 new tests (cancel lifecycle, non-disturbance of bed/allocation/
+  rent, re-notice after cancel, both DB constraints, finalize-after-cancel
+  rejection, date/reason validation, audit payloads, permissions + tenant
+  isolation, state-aware occupancy display + N+1 guard, billing across the
+  round trip, and two service-level concurrency tests for cancel-vs-finalize
+  and double give-notice). Full suite (625) green.

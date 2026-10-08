@@ -1,3 +1,4 @@
+import builtins
 import uuid
 from decimal import Decimal
 
@@ -36,12 +37,14 @@ class Resident(TenantModelMixin):
     # PRD Module 5 status-lifecycle diagram — exact edges (invariant 8).
     # Inquiry -> Reserved -> Active -> Notice Period -> Vacated
     #                                ↘ Blacklisted (from Notice Period)
+    #                                ↘ Active (notice cancelled — owner
+    #                                  request 2026-10-07, see Module 10)
     #                      Active -> Absconded -> Blacklisted
     TRANSITIONS = {
         Status.INQUIRY: {Status.RESERVED},
         Status.RESERVED: {Status.ACTIVE},
         Status.ACTIVE: {Status.NOTICE_PERIOD, Status.ABSCONDED},
-        Status.NOTICE_PERIOD: {Status.VACATED, Status.BLACKLISTED},
+        Status.NOTICE_PERIOD: {Status.VACATED, Status.BLACKLISTED, Status.ACTIVE},
         Status.ABSCONDED: {Status.BLACKLISTED},
         Status.VACATED: set(),
         Status.BLACKLISTED: set(),
@@ -91,6 +94,38 @@ class Resident(TenantModelMixin):
 
     def can_transition_to(self, new_status):
         return new_status in self.TRANSITIONS.get(self.status, set())
+
+    def _vacate_rows(self):
+        """Vacates oldest-first. Reads the `prefetched_vacates` attribute when a
+        caller supplied it via Prefetch(to_attr=...) — see vacate_prefetch() — so
+        list endpoints don't issue a query per resident."""
+        prefetched = getattr(self, 'prefetched_vacates', None)
+        if prefetched is not None:
+            return prefetched
+        return list(self.vacates.order_by('notice_given_date', 'created_at'))
+
+    # NB: the `property` builtin is shadowed inside this class body by the
+    # `property` ForeignKey field above, hence builtins.property here.
+    @builtins.property
+    def open_vacate(self):
+        """The one vacate that is neither cancelled nor settled, or None.
+        `unique_open_vacate_per_resident` guarantees there is at most one."""
+        return next((vacate for vacate in self._vacate_rows() if vacate.is_open), None)
+
+    @builtins.property
+    def latest_vacate(self):
+        """The most recent vacate of any state (open, cancelled or settled)."""
+        rows = self._vacate_rows()
+        return rows[-1] if rows else None
+
+    @builtins.property
+    def latest_settled_vacate(self):
+        """The most recent *settled* vacate — what a Vacated resident's move-out
+        date comes from. Deliberately not `latest_vacate`, which for a resident
+        who cancelled a later notice would be a cancelled row."""
+        return next(
+            (vacate for vacate in reversed(self._vacate_rows()) if vacate.is_settled), None
+        )
 
 
 class Admission(TenantModelMixin):
@@ -251,13 +286,20 @@ class Transfer(TenantModelMixin):
 
 class Vacate(TenantModelMixin):
     """Notice-to-vacate + move-out settlement (PRD Module 11 'Vacating
-    Workflow'). One row per resident: created when notice is given
-    (Active -> Notice Period), then completed at move-out
-    (Notice Period -> Vacated) with the maintenance deduction and security
-    deposit refund. `refund_amount` is computed from the admission's security_deposit_amount
-    (minus the deduction) plus any unapplied advance,
-    never stored, so it can't drift if the deduction is corrected before
-    settlement."""
+    Workflow'). Created when notice is given (Active -> Notice Period), then
+    closed either by the move-out settlement (Notice Period -> Vacated, with
+    the maintenance deduction and security deposit refund) or by cancelling
+    the notice (Notice Period -> Active, owner request 2026-10-07).
+
+    Several rows per resident: a resident who cancels a notice and gives
+    another one later gets a second row, so the first notice stays in history
+    (append-only, like the rest of this module). Only one may be *open* at a
+    time — `unique_open_vacate_per_resident` enforces that in the database,
+    not just in the give-notice check.
+
+    `refund_amount` is computed from the admission's security_deposit_amount
+    (minus the deduction) plus any unapplied advance, never stored, so it
+    can't drift if the deduction is corrected before settlement."""
 
     class RefundMode(models.TextChoices):
         UPI = 'upi', _('UPI')
@@ -265,7 +307,7 @@ class Vacate(TenantModelMixin):
         BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='vacate')
+    resident = models.ForeignKey(Resident, on_delete=models.PROTECT, related_name='vacates')
 
     notice_given_date = models.DateField()
     # notice_given_date + 1 month (PRD 'Standard notice period: 1 month').
@@ -279,12 +321,43 @@ class Vacate(TenantModelMixin):
     refund_mode = models.CharField(max_length=15, choices=RefundMode.choices, blank=True)
     refund_note = models.TextField(blank=True)
 
+    # Notice cancelled — the resident stays on. Mutually exclusive with
+    # actual_vacate_date (a notice cannot both be withdrawn and settled);
+    # enforced by `vacate_not_both_cancelled_and_settled`.
+    cancelled_date = models.DateField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='vacates_cancelled',
+    )
+
     settled_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='vacates_settled'
     )
 
     class Meta:
         db_table = 'vacates'
+        # Oldest-first, so Resident.latest_vacate is simply the last row and a
+        # resident's notice history reads chronologically.
+        ordering = ['notice_given_date', 'created_at']
+        constraints = [
+            # At most one open notice per resident. The give-notice check
+            # (`vacate_already_exists`) races without this backstop — two
+            # concurrent "give notice" calls would both pass it.
+            models.UniqueConstraint(
+                fields=['resident'],
+                condition=models.Q(cancelled_date__isnull=True, actual_vacate_date__isnull=True),
+                name='unique_open_vacate_per_resident',
+            ),
+            # A notice is withdrawn or settled, never both. The services
+            # enforce this too, but admin/scripts bypass them.
+            models.CheckConstraint(
+                condition=~models.Q(
+                    cancelled_date__isnull=False, actual_vacate_date__isnull=False
+                ),
+                name='vacate_not_both_cancelled_and_settled',
+            ),
+        ]
 
     def __str__(self):
         return f'Vacate: {self.resident}'
@@ -292,6 +365,16 @@ class Vacate(TenantModelMixin):
     @property
     def is_settled(self):
         return self.actual_vacate_date is not None
+
+    @property
+    def is_cancelled(self):
+        return self.cancelled_date is not None
+
+    @property
+    def is_open(self):
+        """Still running: neither settled nor cancelled. The only state from
+        which finalize or cancel may act."""
+        return not self.is_settled and not self.is_cancelled
 
     @property
     def refund_amount(self):
@@ -368,3 +451,18 @@ class BlacklistEntry(TenantModelMixin):
 
     def __str__(self):
         return f'Blacklisted: {self.phone}'
+
+
+def vacate_prefetch(lookup='vacates'):
+    """Prefetch a resident's vacates into the `prefetched_vacates` attribute
+    that Resident.open_vacate / latest_vacate / latest_settled_vacate read, so
+    a list endpoint resolves them without a query per row.
+
+    `lookup` is the path to the reverse relation from whatever the queryset is
+    rooted at — 'vacates' from Resident, 'resident__vacates' from Admission.
+    """
+    return models.Prefetch(
+        lookup,
+        queryset=Vacate.objects.order_by('notice_given_date', 'created_at'),
+        to_attr='prefetched_vacates',
+    )

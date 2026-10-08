@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -292,6 +293,8 @@ class TransferCreateSerializer(serializers.Serializer):
 class VacateSerializer(serializers.ModelSerializer):
     refund_amount = serializers.SerializerMethodField()
     is_settled = serializers.BooleanField(read_only=True)
+    is_cancelled = serializers.BooleanField(read_only=True)
+    is_open = serializers.BooleanField(read_only=True)
     # Breakdown of refund_amount: deposit - deduction + unapplied advance.
     security_deposit_amount = serializers.SerializerMethodField()
     advance_refundable = serializers.SerializerMethodField()
@@ -303,6 +306,7 @@ class VacateSerializer(serializers.ModelSerializer):
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
             'security_deposit_amount', 'advance_refundable',
+            'cancelled_date', 'cancellation_reason', 'cancelled_by', 'is_cancelled', 'is_open',
             'settled_by', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
@@ -336,7 +340,13 @@ class VacateGiveNoticeSerializer(serializers.Serializer):
                 {'resident': _('Only an active resident can give notice to vacate.')},
                 code='resident_not_active',
             )
-        if Vacate.objects.filter(resident=resident).exists():
+        # Only an *open* notice blocks a new one. A resident whose previous
+        # notice was cancelled (or settled, though they'd be Vacated and caught
+        # above) may give notice again — that's the whole point of allowing
+        # several Vacate rows. Re-checked under a row lock in give_notice.
+        if Vacate.objects.filter(
+            resident=resident, cancelled_date__isnull=True, actual_vacate_date__isnull=True,
+        ).exists():
             raise serializers.ValidationError(
                 {'resident': _('This resident already has a vacate record.')},
                 code='vacate_already_exists',
@@ -373,6 +383,42 @@ class VacateFinalizeSerializer(serializers.Serializer):
                     'Deduction cannot exceed the security deposit of %(deposit)s.'
                 ) % {'deposit': deposit}},
                 code='deduction_exceeds_deposit',
+            )
+        return attrs
+
+
+class VacateCancelSerializer(serializers.Serializer):
+    """Withdraw a notice to vacate (Notice Period -> Active, owner request
+    2026-10-07). `cancelled_date` is caller-supplied, matching every other date
+    in this module (notice_given_date, actual_vacate_date, absconded_date,
+    refund_date), and defaults to today. Backdating is open to any
+    `manage_deposits` user — the same latitude finalize gives on
+    `actual_vacate_date`. All of this is re-validated in cancel_notice()."""
+
+    cancellation_reason = serializers.CharField(allow_blank=False)
+    cancelled_date = serializers.DateField(required=False)
+
+    def validate_cancelled_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError(
+                _('Cancellation date cannot be in the future.'), code='cancelled_date_in_future',
+            )
+        return value
+
+    def validate_cancellation_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                _('A reason is required to cancel notice.'), code='reason_required',
+            )
+        return value
+
+    def validate(self, attrs):
+        vacate = self.context['vacate']
+        attrs.setdefault('cancelled_date', timezone.localdate())
+        if attrs['cancelled_date'] < vacate.notice_given_date:
+            raise serializers.ValidationError(
+                {'cancelled_date': _('Cancellation cannot predate the notice.')},
+                code='cancelled_before_notice',
             )
         return attrs
 

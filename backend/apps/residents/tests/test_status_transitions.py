@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.urls import reverse
 
 from apps.audit.models import AuditLog
@@ -83,3 +85,54 @@ class ResidentStatusTransitionTests(ResidentAPITestCase):
         response = self.client.patch(status_url(resident), {'status': 'reserved'})
 
         self.assertEqual(response.status_code, 403)
+
+    def test_notice_period_can_return_to_active(self):
+        """Owner request 2026-10-07 — a resident may withdraw their notice.
+        Allowed on this endpoint only when there is no open Vacate row to
+        close (a data-fix path); the test below covers the guarded case."""
+        resident = self.create_resident(self.property, status=Resident.Status.NOTICE_PERIOD)
+
+        response = self.client.patch(status_url(resident), {'status': 'active'})
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['status'], 'active')
+
+    def test_notice_period_to_active_is_blocked_while_a_vacate_is_open(self):
+        """A bare flip here would leave an open Vacate attached to an Active
+        resident, which give-notice then reads as 'already has a vacate
+        record' — locking them out of ever giving notice again. The dedicated
+        /vacates/{id}/cancel/ endpoint is the way through."""
+        bed = self.create_bed(self.create_room(self.create_floor(self.property)), bed_number='101-A')
+        resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.check_in(resident, bed)
+        vacate = self.create_vacate(resident)
+        with tenant_context(self.tenant.id):
+            resident.status = Resident.Status.NOTICE_PERIOD
+            resident.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.patch(status_url(resident), {'status': 'active'})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('status', response.data)
+        with tenant_context(self.tenant.id):
+            resident.refresh_from_db()
+            vacate.refresh_from_db()
+        self.assertEqual(resident.status, Resident.Status.NOTICE_PERIOD)
+        self.assertTrue(vacate.is_open)
+
+    def test_a_settled_vacate_does_not_block_the_generic_flip(self):
+        """Only an *open* vacate guards the transition. A resident whose
+        earlier notice was already settled or cancelled has nothing to close."""
+        bed = self.create_bed(self.create_room(self.create_floor(self.property)), bed_number='102-A')
+        resident = self.create_resident(
+            self.property, phone='9000000009', status=Resident.Status.RESERVED
+        )
+        self.check_in(resident, bed)
+        self.create_vacate(resident, cancelled_date=date(2026, 7, 5))
+        with tenant_context(self.tenant.id):
+            resident.status = Resident.Status.NOTICE_PERIOD
+            resident.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.patch(status_url(resident), {'status': 'active'})
+
+        self.assertEqual(response.status_code, 200, response.data)

@@ -233,23 +233,36 @@ class BedSerializer(serializers.ModelSerializer):
         return None
 
     def get_history(self, obj):
-        from apps.residents.models import Admission
-        admissions = obj.admissions.select_related('resident__vacate').order_by('-joining_date')
+        from apps.residents.models import vacate_prefetch
+        # A resident can have several vacates (a cancelled notice stays in
+        # history), so this prefetches them all into `prefetched_vacates` —
+        # which the Resident accessors below read, keeping this one query
+        # instead of one per admission.
+        admissions = (
+            obj.admissions
+            .select_related('resident')
+            .prefetch_related(vacate_prefetch('resident__vacates'))
+            .order_by('-joining_date')
+        )
         history_list = []
         for adm in admissions:
             res = adm.resident
             initials = f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper()
-            
-            # Resolve moveOut date/status
+
+            # Resolve moveOut date/status. Picked by STATE, not position: the
+            # latest row may be a cancelled notice, whose dates must never be
+            # shown as a move-out.
             move_out = 'Active'
             if res.status == 'vacated':
-                if hasattr(res, 'vacate') and res.vacate.actual_vacate_date:
-                    move_out = res.vacate.actual_vacate_date.strftime('%m/%d/%y')
+                settled = res.latest_settled_vacate
+                if settled is not None:
+                    move_out = settled.actual_vacate_date.strftime('%m/%d/%y')
                 else:
                     move_out = 'Vacated'
             elif res.status == 'notice_period':
-                if hasattr(res, 'vacate'):
-                    move_out = f"Notice (Exp: {res.vacate.expected_vacate_date.strftime('%m/%d/%y')})"
+                open_vacate = res.open_vacate
+                if open_vacate is not None:
+                    move_out = f"Notice (Exp: {open_vacate.expected_vacate_date.strftime('%m/%d/%y')})"
                 else:
                     move_out = 'Notice Period'
             elif res.status != 'active':

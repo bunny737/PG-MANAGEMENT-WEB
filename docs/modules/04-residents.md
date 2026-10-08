@@ -181,5 +181,5 @@ lifecycle (`vacated`/`blacklisted`) instead.
   notice, owner request), a row lock on `change_status` via
   `residents.services.lock_resident`, and a guard rejecting that transition on
   this generic endpoint while the resident has an open `Vacate` — see that
-  module's 2026-10-07 update for the reasoning and the admission lock-order
-  caveat.
+  module's 2026-10-07 update for the reasoning and the lock order, which
+  admission (Module 05) now follows too.

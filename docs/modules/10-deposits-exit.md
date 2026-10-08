@@ -339,8 +339,9 @@ needed a support data-fix.
   re-vacated an Active resident and freed their occupied bed. It now rejects
   `already_cancelled` and asserts the resident is still in their notice period,
   both inside the row lock.
-- [DECISION] **One lock order for the exit/status workflows: `Resident` ->
-  `Vacate` -> `Bed`** (`services.lock_resident`). No service locked the resident
+- [DECISION] **One lock order for every workflow that writes
+  `Resident.status`: `Resident` -> `Vacate` -> `Bed` -> `Subscription`**
+  (`services.lock_resident`). No service locked the resident
   row before this, so `give_notice`, `cancel_notice`, `finalize_vacate`,
   `mark_absconded`, `confirm_blacklist` and Module 04's `change_status` all
   read-then-wrote `status` unguarded. Each now takes
@@ -351,17 +352,29 @@ needed a support data-fix.
   This also closes a **pre-existing** race in `give_notice`, where two
   concurrent calls both passed the unlocked `exists()` check and the loser hit
   the unique index as an uncaught `IntegrityError` (a 500) instead of a 400.
-- [KNOWN DEVIATION] **`AdmissionViewSet.perform_create` is the one place that
-  does not follow that order.** It locks the `Bed` first, then the Subscription
-  via `check_resident_limit`, then writes `resident.status = ACTIVE` with a bare
-  `save()` (which still takes an implicit row lock) — i.e. `Bed -> Subscription
-  -> Resident`. A latent `Bed <-> Resident` cycle therefore already exists
-  between admission and finalize/mark-absconded; it is narrow in practice (it
-  needs the same resident *and* bed, and `Admission` is OneToOne per resident)
-  but re-admission would widen it. **If a resident lock is ever added there it
-  must be taken before the bed lock.** `Subscription` closes no cycle: it is
-  only ever taken by `change_status` (`Resident -> Subscription`) and admission
-  (`Bed -> Subscription`), never before `Resident` or `Bed`.
+- [BUG FOUND + FIXED] **Admission deadlocked against the generic status
+  endpoint, and could double-activate.** `AdmissionViewSet.perform_create`
+  locked `Bed -> Subscription` and only touched the resident at the very end
+  (`resident.save()`, which takes an implicit row lock). Once `change_status`
+  started locking `Resident -> Subscription`, a concurrent `Reserved -> Active`
+  through both paths could deadlock: the PATCH holds the Resident and waits for
+  the Subscription while admission holds the Subscription and waits to update the
+  Resident. PostgreSQL aborts one side with `deadlock detected` and the
+  untranslated error surfaces as a 500. Reproduced before fixing, 8 rounds each.
+  Admission now locks the resident first, re-checks `can_transition_to(ACTIVE)`
+  under that lock (`resident_not_ready_for_checkin`), then the bed, then
+  `check_resident_limit` takes the Subscription — the same order as everything
+  else.
+  A **second defect, same cause**: the "must be Reserved" check lived only in the
+  serializer, outside any lock, so a PATCH that activated the resident in the
+  gap still let admission succeed and both requests reported success. The locked
+  re-check fixes it; exactly one of them now wins and the other gets a 400.
+  This corrects an earlier note in this spec that called admission a
+  "known deviation" and said `Subscription` closes no cycle — that was only true
+  until `change_status` took a resident lock, which is exactly what created it.
+  `Subscription` is taken last on every path (`change_status`: after Resident;
+  admission: after Resident and Bed), so it closes no cycle now. Covered by
+  `test_lock_ordering.py` (real threads, separate connections).
 - [DECISION] **Module 04's generic `PATCH /residents/{id}/status/` is guarded
   for this one transition** (`open_vacate_exists`), unlike the other gaps that
   module documents as accepted debt. A bare `notice_period -> active` flip would

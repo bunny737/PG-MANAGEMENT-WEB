@@ -148,8 +148,28 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         bed = serializer.validated_data['bed']
-        resident = serializer.validated_data['resident']
         with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        # Lock order is Resident -> Bed -> Subscription, the same as every other
+        # workflow that writes Resident.status (services.lock_resident). The
+        # resident goes FIRST: change_status takes Resident then Subscription,
+        # so locking Bed -> Subscription here and only touching the resident at
+        # the end let the two deadlock (PATCH holds Resident and waits for
+        # Subscription; this holds Subscription and waits to update Resident).
+        # PostgreSQL aborts one of them with an untranslated error: a 500.
+        #
+        # Re-check the status under the lock too. The serializer's
+        # `resident_not_ready_for_checkin` check ran outside any lock, so a
+        # concurrent PATCH /status/ could activate the resident in between and
+        # both requests would then report success.
+        resident = services.lock_resident(serializer.validated_data['resident'])
+        if not resident.can_transition_to(Resident.Status.ACTIVE):
+            raise ValidationError(
+                {'resident': _(
+                    'This resident is not ready for check-in — they must be Reserved first.'
+                )},
+                code='resident_not_ready_for_checkin',
+            )
 
         # Lock the bed row for the rest of the check-in. The serializer already
         # checked `bed.status == AVAILABLE`, but that read is not held under a

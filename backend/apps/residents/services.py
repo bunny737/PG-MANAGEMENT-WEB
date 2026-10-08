@@ -153,9 +153,10 @@ def add_one_month(d):
 def lock_resident(resident):
     """Re-read a resident under a row lock, for the exit/status workflows.
 
-    Lock order in this module is **Resident -> Vacate -> Bed**: take this
-    first, validate the re-read `status` inside the lock, then touch the
-    vacate, and write the bed last. Every service here that mutates
+    Lock order for every workflow that writes `Resident.status` is
+    **Resident -> Vacate -> Bed -> Subscription**: take this first, validate the
+    re-read `status` inside the lock, then touch the vacate, then the bed, and
+    let check_resident_limit take the Subscription last. Everything that mutates
     `Resident.status` uses it, so two of them can't interleave on the same
     resident (e.g. cancel-notice racing finalize, or mark-absconded landing on
     a resident someone else just reactivated).
@@ -165,10 +166,11 @@ def lock_resident(resident):
     FOR UPDATE on the nullable side of an outer join — same reason
     subscriptions.services._subscription_for_limit_check narrows its lock.
 
-    NOT taken by apps.residents.views.AdmissionViewSet.perform_create, which
-    locks the Bed first and writes the resident's status last — the one known
-    deviation (see the Module 10 spec). A resident lock added there must be
-    taken BEFORE its bed lock, or the two orders deadlock.
+    Used by the services in this module, ResidentViewSet.change_status and
+    AdmissionViewSet.perform_create. Admission once locked Bed -> Subscription
+    and only touched the resident at the end, which deadlocked against
+    change_status (Resident -> Subscription); see test_lock_ordering.py and the
+    Module 10 spec. Any new code that writes Resident.status must start here.
     """
     return (
         Resident.objects.select_for_update(of=('self',)).get(pk=resident.pk)

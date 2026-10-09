@@ -115,9 +115,14 @@ Authorization: Bearer <access_token>
 
 {
   "fcm_token": "<token from the Firebase SDK>",
-  "device_type": "web" | "android" | "ios"
+  "device_type": "web" | "android" | "ios",
+  "installation_id": "<uuid>"          // optional — Flutter app only
 }
 ```
+- `installation_id` is the app's install UUID (see
+  [modules/19-app-client.md](modules/19-app-client.md)). If an install with that
+  id has been registered via `POST /api/v1/devices/` the subscription is linked to
+  it; an unknown id is ignored. Write-only (not echoed back).
 - Returns **201** with the created row on first registration.
 - Returns **200** if that exact `fcm_token` already exists (re-registering
   the same device upserts — safe to call this every time the client

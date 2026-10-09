@@ -162,6 +162,13 @@ class PushSubscription(TenantModelMixin):
 
     fcm_token = models.CharField(max_length=255, unique=True)
     device_type = models.CharField(max_length=10, choices=DeviceType.choices)
+    # The mobile app install this token came from (apps.devices), when the
+    # client sent its installation_id. SET_NULL: purging stale installs must
+    # not delete a subscription.
+    installation = models.ForeignKey(
+        'devices.AppInstallation', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='push_subscriptions',
+    )
     last_seen_at = models.DateTimeField(auto_now=True)
 
     class Meta:

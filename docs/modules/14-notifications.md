@@ -86,6 +86,7 @@ Table: push_subscriptions                        (RLS enforced, app: apps.notifi
   user                   FK -> accounts.User
   fcm_token               varchar(255), unique
   device_type             web | android | ios
+  installation            FK -> devices.AppInstallation, NULL, SET NULL   (Module 19)
   last_seen_at            datetime, auto_now
 
 Table: scheduled_notifications                    (RLS enforced, app: apps.notifications)  [V2]
@@ -348,6 +349,8 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   email/sms/whatsapp for a consistent polymorphic signature); added
   `docs/push-notifications-integration.md` (web + Flutter FCM setup guide).
   1 new test. Full suite still green.
+- 2026-10-08  `push_subscriptions.installation` FK (→ `devices.AppInstallation`, NULL, SET NULL, migration
+  0007) and optional write-only `installation_id` on the push-subscriptions API — see Module 19.
 - 2026-10-04  Review fixes. (1) `PushSubscriptionViewSet.create` now deletes
   stale rows for the same `fcm_token` (as super admin, since RLS hides other
   tenants') before upserting — a device last used under another tenant/user

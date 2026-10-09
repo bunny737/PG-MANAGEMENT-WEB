@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.audit',
     'apps.reporting',
+    'apps.devices',
 ]
 
 MIDDLEWARE = [
@@ -41,6 +42,10 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Parses X-App-* headers (request.app_client), tags logs/Sentry, and gates
+    # outdated builds (426) / maintenance (503). After LocaleMiddleware so the
+    # error text is translated.
+    'apps.devices.middleware.AppClientMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -127,6 +132,52 @@ REST_FRAMEWORK = {
         'otp_request': '3/min',
         'otp_verify': '10/min',
         'password_reset': '5/min',
+        # Mobile app device registration (apps.devices).
+        'device_register_installation': '30/hour',
+        'device_register_ip': '120/hour',
+    },
+}
+
+# Mobile app version policy / device registration (apps.devices).
+# off = never block; log = only log what WOULD be blocked; on = return
+# 426 (outdated build) / 503 (maintenance) to requests carrying X-App-* headers.
+APP_VERSION_ENFORCEMENT = env('APP_VERSION_ENFORCEMENT', default='log')
+# Optional QA bypass for maintenance: send this value in X-Maintenance-Bypass.
+APP_MAINTENANCE_BYPASS_TOKEN = env('APP_MAINTENANCE_BYPASS_TOKEN', default='')
+# Extra path prefixes (e.g. a health check) exempt from enforcement.
+APP_VERSION_EXEMPT_PREFIXES = env.tuple('APP_VERSION_EXEMPT_PREFIXES', default=())
+DEVICE_REGISTER_MAX_BODY_BYTES = 8 * 1024
+# Retention (privacy): installs unseen this long, and history older than this.
+APP_INSTALLATION_RETENTION_DAYS = env.int('APP_INSTALLATION_RETENTION_DAYS', default=180)
+APP_INSTALLATION_HISTORY_RETENTION_DAYS = env.int('APP_INSTALLATION_HISTORY_RETENTION_DAYS', default=365)
+
+# Server errors and the enforcement "would block" warnings carry the calling
+# app's platform/build/flavor/installation (see apps.devices.client).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'app_client': {'()': 'apps.devices.client.AppClientLogFilter'},
+    },
+    'formatters': {
+        'app': {
+            'format': (
+                '{levelname} {asctime} {name} [app={app_platform}/{app_version}+{app_build} '
+                'flavor={app_flavor} install={app_installation_id}] {message}'
+            ),
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'app_console': {
+            'class': 'logging.StreamHandler',
+            'filters': ['app_client'],
+            'formatter': 'app',
+        },
+    },
+    'loggers': {
+        'django.request': {'handlers': ['app_console'], 'level': 'ERROR', 'propagate': True},
+        'apps': {'handlers': ['app_console'], 'level': 'WARNING', 'propagate': False},
     },
 }
 

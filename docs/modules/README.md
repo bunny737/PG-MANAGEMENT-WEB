@@ -25,6 +25,7 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 16 | Activity Timeline | 16-activity-timeline.md | 3 | 04 | ✅ |
 | 17 | Data Export | 17-export.md | 3 | 04, 08, 09 | ✅ |
 | 18 | PG Features | 18-pg-features.md | 3 | 02 | ✅ |
+| 19 | App Client (version policy, devices, force-update) | 19-app-client.md | 3 | 01, 14, 15 | ✅ |
 
 ## Cross-cutting (enforced in every module — not built once)
 - Tenant isolation + RLS

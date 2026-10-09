@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/v1/',        include('apps.reporting.urls')),
     path('api/v1/',        include('apps.audit.urls')),
     path('api/v1/',        include('apps.notifications.urls')),
+    path('api/v1/',        include('apps.devices.urls')),
 ]
 
 if settings.DEBUG:

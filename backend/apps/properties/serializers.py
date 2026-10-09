@@ -49,12 +49,26 @@ class PropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = [
-            'id', 'name', 'property_type', 'address_line', 'city', 'state', 'country',
-            'contact_number', 'contact_email', 'status',
+            'id', 'name', 'property_type', 'gender_preference',
+            'address_line', 'city', 'state', 'pincode', 'country',
+            'contact_number', 'contact_email', 'latitude', 'longitude', 'status',
             'buildings_count', 'floors_count', 'rooms_count', 'beds_count', 'occupancy_percent',
             'images', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        # Merge with the stored row so a PATCH carrying one coordinate is
+        # judged against what the row would end up holding.
+        latitude = attrs.get('latitude', getattr(self.instance, 'latitude', None))
+        longitude = attrs.get('longitude', getattr(self.instance, 'longitude', None))
+        if (latitude is None) != (longitude is None):
+            missing = 'latitude' if latitude is None else 'longitude'
+            raise serializers.ValidationError(
+                {missing: _('Latitude and longitude must be set together.')},
+                code='coordinates_incomplete',
+            )
+        return attrs
 
     def get_buildings_count(self, obj) -> int:
         return obj.buildings.count()

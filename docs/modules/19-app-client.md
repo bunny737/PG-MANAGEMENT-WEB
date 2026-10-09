@@ -17,6 +17,8 @@ the install (device/OS/app build) for adoption and support, and (3) be
 blocked server-side with a stable code when its build is too old or the
 platform is in maintenance.
 
+Client-side how-to for the Flutter app: [../app-client-flutter-integration.md](../app-client-flutter-integration.md).
+
 Limitation: builds released before this shipped (`0.1.0+1`) send no `X-App-*`
 headers and have no gate — they cannot be force-updated by this mechanism.
 

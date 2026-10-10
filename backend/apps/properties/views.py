@@ -3,14 +3,14 @@ from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
-from apps.core.roles import Role
+from apps.core.roles import Role, permissions_for
 from apps.subscriptions.services import check_property_limit
 
 from . import feature_services, services
@@ -46,6 +46,20 @@ from .serializers import (
 # to (property switcher). Read access is gated by role here; queryset
 # scoping (services.visible_property_ids) enforces the assignment itself.
 _PROPERTY_VIEW_ROLES = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST)
+
+
+_PROPERTY_AUDIT_FIELDS = (
+    'name', 'property_type', 'gender_preference', 'address_line', 'city', 'state',
+    'pincode', 'contact_number', 'contact_email', 'latitude', 'longitude', 'status',
+)
+
+
+def _audit_snapshot(prop):
+    """Editable Property fields as JSON-safe values (coordinates are Decimal)."""
+    return {
+        field: None if getattr(prop, field) is None else str(getattr(prop, field))
+        for field in _PROPERTY_AUDIT_FIELDS
+    }
 
 
 class CanViewProperties(BasePermission):
@@ -90,8 +104,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'property_type']
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'upload_image', 'delete_image'):
+        if self.action in ('create', 'upload_image', 'delete_image'):
             return [IsAuthenticated(), require_permission('manage_properties')()]
+        if self.action in ('update', 'partial_update'):
+            return [IsAuthenticated(), require_permission('edit_properties')()]
         if self.action == 'property_settings':
             return [IsAuthenticated(), require_permission('manage_property_settings')()]
         if self.action == 'property_features':
@@ -125,9 +141,17 @@ class PropertyViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        before = {'name': serializer.instance.name, 'status': serializer.instance.status}
+        # edit_properties lets a Manager edit an assigned property's details;
+        # deactivating it stays with whoever can manage properties.
+        new_status = serializer.validated_data.get('status', serializer.instance.status)
+        if (
+            new_status != serializer.instance.status
+            and 'manage_properties' not in permissions_for(self.request.user.role)
+        ):
+            raise PermissionDenied(_('Only the owner can change a property\'s status.'))
+        before = _audit_snapshot(serializer.instance)
         instance = serializer.save()
-        after = {'name': instance.name, 'status': instance.status}
+        after = _audit_snapshot(instance)
         if before != after:
             audit_log.record(
                 action='property.updated', actor=self.request.user, obj=instance,

@@ -395,16 +395,18 @@ class PropertyStaffAssignmentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.created', actor=self.request.user, obj=instance,
-            after={'staff': instance.staff.email, 'property': instance.property.name},
+            after={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
 
     def perform_destroy(self, instance):
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.removed', actor=self.request.user, obj=instance,
-            before={'staff': instance.staff.email, 'property': instance.property.name},
+            before={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
         instance.delete()

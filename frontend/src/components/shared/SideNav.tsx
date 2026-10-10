@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Building2, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/lib/permissions";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 
 // TODO(FE-13): replace the hardcoded "Owner Portal / Premium Plan" footer
@@ -12,6 +13,11 @@ import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 export function SideNav() {
   const pathname = usePathname();
   const t = useTranslations("common");
+  const { can, ready } = usePermissions();
+
+  const navItems = SIDEBAR_NAV_ITEMS.filter(
+    (item) => !item.permission || (ready && can(item.permission))
+  );
 
   return (
     <nav className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-surface-card md:flex">
@@ -25,7 +31,7 @@ export function SideNav() {
       </div>
 
       <div className="flex flex-1 flex-col gap-0.5 px-3">
-        {SIDEBAR_NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (

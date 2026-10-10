@@ -233,7 +233,8 @@ class PropertyStaffAssignment(TenantModelMixin):
         ]
 
     def __str__(self):
-        return f'{self.staff.email} -> {self.property.name}'
+        staff_identifier = self.staff.email or self.staff.phone or str(self.staff_id)
+        return f'{staff_identifier} -> {self.property.name}'
 
 
 class PropertySettings(TenantModelMixin):

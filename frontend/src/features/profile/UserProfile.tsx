@@ -76,7 +76,7 @@ export function UserProfile() {
       {errorToast && (
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 p-4 text-rose-800 shadow-xl max-w-sm">
           <div className="text-sm">
-            <span className="font-semibold">Update Failed</span>
+            <span className="font-semibold">{t("errorToast")}</span>
             <p className="text-xs text-rose-700 mt-0.5">{errorToast}</p>
           </div>
         </div>

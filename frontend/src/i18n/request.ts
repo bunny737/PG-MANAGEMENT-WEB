@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE } from './config';
 export const MODULES = [
   'common',
   'auth',
+  'staff',
   'settings',
   'properties',
   'residents',

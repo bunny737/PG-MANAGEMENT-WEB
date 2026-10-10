@@ -5,7 +5,7 @@ from .models import AuditLog
 
 class AuditLogActorSerializer(serializers.Serializer):
     id = serializers.UUIDField()
-    email = serializers.EmailField()
+    email = serializers.EmailField(allow_null=True, required=False)
     role = serializers.CharField()
 
 

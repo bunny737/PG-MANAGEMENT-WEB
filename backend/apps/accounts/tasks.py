@@ -28,7 +28,7 @@ def send_welcome_email_task(user_id):
         record_sent(
             tenant_id=user.tenant_id,
             notification_type='welcome',
-            recipient_email=user.email,
+            recipient_email=user.email or '',
             recipient_user=user,
             subject='Verify your email address',
             reference=f'user:{user.id}',

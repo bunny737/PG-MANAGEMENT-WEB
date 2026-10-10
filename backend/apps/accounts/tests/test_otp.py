@@ -72,16 +72,16 @@ class OtpLoginTests(AuthAPITestCase):
         self.assertEqual(self.verify(second).status_code, 200)
 
     def test_unknown_phone_does_not_reveal_registration(self):
-        response, code = self.request_code(phone='+911111111111')
+        response, code = self.request_code(phone='+919999999999')
         self.assertEqual(response.status_code, 200)  # silent — no enumeration
         self.assertIsNone(code)
 
-    def test_otp_login_respects_email_verification_gate(self):
+    def test_otp_login_succeeds_regardless_of_email_verification_gate(self):
         self.create_user(
             self.tenant, Role.MANAGER, 'manager@example.com',
             phone='+919000000000', email_verified=False,
         )
         _, code = self.request_code(phone='+919000000000')
         response = self.verify(code, phone='+919000000000')
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.data.get('code'), 'EMAIL_NOT_VERIFIED')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)

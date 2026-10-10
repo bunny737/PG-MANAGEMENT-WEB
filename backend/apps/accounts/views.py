@@ -1,6 +1,9 @@
+from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +25,7 @@ from .serializers import (
     OtpVerifySerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    PhoneLoginSerializer,
     RefreshSerializer,
     ResendVerificationSerializer,
     SignupSerializer,
@@ -77,6 +81,23 @@ class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
+
+
+class PhoneLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def get_authenticate_header(self, request):
+        # Makes failed logins 401 instead of DRF's 403 fallback.
+        return 'Bearer realm="api"'
+
+    @extend_schema(request=PhoneLoginSerializer, responses=TokenPairSerializer)
+    def post(self, request):
+        serializer = PhoneLoginSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
 
 
 class RefreshView(TokenRefreshView):
@@ -170,6 +191,39 @@ class StaffViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(StaffSerializer(instance).data)
 
+    @action(detail=True, methods=['post'], url_path='set-password')
+    def set_password(self, request, pk=None):
+        instance = self.get_object()
+        if not instance.is_active:
+            return Response(
+                {'detail': _('Cannot reset password for an inactive staff account.')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        password = request.data.get('password')
+        if not password:
+            return Response(
+                {'password': [_('This field is required.')]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_password(password, user=instance)
+        except Exception as exc:
+            raise serializers.ValidationError({'password': list(exc.messages)})
+
+        with transaction.atomic():
+            before_usable = instance.has_usable_password()
+            instance.set_password(password)
+            instance.save(update_fields=['password', 'updated_at'])
+            audit_log.record(
+                action='staff.password_reset',
+                actor=request.user,
+                obj=instance,
+                before={'password_usable': before_usable},
+                after={'password_usable': True},
+                request=request,
+            )
+        return Response({'detail': _('Password updated successfully.')})
+
 
 class CurrentTenantView(RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, require_permission('manage_tenant_settings')]
@@ -198,4 +252,3 @@ class CurrentTenantView(RetrieveUpdateAPIView):
                 request=request,
             )
         return Response(TenantSerializer(tenant).data)
-

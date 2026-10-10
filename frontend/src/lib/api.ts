@@ -186,6 +186,24 @@ export async function login(email: string, password: string) {
   return me;
 }
 
+export async function loginPhone(phone: string, password: string) {
+  const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login-phone/", {
+    method: "POST",
+    body: JSON.stringify({ phone, password }),
+    skipAuth: true,
+  });
+  setTokens(tokens.access, tokens.refresh);
+
+  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
+  localStorage.setItem("isLoggedIn", "true");
+  localStorage.setItem("userRole", me.role);
+  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
+  localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  const effectiveLang = me.language_code || me.tenant?.default_language || "en";
+  writeLocaleCookie(effectiveLang);
+  return me;
+}
+
 export interface PropertyImage {
   id: string;
   image: string;
@@ -646,15 +664,56 @@ export interface StaffUser {
   id: string;
   first_name: string;
   last_name: string;
-  email: string;
+  email: string | null;
+  phone: string;
   role: string;
   is_active: boolean;
+  email_verified?: boolean;
+  created_at?: string;
+}
+
+export interface CreateStaffPayload {
+  first_name: string;
+  last_name?: string;
+  email?: string | null;
+  phone: string;
+  role: "manager" | "receptionist";
+  password?: string;
+}
+
+export interface UpdateStaffPayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  role?: "manager" | "receptionist";
+  is_active?: boolean;
 }
 
 export function listStaff() {
   return apiFetch<StaffUser[] | { results: StaffUser[] }>("/api/v1/staff/").then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+export function createStaff(payload: CreateStaffPayload) {
+  return apiFetch<StaffUser>("/api/v1/staff/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateStaff(staffId: string, payload: UpdateStaffPayload) {
+  return apiFetch<StaffUser>(`/api/v1/staff/${staffId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function setStaffPassword(staffId: string, password: string) {
+  return apiFetch<{ detail: string }>(`/api/v1/staff/${staffId}/set-password/`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
 }
 
 export interface ComplaintComment {

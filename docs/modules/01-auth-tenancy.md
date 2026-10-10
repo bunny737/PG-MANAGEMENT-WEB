@@ -30,13 +30,17 @@ Table: users                        (NOT under RLS — see Decisions)
   id                uuid PK
   tenant_id         FK → tenants, NULL only for super_admin
                     (DB CHECK: user_role_matches_tenant_presence)
-  email             unique          phone  unique-when-set (OTP login key)
+  email             varchar(254) NULL, unique-when-active (case-insensitive: unique_active_email_lower)
+  phone             varchar(32) NULL, unique-when-active (unique_active_phone)
   first_name / last_name
   role              super_admin | owner | manager | receptionist | resident
   language_code     en | hi | te | ta | ml (per-user, PRD i18n)
   email_verified    bool            is_active  bool
   password          bcrypt-sha256
+  auth_version      int (default 0) ← bumped on password changes for instant revocation
   created_at / updated_at
+  (DB CHECKs: user_requires_email_or_phone, user_owner_superadmin_requires_email,
+              user_staff_requires_phone, user_email_not_blank, user_phone_not_blank)
 
 Table: otp_codes                    (NOT under RLS — auth layer)
   id uuid PK · user FK · code_hash · expires_at · attempts · used · created_at
@@ -59,7 +63,8 @@ Table: platform_config              (singleton, id=1)
 - `tenancy.py` — `set_tenant_context()`, `clear_tenant_context()`, and nestable
   `tenant_context()` context manager (Celery/scripts must use it).
 - `authentication.py` — `TenantJWTAuthentication`: rejects suspended/cancelled
-  tenants (`SUBSCRIPTION_SUSPENDED`), then sets the GUCs for the request.
+  tenants (`SUBSCRIPTION_SUSPENDED`), verifies `token.auth_version == user.auth_version`
+  (`PASSWORD_CHANGED`), then sets the GUCs for the request.
 - `middleware.py` — `TenantContextMiddleware` clears GUCs after every request.
 - `exceptions.py` — handler guarantees uppercase machine-readable `code` on errors.
 - **The app connects as non-superuser `app_user`** (docker/postgres/init.sql);
@@ -71,7 +76,8 @@ POST /api/v1/auth/signup/                  tenant + owner + trial          Allow
 POST /api/v1/auth/verify-email/            signed-token verification       AllowAny
 POST /api/v1/auth/resend-verification/     silent resend                   AllowAny
 POST /api/v1/auth/login/                   email+pw → JWT pair w/ claims   AllowAny (10/min)
-POST /api/v1/auth/token/refresh/           refresh + suspension re-check   AllowAny
+POST /api/v1/auth/login-phone/             phone+pw → JWT pair w/ claims   AllowAny (10/min)
+POST /api/v1/auth/token/refresh/           refresh + suspension + auth_ver AllowAny
 POST /api/v1/auth/otp/request/             issue OTP (silent)              AllowAny (3/min)
 POST /api/v1/auth/otp/verify/              phone+code → JWT pair           AllowAny (10/min)
 POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
@@ -80,8 +86,9 @@ GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAut
 GET|PATCH /api/v1/tenants/current/           detail/update tenant default    manage_tenant_settings
 GET|POST /api/v1/staff/                    list/create Manager|Receptionist  manage_staff_accounts
 GET|PATCH /api/v1/staff/{id}/              detail/update/deactivate          manage_staff_accounts
+POST /api/v1/staff/{id}/set-password/      Owner-set/reset staff password  manage_staff_accounts
 ```
-JWT claims: `tenant_id`, `role`, `language`. Access 15 min / refresh 7 days.
+JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / refresh 7 days.
 
 ## Business rules (each maps to a test)
 1. Signup creates Tenant (status=trial) + Owner; `trial_ends_at` comes from
@@ -107,9 +114,11 @@ JWT claims: `tenant_id`, `role`, `language`. Access 15 min / refresh 7 days.
 serialized on `/auth/me/` as `permissions: [...]`.
 
 ## Edge cases handled
-- Same email or phone across tenants → rejected globally (see Decisions).
+- Same email or phone across tenants → superseded by `[DECISION 2026-10-10]`: unique only among active accounts; deactivation frees the identifier for re-employment under a new tenant.
 - Suspension between token issuance and use → caught at authentication.
-- OTP for unverified email → still gated by `EMAIL_NOT_VERIFIED`.
+- Password change between token issuance and use → `auth_version` mismatch triggers immediate rejection with `PASSWORD_CHANGED`.
+- OTP for unverified email → phone possession proven; does not gate on unverified email.
+- Phone login for staff with unverified/absent email → succeeds without requiring email verification.
 - Nested `tenant_context()` restores the previous context (audit writes inside
   a request don't clobber the request's context).
 - Requests that never touch the DB don't open a connection just to clear GUCs.
@@ -128,7 +137,7 @@ serialized on `/auth/me/` as `permissions: [...]`.
 - [DECISION 2026-07-02] Staff–property assignment deferred to Module 02 (needs
   the Property model). Staff CRUD without assignment lives here.
 - [DECISION 2026-07-02] Email globally unique (not per-tenant); phone unique
-  when set because OTP login resolves the user by phone alone.
+  when set because OTP login resolves the user by phone alone. **(Superseded 2026-10-10: uniqueness is scoped to `is_active=True`, freeing identifiers upon deactivation for cross-tenant re-employment).**
 - [DECISION 2026-07-02] OTP delivery is a stub (`accounts/otp.py:_deliver`,
   logs the code; console email backend in dev). SMS provider is V2 (PRD 18).
 - [DECISION 2026-09-10] **`otp.verify` runs in a transaction and
@@ -157,6 +166,45 @@ serialized on `/auth/me/` as `permissions: [...]`.
   prose and its own settings summary table both say "Configurable By: Owner,
   Manager" — confirmed with the product owner that Module 2B is correct.
   `PERMISSION_MATRIX` in `apps/core/roles.py` updated accordingly (Module 03).
+- [DECISION 2026-10-10] **Phone+password login as MVP staff path**: Since SMS
+  provider is not yet integrated, staff log in using phone + password via
+  `POST /api/v1/auth/login-phone/`. Phone is mandatory for Manager/Receptionist;
+  email remains optional for staff (unconditionally required for Owner/Super Admin).
+- [DECISION 2026-10-10] **Active-only uniqueness & Re-employment**: Superseding
+  the 2026-07-02 decision, email and phone uniqueness is scoped to active accounts
+  (`UniqueConstraint(Lower('email'), condition=Q(is_active=True))` and
+  `UniqueConstraint(fields=['phone'], condition=Q(is_active=True))`). Deactivating an
+  account frees its phone and email so the person can be re-employed under a different
+  tenant with a brand new, independent account.
+- [DECISION 2026-10-10] **Strict phone canonicalization**: Numbers normalize to
+  canonical 10 digits starting with 6-9 from shapes: 10 digits, 11 digits starting with 0,
+  or 12 digits starting with 91. All other shapes (e.g. 13-digit numbers or invalid prefixes)
+  are rejected outright without truncation.
+- [DECISION 2026-10-10] **Token revocation via integer `auth_version`**: Rather than a
+  wall-clock timestamp comparison against JWT `iat` (which suffers from same-second
+  precision holes), an integer `auth_version` counter is stored on `User` and stamped in
+  tokens. `set_password()` and `set_unusable_password()` automatically flag `auth_version`
+  for increment in `save()`, atomically revoking all active access and refresh tokens on password
+  change. Rollout decision: Pre-deploy JWTs lack this claim and are deliberately force-logged-out.
+- [DECISION 2026-10-10] **DB constraint `user_staff_requires_phone`**: In addition to serializer
+  checks, a DB CheckConstraint enforces that Manager and Receptionist roles must have a non-null
+  phone number.
+- [DECISION 2026-10-10] **Login verification gate separation**: The email-verification gate is
+  confined to the email+password login path (`POST /auth/login/`). Phone+password login and
+  mobile OTP verify do not gate on unverified email.
+- [DECISION 2026-10-10] **Narrow save on password reset**: Password changes via
+  `StaffViewSet.set_password` use `instance.save(update_fields=['password', 'updated_at'])` to
+  prevent concurrent deactivations or profile modifications from being overwritten by stale model
+  instances. `User.save()` preserves narrow updates and normalizes only fields present in `update_fields`.
+- [DECISION 2026-10-10] **Profile phone clearing constraints**: `MeUpdateSerializer` explicitly
+  blocks Manager and Receptionist roles from removing their phone number via `PATCH /auth/me/`,
+  preventing database constraint violations (`user_staff_requires_phone`). `api_exception_handler`
+  also maps this constraint to a 400 Bad Request (`PHONE_REQUIRED`) error as defense-in-depth.
+- [DECISION 2026-10-10] **Cryptographically secure staff credential generation**: Staff passwords
+  generated in the UI use `crypto.getRandomValues()` with rejection sampling (eliminating modulo
+  bias) and deterministic satisfaction of all configured Django password validators
+  (`MinimumLengthValidator`, `NumericPasswordValidator`, `CommonPasswordValidator`,
+  `UserAttributeSimilarityValidator`).
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -180,3 +228,9 @@ serialized on `/auth/me/` as `permissions: [...]`.
   15's spec.
 - 2026-10-06  Module 18 added `view_property_features` (Owner, Manager, Receptionist) and
   `manage_property_features` (Owner, Manager) to `PERMISSION_MATRIX`.
+- 2026-10-10  Staff phone+password login (`POST /api/v1/auth/login-phone/`),
+  cross-owner re-employment (uniqueness scoped to `is_active=True`), identifier
+  normalization, `auth_version` instant token revocation on password change,
+  Owner-driven staff initial password and password reset (`POST /api/v1/staff/{id}/set-password/`)
+  with atomic audit logging, `user_staff_requires_phone` DB constraint, and frontend Staff
+  Management page (`(owner)/staff/`) with full i18n.

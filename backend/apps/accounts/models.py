@@ -3,11 +3,13 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-from django.db import models
-from django.db.models import Q
+from django.db import models, transaction
+from django.db.models import F, Q
+from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.roles import Role
+from apps.core.roles import Role, STAFF_ROLES
+from .normalization import normalize_email, normalize_phone
 
 
 class Tenant(models.Model):
@@ -41,10 +43,21 @@ class Tenant(models.Model):
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError('Email is required')
-        user = self.model(email=self.normalize_email(email), **extra_fields)
+    def create_user(self, email=None, password=None, **extra_fields):
+        email = normalize_email(email)
+        phone = normalize_phone(extra_fields.get('phone'))
+        if phone is not None:
+            extra_fields['phone'] = phone
+
+        role = extra_fields.get('role')
+        if role in (Role.OWNER, Role.SUPER_ADMIN) and not email:
+            raise ValueError('Email is required for owner and super admin accounts')
+        if role in STAFF_ROLES and not phone:
+            raise ValueError('Phone number is required for staff accounts')
+        if not email and not phone:
+            raise ValueError('At least one of email or phone is required')
+
+        user = self.model(email=email, **extra_fields)
         if password:
             user.set_password(password)
         else:
@@ -72,9 +85,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     tenant = models.ForeignKey(
         Tenant, null=True, blank=True, on_delete=models.CASCADE, related_name='users'
     )
-    email = models.EmailField(_('email address'), unique=True)
-    # Unique when set — OTP login resolves the user by phone alone.
-    phone = models.CharField(max_length=15, unique=True, null=True, blank=True)
+    email = models.EmailField(_('email address'), null=True, blank=True)
+    phone = models.CharField(max_length=15, null=True, blank=True)
+    auth_version = models.PositiveIntegerField(default=0)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True)
     role = models.CharField(max_length=20, choices=Role.choices)
@@ -101,10 +114,72 @@ class User(AbstractBaseUser, PermissionsMixin):
                 ),
                 name='user_role_matches_tenant_presence',
             ),
+            models.UniqueConstraint(
+                Lower('email'),
+                condition=Q(is_active=True),
+                name='unique_active_email_lower',
+            ),
+            models.UniqueConstraint(
+                fields=['phone'],
+                condition=Q(is_active=True),
+                name='unique_active_phone',
+            ),
+            models.CheckConstraint(
+                condition=Q(email__isnull=True) | ~Q(email=''),
+                name='user_email_not_blank',
+            ),
+            models.CheckConstraint(
+                condition=Q(phone__isnull=True) | ~Q(phone=''),
+                name='user_phone_not_blank',
+            ),
+            models.CheckConstraint(
+                condition=~Q(role__in=[Role.OWNER, Role.SUPER_ADMIN]) | Q(email__isnull=False),
+                name='user_owner_superadmin_requires_email',
+            ),
+            models.CheckConstraint(
+                condition=Q(email__isnull=False) | Q(phone__isnull=False),
+                name='user_requires_email_or_phone',
+            ),
+            models.CheckConstraint(
+                condition=~Q(role__in=[Role.MANAGER, Role.RECEPTIONIST]) | Q(phone__isnull=False),
+                name='user_staff_requires_phone',
+            ),
         ]
 
+    def set_password(self, raw_password):
+        super().set_password(raw_password)
+        self._bump_auth_version = True
+
+    def set_unusable_password(self):
+        super().set_unusable_password()
+        self._bump_auth_version = True
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None:
+            update_fields_set = set(update_fields)
+            if 'email' in update_fields_set:
+                self.email = normalize_email(self.email)
+            if 'phone' in update_fields_set:
+                self.phone = normalize_phone(self.phone)
+        else:
+            self.email = normalize_email(self.email)
+            self.phone = normalize_phone(self.phone)
+
+        if getattr(self, '_bump_auth_version', False) and not self._state.adding:
+            with transaction.atomic():
+                # Atomic DB-level increment — safe under concurrent password
+                # changes on the same row without needing select_for_update;
+                # a single UPDATE...SET x = x + 1 can't lose an update.
+                User.objects.filter(pk=self.pk).update(auth_version=F('auth_version') + 1)
+                self.refresh_from_db(fields=['auth_version'])
+                self._bump_auth_version = False
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
     def __str__(self):
-        return self.email
+        return self.email or self.phone or str(self.id)
 
 
 class OtpCode(models.Model):

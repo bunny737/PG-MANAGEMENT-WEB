@@ -1,0 +1,82 @@
+{
+  "title": "Staff Management",
+  "subtitle": "Manage manager and receptionist accounts, reset passwords, and assign property permissions.",
+  "addStaff": "Add Staff Member",
+  "searchPlaceholder": "Search by name, phone, or email...",
+  "filterRole": "All Roles",
+  "filterStatus": "All Statuses",
+  "active": "Active",
+  "inactive": "Inactive",
+  "roles": {
+    "manager": "Manager",
+    "receptionist": "Receptionist",
+    "owner": "Owner",
+    "super_admin": "Super Admin"
+  },
+  "table": {
+    "name": "Staff Member",
+    "contact": "Contact",
+    "role": "Role",
+    "status": "Status",
+    "actions": "Actions",
+    "noStaff": "No staff members found",
+    "noStaffSub": "Add your first manager or receptionist to get started.",
+    "phoneOnly": "Phone-only login"
+  },
+  "actions": {
+    "resetPassword": "Reset Password",
+    "deactivate": "Deactivate",
+    "activate": "Reactivate",
+    "confirmDeactivate": "Are you sure you want to deactivate {name}? They will lose access to the portal immediately.",
+    "confirmActivate": "Are you sure you want to reactivate {name}?"
+  },
+  "modal": {
+    "createTitle": "Add Staff Member",
+    "createSubtitle": "Create an account for a manager or receptionist.",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "placeholderFirstName": "e.g. Ramesh",
+    "placeholderLastName": "e.g. Kumar",
+    "placeholderEmail": "ramesh@example.com",
+    "phone": "Mobile Number",
+    "phoneHelp": "10-digit Indian mobile number (e.g. 9876543210)",
+    "email": "Email Address (Optional)",
+    "emailHelp": "Optional for staff. If provided, they can also sign in via email once verified.",
+    "role": "Role",
+    "selectRole": "Select a role",
+    "password": "Initial Password (Optional)",
+    "passwordHelp": "If left blank, an invitation email will be sent (requires email address).",
+    "autoGenerate": "Auto-generate",
+    "createButton": "Create Staff Account",
+    "cancel": "Cancel",
+    "resetTitle": "Reset Staff Password",
+    "resetSubtitle": "Set a new password for {name}. All active sessions will be terminated immediately.",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "resetButton": "Update Password",
+    "passwordAlertTitle": "Save this password now!",
+    "passwordAlertBody": "This password will only be shown once. Share it securely with the staff member.",
+    "revealedStaff": "Staff: {name}",
+    "revealedPhone": "Phone: {phone}",
+    "copyPassword": "Copy Password",
+    "copied": "Copied to clipboard!",
+    "done": "Done"
+  },
+  "errors": {
+    "phoneRequired": "Phone number is required for staff",
+    "phoneInvalid": "Enter a valid 10-digit Indian mobile number (starting with 6-9)",
+    "firstNameRequired": "First name is required",
+    "roleRequired": "Please select a role",
+    "passwordRequired": "Password is required",
+    "passwordMismatch": "Passwords do not match",
+    "passwordOrEmailRequired": "At least one of password or email is required",
+    "phoneTaken": "This phone number is already active for another account",
+    "emailTaken": "This email address is already active for another account",
+    "genericError": "Failed to complete request. Please try again."
+  },
+  "success": {
+    "created": "Staff member created successfully",
+    "passwordReset": "Password has been reset successfully",
+    "statusUpdated": "Staff status updated successfully"
+  }
+}

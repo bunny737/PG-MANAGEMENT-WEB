@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.contrib.auth.password_validation import validate_password
@@ -22,8 +23,10 @@ from . import otp as otp_service
 from .emails import (
     send_password_reset_email,
     send_staff_invite_email,
+    send_verification_email,
 )
 from .models import Tenant, User
+from .normalization import normalize_email, normalize_phone
 from .tasks import send_welcome_email_task
 from .tokens import (
     check_password_reset_token,
@@ -31,10 +34,12 @@ from .tokens import (
     read_password_reset_uid,
 )
 
+logger = logging.getLogger(__name__)
 
-def _check_user_can_authenticate(user):
+
+def _check_user_can_authenticate(user, *, require_verified_email=True):
     """Shared login gates for password and OTP flows."""
-    if not user.email_verified:
+    if require_verified_email and user.email and not user.email_verified:
         raise AuthenticationFailed(
             _('Verify your email address to log in.'), code='email_not_verified'
         )
@@ -52,25 +57,37 @@ class SignupSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     email = serializers.EmailField()
-    phone = serializers.CharField(max_length=15, required=False, allow_null=True, default=None)
+    phone = serializers.CharField(max_length=20, required=False, allow_null=True, default=None)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     language_code = serializers.ChoiceField(
         choices=['en', 'hi', 'te', 'ta', 'ml'], required=False, default='en'
     )
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
+        try:
+            normalized = normalize_email(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid email format.'), code='invalid_email')
+        if not normalized:
+            raise serializers.ValidationError(_('Email is required.'), code='invalid_email')
+        if User.objects.filter(email__iexact=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this email already exists.'), code='email_taken'
             )
-        return value.lower()
+        return normalized
 
     def validate_phone(self, value):
-        if value and User.objects.filter(phone=value).exists():
+        if not value:
+            return None
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
+        if normalized and User.objects.filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
-        return value or None
+        return normalized
 
     @transaction.atomic
     def create(self, validated_data):
@@ -134,7 +151,8 @@ class ResendVerificationSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         # Always succeed — never reveal whether an email is registered.
-        user = User.objects.filter(email__iexact=self.validated_data['email']).first()
+        # Targets the active account when duplicate inactive accounts exist.
+        user = User.objects.filter(email__iexact=self.validated_data['email'], is_active=True).first()
         if user and not user.email_verified:
             send_verification_email(user)
 
@@ -146,21 +164,22 @@ class LoginSerializer(TokenObtainPairSerializer):
         token['role'] = user.role
         token['tenant_id'] = str(user.tenant_id) if user.tenant_id else None
         token['language'] = user.language_code
+        token['auth_version'] = user.auth_version
         return token
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        _check_user_can_authenticate(self.user)
+        _check_user_can_authenticate(self.user, require_verified_email=True)
         return data
 
 
 class RefreshSerializer(TokenRefreshSerializer):
-    """Refresh that re-checks tenant status so suspension forces logout
-    within one access-token lifetime (15 min)."""
+    """Refresh that re-checks tenant status and auth_version before minting
+    a replacement access token."""
 
     def validate(self, attrs):
-        data = super().validate(attrs)
-        user_id = RefreshToken(attrs['refresh']).get('user_id')
+        token = RefreshToken(attrs['refresh'])
+        user_id = token.get('user_id')
         user = User.objects.select_related('tenant').filter(pk=user_id).first()
         if user is None or not user.is_active:
             raise AuthenticationFailed(
@@ -170,11 +189,22 @@ class RefreshSerializer(TokenRefreshSerializer):
             raise AuthenticationFailed(
                 _('This account is suspended.'), code='subscription_suspended'
             )
-        return data
+        if token.get('auth_version') != user.auth_version:
+            raise AuthenticationFailed(
+                _('Password has been changed. Please log in again.'), code='password_changed'
+            )
+        return super().validate(attrs)
 
 
 class OtpRequestSerializer(serializers.Serializer):
-    phone = serializers.CharField(max_length=15)
+    phone = serializers.CharField(max_length=20)
+
+    def validate_phone(self, value):
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
+        return normalized
 
     def save(self, **kwargs):
         # Always succeed — never reveal whether a phone is registered.
@@ -184,20 +214,80 @@ class OtpRequestSerializer(serializers.Serializer):
 
 
 class OtpVerifySerializer(serializers.Serializer):
-    phone = serializers.CharField(max_length=15)
+    phone = serializers.CharField(max_length=20)
     code = serializers.CharField(max_length=6)
 
+    def validate_phone(self, value):
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
+        return normalized
+
     def validate(self, attrs):
+        phone = attrs['phone']
         user = (
             User.objects.select_related('tenant')
-            .filter(phone=attrs['phone'], is_active=True)
+            .filter(phone=phone, is_active=True)
             .first()
         )
         if user is None or not otp_service.verify(user, attrs['code']):
             raise AuthenticationFailed(
                 _('The code is incorrect or has expired.'), code='invalid_otp'
             )
-        _check_user_can_authenticate(user)
+        _check_user_can_authenticate(user, require_verified_email=False)
+        refresh = LoginSerializer.get_token(user)
+        return {'refresh': str(refresh), 'access': str(refresh.access_token)}
+
+
+class PhoneLoginSerializer(serializers.Serializer):
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        raw_phone = attrs.get('phone')
+        password = attrs.get('password')
+        try:
+            phone = normalize_phone(raw_phone)
+        except ValueError:
+            User().set_password(password or '')
+            raise AuthenticationFailed(
+                _('Invalid credentials.'),
+                code='invalid_credentials',
+            )
+
+        if not phone or not password:
+            User().set_password(password or '')
+            raise AuthenticationFailed(
+                _('Invalid credentials.'),
+                code='invalid_credentials',
+            )
+
+        try:
+            user = (
+                User.objects.select_related('tenant')
+                .get(phone=phone, is_active=True)
+            )
+        except User.DoesNotExist:
+            User().set_password(password)
+            raise AuthenticationFailed(
+                _('Invalid credentials.'),
+                code='invalid_credentials',
+            )
+        except User.MultipleObjectsReturned:
+            logger.error('Multiple active users share phone %r', phone)
+            raise AuthenticationFailed(
+                _('Invalid credentials.'),
+                code='invalid_credentials',
+            )
+
+        if not user.check_password(password):
+            raise AuthenticationFailed(
+                _('Invalid credentials.'),
+                code='invalid_credentials',
+            )
+
+        _check_user_can_authenticate(user, require_verified_email=False)
         refresh = LoginSerializer.get_token(user)
         return {'refresh': str(refresh), 'access': str(refresh.access_token)}
 
@@ -279,11 +369,17 @@ class MeUpdateSerializer(serializers.ModelSerializer):
         fields = ['first_name', 'last_name', 'phone', 'language_code']
 
     def validate_phone(self, value):
-        if value and User.objects.exclude(pk=self.instance.pk).filter(phone=value).exists():
+        if not value:
+            return None
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
+        if normalized and User.objects.exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
-        return value or None
+        return normalized
 
 
 class StaffSerializer(serializers.ModelSerializer):
@@ -297,13 +393,18 @@ class StaffSerializer(serializers.ModelSerializer):
 
 
 class StaffCreateSerializer(serializers.ModelSerializer):
-    """Owner creates Manager/Receptionist accounts. The account starts with no
-    password; the invite email carries a set-password link. Property assignment
-    is Module 02."""
+    """Owner creates Manager/Receptionist accounts. Staff creation requires a phone
+    number and at least one of password or email. If password is provided, the account
+    is usable immediately (and a verification-only email is sent if email is also provided).
+    If no password is provided, an invite email is sent with a set-password link."""
+
+    email = serializers.EmailField(required=False, allow_null=True)
+    phone = serializers.CharField(max_length=20, required=True)
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'role']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'role', 'password']
         read_only_fields = ['id']
 
     def validate_role(self, value):
@@ -314,36 +415,94 @@ class StaffCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
+        if not value:
+            return None
+        try:
+            normalized = normalize_email(value)
+        except ValueError:
+            raise serializers.ValidationError(_('Invalid email format.'), code='invalid_email')
+        if not normalized:
+            return None
+        if User.objects.filter(email__iexact=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this email already exists.'), code='email_taken'
             )
-        return value.lower()
+        return normalized
 
     def validate_phone(self, value):
-        if value and User.objects.filter(phone=value).exists():
+        if not value:
+            raise serializers.ValidationError(
+                _('Phone number is required.'), code='invalid_phone'
+            )
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(
+                _('Invalid phone number.'), code='invalid_phone'
+            )
+        if not normalized:
+            raise serializers.ValidationError(
+                _('Phone number is required.'), code='invalid_phone'
+            )
+        if User.objects.filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
-        return value or None
+        return normalized
+
+    def validate(self, attrs):
+        phone = attrs.get('phone')
+        if not phone:
+            raise serializers.ValidationError(
+                {'phone': [_('Phone number is required.')]}, code='invalid_phone'
+            )
+
+        password = attrs.get('password')
+        email = attrs.get('email')
+        if not password and not email:
+            raise serializers.ValidationError(
+                _('At least one of password or email must be provided.'),
+                code='identifier_required',
+            )
+
+        if password:
+            user_instance = User(
+                email=email,
+                first_name=attrs.get('first_name', ''),
+                last_name=attrs.get('last_name', ''),
+            )
+            try:
+                validate_password(password, user=user_instance)
+            except Exception as exc:
+                raise serializers.ValidationError({'password': list(exc.messages)})
+
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data):
         request = self.context['request']
         tenant = request.user.tenant
+        password = validated_data.pop('password', None)
+        email = validated_data.get('email')
+
         user = User.objects.create_user(
             tenant=tenant,
             language_code=tenant.default_language,
+            password=password,
             **validated_data,
         )
         audit_log.record(
             action='staff.created',
             actor=request.user,
             obj=user,
-            after={'email': user.email, 'role': user.role},
+            after={'email': user.email, 'phone': user.phone, 'role': user.role},
             request=request,
         )
-        send_staff_invite_email(user, tenant)
+        if password:
+            if email:
+                send_verification_email(user)
+        else:
+            send_staff_invite_email(user, tenant)
         return user
 
 
@@ -360,11 +519,46 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_phone(self, value):
-        if value and User.objects.exclude(pk=self.instance.pk).filter(phone=value).exists():
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise serializers.ValidationError(
+                _('Phone number is required for staff.'), code='invalid_phone'
+            )
+        try:
+            normalized = normalize_phone(value)
+        except ValueError:
+            raise serializers.ValidationError(
+                _('Invalid phone number.'), code='invalid_phone'
+            )
+        if not normalized:
+            raise serializers.ValidationError(
+                _('Phone number is required for staff.'), code='invalid_phone'
+            )
+        if User.objects.exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
-        return value or None
+        return normalized
+
+    def validate(self, attrs):
+        # Reactivation safety check: when is_active flips False -> True
+        if attrs.get('is_active') is True and self.instance and not self.instance.is_active:
+            email_to_check = normalize_email(self.instance.email)
+            if email_to_check and User.objects.exclude(pk=self.instance.pk).filter(email__iexact=email_to_check, is_active=True).exists():
+                raise serializers.ValidationError(
+                    {'email': [_('An account with this email already exists.')]},
+                    code='email_taken',
+                )
+            phone_to_check = (
+                attrs.get('phone')
+                if 'phone' in attrs
+                else normalize_phone(self.instance.phone)
+            )
+            if phone_to_check and User.objects.exclude(pk=self.instance.pk).filter(phone=phone_to_check, is_active=True).exists():
+                raise serializers.ValidationError(
+                    {'phone': [_('An account with this phone number already exists.')]},
+                    code='phone_taken',
+                )
+        return attrs
 
     def update(self, instance, validated_data):
         request = self.context['request']

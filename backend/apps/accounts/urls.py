@@ -7,6 +7,7 @@ urlpatterns = [
     path('verify-email/', views.VerifyEmailView.as_view(), name='auth-verify-email'),
     path('resend-verification/', views.ResendVerificationView.as_view(), name='auth-resend-verification'),
     path('login/', views.LoginView.as_view(), name='auth-login'),
+    path('login-phone/', views.PhoneLoginView.as_view(), name='auth-login-phone'),
     path('token/refresh/', views.RefreshView.as_view(), name='auth-token-refresh'),
     path('otp/request/', views.OtpRequestView.as_view(), name='auth-otp-request'),
     path('otp/verify/', views.OtpVerifyView.as_view(), name='auth-otp-verify'),

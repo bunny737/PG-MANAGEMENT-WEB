@@ -101,7 +101,13 @@ export function PropertyFeaturesForm({ propertyId }: { propertyId: string }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof ApiError && err.status === 403 ? t("errPermission") : t("errLoadFailed"));
+        setError(
+          err instanceof ApiError && err.status === 403
+            ? t("errPermission")
+            : err instanceof ApiError && err.message
+            ? err.message
+            : t("errLoadFailed")
+        );
         setIsLoading(false);
       });
     return () => {

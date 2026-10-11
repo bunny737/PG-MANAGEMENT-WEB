@@ -18,6 +18,8 @@ import {
   X,
   Shield,
   Sparkles,
+  Pencil,
+  Building2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
@@ -25,12 +27,19 @@ import {
   createStaff,
   updateStaff,
   setStaffPassword,
+  listProperties,
+  listPropertyAssignments,
+  assignStaffToProperty,
+  unassignStaffFromProperty,
   type StaffUser,
   type CreateStaffPayload,
+  type Property,
+  type PropertyStaffAssignment,
   ApiError,
 } from "@/lib/api";
 import { getInitials } from "@/lib/utils";
 import { generateSecurePassword } from "@/lib/passwords";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 
 function normalizePhone(val: string): string | null {
   const digits = val.replace(/\D/g, "");
@@ -83,6 +92,25 @@ export function StaffDirectory() {
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetErrors, setResetErrors] = useState<Record<string, string>>({});
   const [isResetting, setIsResetting] = useState(false);
+
+  // Edit Staff Modal State
+  const [editTarget, setEditTarget] = useState<StaffUser | null>(null);
+  const [editForm, setEditForm] = useState<{
+    firstName: string;
+    lastName: string;
+    phone: string;
+    role: "manager" | "receptionist";
+  }>({ firstName: "", lastName: "", phone: "", role: "manager" });
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Manage Property Access Modal State
+  const [propertiesTarget, setPropertiesTarget] = useState<StaffUser | null>(null);
+  const [allProperties, setAllProperties] = useState<Property[]>([]);
+  const [assignments, setAssignments] = useState<PropertyStaffAssignment[]>([]);
+  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+  const [propertiesError, setPropertiesError] = useState<string | null>(null);
+  const [togglingPropertyId, setTogglingPropertyId] = useState<string | null>(null);
 
   // One-Time Password Reveal Modal State
   const [revealedPassword, setRevealedPassword] = useState<{
@@ -320,6 +348,104 @@ export function StaffDirectory() {
     }
   };
 
+  const openEditModal = (staff: StaffUser) => {
+    setEditForm({
+      firstName: staff.first_name,
+      lastName: staff.last_name || "",
+      phone: staff.phone,
+      role: staff.role as "manager" | "receptionist",
+    });
+    setEditErrors({});
+    setEditTarget(staff);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+
+    const errors: Record<string, string> = {};
+    if (!editForm.firstName.trim()) {
+      errors.firstName = t("errors.firstNameRequired");
+    }
+    const normPhone = normalizePhone(editForm.phone);
+    if (!editForm.phone.trim()) {
+      errors.phone = t("errors.phoneRequired");
+    } else if (!normPhone) {
+      errors.phone = t("errors.phoneInvalid");
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+
+    setEditErrors({});
+    setIsEditing(true);
+    try {
+      const updated = await updateStaff(editTarget.id, {
+        first_name: editForm.firstName.trim(),
+        last_name: editForm.lastName.trim() || undefined,
+        phone: normPhone!,
+        role: editForm.role,
+      });
+      setStaffList((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      setIsEditing(false);
+      setEditTarget(null);
+    } catch (err) {
+      setIsEditing(false);
+      if (err instanceof ApiError) {
+        const phoneErr = err.fieldError("phone");
+        const nonFieldErr = err.fieldError("non_field_errors") ?? err.fieldError("detail");
+        const newErrors: Record<string, string> = {};
+        if (phoneErr) {
+          newErrors.phone = phoneErr.includes("already active") || phoneErr.includes("taken")
+            ? t("errors.phoneTaken")
+            : phoneErr;
+        }
+        if (nonFieldErr) newErrors.form = nonFieldErr;
+        if (Object.keys(newErrors).length === 0) newErrors.form = err.message;
+        setEditErrors(newErrors);
+      } else {
+        setEditErrors({ form: t("errors.genericError") });
+      }
+    }
+  };
+
+  const openPropertiesModal = (staff: StaffUser) => {
+    setPropertiesTarget(staff);
+    setPropertiesError(null);
+    setIsLoadingProperties(true);
+    Promise.all([listProperties(), listPropertyAssignments({ staff: staff.id })])
+      .then(([properties, assigned]) => {
+        setAllProperties(properties);
+        setAssignments(assigned);
+        setIsLoadingProperties(false);
+      })
+      .catch((err) => {
+        setPropertiesError(err instanceof ApiError ? err.message : t("errors.genericError"));
+        setIsLoadingProperties(false);
+      });
+  };
+
+  const toggleProperty = async (property: Property) => {
+    if (!propertiesTarget) return;
+    const existing = assignments.find((a) => a.property === property.id);
+    setTogglingPropertyId(property.id);
+    try {
+      if (existing) {
+        await unassignStaffFromProperty(existing.id);
+        setAssignments((prev) => prev.filter((a) => a.id !== existing.id));
+      } else {
+        const created = await assignStaffToProperty(propertiesTarget.id, property.id);
+        setAssignments((prev) => [...prev, created]);
+      }
+    } catch (err) {
+      setPropertiesError(err instanceof ApiError ? err.message : t("errors.genericError"));
+    } finally {
+      setTogglingPropertyId(null);
+    }
+  };
+
   const filteredStaff = useMemo(() => {
     return staffList.filter((staff) => {
       const fullName = `${staff.first_name} ${staff.last_name || ""}`.toLowerCase();
@@ -531,6 +657,26 @@ export function StaffDirectory() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(staff)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+                            title={t("actions.editStaff")}
+                          >
+                            <Pencil className="size-3.5" />
+                            <span className="hidden sm:inline">{t("actions.editStaff")}</span>
+                          </button>
+
+                          <PermissionGate permission="assign_staff_to_properties">
+                            <button
+                              onClick={() => openPropertiesModal(staff)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+                              title={t("actions.manageProperties")}
+                            >
+                              <Building2 className="size-3.5" />
+                              <span className="hidden sm:inline">{t("actions.manageProperties")}</span>
+                            </button>
+                          </PermissionGate>
+
                           <button
                             onClick={() => {
                               setResetTarget(staff);
@@ -919,6 +1065,207 @@ export function StaffDirectory() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT STAFF MODAL */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div>
+                <h3 className="font-display text-lg font-bold text-ink">
+                  {t("modal.editTitle")}
+                </h3>
+                <p className="text-xs text-ink-muted">
+                  {t("modal.editSubtitle", {
+                    name: `${editTarget.first_name} ${editTarget.last_name || ""}`.trim(),
+                  })}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditTarget(null)}
+                className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-subtle hover:text-ink"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="mt-4 space-y-4">
+              {editErrors.form && (
+                <div className="rounded-xl border border-status-critical/20 bg-status-critical-soft p-3 text-xs font-medium text-status-critical">
+                  {editErrors.form}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-ink-muted">
+                    {t("modal.firstName")} *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.firstName}
+                    onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-surface-page px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  />
+                  {editErrors.firstName && (
+                    <p className="text-[11px] text-status-critical">{editErrors.firstName}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-ink-muted">
+                    {t("modal.lastName")}
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.lastName}
+                    onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-surface-page px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-ink-muted">
+                  {t("modal.phone")} *
+                </label>
+                <div className="relative">
+                  <Phone className="absolute inset-y-0 left-3 my-auto size-4 text-ink-faint" />
+                  <input
+                    type="tel"
+                    required
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-surface-page py-2 pl-9 pr-3 text-sm text-ink outline-none focus:border-accent"
+                  />
+                </div>
+                {editErrors.phone && (
+                  <p className="text-[11px] text-status-critical">{editErrors.phone}</p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-ink-muted">
+                  {t("modal.role")} *
+                </label>
+                <select
+                  value={editForm.role}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, role: e.target.value as "manager" | "receptionist" })
+                  }
+                  className="w-full rounded-xl border border-border bg-surface-page px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                >
+                  <option value="manager">{t("roles.manager")}</option>
+                  <option value="receptionist">{t("roles.receptionist")}</option>
+                </select>
+                <p className="text-[11px] text-ink-faint">{t("modal.roleChangeHelp")}</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-ink-muted transition-colors hover:bg-surface-subtle"
+                >
+                  {t("modal.cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isEditing}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ink-inverse shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isEditing ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}
+                  {t("modal.saveButton")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE PROPERTY ACCESS MODAL */}
+      {propertiesTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div>
+                <h3 className="font-display text-lg font-bold text-ink">
+                  {t("modal.propertiesTitle")}
+                </h3>
+                <p className="text-xs text-ink-muted">
+                  {t("modal.propertiesSubtitle", {
+                    name: `${propertiesTarget.first_name} ${propertiesTarget.last_name || ""}`.trim(),
+                  })}
+                </p>
+              </div>
+              <button
+                onClick={() => setPropertiesTarget(null)}
+                className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-subtle hover:text-ink"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {propertiesError && (
+                <div className="rounded-xl border border-status-critical/20 bg-status-critical-soft p-3 text-xs font-medium text-status-critical">
+                  {propertiesError}
+                </div>
+              )}
+
+              {isLoadingProperties ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Loader2 className="size-6 animate-spin text-accent" />
+                </div>
+              ) : allProperties.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-muted">
+                  {t("modal.noProperties")}
+                </p>
+              ) : (
+                <div className="max-h-80 space-y-2 overflow-y-auto">
+                  {allProperties.map((property) => {
+                    const isAssigned = assignments.some((a) => a.property === property.id);
+                    const isToggling = togglingPropertyId === property.id;
+                    return (
+                      <label
+                        key={property.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-page px-3.5 py-2.5 cursor-pointer hover:bg-surface-subtle"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Building2 className="size-4 text-ink-faint" />
+                          <span className="text-sm font-medium text-ink">{property.name}</span>
+                        </div>
+                        {isToggling ? (
+                          <Loader2 className="size-4 animate-spin text-accent" />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={isAssigned}
+                            onChange={() => toggleProperty(property)}
+                            className="size-4 rounded border-border text-accent focus:ring-accent"
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-ink-faint">{t("modal.propertiesHelp")}</p>
+            </div>
+
+            <div className="mt-5 flex justify-end border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setPropertiesTarget(null)}
+                className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-ink-inverse shadow-sm transition-all hover:bg-accent-hover"
+              >
+                {t("modal.done")}
+              </button>
+            </div>
           </div>
         </div>
       )}

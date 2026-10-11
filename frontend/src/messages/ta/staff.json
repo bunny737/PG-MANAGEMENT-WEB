@@ -25,6 +25,8 @@
   },
   "actions": {
     "resetPassword": "Reset Password",
+    "editStaff": "Edit",
+    "manageProperties": "Properties",
     "deactivate": "Deactivate",
     "activate": "Reactivate",
     "confirmDeactivate": "Are you sure you want to deactivate {name}? They will lose access to the portal immediately.",
@@ -60,7 +62,15 @@
     "revealedPhone": "Phone: {phone}",
     "copyPassword": "Copy Password",
     "copied": "Copied to clipboard!",
-    "done": "Done"
+    "done": "Done",
+    "editTitle": "Edit Staff Member",
+    "editSubtitle": "Update {name}'s details or role.",
+    "saveButton": "Save Changes",
+    "roleChangeHelp": "Changing the role changes what this staff member can do immediately — the permission set is fixed per role, not customizable.",
+    "propertiesTitle": "Manage Property Access",
+    "propertiesSubtitle": "Choose which properties {name} can access.",
+    "noProperties": "No properties found. Add a property first.",
+    "propertiesHelp": "Owners always have access to every property. A Manager or Receptionist only sees properties checked here."
   },
   "errors": {
     "phoneRequired": "Phone number is required for staff",

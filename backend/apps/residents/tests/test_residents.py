@@ -66,6 +66,74 @@ class ResidentManagementTests(ResidentAPITestCase):
             self.client.post(reverse('resident-list'), resident_payload(self.property)).status_code, 403
         )
 
+    def test_receptionist_resident_detail_omits_financial_fields(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        resident = self.create_resident(self.property)
+        self.check_in(
+            resident, bed,
+            security_deposit_amount=Decimal('5000.00'),
+            advance_amount=Decimal('2000.00'),
+            advance_applied_amount=Decimal('500.00'),
+        )
+
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        response = self.client.get(reverse('resident-detail', args=[resident.id]))
+        self.assertEqual(response.status_code, 200)
+
+        for field in [
+            'contracted_rent',
+            'billing_mode',
+            'security_deposit_amount',
+            'advance_amount',
+            'advance_refundable',
+        ]:
+            self.assertNotIn(field, response.data)
+
+    def test_owner_and_manager_see_resident_financial_fields(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        resident = self.create_resident(self.property)
+        self.check_in(
+            resident, bed,
+            security_deposit_amount=Decimal('5000.00'),
+            advance_amount=Decimal('2000.00'),
+            advance_applied_amount=Decimal('500.00'),
+        )
+
+        # Owner check
+        self.authenticate(self.owner)
+        owner_resp = self.client.get(reverse('resident-detail', args=[resident.id]))
+        self.assertEqual(owner_resp.status_code, 200)
+        for field in [
+            'contracted_rent',
+            'billing_mode',
+            'security_deposit_amount',
+            'advance_amount',
+            'advance_refundable',
+        ]:
+            self.assertIn(field, owner_resp.data)
+
+        # Manager check
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+        self.authenticate(manager)
+        mgr_resp = self.client.get(reverse('resident-detail', args=[resident.id]))
+        self.assertEqual(mgr_resp.status_code, 200)
+        for field in [
+            'contracted_rent',
+            'billing_mode',
+            'security_deposit_amount',
+            'advance_amount',
+            'advance_refundable',
+        ]:
+            self.assertIn(field, mgr_resp.data)
+
     def test_resident_role_has_no_access(self):
         resident_user = self.create_user(self.tenant, Role.RESIDENT, 'resident@example.com')
         self.authenticate(resident_user)

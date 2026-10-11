@@ -1,0 +1,53 @@
+{
+  "title": "Visitors Log",
+  "subtitle": "Track and manage visitor check-ins and check-outs.",
+  "totalLogged": "Total Logged",
+  "residentFallback": "Resident",
+  "logVisitor": "Log Visitor",
+  "searchPlaceholder": "Search by visitor name or mobile number...",
+  "filterStatus": "All Statuses",
+  "checkedIn": "Checked In",
+  "checkedOut": "Checked Out",
+  "table": {
+    "visitor": "Visitor",
+    "resident": "Resident Visited",
+    "contact": "Contact",
+    "purpose": "Purpose",
+    "entryTime": "Entry Time",
+    "exitTime": "Exit Time",
+    "status": "Status",
+    "actions": "Actions",
+    "noVisitors": "No visitors logged",
+    "noVisitorsSub": "Log a visitor entry to get started."
+  },
+  "actions": {
+    "checkOut": "Check Out",
+    "checkingOut": "Checking out...",
+    "confirmCheckOut": "Check out {name}?"
+  },
+  "modal": {
+    "title": "Log Visitor Entry",
+    "subtitle": "Enter visitor details and select the resident being visited.",
+    "residentLabel": "Resident Being Visited",
+    "selectResident": "Select a resident...",
+    "nameLabel": "Visitor Name",
+    "namePlaceholder": "e.g. Ramesh Kumar",
+    "phoneLabel": "Mobile Number",
+    "phonePlaceholder": "98765 43210",
+    "purposeLabel": "Purpose of Visit",
+    "purposePlaceholder": "e.g. Family visit, delivery, friend",
+    "submit": "Record Entry",
+    "submitting": "Recording..."
+  },
+  "errors": {
+    "residentRequired": "Please select a resident",
+    "nameRequired": "Visitor name is required",
+    "phoneRequired": "Please enter a valid 10-digit mobile number",
+    "purposeRequired": "Purpose is required",
+    "loadFailed": "Failed to load visitors log"
+  },
+  "toasts": {
+    "logged": "Visitor entry recorded successfully",
+    "checkedOut": "Visitor checked out successfully"
+  }
+}

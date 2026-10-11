@@ -20,7 +20,7 @@ import {
   type PropertyFeaturesState,
   type TenantFeature,
 } from "@/lib/api";
-import { usePermissions } from "@/lib/permissions";
+import { useSession } from "@/lib/session";
 import { FeaturePicker, featureKey, keyToRef, toFeatureRefs, type FeatureSelection } from "./FeaturePicker";
 
 /** Stable string for "has anything changed since the last load/save". */
@@ -40,7 +40,7 @@ function readDraft(propertyId: string): FeatureSelection | null {
 export function PropertyFeaturesForm({ propertyId }: { propertyId: string }) {
   const t = useTranslations("properties.features");
   const tCommon = useTranslations("common");
-  const { ready, can } = usePermissions();
+  const { ready, can } = useSession();
   const canEdit = can("manage_property_features");
 
   const [property, setProperty] = useState<Property | null>(null);

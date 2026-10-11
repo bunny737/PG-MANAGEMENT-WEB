@@ -7,11 +7,17 @@
     "dashboard": "डैशबोर्ड",
     "properties": "संपत्तियां",
     "residents": "निवासी",
+    "visitors": "आगंतुक",
     "staff": "स्टाफ",
     "complaints": "शिकायतें",
     "financials": "वित्तीय विवरण",
     "settings": "सेटिंग्स",
     "more": "अधिक"
+  },
+  "roles": {
+    "owner": "मालिक",
+    "manager": "मैनेजर",
+    "receptionist": "रिसेप्शनिस्ट"
   },
   "sideNav": {
     "ownerPortal": "मालिक पोर्टल",

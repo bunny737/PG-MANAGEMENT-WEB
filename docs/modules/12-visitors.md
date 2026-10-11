@@ -37,9 +37,9 @@ Table: visitors                                 (RLS enforced, app: apps.operati
 ## API endpoints
 ```
 GET|POST   /api/v1/visitors/                 list / log entry              manage_visitors
-GET        /api/v1/visitors/{id}/            retrieve
+GET        /api/v1/visitors/{id}/            retrieve                      manage_visitors
 POST       /api/v1/visitors/{id}/check-out/  log exit ({"exit_time"?})     manage_visitors
-POST       /api/v1/visitors/{id}/confirm/    optional Owner/Manager stamp  manage_visitors
+POST       /api/v1/visitors/{id}/confirm/    optional Owner/Manager stamp  Owner/Manager only (CanConfirmVisitor)
 ```
 No PATCH/DELETE — a logged entry is corrected via the dedicated actions,
 not raw edits.
@@ -53,23 +53,28 @@ not raw edits.
    visitor already checked out (`already_checked_out`) or if the given
    `exit_time` precedes `entry_time` (`exit_before_entry`).
 3. **Confirm** (`POST /visitors/{id}/confirm/`) stamps `approved_by` from
-   the request user; rejected if already confirmed (`already_confirmed`).
+   the request user (Owner/Manager/Super Admin only; Receptionist receives
+   403); rejected if already confirmed (`already_confirmed`).
    It does **not** gate check-in/check-out — see Decisions.
 4. `is_checked_in` (`exit_time is None`) is computed, never stored — same
    discipline as `Invoice.is_overdue`.
 5. Logging, check-out, and confirm are all audit logged.
 6. `manage_visitors` (Super Admin, Owner, Manager, **and Receptionist**)
-   gates every endpoint — this is the only module where Receptionist has
-   full access, matching the PRD §6 matrix exactly. Scoped to the actor's
-   assigned properties via the resident's property. Resident (self-service
-   `request_visitor`) has no access — see Decisions.
+   gates entry, retrieval, and check-out — this is the primary job of
+   the Receptionist. The `confirm` action requires Owner or Manager
+   role (`CanConfirmVisitor`). Scoped to the actor's assigned properties
+   via the resident's property. Resident (self-service `request_visitor`)
+   has no access — see Decisions.
 7. `visitors` is RLS-enforced (isolation proven).
 8. History is filterable by `resident` (PRD "Visitor history per
    resident") and `mobile_number` (repeat-visitor lookups).
 
 ## Permissions
-- `manage_visitors` (Super Admin, Owner, Manager, Receptionist): every
-  endpoint, scoped to assigned properties for Manager/Receptionist.
+- `manage_visitors` (Super Admin, Owner, Manager, Receptionist): list,
+  detail, log entry, and check-out, scoped to assigned properties for
+  Manager/Receptionist.
+- `confirm` action: Owner, Manager, and Super Admin only (`CanConfirmVisitor`;
+  Receptionist receives 403).
 - Resident: no access (see Decisions).
 
 ## Edge cases handled
@@ -95,6 +100,11 @@ not raw edits.
   can independently complete the whole flow — log entry, check out, and
   optionally confirm — with `confirm` recorded as an audit-visible stamp
   layered on top, not a precondition for logging or check-out.
+- [DECISION 2026-10-11] **`confirm` action restricted to Owner/Manager**:
+  While Receptionist can log entries and check-outs via `manage_visitors`,
+  stamping confirmation/approval requires Owner, Manager, or Super Admin
+  (`CanConfirmVisitor`). A Receptionist attempting `POST /visitors/{id}/confirm/`
+  receives 403 Forbidden to prevent authorization bypass and forged confirmations.
 - [DECISION 2026-07-04] **No separate `status` field.** Unlike Complaint's
   exact linear workflow, a visitor's state is fully captured by
   `entry_time`/`exit_time`/`approved_by` — a computed `is_checked_in`

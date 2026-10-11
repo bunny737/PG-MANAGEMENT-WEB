@@ -101,19 +101,18 @@ Table: property_staff_assignments   (RLS enforced)
 GET|POST    /api/v1/properties/                          list/create        manage_properties (write) / owner+manager+receptionist (read, scoped)
 GET|PATCH   /api/v1/properties/{id}/                      detail/update      same (no DELETE — deactivate via status)
 POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
-DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
-GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds
+GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
                                                             (create accepts write-only `number_of_floors` to
                                                             auto-generate that many named Floors — see Decisions)
-GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds
-GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
+GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
                                                             (create accepts write-only `auto_create_beds` to
                                                             generate `sharing_type` beds — see Decisions)
-GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds
-GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds
+GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
 GET|POST    /api/v1/staff-property-assignments/           list/create        assign_staff_to_properties
 DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  assign_staff_to_properties
 ```
@@ -125,8 +124,10 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
    see only properties they've been explicitly assigned (PRD §6). Enforced
    both by role gate (`CanViewProperties`) and queryset scoping
    (`services.visible_property_ids`).
-3. `manage_rooms_beds` (buildings/floors/rooms/beds CRUD) excludes
-   Receptionist entirely, per the PRD permission matrix.
+3. `manage_rooms_beds` (buildings/floors/rooms/beds mutations: create, update,
+   delete) excludes Receptionist, per the PRD permission matrix. Safe methods
+   (GET list/detail) allow Receptionist read access scoped to assigned
+   properties via `CanViewProperties` (see Decisions, 2026-10-11).
 4. Creating a Building/Floor/Room/Bed under a property the requesting
    Manager isn't assigned to is rejected (`property_not_assigned`), even
    though the property is in the same tenant and would otherwise pass RLS —
@@ -166,10 +167,11 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
 
 ## Permissions
 - `manage_properties` (Super Admin, Owner): create/update properties.
-- Read access to `/properties/`: Super Admin, Owner, Manager, Receptionist
-  (role gate), further scoped to assigned properties for Manager/Receptionist.
-- `manage_rooms_beds` (Super Admin, Owner, Manager): full CRUD on
-  floors/rooms/beds, scoped to assigned properties for Manager.
+- Read access to `/properties/`, `/buildings/`, `/floors/`, `/rooms/`, `/beds/`:
+  Super Admin, Owner, Manager, Receptionist (`CanViewProperties` role gate on safe methods),
+  further scoped to assigned properties for Manager/Receptionist (`visible_property_ids`).
+- `manage_rooms_beds` (Super Admin, Owner, Manager): mutations (create, update, delete) on
+  floors/rooms/beds/buildings, scoped to assigned properties for Manager. Receptionist is 403-denied.
 - `assign_staff_to_properties` (Super Admin, Owner): manage
   `PropertyStaffAssignment` rows.
 
@@ -289,6 +291,24 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   were left exactly where they were — they don't depend on Building and
   are still mock-data-only (never wired to the real API), so there was
   nothing to migrate there.
+- [DECISION 2026-10-11] **Receptionist read-only hierarchy access**:
+  Safe HTTP methods (`GET` list and retrieve) on `/buildings/`, `/floors/`,
+  `/rooms/`, and `/beds/` use `CanViewProperties` (Super Admin, Owner, Manager,
+  Receptionist), scoped to assigned properties via `services.visible_property_ids`.
+  This allows Receptionists to view layout, rooms, and bed statuses at the desk
+  (and renders the frontend "Manage Layout" screen read-only) without receiving
+  403 errors. All mutation methods (`POST`, `PATCH`, `DELETE`) remain strictly
+  gated by `manage_rooms_beds` (Owner, Manager, Super Admin only).
+- [DECISION 2026-10-11] **Financial data minimization in BedSerializer & RoomSerializer**:
+  When Receptionists (or any user lacking `manage_residents`) access read-only rooms or beds,
+  `BedSerializer` strips contracted resident financial data (`current_occupant.rent` and
+  `history[].rate`) to maintain strict parity with `ResidentSerializer` restrictions.
+  Furthermore, users lacking `view_activity_timeline` (such as Receptionists) have bed
+  `history` omitted entirely, avoiding exposure of admission timeline details and preventing
+  unnecessary historical queries during room listing. Published rack rates
+  (`effective_rate_with_food`, `effective_rate_without_food`, and room rack rates) remain
+  visible to Receptionists as standard property catalog/inventory pricing required for desk
+  inquiries and room allocation walkthroughs.
 
 ## Bugs found and fixed
 - **2026-07-03 (during Module 04):** `services.can_view_property()` chained

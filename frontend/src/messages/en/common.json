@@ -7,11 +7,17 @@
     "dashboard": "Dashboard",
     "properties": "Properties",
     "residents": "Residents",
+    "visitors": "Visitors",
     "staff": "Staff",
     "complaints": "Complaints",
     "financials": "Financials",
     "settings": "Settings",
     "more": "More"
+  },
+  "roles": {
+    "owner": "Owner",
+    "manager": "Manager",
+    "receptionist": "Receptionist"
   },
   "sideNav": {
     "ownerPortal": "Owner Portal",

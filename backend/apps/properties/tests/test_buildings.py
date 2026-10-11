@@ -65,10 +65,54 @@ class BuildingTests(PropertyAPITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('property', response.data)
 
-    def test_receptionist_has_no_access_to_buildings(self):
+    def test_receptionist_can_view_buildings_of_assigned_property(self):
         receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
         self.authenticate(receptionist)
-        self.assertEqual(self.client.get(reverse('building-list')).status_code, 403)
+
+        response = self.client.get(reverse('building-list'), {'property': str(self.property.id)})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        with tenant_context(self.tenant.id):
+            building = Building.objects.get(property=self.property)
+        detail_resp = self.client.get(reverse('building-detail', args=[building.id]))
+        self.assertEqual(detail_resp.status_code, 200)
+
+    def test_receptionist_cannot_view_buildings_of_unassigned_property(self):
+        other_property = self.create_property(self.tenant, name='Other Property')
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)  # not other_property
+        self.authenticate(receptionist)
+
+        response = self.client.get(reverse('building-list'), {'property': str(other_property.id)})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+        with tenant_context(self.tenant.id):
+            other_bldg = Building.objects.get(property=other_property)
+        detail_resp = self.client.get(reverse('building-detail', args=[other_bldg.id]))
+        self.assertEqual(detail_resp.status_code, 404)
+
+    def test_receptionist_cannot_create_update_or_delete_building(self):
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        with tenant_context(self.tenant.id):
+            building = Building.objects.get(property=self.property)
+
+        # POST
+        create_resp = self.client.post(reverse('building-list'), {'property': str(self.property.id), 'name': 'Block B'})
+        self.assertEqual(create_resp.status_code, 403)
+
+        # PATCH
+        patch_resp = self.client.patch(reverse('building-detail', args=[building.id]), {'name': 'New Name'})
+        self.assertEqual(patch_resp.status_code, 403)
+
+        # DELETE
+        delete_resp = self.client.delete(reverse('building-detail', args=[building.id]))
+        self.assertEqual(delete_resp.status_code, 403)
 
     def test_cannot_delete_building_with_floors(self):
         self.authenticate(self.owner)

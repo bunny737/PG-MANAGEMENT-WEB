@@ -114,7 +114,7 @@ class ResidentViewSet(viewsets.ModelViewSet):
                 before={'status': before_status}, after={'status': instance.status},
                 request=request,
             )
-        return Response(ResidentSerializer(instance).data)
+        return Response(ResidentSerializer(instance, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['get'])
     def timeline(self, request, pk=None):

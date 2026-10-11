@@ -21,6 +21,7 @@ import {
   X
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { getInitials } from "@/lib/utils";
 import { getResident, updateResident, type Resident, ApiError } from "@/lib/api";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
@@ -197,27 +198,33 @@ export function ResidentProfile({ id }: { id: string }) {
 
         {/* Action Buttons Toolbar */}
         <div className="flex flex-wrap gap-2.5">
-          <button
-            onClick={() => handleAction("edit")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <Edit className="size-3.5" />
-            {t("editProfile")}
-          </button>
-          <button
-            onClick={() => handleAction("transfer")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <ArrowRightLeft className="size-3.5 text-accent" />
-            {t("transferRoom")}
-          </button>
-          <button
-            onClick={() => handleAction("vacate")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <LogOut className="size-3.5" />
-            {t("vacateResident")}
-          </button>
+          <PermissionGate permission="manage_residents">
+            <button
+              onClick={() => handleAction("edit")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Edit className="size-3.5" />
+              {t("editProfile")}
+            </button>
+          </PermissionGate>
+          <PermissionGate permission="manage_allocations">
+            <button
+              onClick={() => handleAction("transfer")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <ArrowRightLeft className="size-3.5 text-accent" />
+              {t("transferRoom")}
+            </button>
+          </PermissionGate>
+          <PermissionGate permission="manage_deposits">
+            <button
+              onClick={() => handleAction("vacate")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <LogOut className="size-3.5" />
+              {t("vacateResident")}
+            </button>
+          </PermissionGate>
         </div>
       </div>
 

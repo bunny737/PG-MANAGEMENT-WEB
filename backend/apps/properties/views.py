@@ -276,9 +276,13 @@ class TenantFeatureViewSet(viewsets.ModelViewSet):
 
 class BuildingViewSet(viewsets.ModelViewSet):
     serializer_class = BuildingSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['property']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -305,9 +309,13 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
 class FloorViewSet(viewsets.ModelViewSet):
     serializer_class = FloorSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['building']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -329,9 +337,13 @@ class FloorViewSet(viewsets.ModelViewSet):
 
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['floor', 'category', 'status']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -353,9 +365,13 @@ class RoomViewSet(viewsets.ModelViewSet):
 
 class BedViewSet(viewsets.ModelViewSet):
     serializer_class = BedSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['room', 'status']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

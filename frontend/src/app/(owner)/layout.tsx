@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { SideNav } from "@/components/shared/SideNav";
+import { clearSession } from "@/lib/api";
+import { ensureFreshSession, useSession } from "@/lib/session";
 
+const ALLOWED_ROLES = ["owner", "manager", "receptionist"];
+
+/**
+ * Client-side UX guard for the (owner) portal layout.
+ *
+ * NOTE: This is explicitly a client-side UX guard, not a primary security boundary.
+ * Real authorization boundaries reside on the backend via require_permission()
+ * and JWT validation (see docs/frontend-plan.md §3.1).
+ */
 export default function OwnerLayout({
   children,
 }: {
@@ -13,21 +24,32 @@ export default function OwnerLayout({
 }) {
   const router = useRouter();
   const t = useTranslations("common");
-  const [authorized, setAuthorized] = useState(false);
+  const { ready, authenticated, role } = useSession();
+
+  // Revalidate session once per portal load.
+  useEffect(() => {
+    ensureFreshSession();
+  }, []);
 
   useEffect(() => {
-    const loggedIn = localStorage.getItem("isLoggedIn");
-    if (loggedIn !== "true") {
-      router.push("/login");
-    } else {
-      const timer = setTimeout(() => {
-        setAuthorized(true);
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [router]);
+    if (!ready) return;
 
-  if (!authorized) {
+    if (!authenticated) {
+      router.replace("/login");
+      return;
+    }
+
+    if (role && !ALLOWED_ROLES.includes(role)) {
+      // Rejects super_admin or resident accounts that have no portal shell here,
+      // avoiding redirect loops by clearing session before bouncing to login.
+      clearSession();
+      router.replace("/login");
+    }
+  }, [ready, authenticated, role, router]);
+
+  const isAuthorized = ready && authenticated && role && ALLOWED_ROLES.includes(role);
+
+  if (!isAuthorized) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-surface-page">
         <div className="flex flex-col items-center gap-2">

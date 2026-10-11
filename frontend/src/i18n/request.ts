@@ -17,6 +17,7 @@ export const MODULES = [
   'dashboard',
   'financials',
   'status',
+  'visitors',
 ];
 
 async function loadMessages(locale: string) {

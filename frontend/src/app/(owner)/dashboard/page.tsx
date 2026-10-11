@@ -25,9 +25,10 @@ import {
   type Resident,
   ApiError
 } from "@/lib/api";
+import { RequirePermission } from "@/components/shared/RequirePermission";
 import type { DashboardSummary, ActivityItem } from "@/features/dashboard/types";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const t = useTranslations("dashboard");
   const [beds, setBeds] = useState<Bed[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -259,3 +260,12 @@ export default function DashboardPage() {
     </>
   );
 }
+
+export default function DashboardPage() {
+  return (
+    <RequirePermission permission="view_reports" fallback="/visitors">
+      <DashboardContent />
+    </RequirePermission>
+  );
+}
+

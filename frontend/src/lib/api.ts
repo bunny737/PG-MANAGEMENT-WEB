@@ -91,10 +91,14 @@ export function clearSession() {
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");
   localStorage.removeItem("userName");
+  localStorage.removeItem("currentUser");
   localStorage.removeItem(PERMISSIONS_KEY);
   // Invariant F7: no tenant data survives logout.
   for (const key of Object.keys(sessionStorage)) {
     if (key.startsWith(FEATURE_DRAFT_PREFIX)) sessionStorage.removeItem(key);
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
   }
 }
 
@@ -181,8 +185,12 @@ export async function login(email: string, password: string) {
   localStorage.setItem("userRole", me.role);
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
   localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  localStorage.setItem("currentUser", JSON.stringify(me));
   const effectiveLang = me.language_code || me.tenant?.default_language || "en";
   writeLocaleCookie(effectiveLang);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
+  }
   return me;
 }
 
@@ -199,8 +207,12 @@ export async function loginPhone(phone: string, password: string) {
   localStorage.setItem("userRole", me.role);
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
   localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  localStorage.setItem("currentUser", JSON.stringify(me));
   const effectiveLang = me.language_code || me.tenant?.default_language || "en";
   writeLocaleCookie(effectiveLang);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
+  }
   return me;
 }
 
@@ -445,7 +457,7 @@ export interface Bed {
     phone: string;
     status: string;
     joining_date: string | null;
-    rent: string;
+    rent?: string;
     initials: string;
   } | null;
   history?: Array<{
@@ -453,7 +465,7 @@ export interface Bed {
     term: string;
     moveIn: string;
     moveOut: string;
-    rate: string;
+    rate?: string;
     initials: string;
   }>;
   created_at: string;
@@ -1011,3 +1023,52 @@ export function replacePropertyFeatures(
     body: JSON.stringify(payload),
   });
 }
+
+export interface Visitor {
+  id: string;
+  resident: string;
+  visitor_name: string;
+  mobile_number: string;
+  purpose: string;
+  entry_time: string;
+  exit_time: string | null;
+  is_checked_in: boolean;
+  logged_by?: string;
+  checked_out_by?: string | null;
+  approved_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VisitorPayload {
+  resident: string;
+  visitor_name: string;
+  mobile_number: string;
+  purpose: string;
+  entry_time?: string;
+}
+
+export function listVisitors(filters?: { resident?: string; mobile_number?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.resident) params.append("resident", filters.resident);
+  if (filters?.mobile_number) params.append("mobile_number", filters.mobile_number);
+  const q = params.toString();
+  return apiFetch<Visitor[] | { results: Visitor[] }>(`/api/v1/visitors/${q ? `?${q}` : ""}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function createVisitor(payload: VisitorPayload) {
+  return apiFetch<Visitor>("/api/v1/visitors/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function checkOutVisitor(id: string, exit_time?: string) {
+  return apiFetch<Visitor>(`/api/v1/visitors/${id}/check-out/`, {
+    method: "POST",
+    body: JSON.stringify(exit_time ? { exit_time } : {}),
+  });
+}
+

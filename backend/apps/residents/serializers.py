@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.core.roles import permissions_for
 from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
@@ -19,6 +20,21 @@ from .models import (
 
 
 class ResidentSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
+            user_permissions = permissions_for(getattr(request.user, 'role', None))
+            if 'manage_residents' not in user_permissions:
+                for field in [
+                    'contracted_rent',
+                    'billing_mode',
+                    'security_deposit_amount',
+                    'advance_amount',
+                    'advance_refundable',
+                ]:
+                    self.fields.pop(field, None)
+
     unit = serializers.SerializerMethodField()
     block = serializers.SerializerMethodField()
     move_in_date = serializers.SerializerMethodField()

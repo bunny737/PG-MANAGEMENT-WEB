@@ -4,18 +4,28 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { BOTTOM_NAV_ITEMS } from "./NavItems";
+import { useSession } from "@/lib/session";
+import { SIDEBAR_NAV_ITEMS, MORE_NAV_ITEM } from "./NavItems";
 
-/** Mobile tab bar (< md) — matches the phone reference mock. SideNav takes
- * over at md+ (see (owner)/layout.tsx). */
+/**
+ * Mobile tab bar (< md) — displays first 3 permission-visible items plus a 4th "More" slot.
+ */
 export function BottomNav() {
   const pathname = usePathname();
   const t = useTranslations("common");
+  const { can, ready } = useSession();
+
+  const visibleItems = SIDEBAR_NAV_ITEMS.filter(
+    (item) => !item.permission || (ready && can(item.permission))
+  );
+
+  const primaryItems = visibleItems.slice(0, 3);
+  const bottomBarItems = [...primaryItems, MORE_NAV_ITEM];
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card/95 shadow-[0_-4px_16px_-4px_rgb(11_18_32/0.08)] backdrop-blur-sm md:hidden">
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
-        {BOTTOM_NAV_ITEMS.map((item) => {
+        {bottomBarItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (

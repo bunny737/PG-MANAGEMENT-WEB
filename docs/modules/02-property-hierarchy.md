@@ -17,6 +17,9 @@ of their PGs/hostels, and assigns Manager/Receptionist staff to the specific
 properties they're allowed to work on. Every later module (residents,
 admissions, allocations, billing) hangs off this hierarchy.
 
+Client-side how-to for the Flutter app (property-staff assignment endpoints,
+Receptionist data minimization): [../auth-staff-flutter-integration.md](../auth-staff-flutter-integration.md).
+
 ## Data model (as-built)
 
 ```

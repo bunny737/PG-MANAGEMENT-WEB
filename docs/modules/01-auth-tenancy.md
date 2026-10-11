@@ -15,6 +15,9 @@ JWT session management, email verification, password reset, the 5-role permissio
 model, Owner-managed staff accounts, and the tenant-isolation (RLS) infrastructure
 every later module builds on.
 
+Client-side how-to for the Flutter app (phone+password login, `auth_version` token
+revocation, email-optional staff accounts): [../auth-staff-flutter-integration.md](../auth-staff-flutter-integration.md).
+
 ## Data model (as-built)
 
 ```

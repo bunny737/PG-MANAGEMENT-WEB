@@ -161,7 +161,10 @@ app uses, with no proxy layer:
 - Auth: same `POST /api/v1/auth/login/` -> `{access, refresh}` and
   `POST /api/v1/auth/token/refresh/` flow as the web temporary client
   (`frontend/src/lib/api.ts`), just called from Dart (`dio`/`http`) instead
-  of `fetch`.
+  of `fetch`. A phone+password path (`POST /api/v1/auth/login-phone/`) was
+  added for Manager/Receptionist accounts that have no email, plus
+  `auth_version`-based immediate token revocation on password change —
+  both covered in `docs/auth-staff-flutter-integration.md`.
 - Token storage: `flutter_secure_storage` (Android Keystore-backed on
   Android, Keychain-backed on iOS — one API, platform-correct storage on
   both). Never plain `SharedPreferences`/local files — that's the mobile

@@ -93,7 +93,7 @@ export function PropertyList() {
               {/* Type pill overlay */}
               <div className="absolute top-4 left-4 z-10">
                 <span className="bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                  {t(`types.${property.property_type as "pg" | "boys_hostel" | "girls_hostel" | "co_living"}`) ?? property.property_type}
+                  {t(`types.${property.property_type as "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living"}`) ?? property.property_type}
                 </span>
               </div>
               {/* Edit action overlay */}
@@ -115,6 +115,7 @@ export function PropertyList() {
                 <p className="text-xs text-ink-muted mt-1 flex items-center gap-1.5">
                   <MapPin className="size-3.5 text-ink-faint shrink-0" />
                   {property.address_line}, {property.city}, {property.state}
+                  {property.pincode ? ` - ${property.pincode}` : ""}
                 </p>
               </div>
 

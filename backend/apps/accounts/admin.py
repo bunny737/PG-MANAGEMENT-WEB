@@ -91,9 +91,10 @@ class UserAdmin(BaseUserAdmin):
         (None, {'fields': ('email', 'phone', 'password')}),
         ('Personal Info', {'fields': ('first_name', 'last_name', 'tenant', 'role', 'language_code')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'email_verified', 'groups', 'user_permissions')}),
+        ('Module access (edit via Team Management)', {'fields': ('module_access',)}),
         ('Important Dates', {'fields': ('last_login', 'created_at', 'updated_at')}),
     )
-    readonly_fields = ('created_at', 'updated_at', 'last_login')
+    readonly_fields = ('created_at', 'updated_at', 'last_login', 'module_access')
 
     add_fieldsets = (
         (None, {

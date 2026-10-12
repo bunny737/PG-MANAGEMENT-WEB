@@ -49,7 +49,13 @@ class ResidentViewSet(viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update', 'change_status'):
             return [IsAuthenticated(), require_permission('manage_residents')()]
         if self.action == 'timeline':
-            return [IsAuthenticated(), require_permission('view_activity_timeline')()]
+            # The timeline is resident data *and* invoice/payment amounts, so it
+            # needs both the Tenants and the Finance side of module access.
+            return [
+                IsAuthenticated(),
+                require_permission('view_resident_profile')(),
+                require_permission('view_activity_timeline')(),
+            ]
         return [IsAuthenticated(), require_permission('view_resident_profile')()]
 
     def get_queryset(self):

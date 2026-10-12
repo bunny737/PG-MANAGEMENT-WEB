@@ -16,7 +16,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.audit import log as audit_log
 from apps.core.authentication import BLOCKED_TENANT_STATUSES
 from apps.core.models import PlatformConfig
-from apps.core.roles import Role, STAFF_ROLES, permissions_for
+from apps.core.modules import validate_levels_payload
+from apps.core.roles import Role, STAFF_ROLES, permissions_for_user
 from apps.subscriptions.models import Subscription
 
 from . import otp as otp_service
@@ -360,7 +361,7 @@ class MeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'email', 'role', 'email_verified', 'tenant', 'permissions']
 
     def get_permissions(self, obj) -> list[str]:
-        return permissions_for(obj.role)
+        return permissions_for_user(obj)
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -518,6 +519,22 @@ class StaffCreateSerializer(serializers.ModelSerializer):
         return user
 
 
+class ModuleAccessWriteSerializer(serializers.Serializer):
+    """PUT body for a staff member's module access: a complete replacement.
+
+    `role` is the role the client rendered; the view compares it to the locked row
+    and answers 409 ROLE_CHANGED on a mismatch."""
+
+    role = serializers.ChoiceField(choices=[role.value for role in STAFF_ROLES])
+    levels = serializers.JSONField()
+
+    def validate_levels(self, value):
+        clean, errors = validate_levels_payload(value)
+        if errors:
+            raise serializers.ValidationError(errors)
+        return clean
+
+
 class StaffUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -574,9 +591,22 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         request = self.context['request']
-        before = {'role': instance.role, 'is_active': instance.is_active}
+        before = {
+            'role': instance.role,
+            'is_active': instance.is_active,
+            'module_access': instance.module_access,
+        }
+        # A role change voids any Owner-configured module access: the overrides were
+        # tuned for the old role (their stored base_role would be ignored anyway —
+        # clearing keeps the data and the audit trail honest).
+        if validated_data.get('role', instance.role) != instance.role:
+            validated_data['module_access'] = None
         instance = super().update(instance, validated_data)
-        after = {'role': instance.role, 'is_active': instance.is_active}
+        after = {
+            'role': instance.role,
+            'is_active': instance.is_active,
+            'module_access': instance.module_access,
+        }
         if before != after:
             audit_log.record(
                 action='staff.updated',

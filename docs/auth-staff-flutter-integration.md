@@ -15,13 +15,16 @@
    hasn't expired yet. Handle it distinctly from a normal 401 — see §2.
 3. `email` can be `null` on `/auth/me/` and in any staff list. Don't assume every account has one —
    see §3.
-4. If the logged-in user is a **Receptionist**, several JSON **keys are completely absent** from
-   Resident/Bed responses (not `null` — *absent*). A non-nullable Dart model will crash. See §4.
-   This is the single most likely thing to break if copy-pasted model classes from Owner/Manager
-   testing.
-5. Drive all UI (nav, buttons, screens) off the `permissions` array from `/auth/me/`, never off
-   `role == "manager"` string checks — see §5. This mirrors the web app's `PermissionGate`/
-   `RequirePermission` pattern (`frontend/src/components/shared/`).
+4. When the logged-in user lacks Finance / Tenants access (a **Receptionist** by default, or any
+   staff member whose modules the Owner reduced), several JSON **keys are completely absent**
+   from Resident/Bed responses (not `null` — *absent*) and `current_occupant` can be `null`.
+   A non-nullable Dart model will crash. See §4. This is the single most likely thing to break
+   if model classes were only tested as Owner.
+5. Drive all UI (nav, buttons, screens, redirects) off the `permissions` array from
+   `/auth/me/`, never off `role == "manager"` string checks — an Owner can now tune each staff
+   member's access **per person** (§5), so the role no longer tells you what someone can do.
+   This mirrors the web app's `PermissionGate`/`RequirePermission` pattern
+   (`frontend/src/components/shared/`).
 
 ## 1. Login: two endpoints
 
@@ -125,47 +128,56 @@ staff). Checklist:
 }
 ```
 
-## 4. Receptionist data minimization — keys are *absent*, not `null`
+## 4. Missing keys — absent, not `null`
 
-If the logged-in user's role is `receptionist` (lacks the `manage_residents` permission), the
-backend **removes these keys entirely** from every `Resident` object:
-`contracted_rent`, `billing_mode`, `security_deposit_amount`, `advance_amount`,
-`advance_refundable`.
+What a user sees depends on their **module access** (§5), not just their role. These fields are
+**removed from the JSON entirely** (not sent as `null`):
 
-And from every `Bed` object: the `history` key is removed entirely (if the role lacks
-`view_activity_timeline` — true for both Manager and Receptionist), and inside `current_occupant`
-(when present), the nested `rent` key is removed (if the role lacks `manage_residents` — true for
-Receptionist only).
+| Field(s) | Present only if the user has |
+|---|---|
+| Resident: `contracted_rent`, `billing_mode` | `view_finance` |
+| Resident: `security_deposit_amount`, `advance_amount`, `advance_refundable` | `view_finance` **or** `manage_deposits` |
+| Bed: `history` | `view_activity_timeline` **and** `view_resident_profile` |
+| Bed: `current_occupant.rent` | `view_finance` |
+| Bed: `current_occupant` itself | `view_resident_profile` — otherwise the key is present but **`null`** |
 
-**This is a key-presence difference, not a `null` value.** If your Dart model uses
-`json_serializable`/`freezed` with these fields marked required/non-nullable, deserializing a
-Receptionist's response for Resident/Bed data **throws**, not "shows null." Make every one of these
-fields optional in the model (`String? contractedRent`, etc.) regardless of which role you're
-testing with — a model that only gets tested as Owner/Manager will pass CI and break in production
-the first time a Receptionist account opens that screen.
+Defaults: Owner/Manager have everything; a **Receptionist** has none of the finance fields, no
+`history`, but does see `current_occupant` (name/phone, no rent).
 
-Same principle as `frontend/src/features/properties/BedDetails.tsx` already handles on web (built
-in the same commit, `060fdad`) — it tolerates missing `rent`/`history` rather than assuming
-presence.
+**This is a key-presence difference, not a `null` value** (except `current_occupant`, which is
+`null`). If your Dart model uses `json_serializable`/`freezed` with these fields
+required/non-nullable, deserializing throws. Make every field above optional in the model
+(`String? contractedRent`, …) regardless of which role you test with — a model only tested as
+Owner/Manager passes CI and breaks the first time a Receptionist, or a Manager whose Finance
+module was turned off, opens that screen. Likewise hide the rent/finance UI instead of rendering a
+zero. Same as `frontend/src/features/properties/BedDetails.tsx` and
+`frontend/src/features/residents/ResidentProfile.tsx`, which tolerate absent fields.
 
-## 5. Drive UI off `permissions`, never off role strings
+## 5. Drive UI off `permissions`; access is per person
 
-`/auth/me/`'s `permissions` array (§3) is the *only* thing that should gate what a screen/button
-does. The backend's permission matrix (`backend/apps/core/roles.py`) decides what each role can do
-— it is **not owner-configurable** (there's no "pick individual permissions" UI anywhere, web or
-otherwise; an Owner only ever picks a role, and the role's fixed permission set follows). Mirror the
-web app's pattern:
+`/auth/me/`'s `permissions` array (§3) is the *only* thing that should gate what a screen or
+button does. **Since 2026-10-12 it is per person**: the role gives the defaults, and the Owner can
+override each Manager's/Receptionist's access per *module* (Dashboard, Properties, Tenants,
+Finance, Reports, Complaints, Visitors) with a level (**off / view / full**, only where a module
+supports it) from the Team Management screen (§6.1). Never hardcode "if role == manager, show X".
+Mirror the web app's pattern:
 - `PermissionGate` (`frontend/src/components/shared/PermissionGate.tsx`) — renders nothing if the
-  permission is missing. Flutter equivalent: a widget that takes a permission string and either
-  returns its child or `SizedBox.shrink()`.
-- `RequirePermission` (`frontend/src/components/shared/RequirePermission.tsx`) — gates an entire
-  route/page. Flutter equivalent: a route guard checked against the cached `permissions` list
-  before pushing the page.
+  permission is missing. Flutter equivalent: a widget taking a permission string and returning its
+  child or `SizedBox.shrink()`.
+- `RequirePermission` — gates an entire route. If the permission is missing, send the user to the
+  **first screen their permissions allow** (`firstAllowedRoute` in `frontend/src/lib/permissions.ts`),
+  else their profile — never a hardcoded role landing page. Do the same after login.
 
-Cache the `permissions` list once after login (and refresh it if you ever re-fetch `/auth/me/`,
-e.g. after a role change — see §6). Never hardcode "if role == manager, show X" — the permission
-codes are the contract, not the role names (a future role or a matrix change shouldn't require an
-app update to respect it correctly, since the client already just checks the list).
+Permission codes you will see for the module screens: `view_dashboard` (dashboard screen),
+`view_property_features` (properties), `view_resident_profile` (tenants), `view_finance`
+(finance reads), `view_reports`, `manage_complaints`, `manage_visitors`; write actions use the
+`manage_*` codes (`manage_invoices`, `manage_payments`, `manage_residents`, …).
+
+**Keeping the cache fresh.** The API enforces a change **immediately** (a revoked permission 403s
+on the very next request), but the app's cached `permissions` only update when `/auth/me/` is
+re-fetched. Re-fetch on app resume (throttle ~60 s) and **immediately after any `403` with
+`code: "PERMISSION_DENIED"`** (bypass the throttle), then re-evaluate the gates; otherwise a user
+whose access was just reduced keeps seeing screens that now fail.
 
 ## 6. Staff management endpoints (only if/when an Owner-side mobile screen is built)
 
@@ -214,6 +226,29 @@ web client does (`frontend/src/lib/api.ts` → `ApiError.fieldError()`, used in
 `frontend/src/features/staff/StaffDirectory.tsx`) — don't try to build a clean `switch` on error
 codes for staff-creation validation, only for the short list above.
 
+### 6.1 Module access (reference only, no mobile UI yet)
+`manage_staff_accounts` (Owner/Super Admin) only; the target must be a Manager/Receptionist of the
+caller's tenant (anything else is `404`).
+```
+GET    /api/v1/staff/{id}/module-access/   → { role, customized, modules: [ { key, levels, level, default_level } ] }
+PUT    /api/v1/staff/{id}/module-access/   { "role": "manager", "levels": { "dashboard": "full", "finance": "view", ... } }
+DELETE /api/v1/staff/{id}/module-access/   reset to role defaults (same response shape as GET)
+```
+- Render from the server's registry: `modules[].key` + `levels` (each module lists only the levels it
+  supports, lowest first, always starting with `off`). A module with a single non-off level is a
+  plain toggle; Properties, Tenants and Finance also get a level picker. Names/labels are your i18n
+  (keyed by `key` and level) — don't hardcode the module list.
+- **`PUT` is a complete replacement**: send every module key. Unknown module or an unsupported
+  level → `400` with per-module errors under `levels`. `role` is the role your screen rendered; if
+  it changed meanwhile the server answers `409 { "code": "ROLE_CHANGED" }` — refetch and show a notice.
+- Levels equal to the role defaults are stored as "not customized" (`customized: false`).
+- Changing a staff member's role (`PATCH /staff/{id}/`) resets their access to the new role's defaults.
+- Autosave pattern used on web (`frontend/src/features/staff/useModuleAccess.ts`): apply optimistically,
+  one serialized worker sends the latest complete map, roll back to the last server-confirmed state on
+  failure.
+- **Registry growth**: a module added in a later release resolves to `off` for staff who already have a
+  saved override (they don't inherit the role default) — expect new modules to appear switched off.
+
 ## 7. Property-staff assignment endpoints (reference only, no mobile UI yet)
 
 A Manager/Receptionist only sees properties explicitly assigned here; an Owner implicitly sees
@@ -240,12 +275,14 @@ check first with the `GET ...?staff={id}` list if you're building a toggle UI (s
 - [ ] Log in, reset that account's password via `set-password/` from a second "Owner" session,
       confirm the first session's next request gets `PASSWORD_CHANGED` and your app shows a clean
       "log in again" flow rather than looping on refresh.
-- [ ] Log in as a Receptionist, open a screen that renders `Resident`/`Bed` data, confirm it
-      doesn't crash on the missing `contracted_rent`/`billing_mode`/`security_deposit_amount`/
-      `advance_amount`/`advance_refundable`/`history`/`current_occupant.rent` keys (§4).
+- [ ] Log in as a Receptionist, and as a Manager whose Finance/Tenants modules the Owner turned
+      off, open screens that render `Resident`/`Bed` data, and confirm nothing crashes on the missing
+      `contracted_rent`/`billing_mode`/deposit-figure/`history`/`current_occupant.rent` keys or a
+      `null` `current_occupant` (§4).
 - [ ] Confirm nav/buttons for Owner-only actions (staff management, property assignment) are
       absent for a Manager/Receptionist session, driven by the `permissions` array, not a role
-      check.
+      check — and that reducing a module from the Owner's session removes its screens for that
+      staff user after the next `/auth/me/` refresh (resume or after a `403`).
 - [ ] Try phone formats `9876543210`, `09876543210`, `+91 98765 43210`, `919876543210` against
       `login-phone/` with the same account — all four should succeed (same canonical number).
       Try an 11-digit number not starting with `0`, or a 10-digit number not starting 6–9 — both
@@ -257,6 +294,6 @@ check first with the `GET ...?staff={id}` list if you're building a toggle UI (s
 |---|---|
 | `login-phone/` always returns `INVALID_CREDENTIALS` even with the right password | Check the phone format you're sending actually normalizes to the stored 10-digit value (§1.2) — a format outside the three accepted shapes is rejected outright, not fuzzy-matched. |
 | A session gets logged out right after you reset *a different* staff member's password | Shouldn't happen — `auth_version` is per-user. If it does, that's a real bug, not expected behavior; file it rather than working around it. |
-| Resident/Bed JSON deserialization crashes only for one test account | Almost always a Receptionist account hitting §4 — check which fields are missing in the raw response vs. what your model requires. |
+| Resident/Bed JSON deserialization crashes only for one test account | Almost always a Receptionist (or a staff user with Finance/Tenants reduced) hitting §4 — check which fields are missing in the raw response vs. what your model requires. |
 | `/auth/me/.email` is `null` and some unrelated feature breaks | That feature assumed every account has an email — see §3, fix the assumption, not the test data. |
 | Staff creation returns 400 with no top-level `code` you recognize | Expected for ordinary validation errors (§6) — read the field-keyed message array instead of switching on `code`. |

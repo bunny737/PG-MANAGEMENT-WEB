@@ -1,12 +1,15 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { firstAllowedRoute } from "@/lib/permissions";
 import { useSession } from "@/lib/session";
 
 interface RequirePermissionProps {
   permission: string;
+  /** Where to go when the permission is missing. Defaults to the first screen this user's
+   * (Owner-configured) access allows, else their profile — never a hardcoded role landing page. */
   fallback?: string;
   children: React.ReactNode;
 }
@@ -16,14 +19,11 @@ interface RequirePermissionProps {
  * until session readiness is confirmed. Redirects via router.replace() to fallback
  * if authorization check fails.
  */
-export function RequirePermission({
-  permission,
-  fallback = "/profile",
-  children,
-}: RequirePermissionProps) {
+export function RequirePermission({ permission, fallback, children }: RequirePermissionProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const t = useTranslations("common");
-  const { ready, authenticated, can } = useSession();
+  const { ready, authenticated, can, permissions } = useSession();
 
   const hasPermission = ready && authenticated && can(permission);
 
@@ -34,9 +34,9 @@ export function RequirePermission({
       return;
     }
     if (!can(permission)) {
-      router.replace(fallback);
+      router.replace(fallback ?? firstAllowedRoute(permissions, pathname));
     }
-  }, [ready, authenticated, can, permission, fallback, router]);
+  }, [ready, authenticated, can, permission, fallback, permissions, pathname, router]);
 
   if (!ready || !hasPermission) {
     return (

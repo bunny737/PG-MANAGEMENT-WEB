@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { getCurrentUser, PERMISSIONS_KEY, type CurrentUser } from "@/lib/api";
+import {
+  getCurrentUser,
+  PERMISSION_DENIED_EVENT,
+  PERMISSIONS_KEY,
+  type CurrentUser,
+} from "@/lib/api";
 
 export const SESSION_CHANGED_EVENT = "session-changed";
 
@@ -119,9 +124,19 @@ function getServerSnapshot(): SessionSnapshot {
   return SERVER_SNAPSHOT;
 }
 
+/** Minimum gap between *focus-triggered* refreshes of /auth/me/. */
+const FOCUS_REFRESH_MIN_MS = 60_000;
+/** A 403 refresh is never throttled by focus, only de-bounced so a burst of 403s is one fetch. */
+const DENIED_REFRESH_DEBOUNCE_MS = 2_000;
+let lastRefreshedAt = 0;
+let lastDeniedRefreshAt = 0;
+
 /**
- * Revalidates session from /auth/me/ exactly once per portal load. Guarded by a module-level
- * in-flight promise to collapse concurrent calls.
+ * Revalidates the session (and its permissions) from /auth/me/. Called once per portal load
+ * by the layout, on tab focus (throttled, see `refreshOnFocus`) and after any 403 — the Owner
+ * can change a staff member's module access at any time, and the API enforces that
+ * immediately, but the UI only learns about it from here. Guarded by a module-level in-flight
+ * promise to collapse concurrent calls.
  */
 export function ensureFreshSession(): Promise<CurrentUser | null> {
   if (typeof window === "undefined") return Promise.resolve(null);
@@ -129,6 +144,7 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
 
   inFlightPromise = getCurrentUser()
     .then((me) => {
+      lastRefreshedAt = Date.now();
       inMemoryUser = me;
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userRole", me.role);
@@ -146,6 +162,34 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
     });
 
   return inFlightPromise;
+}
+
+function isLoggedIn(): boolean {
+  try {
+    return localStorage.getItem("isLoggedIn") === "true";
+  } catch {
+    return false;
+  }
+}
+
+function refreshOnFocus() {
+  if (document.visibilityState === "hidden" || !isLoggedIn()) return;
+  if (Date.now() - lastRefreshedAt < FOCUS_REFRESH_MIN_MS) return;
+  void ensureFreshSession();
+}
+
+function refreshAfterDenied() {
+  if (!isLoggedIn()) return;
+  const now = Date.now();
+  if (now - lastDeniedRefreshAt < DENIED_REFRESH_DEBOUNCE_MS) return;
+  lastDeniedRefreshAt = now;
+  void ensureFreshSession(); // deliberately not subject to FOCUS_REFRESH_MIN_MS
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("focus", refreshOnFocus);
+  document.addEventListener("visibilitychange", refreshOnFocus);
+  window.addEventListener(PERMISSION_DENIED_EVENT, refreshAfterDenied);
 }
 
 export function useSession() {

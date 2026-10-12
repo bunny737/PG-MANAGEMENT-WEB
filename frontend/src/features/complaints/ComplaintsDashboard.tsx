@@ -88,8 +88,10 @@ export function ComplaintsDashboard() {
 
     Promise.all([
       listComplaints(),
-      listResidents(),
-      listStaff(),
+      // Residents (Tenants module) and the staff list (Owner-only) are optional: a user
+      // with Complaints but not those must still see their complaints.
+      listResidents().catch((): Resident[] => []),
+      listStaff().catch((): StaffUser[] => []),
       getCurrentUser().catch(() => null)
     ])
       .then(([complaintData, residentData, staffData]) => {

@@ -16,6 +16,7 @@ import {
   UserCheck,
   ChevronRight,
 } from "lucide-react";
+import { firstAllowedRoute } from "@/lib/permissions";
 import { ApiError, clearSession, login, loginPhone } from "@/lib/api";
 
 type LoginView = "choice" | "owner" | "staff";
@@ -99,7 +100,8 @@ export function LoginForm() {
       setIsLoading(false);
       setIsSuccess(true);
       setTimeout(() => {
-        router.push("/dashboard");
+        // Access is Owner-configured per person, so land on the first screen it allows.
+        router.push(firstAllowedRoute(me.permissions ?? []));
       }, 800);
     } catch (err) {
       setIsLoading(false);
@@ -144,11 +146,7 @@ export function LoginForm() {
       setIsLoading(false);
       setIsSuccess(true);
       setTimeout(() => {
-        if (me.role === "receptionist") {
-          router.push("/visitors");
-        } else {
-          router.push("/dashboard");
-        }
+        router.push(firstAllowedRoute(me.permissions ?? []));
       }, 800);
     } catch (err) {
       setIsLoading(false);

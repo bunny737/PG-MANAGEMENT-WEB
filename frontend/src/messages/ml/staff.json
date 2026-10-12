@@ -26,11 +26,11 @@
   "actions": {
     "resetPassword": "Reset Password",
     "editStaff": "Edit",
-    "manageProperties": "Properties",
     "deactivate": "Deactivate",
     "activate": "Reactivate",
     "confirmDeactivate": "Are you sure you want to deactivate {name}? They will lose access to the portal immediately.",
-    "confirmActivate": "Are you sure you want to reactivate {name}?"
+    "confirmActivate": "Are you sure you want to reactivate {name}?",
+    "manageAccess": "Access"
   },
   "modal": {
     "createTitle": "Add Staff Member",
@@ -66,9 +66,7 @@
     "editTitle": "Edit Staff Member",
     "editSubtitle": "Update {name}'s details or role.",
     "saveButton": "Save Changes",
-    "roleChangeHelp": "Changing the role changes what this staff member can do immediately — the permission set is fixed per role, not customizable.",
-    "propertiesTitle": "Manage Property Access",
-    "propertiesSubtitle": "Choose which properties {name} can access.",
+    "roleChangeHelp": "Changing the role resets this person's module access to the new role's defaults.",
     "noProperties": "No properties found. Add a property first.",
     "propertiesHelp": "Owners always have access to every property. A Manager or Receptionist only sees properties checked here."
   },
@@ -88,5 +86,75 @@
     "created": "Staff member created successfully",
     "passwordReset": "Password has been reset successfully",
     "statusUpdated": "Staff status updated successfully"
+  },
+  "access": {
+    "backToStaff": "Team Management",
+    "moduleAccess": "Module access",
+    "pgAccess": "PG access",
+    "pgCountNone": "No properties",
+    "pgCountOne": "1 property",
+    "pgCountMany": "{count} properties",
+    "levels": {
+      "off": "Off",
+      "view": "View only",
+      "full": "Full access"
+    },
+    "modules": {
+      "dashboard": {
+        "name": "Dashboard",
+        "full": "Full view",
+        "hint": "Shows the dashboard screen. Each card still follows its own module's access."
+      },
+      "properties": {
+        "name": "Properties",
+        "view": "View only",
+        "full": "Full access",
+        "hint": "Full access includes rooms, beds and property settings (late fees, penalties). View only keeps property features read-only."
+      },
+      "tenants": {
+        "name": "Tenants",
+        "view": "View only",
+        "full": "Full access",
+        "hint": "Full access includes admissions, allocations and move-out with deposit settlement. Billing figures follow the Finance module."
+      },
+      "finance": {
+        "name": "Finance",
+        "view": "View only",
+        "full": "Full access",
+        "hint": "View only shows invoices, payments and rent figures. Full access can also create and change them."
+      },
+      "reports": {
+        "name": "Reports",
+        "full": "Full view",
+        "hint": "Occupancy and other report exports."
+      },
+      "complaints": {
+        "name": "Complaints",
+        "full": "Full access",
+        "hint": "View, assign and resolve resident complaints."
+      },
+      "visitors": {
+        "name": "Visitors",
+        "full": "Full access",
+        "hint": "Log visitor entry and exit."
+      }
+    },
+    "customizedBadge": "Custom access",
+    "defaultsBadge": "Role defaults",
+    "resetDefaults": "Reset to role defaults",
+    "saving": "Saving…",
+    "saveFailed": "Couldn't save that change, so it was reverted.",
+    "roleChangedNotice": "This staff member's role changed, so their access was reloaded.",
+    "dismiss": "Dismiss",
+    "notFoundTitle": "Staff member not found",
+    "notFoundBody": "This person doesn't exist or isn't part of your team.",
+    "loadFailed": "Couldn't load access settings.",
+    "retry": "Retry",
+    "inactiveBanner": "This account is deactivated. You can still adjust access; it applies when they are reactivated.",
+    "applyNote": "Changes are enforced by the server immediately. The staff member’s screen updates the next time they open or refocus the app.",
+    "deactivate": "Deactivate",
+    "reactivate": "Reactivate",
+    "editDetails": "Edit details",
+    "pgToggleError": "Couldn't update property access."
   }
 }

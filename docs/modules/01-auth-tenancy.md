@@ -41,6 +41,8 @@ Table: users                        (NOT under RLS — see Decisions)
   email_verified    bool            is_active  bool
   password          bcrypt-sha256
   auth_version      int (default 0) ← bumped on password changes for instant revocation
+  module_access     jsonb NULL      ← Owner-configured staff access, see "Module access" below
+                                     {"base_role": "<role>", "levels": {module: level}}; NULL = role defaults
   created_at / updated_at
   (DB CHECKs: user_requires_email_or_phone, user_owner_superadmin_requires_email,
               user_staff_requires_phone, user_email_not_blank, user_phone_not_blank)
@@ -90,6 +92,8 @@ GET|PATCH /api/v1/tenants/current/           detail/update tenant default    man
 GET|POST /api/v1/staff/                    list/create Manager|Receptionist  manage_staff_accounts
 GET|PATCH /api/v1/staff/{id}/              detail/update/deactivate          manage_staff_accounts
 POST /api/v1/staff/{id}/set-password/      Owner-set/reset staff password  manage_staff_accounts
+GET|PUT|DELETE /api/v1/staff/{id}/module-access/  read / replace / reset a staff     manage_staff_accounts
+                                           member's module access (see below)
 ```
 JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / refresh 7 days.
 
@@ -109,12 +113,59 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
 9. RLS: tenant context sees only its rows; no context sees none; super admin
    context sees all; cross-tenant INSERT rejected by the database itself.
 10. Auth endpoints are rate limited (429 past the configured rate).
-11. `/me` exposes the PRD §6 permission matrix; frontend renders from it (F8).
+11. `/me` exposes the caller's resolved permissions (role matrix adjusted by module access);
+    frontend renders from it (F8).
+12. Module access resolves fail-closed (table below); owner-only and notification codes are
+    never grantable; Owner/Super Admin/Resident ignore any override.
+13. A staff member's module access can only be changed by an Owner (`manage_staff_accounts`),
+    never by themself; cross-tenant ids are 404.
+14. Module-access writes and role changes share one row-locked transaction; every write is
+    audited (`staff.module_access_updated` / `staff.updated`) with before/after and IP.
 
 ## Permissions
-`apps/core/roles.py` holds `Role` + `PERMISSION_MATRIX` (exact PRD §6 table).
-`require_permission('<perm>')` DRF class factory + `IsSuperAdmin`. Matrix is
-serialized on `/auth/me/` as `permissions: [...]`.
+`apps/core/roles.py` holds `Role` + `PERMISSION_MATRIX` (the PRD §6 table, plus `view_dashboard`
+and `view_finance`). `require_permission('<perm>')` DRF class factory (+
+`require_permission_by_method(read, write)` using DRF `SAFE_METHODS`) + `IsSuperAdmin`.
+Every check and `/auth/me/` resolve through `permissions_for_user(user)` — the role matrix
+**adjusted by the staff member's module access** — never through the bare role.
+
+### Module access (owner request 2026-10-12)
+`apps/core/modules.py` is the server-owned registry. A *module* groups existing permission codes;
+a *level* (`off < view < full`) is cumulative (a level's codes = union of every level up to it).
+
+| module | view | full adds |
+|---|---|---|
+| dashboard | – | `view_dashboard` (UI visibility only) |
+| properties | `view_property_features` | `manage_property_features`, `manage_rooms_beds`, `manage_property_settings` |
+| tenants | `view_resident_profile` | `manage_residents`, `manage_admissions`, `manage_allocations`, `manage_deposits` |
+| finance | `view_finance`, `view_activity_timeline` | `manage_invoices`, `manage_payments`, `manage_discounts` |
+| reports | – | `view_reports` |
+| complaints | – | `manage_complaints` |
+| visitors | – | `manage_visitors` |
+
+Dashboard/Reports/Complaints/Visitors support only Off/Full (their `manage_*` code covers reads and
+writes). Never grantable (role-only): `manage_properties`, `manage_staff_accounts`,
+`assign_staff_to_properties`, `manage_tenant_settings`, `manage_subscription`, `view_audit_logs`,
+`manage_tenants`, notification codes. `ROLE_DEFAULT_LEVELS` is hand-written (manager: everything
+Full; receptionist: properties/tenants View, visitors Full, rest Off) and a test pins it to
+`PERMISSION_MATRIX`.
+
+Resolution of stored `module_access` for a staff role (everything else → plain role permissions):
+
+| stored value | result |
+|---|---|
+| NULL | role defaults |
+| non-dict / dict without `base_role` (incl. raw `{}`) | every module off |
+| `base_role` ≠ current role | role defaults (a role change voids the override, by any path) |
+| `levels` missing or not a dict | every module off |
+| module missing from `levels` (registry grew) | that module off |
+| unknown module key | ignored |
+| invalid/unsupported level | that module off |
+
+API: `GET` returns `{role, customized, modules:[{key, levels, level, default_level}]}`; `PUT
+{role, levels}` is a **complete replacement** (all modules required; unknown/unsupported → 400;
+`role` mismatch → `409 {"code": "ROLE_CHANGED"}`); `DELETE` resets to role defaults. Levels equal
+to the role defaults are stored as NULL. Changing a staff member's role clears the override.
 
 ## Edge cases handled
 - Same email or phone across tenants → superseded by `[DECISION 2026-10-10]`: unique only among active accounts; deactivation frees the identifier for re-employment under a new tenant.
@@ -209,6 +260,52 @@ serialized on `/auth/me/` as `permissions: [...]`.
   (`MinimumLengthValidator`, `NumericPasswordValidator`, `CommonPasswordValidator`,
   `UserAttributeSimilarityValidator`).
 
+- [DECISION 2026-10-12] **Per-staff module access supersedes the fixed-matrix stance of PRD §6.**
+  The PRD defines one fixed permission set per role and no owner-configurable permissions; the
+  product owner asked for a Team Management screen where the Owner tunes each Manager's /
+  Receptionist's access per module. Confirmed scope: *generic levels first* (Off/View/Full where a
+  module supports them, built from existing permission codes — named narrow presets such as
+  "Move Out" need new narrow codes and are deferred) and *role sets the defaults, modules override
+  per person* (Role stays; overrides are stamped with `base_role` so a role change by any path
+  voids them). The registry, role defaults and resolution rules are above.
+- [DECISION 2026-10-12] **Finance vs Tenants boundary.** Finance governs invoices, payments,
+  discounts, their exports and the billing money fields (`contracted_rent`, `billing_mode`) on
+  resident/bed views (`view_finance`). Tenants→Full deliberately includes the move-out workflow
+  (vacate, deposit refund, write-off, absconded, blacklist — all `manage_deposits`), so the
+  deposit-settlement figures (`security_deposit_amount`, `advance_amount`, `advance_refundable`)
+  are visible with `view_finance` **or** `manage_deposits`. Tenants→Full + Finance→Off can process
+  a move-out but cannot read invoices/payments/discounts, rent or billing mode. Rejected: moving
+  deposits into Finance or requiring both (either stops Tenants→Full staff from processing
+  move-outs). The resident timeline needs `view_resident_profile` **and** `view_activity_timeline`;
+  `BedSerializer.current_occupant` is null without `view_resident_profile`, `history` needs both.
+- [DECISION 2026-10-12] **"Off" honesty limits (documented, not bugs).** Property / building /
+  floor / room / bed GETs stay role-based (`CanViewProperties`) for assigned staff: they are the
+  structural backbone (property switcher, admission bed picker), so Properties=Off hides the
+  Properties screens and management but not those reads. `view_dashboard` is a UI-visibility code
+  only — each dashboard card's data is still enforced by its own module. Properties→Full includes
+  property settings (late fees, penalties) — an Owner revokes that by choosing Properties→View.
+  Revoking Complaints does not unassign complaints already assigned to that person.
+  `CanConfirmVisitor` stays Owner/Manager-only *and* now requires `manage_visitors`.
+- [DECISION 2026-10-12] **Writes are race-safe.** `PUT module-access` carries the role the client
+  rendered and answers `409 ROLE_CHANGED` if it changed; both it and `PATCH /staff/{id}/` run
+  inside the `locked_staff` context manager (`apps/accounts/staff_access.py`: `atomic` +
+  `select_for_update`, kept open through validation, save and audit), so a role change and a
+  module-access change can never interleave on stale data.
+- [DECISION 2026-10-12] **Reductions are enforced by the API immediately** (`request.user` is
+  loaded per request; no `auth_version` bump). The staff member's *visible* UI stays stale until
+  `/auth/me/` is refreshed: the frontend refreshes on tab focus (throttled to 60 s) and, without
+  throttle, after any 403.
+- [DECISION 2026-10-12] **Registry growth warning.** When a module is added to
+  `apps/core/modules.py`, staff with a saved override resolve the new module to `off`
+  (fail-closed — they do *not* inherit the role default); only never-customized staff (NULL) pick
+  up the new role default. A release that adds a module must decide whether to backfill existing
+  overrides with a data migration. Likewise `edit_properties` (on the unmerged
+  `feature/property-map-location` branch) must be added to Properties→Full when that merges — the
+  registry↔matrix consistency test fails until someone does.
+- [DECISION 2026-10-12] Frontend autosave coalesces: toggles apply optimistically and one worker
+  sends the latest complete map after the in-flight request (controls stay enabled while saving,
+  a failed save rolls back to the last server-confirmed state, `409 ROLE_CHANGED` reloads).
+
 ## Changelog
 - 2026-06-xx  Created stub.
 - 2026-07-02  Built: tenancy/RLS infra, Tenant/User/OtpCode/PlatformConfig/
@@ -237,3 +334,10 @@ serialized on `/auth/me/` as `permissions: [...]`.
   Owner-driven staff initial password and password reset (`POST /api/v1/staff/{id}/set-password/`)
   with atomic audit logging, `user_staff_requires_phone` DB constraint, and frontend Staff
   Management page (`(owner)/staff/`) with full i18n.
+- 2026-10-12  Owner-configurable per-staff module access (see Permissions → Module access and the
+  `[DECISION 2026-10-12]` entries): `User.module_access` (migration 0005), `apps/core/modules.py`
+  registry, `permissions_for_user`, `require_permission_by_method`, `view_dashboard` /
+  `view_finance` codes, `GET|PUT|DELETE /staff/{id}/module-access/`, row-locked
+  `PATCH /staff/{id}/`, billing viewsets split read (`view_finance`) from write (`manage_*`),
+  finance exports on `view_finance`, resident/bed money-field visibility on Finance, and the Team
+  Management screen (`(owner)/staff/[id]`) replacing the old Manage Property Access modal.

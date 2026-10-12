@@ -366,3 +366,9 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   block the delete (the `building_not_empty` guard still counts floors only). Removed
   the mock-only room `amenities` field from `frontend/.../mock-properties.ts` — what a
   PG offers is now real data, see `18-pg-features.md`.
+- 2026-10-12  Staff↔property assignment ("PG access") moved from the Staff directory modal onto the
+  per-staff Team Management screen (`(owner)/staff/[id]`, same `/staff-property-assignments/` API).
+  `BedSerializer` now follows module access (Module 01 `[DECISION 2026-10-12]`): `current_occupant`
+  is null without `view_resident_profile`, `history` needs `view_activity_timeline` **and**
+  `view_resident_profile`, occupant `rent` needs `view_finance` (was `manage_residents`). Property /
+  building / floor / room / bed GETs deliberately stay role-based for assigned staff.

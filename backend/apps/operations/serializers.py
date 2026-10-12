@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from apps.core.roles import permissions_for
+from apps.core.roles import permissions_for_user
 from apps.properties.services import can_view_property
 
 from .models import Complaint, ComplaintComment, Visitor
@@ -139,7 +139,7 @@ class ComplaintAssignSerializer(serializers.Serializer):
         complaint = self.context['complaint']
         if value.tenant_id != complaint.tenant_id:
             raise serializers.ValidationError(_('This user is not in your tenant.'), code='cross_tenant_assignee')
-        if 'manage_complaints' not in permissions_for(value.role):
+        if 'manage_complaints' not in permissions_for_user(value):
             raise serializers.ValidationError(
                 _('This user does not have complaint-management access.'), code='assignee_not_staff'
             )

@@ -193,3 +193,8 @@ lifecycle (`vacated`/`blacklisted`) instead.
   this generic endpoint while the resident has an open `Vacate` — see that
   module's 2026-10-07 update for the reasoning and the lock order, which
   admission (Module 05) now follows too.
+- 2026-10-12  Per-staff module access (Module 01 `[DECISION 2026-10-12]`): `ResidentSerializer`
+  hides `contracted_rent`/`billing_mode` without `view_finance`, and the deposit figures
+  (`security_deposit_amount`, `advance_amount`, `advance_refundable`) without `view_finance` or
+  `manage_deposits` (previously both groups keyed on `manage_residents`; role defaults unchanged).
+  The `timeline` action now requires `view_resident_profile` **and** `view_activity_timeline`.

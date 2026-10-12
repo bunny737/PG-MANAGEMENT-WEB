@@ -141,3 +141,5 @@ Module 08.
 - 2026-10-04  The admission advance now appears as an auto-recorded Payment on
   the resident's first issued invoice (see Module 08 changelog); security
   deposits are never payments.
+- 2026-10-12  Payment viewset split the same way: reads (incl. `receipt`) need `view_finance`,
+  writes `manage_payments`. See Module 01 `[DECISION 2026-10-12]`.

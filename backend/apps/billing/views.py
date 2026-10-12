@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
-from apps.core.permissions import require_permission
+from apps.core.permissions import require_permission_by_method
 from apps.notifications.tasks import send_invoice_issued_email_task
 from apps.properties.services import visible_property_ids
 from apps.residents.models import Resident
@@ -34,7 +34,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
     (consistent with the rest of the platform's financial-record handling)."""
 
     serializer_class = DiscountSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_discounts')]
+    permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_discounts')]
     http_method_names = ['get', 'post', 'patch']
     filterset_fields = ['resident', 'reason', 'discount_type']
 
@@ -100,7 +100,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     `manage_invoices` excludes Receptionist. Drafts are deletable (regenerate);
     once issued an invoice is a financial record and cannot be edited/deleted."""
 
-    permission_classes = [IsAuthenticated, require_permission('manage_invoices')]
+    permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_invoices')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['resident', 'status', 'billing_mode']
 
@@ -270,7 +270,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     is a financial record: correct a mistake by deleting and re-recording,
     there is no edit (`patch`)."""
 
-    permission_classes = [IsAuthenticated, require_permission('manage_payments')]
+    permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_payments')]
     http_method_names = ['get', 'post', 'delete']
     filterset_fields = ['invoice', 'invoice__resident', 'payment_mode']
 

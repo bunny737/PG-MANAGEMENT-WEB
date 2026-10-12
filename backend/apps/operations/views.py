@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
-from apps.core.roles import Role
+from apps.core.roles import Role, permissions_for_user
 from apps.properties.services import visible_property_ids
 
 from .models import Complaint, ComplaintComment, Visitor
@@ -143,11 +143,20 @@ _CONFIRM_ROLES = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER)
 
 
 class CanConfirmVisitor(BasePermission):
+    """Confirming stays an Owner/Manager-only act (a Receptionist logs visitors but
+    never confirms them, whatever module access they were given) — and it still
+    requires the Visitors module, so Visitors=off really is off."""
+
     message = _('Only Owners and Managers can confirm visitors.')
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.role in _CONFIRM_ROLES)
+        return bool(
+            user
+            and user.is_authenticated
+            and user.role in _CONFIRM_ROLES
+            and 'manage_visitors' in permissions_for_user(user)
+        )
 
 
 class VisitorViewSet(viewsets.ModelViewSet):

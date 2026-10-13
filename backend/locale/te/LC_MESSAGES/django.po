@@ -1423,3 +1423,23 @@ msgstr "ఈ టెనెంట్ ఇప్పటికే సస్పెండ
 #: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr "ఈ టెనెంట్ సస్పెండ్ చేయబడలేదు."
+
+#: apps/properties/models.py
+msgid "Hostel"
+msgstr "హాస్టల్"
+
+#: apps/properties/models.py
+msgid "Unisex"
+msgstr "యునిసెక్స్"
+
+#: apps/properties/models.py
+msgid "Enter a valid 6-digit pincode."
+msgstr "చెల్లుబాటు అయ్యే 6-అంకెల పిన్‌కోడ్ నమోదు చేయండి."
+
+#: apps/properties/serializers.py
+msgid "Latitude and longitude must be set together."
+msgstr "అక్షాంశం మరియు రేఖాంశం రెండూ కలిపి సెట్ చేయాలి."
+
+#: apps/properties/views.py
+msgid "Only the owner can change a property's status."
+msgstr "ప్రాపర్టీ స్థితిని యజమాని మాత్రమే మార్చగలరు."

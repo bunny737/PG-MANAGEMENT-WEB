@@ -25,6 +25,10 @@ PERMISSION_MATRIX = {
     'manage_tenant_settings': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_subscription': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_properties': (Role.SUPER_ADMIN, Role.OWNER),
+    # Not in PRD §6 — owner decision 2026-10-09: a Manager may edit the
+    # details of a property they're assigned to, but not create one or change
+    # its status (those stay under manage_properties).
+    'edit_properties': _OPS,
     # PRD §6's matrix table lists Owner-only, but PRD Module 2B's prose and its
     # own settings summary table both say "Configurable By: Owner, Manager" —
     # confirmed with the product owner 2026-07-03 that Module 2B is correct.

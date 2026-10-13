@@ -24,9 +24,14 @@ Table: properties                   (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
   name              varchar(200)
-  property_type     boys_hostel | girls_hostel | pg | co_living
+  property_type     boys_hostel | girls_hostel | hostel | pg | co_living
+  gender_preference unisex | male | female   (default unisex)
   address_line / city / state / country
+  pincode           varchar(6)      blank-allowed; ^[1-9]\d{5}$ when written
   contact_number    varchar(15)     contact_email  blank-allowed
+  latitude          decimal(9,6) null   -90..90    map pin, geocoded on the client
+  longitude         decimal(9,6) null   -180..180
+                    -- CHECK property_coordinates_both_or_neither: both set or both NULL
   status            active | inactive
   created_at / updated_at
   -- buildings_count / floors_count / rooms_count / beds_count are computed
@@ -99,7 +104,10 @@ Table: property_staff_assignments   (RLS enforced)
 ## API endpoints
 ```
 GET|POST    /api/v1/properties/                          list/create        manage_properties (write) / owner+manager+receptionist (read, scoped)
-GET|PATCH   /api/v1/properties/{id}/                      detail/update      same (no DELETE — deactivate via status)
+GET|PATCH   /api/v1/properties/{id}/                      detail/update      PATCH: edit_properties (Manager: assigned properties only;
+                                                            changing `status` needs manage_properties). No DELETE — deactivate via status.
+                                                            PATCH is partial: an omitted key is left unchanged.
+                                                            `{"latitude": null, "longitude": null}` clears the pin.
 POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
 DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
 GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds
@@ -163,9 +171,25 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
     rate overrides (they inherit the room's rates). Room number must be
     <= 18 chars when used. A free "number of beds" field was rejected: it
     would duplicate `sharing_type` (= bed capacity) and could contradict it.
+15. `latitude` and `longitude` are both set or both null. On PATCH the rule
+    is checked against the stored row merged with the request, so sending one
+    coordinate, or nulling one half of an existing pin, is a 400
+    (`coordinates_incomplete`). Out-of-range values and more than 6 decimal
+    places are field-level 400s. A DB CHECK constraint backs the pair rule.
+16. `pincode` is validated (`^[1-9]\d{5}$`) only when it is written. Rows
+    created before the field existed hold `''` and still accept unrelated edits.
+17. A Manager can PATCH a property they are assigned to (an unassigned one is
+    a 404, same as reading it) but cannot change its `status` (403). A
+    Receptionist cannot PATCH at all (403). Create and image upload/delete
+    stay Owner/Super Admin only.
+18. The `property.updated` audit entry snapshots every editable field
+    (before/after), not just name and status.
 
 ## Permissions
-- `manage_properties` (Super Admin, Owner): create/update properties.
+- `manage_properties` (Super Admin, Owner): create properties, change
+  `status`, upload/delete images.
+- `edit_properties` (Super Admin, Owner, Manager): PATCH a property's
+  details, scoped to assigned properties for Manager.
 - Read access to `/properties/`: Super Admin, Owner, Manager, Receptionist
   (role gate), further scoped to assigned properties for Manager/Receptionist.
 - `manage_rooms_beds` (Super Admin, Owner, Manager): full CRUD on
@@ -289,6 +313,30 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   were left exactly where they were — they don't depend on Building and
   are still mock-data-only (never wired to the real API), so there was
   nothing to migrate there.
+- [DECISION 2026-10-09] Map location + app edit screen (Flutter branch
+  `feature/property-map-location`). Added `latitude`/`longitude` as
+  `decimal(9,6)` — the app rounds to 6 places, so a different precision here
+  would need its `coordinate_converter.dart` changed to match. Geocoding is
+  done on the device; the backend holds no maps key. Three points the app's
+  spec assumed that the backend didn't have, each confirmed with the owner:
+  1. **`pincode` and `gender_preference` are new columns.** The app was
+     already sending both and DRF was silently dropping them. Existing
+     `boys_hostel`/`girls_hostel` rows are backfilled to `male`/`female` in
+     migration `0008`; everything else defaults to `unisex`. The app's
+     client-side fallback value `both` is **not** a backend value.
+  2. **`hostel` is added as a fifth `property_type`**, alongside (not
+     replacing) `boys_hostel`/`girls_hostel`, which the web form still uses.
+     The two are not kept in sync: nothing stops `boys_hostel` +
+     `gender_preference=female`. Collapsing the gendered types into
+     `hostel` + `gender_preference` is the cleaner end state but needs the
+     web form changed too — deferred.
+  3. **Manager may edit assigned properties** via a new `edit_properties`
+     permission. This is not in the PRD §6 matrix (which gives Manager no
+     property write). `status` is deliberately excluded so a Manager can't
+     deactivate a property.
+- [OPEN] The web `PropertyForm` does not yet expose `pincode`,
+  `gender_preference`, `hostel` or the map pin; it only gained the `hostel`
+  label so a property created from the app renders in the web list.
 
 ## Bugs found and fixed
 - **2026-07-03 (during Module 04):** `services.can_view_property()` chained
@@ -343,3 +391,10 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   block the delete (the `building_not_empty` guard still counts floors only). Removed
   the mock-only room `amenities` field from `frontend/.../mock-properties.ts` — what a
   PG offers is now real data, see `18-pg-features.md`.
+- 2026-10-09  Map location and app edit support: `latitude`/`longitude`,
+  `pincode`, `gender_preference` and a `hostel` property type (migration
+  `0008_property_location_pincode_gender`, with a gender backfill and a
+  both-or-neither CHECK on the coordinates). New `edit_properties`
+  permission lets a Manager PATCH assigned properties (not `status`).
+  `property.updated` audit entries now snapshot every editable field.
+  13 new tests. Regenerated `docs/erd.png`.

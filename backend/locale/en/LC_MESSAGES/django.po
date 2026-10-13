@@ -1406,3 +1406,23 @@ msgstr ""
 #: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr ""
+
+#: apps/properties/models.py
+msgid "Hostel"
+msgstr ""
+
+#: apps/properties/models.py
+msgid "Unisex"
+msgstr ""
+
+#: apps/properties/models.py
+msgid "Enter a valid 6-digit pincode."
+msgstr ""
+
+#: apps/properties/serializers.py
+msgid "Latitude and longitude must be set together."
+msgstr ""
+
+#: apps/properties/views.py
+msgid "Only the owner can change a property's status."
+msgstr ""

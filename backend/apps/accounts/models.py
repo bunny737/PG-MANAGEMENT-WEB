@@ -88,6 +88,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(_('email address'), null=True, blank=True)
     phone = models.CharField(max_length=15, null=True, blank=True)
     auth_version = models.PositiveIntegerField(default=0)
+    # Owner-configured module access for staff roles (apps/core/modules.py).
+    # NULL = role defaults. Shape: {"base_role": <role>, "levels": {module: level}}.
+    module_access = models.JSONField(null=True, blank=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True)
     role = models.CharField(max_length=20, choices=Role.choices)

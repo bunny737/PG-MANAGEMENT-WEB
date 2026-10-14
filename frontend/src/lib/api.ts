@@ -16,6 +16,8 @@ const ACCESS_TOKEN_KEY = "accessToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
 /** Permission codes from /auth/me/ — read through `usePermissions()`. */
 export const PERMISSIONS_KEY = "userPermissions";
+/** Fired on any 403 so the session layer can refresh permissions right away. */
+export const PERMISSION_DENIED_EVENT = "permission-denied";
 /** sessionStorage prefix for a feature selection that failed to save after a property was created. */
 export const FEATURE_DRAFT_PREFIX = "featureDraft:";
 
@@ -165,6 +167,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   }
 
   if (!res.ok) {
+    if (res.status === 403 && typeof window !== "undefined") {
+      // The Owner may have just changed this user's access: lib/session.ts re-fetches
+      // /auth/me/ immediately (bypassing its focus throttle) so gated UI updates now.
+      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+    }
     throw new ApiError(res.status, await parseErrorBody(res));
   }
 
@@ -725,6 +732,50 @@ export function setStaffPassword(staffId: string, password: string) {
   return apiFetch<{ detail: string }>(`/api/v1/staff/${staffId}/set-password/`, {
     method: "POST",
     body: JSON.stringify({ password }),
+  });
+}
+
+export function getStaff(staffId: string) {
+  return apiFetch<StaffUser>(`/api/v1/staff/${staffId}/`);
+}
+
+/** off < view < full. Each module supports only some of these (see `levels`). */
+export type ModuleLevel = "off" | "view" | "full";
+
+export interface ModuleAccessEntry {
+  key: string;
+  /** Levels this module supports, lowest first; always starts with "off". */
+  levels: ModuleLevel[];
+  level: ModuleLevel;
+  default_level: ModuleLevel;
+}
+
+export interface StaffModuleAccess {
+  role: "manager" | "receptionist";
+  customized: boolean;
+  modules: ModuleAccessEntry[];
+}
+
+export function getStaffModuleAccess(staffId: string) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`);
+}
+
+/** Complete replacement: every module key must be present. `role` is the role the
+ * screen rendered — the server answers 409 ROLE_CHANGED if it has changed since. */
+export function saveStaffModuleAccess(
+  staffId: string,
+  role: StaffModuleAccess["role"],
+  levels: Record<string, ModuleLevel>
+) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`, {
+    method: "PUT",
+    body: JSON.stringify({ role, levels }),
+  });
+}
+
+export function resetStaffModuleAccess(staffId: string) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`, {
+    method: "DELETE",
   });
 }
 

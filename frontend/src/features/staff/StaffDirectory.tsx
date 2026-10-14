@@ -19,27 +19,21 @@ import {
   Shield,
   Sparkles,
   Pencil,
-  Building2,
+  SlidersHorizontal,
 } from "lucide-react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   listStaff,
   createStaff,
   updateStaff,
   setStaffPassword,
-  listProperties,
-  listPropertyAssignments,
-  assignStaffToProperty,
-  unassignStaffFromProperty,
   type StaffUser,
   type CreateStaffPayload,
-  type Property,
-  type PropertyStaffAssignment,
   ApiError,
 } from "@/lib/api";
 import { getInitials } from "@/lib/utils";
 import { generateSecurePassword } from "@/lib/passwords";
-import { PermissionGate } from "@/components/shared/PermissionGate";
 
 function normalizePhone(val: string): string | null {
   const digits = val.replace(/\D/g, "");
@@ -103,14 +97,6 @@ export function StaffDirectory() {
   }>({ firstName: "", lastName: "", phone: "", role: "manager" });
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [isEditing, setIsEditing] = useState(false);
-
-  // Manage Property Access Modal State
-  const [propertiesTarget, setPropertiesTarget] = useState<StaffUser | null>(null);
-  const [allProperties, setAllProperties] = useState<Property[]>([]);
-  const [assignments, setAssignments] = useState<PropertyStaffAssignment[]>([]);
-  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
-  const [propertiesError, setPropertiesError] = useState<string | null>(null);
-  const [togglingPropertyId, setTogglingPropertyId] = useState<string | null>(null);
 
   // One-Time Password Reveal Modal State
   const [revealedPassword, setRevealedPassword] = useState<{
@@ -411,41 +397,6 @@ export function StaffDirectory() {
     }
   };
 
-  const openPropertiesModal = (staff: StaffUser) => {
-    setPropertiesTarget(staff);
-    setPropertiesError(null);
-    setIsLoadingProperties(true);
-    Promise.all([listProperties(), listPropertyAssignments({ staff: staff.id })])
-      .then(([properties, assigned]) => {
-        setAllProperties(properties);
-        setAssignments(assigned);
-        setIsLoadingProperties(false);
-      })
-      .catch((err) => {
-        setPropertiesError(err instanceof ApiError ? err.message : t("errors.genericError"));
-        setIsLoadingProperties(false);
-      });
-  };
-
-  const toggleProperty = async (property: Property) => {
-    if (!propertiesTarget) return;
-    const existing = assignments.find((a) => a.property === property.id);
-    setTogglingPropertyId(property.id);
-    try {
-      if (existing) {
-        await unassignStaffFromProperty(existing.id);
-        setAssignments((prev) => prev.filter((a) => a.id !== existing.id));
-      } else {
-        const created = await assignStaffToProperty(propertiesTarget.id, property.id);
-        setAssignments((prev) => [...prev, created]);
-      }
-    } catch (err) {
-      setPropertiesError(err instanceof ApiError ? err.message : t("errors.genericError"));
-    } finally {
-      setTogglingPropertyId(null);
-    }
-  };
-
   const filteredStaff = useMemo(() => {
     return staffList.filter((staff) => {
       const fullName = `${staff.first_name} ${staff.last_name || ""}`.toLowerCase();
@@ -666,16 +617,14 @@ export function StaffDirectory() {
                             <span className="hidden sm:inline">{t("actions.editStaff")}</span>
                           </button>
 
-                          <PermissionGate permission="assign_staff_to_properties">
-                            <button
-                              onClick={() => openPropertiesModal(staff)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
-                              title={t("actions.manageProperties")}
-                            >
-                              <Building2 className="size-3.5" />
-                              <span className="hidden sm:inline">{t("actions.manageProperties")}</span>
-                            </button>
-                          </PermissionGate>
+                          <Link
+                            href={`/staff/${staff.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+                            title={t("actions.manageAccess")}
+                          >
+                            <SlidersHorizontal className="size-3.5" />
+                            <span className="hidden sm:inline">{t("actions.manageAccess")}</span>
+                          </Link>
 
                           <button
                             onClick={() => {
@@ -1183,89 +1132,6 @@ export function StaffDirectory() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* MANAGE PROPERTY ACCESS MODAL */}
-      {propertiesTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <div>
-                <h3 className="font-display text-lg font-bold text-ink">
-                  {t("modal.propertiesTitle")}
-                </h3>
-                <p className="text-xs text-ink-muted">
-                  {t("modal.propertiesSubtitle", {
-                    name: `${propertiesTarget.first_name} ${propertiesTarget.last_name || ""}`.trim(),
-                  })}
-                </p>
-              </div>
-              <button
-                onClick={() => setPropertiesTarget(null)}
-                className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-subtle hover:text-ink"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {propertiesError && (
-                <div className="rounded-xl border border-status-critical/20 bg-status-critical-soft p-3 text-xs font-medium text-status-critical">
-                  {propertiesError}
-                </div>
-              )}
-
-              {isLoadingProperties ? (
-                <div className="flex h-32 items-center justify-center">
-                  <Loader2 className="size-6 animate-spin text-accent" />
-                </div>
-              ) : allProperties.length === 0 ? (
-                <p className="py-6 text-center text-sm text-ink-muted">
-                  {t("modal.noProperties")}
-                </p>
-              ) : (
-                <div className="max-h-80 space-y-2 overflow-y-auto">
-                  {allProperties.map((property) => {
-                    const isAssigned = assignments.some((a) => a.property === property.id);
-                    const isToggling = togglingPropertyId === property.id;
-                    return (
-                      <label
-                        key={property.id}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-page px-3.5 py-2.5 cursor-pointer hover:bg-surface-subtle"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Building2 className="size-4 text-ink-faint" />
-                          <span className="text-sm font-medium text-ink">{property.name}</span>
-                        </div>
-                        {isToggling ? (
-                          <Loader2 className="size-4 animate-spin text-accent" />
-                        ) : (
-                          <input
-                            type="checkbox"
-                            checked={isAssigned}
-                            onChange={() => toggleProperty(property)}
-                            className="size-4 rounded border-border text-accent focus:ring-accent"
-                          />
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="text-[11px] text-ink-faint">{t("modal.propertiesHelp")}</p>
-            </div>
-
-            <div className="mt-5 flex justify-end border-t border-border pt-4">
-              <button
-                type="button"
-                onClick={() => setPropertiesTarget(null)}
-                className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-ink-inverse shadow-sm transition-all hover:bg-accent-hover"
-              >
-                {t("modal.done")}
-              </button>
-            </div>
           </div>
         </div>
       )}

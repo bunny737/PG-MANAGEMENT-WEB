@@ -20,13 +20,13 @@ export interface NavItem {
 
 /** Desktop sidebar — gated by permission matrix where applicable. */
 export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
-  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, permission: "view_reports" },
-  { href: "/properties", labelKey: "nav.properties", icon: Building },
-  { href: "/residents", labelKey: "nav.residents", icon: Users },
+  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, permission: "view_dashboard" },
+  { href: "/properties", labelKey: "nav.properties", icon: Building, permission: "view_property_features" },
+  { href: "/residents", labelKey: "nav.residents", icon: Users, permission: "view_resident_profile" },
   { href: "/visitors", labelKey: "nav.visitors", icon: ClipboardList, permission: "manage_visitors" },
   { href: "/staff", labelKey: "nav.staff", icon: UserCheck, permission: "manage_staff_accounts" },
   { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle, permission: "manage_complaints" },
-  { href: "/financials", labelKey: "nav.financials", icon: Receipt, permission: "manage_invoices" },
+  { href: "/financials", labelKey: "nav.financials", icon: Receipt, permission: "view_finance" },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
 ];
 

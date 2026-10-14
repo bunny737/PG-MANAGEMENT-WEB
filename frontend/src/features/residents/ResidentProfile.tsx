@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
+import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
 import { getResident, updateResident, type Resident, ApiError } from "@/lib/api";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
@@ -31,6 +32,10 @@ export function ResidentProfile({ id }: { id: string }) {
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("status");
   const [resident, setResident] = useState<Resident | null>(null);
+  const { can } = useSession();
+  // Billing figures belong to the Finance module: without view_finance the API omits
+  // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
+  const canSeeFinance = can("view_finance");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -262,8 +267,12 @@ export function ResidentProfile({ id }: { id: string }) {
         </div>
 
         <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto border-t md:border-t-0 border-border pt-4 md:pt-0 text-xs text-ink-muted space-y-1">
-          <span className="font-semibold text-ink">{t("overview.contractedRent")}</span>
-          <span className="font-mono text-base font-extrabold text-accent">{t("financials.rentAmount")}: {tCommon("labels.rupeeSymbol")}{parseFloat(resident.rent ?? "0").toFixed(2)}</span>
+          {canSeeFinance && (
+            <>
+              <span className="font-semibold text-ink">{t("overview.contractedRent")}</span>
+              <span className="font-mono text-base font-extrabold text-accent">{t("financials.rentAmount")}: {tCommon("labels.rupeeSymbol")}{parseFloat(resident.rent ?? "0").toFixed(2)}</span>
+            </>
+          )}
           <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {resident.joining_date || resident.move_in_date || "--"}</span>
         </div>
       </div>
@@ -272,7 +281,7 @@ export function ResidentProfile({ id }: { id: string }) {
       <div className="flex border-b border-border bg-surface-card rounded-xl p-1 shadow-sm overflow-x-auto">
         {[
           { id: "overview", label: t("tabs.overview"), icon: UserCheck },
-          { id: "financials", label: t("tabs.financials"), icon: CreditCard },
+          ...(canSeeFinance ? [{ id: "financials", label: t("tabs.financials"), icon: CreditCard }] : []),
           { id: "documents", label: t("tabs.documents"), icon: FileText },
           { id: "maintenance", label: t("tabs.maintenance"), icon: Wrench },
         ].map((tab) => {
@@ -408,7 +417,7 @@ export function ResidentProfile({ id }: { id: string }) {
       )}
 
       {/* Tab 2: Financials & Rent History */}
-      {activeTab === "financials" && (
+      {activeTab === "financials" && canSeeFinance && (
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
           <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-3">
             {t("financials.heading")}

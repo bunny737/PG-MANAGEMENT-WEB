@@ -125,3 +125,6 @@ not raw edits.
   (the only module where it does). 20 new tests (creation, check-out
   validation, confirm, scoping including the Receptionist-can-access case,
   RLS isolation); full suite (307) green. Spec written to as-built.
+- 2026-10-12  `confirm` is still Owner/Manager-only but now also requires `manage_visitors`, so a
+  Manager whose Visitors module is Off can no longer confirm. A Receptionist given Visitors→Full
+  still cannot confirm (role rule). See Module 01 `[DECISION 2026-10-12]`.

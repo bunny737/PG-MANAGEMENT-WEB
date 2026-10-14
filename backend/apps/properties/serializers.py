@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from apps.core.roles import STAFF_ROLES, permissions_for
+from apps.core.roles import STAFF_ROLES, permissions_for_user
 
 from . import feature_services, services
 from .feature_catalog import CUSTOM_CATEGORY_LABEL, label_for
@@ -213,20 +213,32 @@ class BedSerializer(serializers.ModelSerializer):
                 request = getattr(self.parent.parent, 'context', {}).get('request')
         return request
 
-    def _can_view_financials(self) -> bool:
+    def _permissions(self):
+        """The requesting user's resolved permissions, or None when there is no
+        authenticated request context (internal use) — which stays unrestricted."""
         request = self._get_request()
         if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
-            return 'manage_residents' in permissions_for(getattr(request.user, 'role', None))
-        return True
+            return set(permissions_for_user(request.user))
+        return None
+
+    def _can_view_financials(self) -> bool:
+        # Rent is a billing figure: the Finance module governs it.
+        perms = self._permissions()
+        return True if perms is None else 'view_finance' in perms
+
+    def _can_view_occupant(self) -> bool:
+        perms = self._permissions()
+        return True if perms is None else 'view_resident_profile' in perms
 
     def _can_view_history(self) -> bool:
-        request = self._get_request()
-        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
-            return 'view_activity_timeline' in permissions_for(getattr(request.user, 'role', None))
-        return True
+        # History carries resident names *and* invoice/payment amounts, so it needs both.
+        perms = self._permissions()
+        return True if perms is None else {'view_activity_timeline', 'view_resident_profile'} <= perms
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
+        if not self._can_view_occupant():
+            ret['current_occupant'] = None
         if not self._can_view_history():
             ret.pop('history', None)
         if not self._can_view_financials():

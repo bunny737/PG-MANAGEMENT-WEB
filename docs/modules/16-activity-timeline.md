@@ -147,3 +147,6 @@ Response: a JSON array, oldest first, each item
   deposit_forfeited 12, dues_written_off 13, blacklisted 14 (blacklisted had
   collided with dues_written_off at 13). Rule 8 rewritten — the "exactly one
   exit sequence" assumption no longer holds. 2 new tests.
+- 2026-10-12  The timeline endpoint needs `view_resident_profile` **and** `view_activity_timeline`
+  (the latter now belongs to the Finance module's View level), so Finance=View alone never reaches
+  resident data. See Module 01 `[DECISION 2026-10-12]`.

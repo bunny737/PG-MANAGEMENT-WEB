@@ -191,3 +191,7 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - 2026-10-06  Note for Module 18: `property_features.is_paid` is informational
   ("Included" vs "Extra cost") and is never read by the invoice engine. Chargeable
   add-ons still go through invoice line items / the reserved `addons` JSON (invariant 6).
+- 2026-10-12  Discount/Invoice viewsets use `require_permission_by_method('view_finance', 'manage_*')`:
+  `GET`/`HEAD`/`OPTIONS` (incl. `outstanding`) need `view_finance`, every write (incl. `issue`,
+  `bulk-generate`, line items) needs the `manage_*` code. Role defaults are unchanged (Owner/Manager
+  have both). See Module 01 `[DECISION 2026-10-12]`.

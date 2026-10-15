@@ -232,17 +232,25 @@ export interface PropertyImage {
 export interface PropertyPayload {
   name: string;
   property_type: string;
+  gender_preference?: string;
   address_line: string;
   city: string;
   state: string;
+  pincode?: string;
   country?: string;
   contact_number: string;
   contact_email?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface Property extends PropertyPayload {
   id: string;
   status: string;
+  gender_preference?: string;
+  pincode?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   buildings_count: number;
   floors_count: number;
   rooms_count: number;

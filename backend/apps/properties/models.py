@@ -2,7 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -16,8 +16,16 @@ class Property(TenantModelMixin):
     class PropertyType(models.TextChoices):
         BOYS_HOSTEL = 'boys_hostel', _('Boys Hostel')
         GIRLS_HOSTEL = 'girls_hostel', _('Girls Hostel')
+        # Gender-neutral type sent by the Flutter app, which carries gender in
+        # `gender_preference` instead (see Decisions, 2026-10-09).
+        HOSTEL = 'hostel', _('Hostel')
         PG = 'pg', _('PG')
         CO_LIVING = 'co_living', _('Co-Living Space')
+
+    class GenderPreference(models.TextChoices):
+        UNISEX = 'unisex', _('Unisex')
+        MALE = 'male', _('Male')
+        FEMALE = 'female', _('Female')
 
     class Status(models.TextChoices):
         ACTIVE = 'active', _('Active')
@@ -26,16 +34,43 @@ class Property(TenantModelMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     property_type = models.CharField(max_length=20, choices=PropertyType.choices)
+    gender_preference = models.CharField(
+        max_length=10, choices=GenderPreference.choices, default=GenderPreference.UNISEX,
+    )
     address_line = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
+    # Blank for properties created before the field existed; validated only
+    # when written, so an old row never blocks an unrelated edit.
+    pincode = models.CharField(
+        max_length=6, blank=True,
+        validators=[RegexValidator(r'^[1-9]\d{5}$', _('Enter a valid 6-digit pincode.'))],
+    )
     country = models.CharField(max_length=100, default='India')
     contact_number = models.CharField(max_length=15)
     contact_email = models.EmailField(blank=True)
+    # Map pin, geocoded on the client. Both set or both NULL.
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
+    )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
 
     class Meta:
         db_table = 'properties'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(latitude__isnull=True, longitude__isnull=True)
+                    | Q(latitude__isnull=False, longitude__isnull=False)
+                ),
+                name='property_coordinates_both_or_neither',
+            ),
+        ]
 
     def __str__(self):
         return self.name

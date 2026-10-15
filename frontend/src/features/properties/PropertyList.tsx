@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, MapPin, Building, ChevronRight, LoaderCircle, AlertTriangle, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { ApiError, listProperties, type Property } from "@/lib/api";
 
 export function PropertyList() {
@@ -36,13 +37,15 @@ export function PropertyList() {
             {t("list.portfolioSubtitle")}
           </p>
         </div>
-        <Link
-          href="/properties/add"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="size-4.5" />
-          {t("list.addProperty")}
-        </Link>
+        <PermissionGate permission="manage_properties">
+          <Link
+            href="/properties/add"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="size-4.5" />
+            {t("list.addProperty")}
+          </Link>
+        </PermissionGate>
       </div>
 
       {error && (
@@ -97,13 +100,15 @@ export function PropertyList() {
                 </span>
               </div>
               {/* Edit action overlay */}
-              <Link
-                href={`/properties/${property.id}/edit`}
-                className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-slate-950/70 transition-colors cursor-pointer"
-              >
-                <Pencil className="size-3" />
-                {t("list.edit")}
-              </Link>
+              <PermissionGate permission="manage_properties">
+                <Link
+                  href={`/properties/${property.id}/edit`}
+                  className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-slate-950/70 transition-colors cursor-pointer"
+                >
+                  <Pencil className="size-3" />
+                  {t("list.edit")}
+                </Link>
+              </PermissionGate>
             </div>
 
             {/* Property details */}

@@ -14,6 +14,8 @@ from .tokens import make_email_verification_token, make_password_reset_credentia
 
 
 def _send(user, subject, body):
+    if not user.email:
+        return
     with translation.override(user.language_code or 'en'):
         send_mail(
             subject=subject,

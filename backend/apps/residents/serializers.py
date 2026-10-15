@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.core.roles import permissions_for_user
 from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
@@ -19,6 +20,22 @@ from .models import (
 
 
 class ResidentSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
+            # Finance module (view_finance) governs the billing money fields; the
+            # deposit-settlement figures are also visible to Tenants->Full
+            # (manage_deposits) because the move-out workflow needs them.
+            user_permissions = set(permissions_for_user(request.user))
+            hidden = []
+            if 'view_finance' not in user_permissions:
+                hidden += ['contracted_rent', 'billing_mode']
+            if not user_permissions & {'view_finance', 'manage_deposits'}:
+                hidden += ['security_deposit_amount', 'advance_amount', 'advance_refundable']
+            for field in hidden:
+                self.fields.pop(field, None)
+
     unit = serializers.SerializerMethodField()
     block = serializers.SerializerMethodField()
     move_in_date = serializers.SerializerMethodField()

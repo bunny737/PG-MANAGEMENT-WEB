@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from apps.core.roles import STAFF_ROLES
+from apps.core.roles import STAFF_ROLES, permissions_for_user
 
 from . import feature_services, services
 from .feature_catalog import CUSTOM_CATEGORY_LABEL, label_for
@@ -219,6 +219,47 @@ class BedSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def _get_request(self):
+        request = self.context.get('request')
+        if not request and hasattr(self, 'parent') and self.parent:
+            request = getattr(self.parent, 'context', {}).get('request')
+            if not request and hasattr(self.parent, 'parent') and self.parent.parent:
+                request = getattr(self.parent.parent, 'context', {}).get('request')
+        return request
+
+    def _permissions(self):
+        """The requesting user's resolved permissions, or None when there is no
+        authenticated request context (internal use) — which stays unrestricted."""
+        request = self._get_request()
+        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
+            return set(permissions_for_user(request.user))
+        return None
+
+    def _can_view_financials(self) -> bool:
+        # Rent is a billing figure: the Finance module governs it.
+        perms = self._permissions()
+        return True if perms is None else 'view_finance' in perms
+
+    def _can_view_occupant(self) -> bool:
+        perms = self._permissions()
+        return True if perms is None else 'view_resident_profile' in perms
+
+    def _can_view_history(self) -> bool:
+        # History carries resident names *and* invoice/payment amounts, so it needs both.
+        perms = self._permissions()
+        return True if perms is None else {'view_activity_timeline', 'view_resident_profile'} <= perms
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if not self._can_view_occupant():
+            ret['current_occupant'] = None
+        if not self._can_view_history():
+            ret.pop('history', None)
+        if not self._can_view_financials():
+            if ret.get('current_occupant') and 'rent' in ret['current_occupant']:
+                ret['current_occupant'].pop('rent', None)
+        return ret
+
     def get_effective_rate_with_food(self, obj) -> str:
         return str(obj.rack_rate(with_food=True))
 
@@ -232,7 +273,7 @@ class BedSerializer(serializers.ModelSerializer):
         ).first()
         if allocation and allocation.resident:
             res = allocation.resident
-            return {
+            data = {
                 'id': str(res.id),
                 'first_name': res.first_name,
                 'last_name': res.last_name,
@@ -241,12 +282,16 @@ class BedSerializer(serializers.ModelSerializer):
                 'phone': res.phone,
                 'status': res.status,
                 'joining_date': res.admission.joining_date.strftime('%Y-%m-%d') if hasattr(res, 'admission') else None,
-                'rent': str(allocation.contracted_rent),
                 'initials': f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper(),
             }
+            if self._can_view_financials():
+                data['rent'] = str(allocation.contracted_rent)
+            return data
         return None
 
     def get_history(self, obj):
+        if not self._can_view_history():
+            return []
         from apps.residents.models import vacate_prefetch
         # A resident can have several vacates (a cancelled notice stays in
         # history), so this prefetches them all into `prefetched_vacates` —
@@ -282,14 +327,16 @@ class BedSerializer(serializers.ModelSerializer):
             elif res.status != 'active':
                 move_out = res.status.title()
 
-            history_list.append({
+            entry = {
                 'resident': f"{res.first_name} {res.last_name}".strip(),
                 'term': f"Admission - {adm.billing_mode.replace('_', ' ').title()}",
                 'moveIn': adm.joining_date.strftime('%m/%d/%y'),
                 'moveOut': move_out,
-                'rate': f"₹{int(adm.contracted_rent)}",
                 'initials': initials,
-            })
+            }
+            if self._can_view_financials():
+                entry['rate'] = f"₹{int(adm.contracted_rent)}"
+            history_list.append(entry)
         return history_list
 
     def validate_room(self, value):

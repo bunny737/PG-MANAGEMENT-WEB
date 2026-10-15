@@ -47,6 +47,12 @@ PERMISSION_MATRIX = {
     'manage_payments': _OPS,
     'manage_deposits': _OPS,
     'manage_discounts': _OPS,
+    # Module-access codes (2026-10-12, owner request — see apps/core/modules.py).
+    # view_dashboard only gates the dashboard *screen* (each card's data is still
+    # enforced by its own module); view_finance is the read side of invoices,
+    # payments and discounts and of the billing money fields on resident/bed views.
+    'view_dashboard': _OPS,
+    'view_finance': _OPS,
     'manage_complaints': _OPS,
     'manage_visitors': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_resident_profile': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
@@ -79,3 +85,12 @@ def permissions_for(role):
     """Sorted permission codes for a role — serialized on /auth/me/ so the
     frontend renders actions from the matrix instead of inferring from role names."""
     return sorted(perm for perm, roles in PERMISSION_MATRIX.items() if role in roles)
+
+
+def permissions_for_user(user):
+    """Sorted permission codes for a user: the role's matrix, adjusted by a staff
+    member's Owner-configured module access (apps/core/modules.py). Every
+    permission check and /auth/me/ resolve through this, never through the bare role."""
+    from .modules import resolve_permissions  # modules.py imports this module
+
+    return resolve_permissions(user)

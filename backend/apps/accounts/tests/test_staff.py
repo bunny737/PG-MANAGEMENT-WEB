@@ -12,6 +12,7 @@ from .base import STRONG_PASSWORD, AuthAPITestCase
 def staff_payload(**overrides):
     payload = {
         'email': 'suresh@example.com',
+        'phone': '9876543210',
         'first_name': 'Suresh',
         'role': Role.MANAGER,
     }

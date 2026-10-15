@@ -300,9 +300,13 @@ class TenantFeatureViewSet(viewsets.ModelViewSet):
 
 class BuildingViewSet(viewsets.ModelViewSet):
     serializer_class = BuildingSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['property']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -329,9 +333,13 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
 class FloorViewSet(viewsets.ModelViewSet):
     serializer_class = FloorSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['building']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -353,9 +361,13 @@ class FloorViewSet(viewsets.ModelViewSet):
 
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['floor', 'category', 'status']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -377,9 +389,13 @@ class RoomViewSet(viewsets.ModelViewSet):
 
 class BedViewSet(viewsets.ModelViewSet):
     serializer_class = BedSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['room', 'status']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -419,16 +435,18 @@ class PropertyStaffAssignmentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.created', actor=self.request.user, obj=instance,
-            after={'staff': instance.staff.email, 'property': instance.property.name},
+            after={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
 
     def perform_destroy(self, instance):
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.removed', actor=self.request.user, obj=instance,
-            before={'staff': instance.staff.email, 'property': instance.property.name},
+            before={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
         instance.delete()

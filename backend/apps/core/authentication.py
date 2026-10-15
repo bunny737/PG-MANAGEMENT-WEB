@@ -11,8 +11,8 @@ BLOCKED_TENANT_STATUSES = ('suspended', 'cancelled')
 
 
 class TenantJWTAuthentication(JWTAuthentication):
-    """JWT auth that enforces tenant suspension and sets the Postgres tenant
-    context (RLS GUCs) for the rest of the request."""
+    """JWT auth that enforces tenant suspension, token auth_version validity,
+    and sets the Postgres tenant context (RLS GUCs) for the rest of the request."""
 
     def authenticate(self, request):
         result = super().authenticate(request)
@@ -24,6 +24,11 @@ class TenantJWTAuthentication(JWTAuthentication):
             # Force logout on plan suspension — the frontend reacts to this code.
             raise AuthenticationFailed(
                 _('This account is suspended.'), code='subscription_suspended'
+            )
+
+        if token.get('auth_version') != user.auth_version:
+            raise AuthenticationFailed(
+                _('Password has been changed. Please log in again.'), code='password_changed'
             )
 
         set_tenant_context(

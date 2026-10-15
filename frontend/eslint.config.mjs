@@ -43,6 +43,8 @@ const eslintConfig = defineConfig([
               "htmlFor",
               "autoComplete",
               "dot",
+              "permission",
+              "fallback",
             ],
           },
           "object-properties": {
@@ -105,6 +107,8 @@ const eslintConfig = defineConfig([
               "htmlFor",
               "autoComplete",
               "dot",
+              "permission",
+              "fallback",
             ],
           },
           "object-properties": {

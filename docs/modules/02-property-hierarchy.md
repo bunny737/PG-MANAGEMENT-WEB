@@ -17,6 +17,9 @@ of their PGs/hostels, and assigns Manager/Receptionist staff to the specific
 properties they're allowed to work on. Every later module (residents,
 admissions, allocations, billing) hangs off this hierarchy.
 
+Client-side how-to for the Flutter app (property-staff assignment endpoints,
+Receptionist data minimization): [../auth-staff-flutter-integration.md](../auth-staff-flutter-integration.md).
+
 ## Data model (as-built)
 
 ```
@@ -109,19 +112,18 @@ GET|PATCH   /api/v1/properties/{id}/                      detail/update      PAT
                                                             PATCH is partial: an omitted key is left unchanged.
                                                             `{"latitude": null, "longitude": null}` clears the pin.
 POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
-DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
-GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds
+GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
                                                             (create accepts write-only `number_of_floors` to
                                                             auto-generate that many named Floors — see Decisions)
-GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds
-GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
+GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
                                                             (create accepts write-only `auto_create_beds` to
                                                             generate `sharing_type` beds — see Decisions)
-GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds
-GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds
+GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
 GET|POST    /api/v1/staff-property-assignments/           list/create        assign_staff_to_properties
 DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  assign_staff_to_properties
 ```
@@ -133,8 +135,10 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
    see only properties they've been explicitly assigned (PRD §6). Enforced
    both by role gate (`CanViewProperties`) and queryset scoping
    (`services.visible_property_ids`).
-3. `manage_rooms_beds` (buildings/floors/rooms/beds CRUD) excludes
-   Receptionist entirely, per the PRD permission matrix.
+3. `manage_rooms_beds` (buildings/floors/rooms/beds mutations: create, update,
+   delete) excludes Receptionist, per the PRD permission matrix. Safe methods
+   (GET list/detail) allow Receptionist read access scoped to assigned
+   properties via `CanViewProperties` (see Decisions, 2026-10-11).
 4. Creating a Building/Floor/Room/Bed under a property the requesting
    Manager isn't assigned to is rejected (`property_not_assigned`), even
    though the property is in the same tenant and would otherwise pass RLS —
@@ -190,10 +194,11 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   `status`, upload/delete images.
 - `edit_properties` (Super Admin, Owner, Manager): PATCH a property's
   details, scoped to assigned properties for Manager.
-- Read access to `/properties/`: Super Admin, Owner, Manager, Receptionist
-  (role gate), further scoped to assigned properties for Manager/Receptionist.
-- `manage_rooms_beds` (Super Admin, Owner, Manager): full CRUD on
-  floors/rooms/beds, scoped to assigned properties for Manager.
+- Read access to `/properties/`, `/buildings/`, `/floors/`, `/rooms/`, `/beds/`:
+  Super Admin, Owner, Manager, Receptionist (`CanViewProperties` role gate on safe methods),
+  further scoped to assigned properties for Manager/Receptionist (`visible_property_ids`).
+- `manage_rooms_beds` (Super Admin, Owner, Manager): mutations (create, update, delete) on
+  floors/rooms/beds/buildings, scoped to assigned properties for Manager. Receptionist is 403-denied.
 - `assign_staff_to_properties` (Super Admin, Owner): manage
   `PropertyStaffAssignment` rows.
 
@@ -313,6 +318,24 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   were left exactly where they were — they don't depend on Building and
   are still mock-data-only (never wired to the real API), so there was
   nothing to migrate there.
+- [DECISION 2026-10-11] **Receptionist read-only hierarchy access**:
+  Safe HTTP methods (`GET` list and retrieve) on `/buildings/`, `/floors/`,
+  `/rooms/`, and `/beds/` use `CanViewProperties` (Super Admin, Owner, Manager,
+  Receptionist), scoped to assigned properties via `services.visible_property_ids`.
+  This allows Receptionists to view layout, rooms, and bed statuses at the desk
+  (and renders the frontend "Manage Layout" screen read-only) without receiving
+  403 errors. All mutation methods (`POST`, `PATCH`, `DELETE`) remain strictly
+  gated by `manage_rooms_beds` (Owner, Manager, Super Admin only).
+- [DECISION 2026-10-11] **Financial data minimization in BedSerializer & RoomSerializer**:
+  When Receptionists (or any user lacking `manage_residents`) access read-only rooms or beds,
+  `BedSerializer` strips contracted resident financial data (`current_occupant.rent` and
+  `history[].rate`) to maintain strict parity with `ResidentSerializer` restrictions.
+  Furthermore, users lacking `view_activity_timeline` (such as Receptionists) have bed
+  `history` omitted entirely, avoiding exposure of admission timeline details and preventing
+  unnecessary historical queries during room listing. Published rack rates
+  (`effective_rate_with_food`, `effective_rate_without_food`, and room rack rates) remain
+  visible to Receptionists as standard property catalog/inventory pricing required for desk
+  inquiries and room allocation walkthroughs.
 - [DECISION 2026-10-09] Map location + app edit screen (Flutter branch
   `feature/property-map-location`). Added `latitude`/`longitude` as
   `decimal(9,6)` — the app rounds to 6 places, so a different precision here
@@ -391,6 +414,12 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   block the delete (the `building_not_empty` guard still counts floors only). Removed
   the mock-only room `amenities` field from `frontend/.../mock-properties.ts` — what a
   PG offers is now real data, see `18-pg-features.md`.
+- 2026-10-12  Staff↔property assignment ("PG access") moved from the Staff directory modal onto the
+  per-staff Team Management screen (`(owner)/staff/[id]`, same `/staff-property-assignments/` API).
+  `BedSerializer` now follows module access (Module 01 `[DECISION 2026-10-12]`): `current_occupant`
+  is null without `view_resident_profile`, `history` needs `view_activity_timeline` **and**
+  `view_resident_profile`, occupant `rent` needs `view_finance` (was `manage_residents`). Property /
+  building / floor / room / bed GETs deliberately stay role-based for assigned staff.
 - 2026-10-09  Map location and app edit support: `latitude`/`longitude`,
   `pincode`, `gender_preference` and a `hostel` property type (migration
   `0008_property_location_pincode_gender`, with a gender backfill and a

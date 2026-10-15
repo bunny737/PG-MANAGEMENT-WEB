@@ -42,7 +42,7 @@ class PaymentExportView(APIView):
     """PRD Module 23: 'Payment history' export. Gated by `manage_payments`
     (excludes Receptionist), matching the live `/payments/` endpoint."""
 
-    permission_classes = [IsAuthenticated, require_permission('manage_payments')]
+    permission_classes = [IsAuthenticated, require_permission('view_finance')]
 
     def get(self, request):
         columns, rows = services.payment_rows(request.user, request.query_params.get('property'))
@@ -56,7 +56,7 @@ class OutstandingDuesExportView(APIView):
     """PRD Module 23: 'Outstanding dues' export. Gated by `manage_invoices`,
     matching the live `/invoices/outstanding/` endpoint this mirrors."""
 
-    permission_classes = [IsAuthenticated, require_permission('manage_invoices')]
+    permission_classes = [IsAuthenticated, require_permission('view_finance')]
 
     def get(self, request):
         columns, rows = services.outstanding_dues_rows(request.user, request.query_params.get('property'))

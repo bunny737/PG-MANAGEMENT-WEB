@@ -6,6 +6,7 @@ import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown, LoaderCircl
 import { useTranslations } from "next-intl";
 import { getInitials } from "@/lib/utils";
 import { listResidents, type Resident, ApiError } from "@/lib/api";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 
 export function ResidentsDirectory() {
@@ -163,13 +164,15 @@ export function ResidentsDirectory() {
             {t("subtitle")}
           </p>
         </div>
-        <Link
-          href="/admissions/new"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
-        >
-          <UserPlus className="size-4.5" />
-          {t("admitResident")}
-        </Link>
+        <PermissionGate permission="manage_admissions">
+          <Link
+            href="/admissions/new"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <UserPlus className="size-4.5" />
+            {t("admitResident")}
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* Filter and Search Panel */}

@@ -5,13 +5,22 @@ import Link from "next/link";
 import { Building2, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { clearSession } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
 
-// TODO(FE-13): replace the hardcoded "Owner Portal / Premium Plan" footer
-// with the authenticated user's name/role and the tenant's actual plan name.
 export function SideNav() {
   const pathname = usePathname();
   const t = useTranslations("common");
+  const { can, ready, user, role, userName } = useSession();
+
+  const navItems = SIDEBAR_NAV_ITEMS.filter(
+    (item) => !item.permission || (ready && can(item.permission))
+  );
+
+  const displayName = userName || (user ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : "") || (role ? t(`roles.${role}`) : t("sideNav.ownerPortal"));
+  const roleLabel = role ? t(`roles.${role}`) : "";
+  const initials = ((user?.first_name?.[0] || "") + (user?.last_name?.[0] || "")).toUpperCase() || (role ? role.slice(0, 2).toUpperCase() : "OP");
 
   return (
     <nav className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-surface-card md:flex">
@@ -25,7 +34,7 @@ export function SideNav() {
       </div>
 
       <div className="flex flex-1 flex-col gap-0.5 px-3">
-        {SIDEBAR_NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
@@ -34,8 +43,6 @@ export function SideNav() {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                // `relative` anchors the active rail; the group lets the icon
-                // pick up the accent on hover ahead of the label.
                 "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                 isActive
                   ? "bg-accent-soft font-semibold text-accent"
@@ -67,18 +74,18 @@ export function SideNav() {
           className="flex min-w-0 items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80"
         >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-surface-inverse-soft to-surface-inverse text-xs font-bold text-ink-inverse">
-            OP
+            {initials}
           </span>
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold text-ink">
-              {t("sideNav.ownerPortal")}
+              {displayName}
             </span>
-            <span className="truncate text-xs text-ink-faint">{t("sideNav.premiumPlan")}</span>
+            <span className="truncate text-xs text-ink-faint">{roleLabel}</span>
           </div>
         </Link>
         <button
           onClick={() => {
-            localStorage.removeItem("isLoggedIn");
+            clearSession();
             window.location.href = "/login";
           }}
           className="shrink-0 cursor-pointer rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-status-critical-soft hover:text-status-critical"

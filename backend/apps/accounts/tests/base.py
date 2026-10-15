@@ -7,25 +7,34 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import Tenant, User
 from apps.accounts.serializers import LoginSerializer
-from apps.core.roles import Role
+from apps.core.roles import Role, STAFF_ROLES
 
 STRONG_PASSWORD = 'Vintage-Kite-77'
 
 
 class AuthAPITestCase(APITestCase):
+    _phone_counter = 0
+
     def setUp(self):
         super().setUp()
         cache.clear()  # reset throttle counters between tests
+
+    @classmethod
+    def _next_phone(cls):
+        cls._phone_counter += 1
+        return f'98765{cls._phone_counter:05d}'
 
     @staticmethod
     def create_tenant(name='Sunrise PG', **kwargs):
         kwargs.setdefault('trial_ends_at', timezone.now() + timedelta(days=60))
         return Tenant.objects.create(name=name, **kwargs)
 
-    @staticmethod
-    def create_user(tenant, role, email, password=STRONG_PASSWORD, **kwargs):
+    @classmethod
+    def create_user(cls, tenant, role, email=None, password=STRONG_PASSWORD, **kwargs):
         kwargs.setdefault('first_name', 'Test')
         kwargs.setdefault('email_verified', True)
+        if role in STAFF_ROLES and 'phone' not in kwargs:
+            kwargs['phone'] = cls._next_phone()
         return User.objects.create_user(
             email=email, password=password, tenant=tenant, role=role, **kwargs
         )

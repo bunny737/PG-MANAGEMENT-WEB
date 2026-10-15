@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Trash2, Building2, Settings, ListChecks, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { getProperty, listBuildings, deleteBuilding, type Property, type Building, ApiError } from "@/lib/api";
 
 export function BuildingList({ propertyId }: { propertyId: string }) {
@@ -120,20 +121,24 @@ export function BuildingList({ propertyId }: { propertyId: string }) {
             <ListChecks className="size-4" />
             {t("features")}
           </Link>
-          <Link
-            href={`/properties/${property.id}/settings`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <Settings className="size-4" />
-            {t("billingSettings")}
-          </Link>
-          <Link
-            href={`/properties/${property.id}/buildings/add`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <Plus className="size-4.5" />
-            {t("addBuilding")}
-          </Link>
+          <PermissionGate permission="manage_property_settings">
+            <Link
+              href={`/properties/${property.id}/settings`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Settings className="size-4" />
+              {t("billingSettings")}
+            </Link>
+          </PermissionGate>
+          <PermissionGate permission="manage_rooms_beds">
+            <Link
+              href={`/properties/${property.id}/buildings/add`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Plus className="size-4.5" />
+              {t("addBuilding")}
+            </Link>
+          </PermissionGate>
         </div>
       </div>
 
@@ -208,13 +213,15 @@ export function BuildingList({ propertyId }: { propertyId: string }) {
                 </div>
 
                 <div className="col-span-1 md:col-span-2 flex justify-end gap-2.5 pt-3.5 md:pt-0 border-t md:border-none border-border/40">
-                  <button
-                    onClick={() => handleDeleteBuilding(building.id, building.name)}
-                    aria-label="Delete Building"
-                    className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical-soft rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <PermissionGate permission="manage_rooms_beds">
+                    <button
+                      onClick={() => handleDeleteBuilding(building.id, building.name)}
+                      aria-label="Delete Building"
+                      className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical-soft rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </PermissionGate>
                 </div>
               </div>
             ))}

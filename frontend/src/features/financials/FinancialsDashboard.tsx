@@ -12,6 +12,7 @@ import {
   Undo
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 
 interface Invoice {
@@ -258,12 +259,15 @@ export function FinancialsDashboard() {
           <div className="space-y-3.5 text-xs text-white/80 leading-relaxed">
             <p>{t("ops.desc1")}</p>
             <p>{t("ops.desc2")}</p>
-            <div className="pt-2">
-              <span className="font-bold text-white uppercase tracking-wider text-[9px] block mb-1">{t("ops.quickAction")}</span>
-              <button className="w-full bg-white text-slate-900 font-bold py-2 rounded-xl text-xs hover:bg-slate-100 transition-colors">
-                {t("ops.regenerateInvoices")}
-              </button>
-            </div>
+            {/* Finance=View sees the figures; changing billing needs Finance=Full (manage_invoices). */}
+            <PermissionGate permission="manage_invoices">
+              <div className="pt-2">
+                <span className="font-bold text-white uppercase tracking-wider text-[9px] block mb-1">{t("ops.quickAction")}</span>
+                <button className="w-full bg-white text-slate-900 font-bold py-2 rounded-xl text-xs hover:bg-slate-100 transition-colors">
+                  {t("ops.regenerateInvoices")}
+                </button>
+              </div>
+            </PermissionGate>
           </div>
         </div>
 
@@ -355,12 +359,14 @@ export function FinancialsDashboard() {
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
                         {inv.status === "overdue" && inv.penaltyAmount && (
-                          <button
-                            onClick={() => handleWaivePenalty(inv.id)}
-                            className="text-[10px] font-bold text-accent border border-accent/20 bg-accent-soft hover:bg-accent hover:text-white px-2.5 py-1 rounded transition-colors cursor-pointer"
-                          >
-                            {t("log.waivePenalty")}
-                          </button>
+                          <PermissionGate permission="manage_invoices">
+                            <button
+                              onClick={() => handleWaivePenalty(inv.id)}
+                              className="text-[10px] font-bold text-accent border border-accent/20 bg-accent-soft hover:bg-accent hover:text-white px-2.5 py-1 rounded transition-colors cursor-pointer"
+                            >
+                              {t("log.waivePenalty")}
+                            </button>
+                          </PermissionGate>
                         )}
                         <button className="p-1 rounded text-ink-muted hover:text-accent transition-colors cursor-pointer">
                           <Download className="size-4 inline" />

@@ -7,10 +7,17 @@
     "dashboard": "డాష్‌బోర్డ్",
     "properties": "ప్రాపర్టీలు",
     "residents": "నివాసితులు",
+    "visitors": "సందర్శకులు",
+    "staff": "సిబ్బంది",
     "complaints": "ఫిర్యాదులు",
     "financials": "ఆర్థిక వ్యవహారాలు",
     "settings": "సెట్టింగ్‌లు",
     "more": "మరిన్ని"
+  },
+  "roles": {
+    "owner": "ఓనర్",
+    "manager": "మేనేజర్",
+    "receptionist": "రిసెప్షనిస్ట్"
   },
   "sideNav": {
     "ownerPortal": "ఓనర్ పోర్టల్",

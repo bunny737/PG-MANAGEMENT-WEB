@@ -25,9 +25,11 @@ import {
   type Resident,
   ApiError
 } from "@/lib/api";
+import { RequirePermission } from "@/components/shared/RequirePermission";
+import { useSession } from "@/lib/session";
 import type { DashboardSummary, ActivityItem } from "@/features/dashboard/types";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const t = useTranslations("dashboard");
   const [beds, setBeds] = useState<Bed[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -39,38 +41,52 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const { can } = useSession();
+  const canSeeFinance = can("view_finance");
+  const canSeeComplaints = can("manage_complaints");
+  const canSeeAdmissions = can("manage_admissions");
+  const canSeeResidents = can("view_resident_profile");
+
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
+    // The dashboard toggle only controls this *screen*; each dataset is still enforced by
+    // its own module on the API. So fetch only what this user may read, and let a failed
+    // dataset degrade its own card instead of blanking the whole dashboard.
+    const none = <T,>() => Promise.resolve([] as T[]);
+    const requests = [
       listAllBeds(),
-      listComplaints(),
-      listInvoices(),
-      listPayments(),
-      listAdmissions(),
-      listResidents()
-    ])
-      .then(([bedsData, complaintsData, invoicesData, paymentsData, admissionsData, residentsData]) => {
-        if (cancelled) return;
-        setBeds(bedsData);
-        setComplaints(complaintsData);
-        setInvoices(invoicesData);
-        setPayments(paymentsData);
-        setAdmissions(admissionsData);
-        setResidents(residentsData);
+      canSeeComplaints ? listComplaints() : none<Complaint>(),
+      canSeeFinance ? listInvoices() : none<Invoice>(),
+      canSeeFinance ? listPayments() : none<Payment>(),
+      canSeeAdmissions ? listAdmissions() : none<Admission>(),
+      canSeeResidents ? listResidents() : none<Resident>(),
+    ] as const;
+
+    Promise.allSettled(requests).then((results) => {
+      if (cancelled) return;
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed.length === results.length) {
+        const reason = failed[0].reason;
+        console.error(reason);
+        setError(reason instanceof ApiError ? reason.message : "Failed to load dashboard report metrics.");
         setIsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : "Failed to load dashboard report metrics.");
-        setIsLoading(false);
-      });
+        return;
+      }
+      const value = <T,>(r: PromiseSettledResult<T[]>): T[] => (r.status === "fulfilled" ? r.value : []);
+      setBeds(value(results[0]) as Bed[]);
+      setComplaints(value(results[1]) as Complaint[]);
+      setInvoices(value(results[2]) as Invoice[]);
+      setPayments(value(results[3]) as Payment[]);
+      setAdmissions(value(results[4]) as Admission[]);
+      setResidents(value(results[5]) as Resident[]);
+      setIsLoading(false);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canSeeFinance, canSeeComplaints, canSeeAdmissions, canSeeResidents]);
 
   const summaryData = useMemo<DashboardSummary | null>(() => {
     if (isLoading || error) return null;
@@ -231,11 +247,13 @@ export default function DashboardPage() {
         <QuickActions />
         <div className="flex flex-col gap-4 px-4">
           <OccupancyCard data={summaryData.occupancy} />
-          <FinancialsCard data={summaryData.financials} />
-          <ActiveIssuesCard
-            issues={summaryData.issues}
-            highPriorityCount={summaryData.highPriorityIssueCount}
-          />
+          {canSeeFinance && <FinancialsCard data={summaryData.financials} />}
+          {canSeeComplaints && (
+            <ActiveIssuesCard
+              issues={summaryData.issues}
+              highPriorityCount={summaryData.highPriorityIssueCount}
+            />
+          )}
         </div>
       </div>
 
@@ -243,15 +261,21 @@ export default function DashboardPage() {
       <div className="hidden md:block">
         <DesktopHeader />
         <div className="flex flex-col gap-6 p-8">
-          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
+          <div
+            className={`grid grid-cols-1 items-stretch gap-6 ${canSeeFinance ? "lg:grid-cols-[2fr_1fr]" : ""}`}
+          >
             <OccupancyCard data={summaryData.occupancy} />
-            <FinancialsCard data={summaryData.financials} />
+            {canSeeFinance && <FinancialsCard data={summaryData.financials} />}
           </div>
-          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
-            <ActiveIssuesCard
-              issues={summaryData.issues}
-              highPriorityCount={summaryData.highPriorityIssueCount}
-            />
+          <div
+            className={`grid grid-cols-1 items-stretch gap-6 ${canSeeComplaints ? "lg:grid-cols-[2fr_1fr]" : ""}`}
+          >
+            {canSeeComplaints && (
+              <ActiveIssuesCard
+                issues={summaryData.issues}
+                highPriorityCount={summaryData.highPriorityIssueCount}
+              />
+            )}
             <TodaysActivity items={summaryData.activity} />
           </div>
         </div>
@@ -259,3 +283,12 @@ export default function DashboardPage() {
     </>
   );
 }
+
+export default function DashboardPage() {
+  return (
+    <RequirePermission permission="view_dashboard">
+      <DashboardContent />
+    </RequirePermission>
+  );
+}
+

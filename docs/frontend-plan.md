@@ -161,7 +161,10 @@ app uses, with no proxy layer:
 - Auth: same `POST /api/v1/auth/login/` -> `{access, refresh}` and
   `POST /api/v1/auth/token/refresh/` flow as the web temporary client
   (`frontend/src/lib/api.ts`), just called from Dart (`dio`/`http`) instead
-  of `fetch`.
+  of `fetch`. A phone+password path (`POST /api/v1/auth/login-phone/`) was
+  added for Manager/Receptionist accounts that have no email, plus
+  `auth_version`-based immediate token revocation on password change —
+  both covered in `docs/auth-staff-flutter-integration.md`.
 - Token storage: `flutter_secure_storage` (Android Keystore-backed on
   Android, Keychain-backed on iOS — one API, platform-correct storage on
   both). Never plain `SharedPreferences`/local files — that's the mobile
@@ -187,12 +190,12 @@ app uses, with no proxy layer:
 app/
 ├── (auth)/                     login, signup (tenant onboarding + 60-day trial),
 │                               verify-email, otp, forgot-password, reset-password
-├── (owner)/                    Owner + Manager portal (nav filtered by permission matrix)
-│   ├── dashboard/              occupancy + financial dashboards
+├── (owner)/                    Owner, Manager, and Receptionist portal (nav filtered by permission matrix)
+│   ├── dashboard/              occupancy + financial dashboards (Owner, Manager)
 │   ├── properties/[id]/        floors / rooms / beds setup, bed grid
 │   │   ├── settings/           Module 2B: transfer rent timing, penalty config
 │   │   └── features/           Module 18: what the PG offers (catalogue + own features)
-│   ├── residents/[id]/         profile, documents, timeline, discounts
+│   ├── residents/[id]/         profile, documents, timeline, discounts (financial fields omitted for Receptionist)
 │   ├── admissions/             pipeline: Inquiry → Visit → Reserved → Admission → Check-in
 │   ├── allocations/            bed board, temporary-allocation list, transfers
 │   ├── billing/
@@ -200,11 +203,10 @@ app/
 │   │   └── payments/           record payment, receipts, outstanding dues
 │   ├── deposits/               notice period, vacating wizard, absconded flow
 │   ├── complaints/             status board, comment threads
-│   ├── visitors/               log + history
-│   ├── staff/                  Owner only: Manager/Receptionist accounts + property assignment
+│   ├── visitors/               log, check-in, check-out (Owner, Manager, Receptionist)
+│   ├── staff/                  Owner only: Manager/Receptionist accounts; `staff/[id]` = per-person module access + PG access
 │   ├── reports/                exports (CSV/Excel/PDF)
 │   └── subscription/           Owner only: plan usage, upgrade via Razorpay, billing history
-├── (reception)/                Receptionist portal: visitors + read-only resident lookup
 ├── (resident)/                 Resident portal (primary PWA install target)
 │   ├── home/  invoices/  receipts/  complaints/  visitors/  notices/  profile/
 ├── (superadmin)/               tenants, plan-limit config, platform metrics, overrides
@@ -214,9 +216,10 @@ app/
 └── sw.ts                       Serwist service worker
 ```
 
-Owner and Manager share the `(owner)` portal: navigation and actions are filtered by the
-permission matrix (PRD §6) fetched from the backend at session start — never inferred
-client-side from role names. Managers see a **property switcher** scoped to assigned
+Owner, Manager, and Receptionist share the `(owner)` portal (receptionist folded in per 2026-10-11 decision): navigation and actions are filtered by the
+permission matrix (PRD §6) fetched from the backend `/auth/me/` at session start — never inferred
+client-side from role names. Receptionist sees only visitor management and read-only property/resident
+views. Super Admin and Resident logins into this portal are explicitly rejected. Managers see a **property switcher** scoped to assigned
 properties; Owners see all properties.
 
 ### 3.3 Frontend directory conventions
@@ -371,7 +374,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 |
-| FE-01 | Auth & shell | 🟨 (password login wired to real JWT login, temporary non-BFF client — see Decisions; OTP/signup/reset/BFF proxy/permission-matrix nav still mock) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; OTP/signup/reset/BFF proxy still future work) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; floor/room/bed builder + bed grid still mock; Module 18 Features page + optional features section in Add Property wired to real API, gated by `usePermissions()` reading `/auth/me/` permissions) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | ⬜ |
@@ -384,7 +387,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-10 | Deposits & exit | ⬜ |
 | FE-D2 | Financial dashboard | ⬜ |
 | FE-11 | Complaints | ⬜ |
-| FE-12 | Visitors | ⬜ |
+| FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |
 | FE-13 | Subscription + Super Admin | ⬜ |
 | FE-14 | Notifications | ⬜ |
 | FE-15 | Audit logs | ⬜ |
@@ -446,3 +449,8 @@ Small additions to note in the relevant module specs when built:
 | Mobile client build order (2026-07-05) | Web/PWA -> Android -> iOS, all as clients of one Django API | Owner confirmed sequencing; avoids building two native apps in parallel and confirms the API needs no per-client redesign (§3.1a) |
 | Mobile client tech (2026-09-17) | Flutter (Dart), one codebase for Android + iOS — supersedes the 2026-07-05 native-Android-then-native-iOS plan (Kotlin/Compose, Swift/SwiftUI) | Owner decision; keeps the "one Django API, no per-client redesign" principle from the row above (§3.1a) — only the client implementation technology changes, not the sequencing or API contract |
 | Auth for Add Property (2026-07-05) | Temporary direct-to-Django client (`lib/api.ts`): real login, JWT in `localStorage`, dev-only CORS — not the §3.1 BFF proxy | The BFF proxy (FE-01) didn't exist yet and nothing in the app called the real backend; owner approved a minimal unblock to get the Add Property form (module 02) working now rather than building the full proxy first. **Still needs replacing** with the httpOnly-cookie proxy before this app leaves a developer's machine — see `docs/modules/02-property-hierarchy.md` Decisions. |
+| Receptionist portal consolidation (2026-10-11) | Single `(owner)` shell for Owner, Manager, and Receptionist — no separate `(reception)` portal group | Keeps the layout, navigation, and mobile UX unified across all staff roles. What each role can view and mutate is governed purely by `PERMISSION_MATRIX` codes from `/auth/me/`, rather than maintaining multiple shell layouts. |
+| Per-staff module access (2026-10-12) | `(owner)/staff/[id]` Team Management screen: module toggles + level picker + PG access; nav, page guards and redirects are all driven by `/auth/me/` permissions (`view_dashboard`, `view_finance`, `view_resident_profile`, `view_property_features`…); `RequirePermission` falls back to the first allowed route (`firstAllowedRoute`), never a role landing page; permissions refresh on tab focus (throttled) and after any 403 | Owner request superseding the fixed per-role matrix (Module 01 `[DECISION 2026-10-12]`); access is per person, so no screen can be assumed reachable by role (F8). No frontend test runner exists yet — behavior is verified by the manual script in the change's plan |
+| Permission-driven nav & route guards (2026-10-11) | Client-side session check (`useSession()`, `useSyncExternalStore` cached + revalidated via `GET /auth/me/` once per load) with `<RequirePermission>` and `<PermissionGate>` | Replaces role-name-based navigation. Acts as a client-side UX guard to hide disallowed buttons and prevent 403 errors; explicitly **not** the §3.1 BFF/httpOnly-cookie design (which remains future work). True authorization boundary remains server-side `require_permission()` checks. |
+| Portal login boundaries (2026-10-11) | Upfront Owner / Staff choice; strict role validation; Super Admin and Resident logins explicitly rejected | Prevents redirection loops or dead-ends for roles with no portal UI in this web app. Owner login requires `owner` role; Staff login requires `manager` or `receptionist`. Stray `super_admin` or `resident` credentials show a clear localized error. |
+

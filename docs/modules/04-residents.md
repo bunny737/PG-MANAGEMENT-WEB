@@ -155,6 +155,16 @@ lifecycle (`vacated`/`blacklisted`) instead.
   closes the "bare status flip bypasses Admission's own check" gap called
   out below, specifically for the plan-limit case (judged consequential
   enough to guard, unlike other workflow gaps left as accepted debt).
+- [DECISION 2026-10-11] Receptionist resident financial field carve-out:
+  Receptionist holds `view_resident_profile` so front-desk staff can look up
+  residents, verify identity, and check unit/bed allocations, but
+  `ResidentSerializer` previously exposed `contracted_rent`, `billing_mode`,
+  `security_deposit_amount`, `advance_amount`, and `advance_refundable`.
+  To prevent data disclosure while keeping a single `GET /residents/` API,
+  `ResidentSerializer.__init__` pops these five fields dynamically whenever
+  the requesting user lacks `manage_residents` (`permissions_for(user.role)`).
+  This prevents financial terms from reaching the front desk even if the
+  frontend tab is hidden.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -183,3 +193,8 @@ lifecycle (`vacated`/`blacklisted`) instead.
   this generic endpoint while the resident has an open `Vacate` — see that
   module's 2026-10-07 update for the reasoning and the lock order, which
   admission (Module 05) now follows too.
+- 2026-10-12  Per-staff module access (Module 01 `[DECISION 2026-10-12]`): `ResidentSerializer`
+  hides `contracted_rent`/`billing_mode` without `view_finance`, and the deposit figures
+  (`security_deposit_amount`, `advance_amount`, `advance_refundable`) without `view_finance` or
+  `manage_deposits` (previously both groups keyed on `manage_residents`; role defaults unchanged).
+  The `timeline` action now requires `view_resident_profile` **and** `view_activity_timeline`.

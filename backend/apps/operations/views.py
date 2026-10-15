@@ -2,11 +2,12 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
+from apps.core.roles import Role, permissions_for_user
 from apps.properties.services import visible_property_ids
 
 from .models import Complaint, ComplaintComment, Visitor
@@ -138,6 +139,26 @@ class ComplaintViewSet(viewsets.ModelViewSet):
         return Response(ComplaintCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
 
+_CONFIRM_ROLES = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER)
+
+
+class CanConfirmVisitor(BasePermission):
+    """Confirming stays an Owner/Manager-only act (a Receptionist logs visitors but
+    never confirms them, whatever module access they were given) — and it still
+    requires the Visitors module, so Visitors=off really is off."""
+
+    message = _('Only Owners and Managers can confirm visitors.')
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and user.role in _CONFIRM_ROLES
+            and 'manage_visitors' in permissions_for_user(user)
+        )
+
+
 class VisitorViewSet(viewsets.ModelViewSet):
     """Visitor entry/exit log (PRD Module 13). `manage_visitors` is the one
     permission in the whole matrix that includes Receptionist — front desk
@@ -149,6 +170,11 @@ class VisitorViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, require_permission('manage_visitors')]
     http_method_names = ['get', 'post']
     filterset_fields = ['resident', 'mobile_number']
+
+    def get_permissions(self):
+        if self.action == 'confirm':
+            return [IsAuthenticated(), CanConfirmVisitor()]
+        return super().get_permissions()
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

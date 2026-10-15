@@ -90,7 +90,7 @@ def notify(*, tenant_id, notification_type, recipient_user, context, channels=No
             ))
             continue
 
-        recipient_email = getattr(recipient_user, 'email', '') if channel == 'email' else ''
+        recipient_email = (getattr(recipient_user, 'email', '') or '') if channel == 'email' else ''
         status, note = handler.send(
             recipient_email=recipient_email,
             recipient_user=recipient_user, subject=subject, body=body,

@@ -20,7 +20,7 @@ import {
   type PropertyFeaturesState,
   type TenantFeature,
 } from "@/lib/api";
-import { usePermissions } from "@/lib/permissions";
+import { useSession } from "@/lib/session";
 import { FeaturePicker, featureKey, keyToRef, toFeatureRefs, type FeatureSelection } from "./FeaturePicker";
 
 /** Stable string for "has anything changed since the last load/save". */
@@ -40,7 +40,7 @@ function readDraft(propertyId: string): FeatureSelection | null {
 export function PropertyFeaturesForm({ propertyId }: { propertyId: string }) {
   const t = useTranslations("properties.features");
   const tCommon = useTranslations("common");
-  const { ready, can } = usePermissions();
+  const { ready, can } = useSession();
   const canEdit = can("manage_property_features");
 
   const [property, setProperty] = useState<Property | null>(null);
@@ -101,7 +101,13 @@ export function PropertyFeaturesForm({ propertyId }: { propertyId: string }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof ApiError && err.status === 403 ? t("errPermission") : t("errLoadFailed"));
+        setError(
+          err instanceof ApiError && err.status === 403
+            ? t("errPermission")
+            : err instanceof ApiError && err.message
+            ? err.message
+            : t("errLoadFailed")
+        );
         setIsLoading(false);
       });
     return () => {

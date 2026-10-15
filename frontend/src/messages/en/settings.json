@@ -99,6 +99,7 @@
     "allPropertiesOwner": "All Properties (Owner)",
     "emailOtpNotice": "Email changes require secondary security OTP validation.",
     "updatedToast": "Profile Updated",
-    "updatedToastSub": "Your profile settings have been saved successfully."
+    "updatedToastSub": "Your profile settings have been saved successfully.",
+    "errorToast": "Update Failed"
   }
 }

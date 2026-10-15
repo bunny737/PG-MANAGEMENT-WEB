@@ -29,6 +29,14 @@ class ResidentStatusTransitionTests(ResidentAPITestCase):
             self.assertEqual(response.status_code, 200, response.data)
             self.assertEqual(response.data['status'], target)
 
+    def test_status_transition_returns_full_serialized_body_with_context(self):
+        resident = self.create_resident(self.property)
+        response = self.client.patch(status_url(resident), {'status': 'reserved'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'reserved')
+        self.assertIn('first_name', response.data)
+        self.assertIn('contracted_rent', response.data)
+
     def test_active_can_go_to_absconded_then_blacklisted(self):
         resident = self.create_resident(self.property, status=Resident.Status.ACTIVE)
 

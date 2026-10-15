@@ -1,7 +1,9 @@
+from datetime import date
 from django.urls import reverse
 
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Building, Room
+from apps.residents.models import Admission, Allocation, Resident
 
 from .base import PropertyAPITestCase
 
@@ -160,12 +162,87 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
             bed.save()
         self.assertEqual(self.client.delete(reverse('bed-detail', args=[bed.id])).status_code, 204)
 
-    def test_receptionist_has_no_access_to_rooms_or_beds(self):
+    def test_receptionist_can_view_floors_rooms_beds_of_assigned_property(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+
         receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
         self.authenticate(receptionist)
-        self.assertEqual(self.client.get(reverse('floor-list')).status_code, 403)
-        self.assertEqual(self.client.get(reverse('room-list')).status_code, 403)
-        self.assertEqual(self.client.get(reverse('bed-list')).status_code, 403)
+
+        # Floors
+        f_list = self.client.get(reverse('floor-list'), {'building': str(self.building.id)})
+        self.assertEqual(f_list.status_code, 200)
+        self.assertEqual(len(f_list.data), 1)
+        f_detail = self.client.get(reverse('floor-detail', args=[floor.id]))
+        self.assertEqual(f_detail.status_code, 200)
+
+        # Rooms
+        r_list = self.client.get(reverse('room-list'), {'floor': str(floor.id)})
+        self.assertEqual(r_list.status_code, 200)
+        self.assertEqual(len(r_list.data), 1)
+        r_detail = self.client.get(reverse('room-detail', args=[room.id]))
+        self.assertEqual(r_detail.status_code, 200)
+
+        # Beds
+        b_list = self.client.get(reverse('bed-list'), {'room': str(room.id)})
+        self.assertEqual(b_list.status_code, 200)
+        self.assertEqual(len(b_list.data), 1)
+        b_detail = self.client.get(reverse('bed-detail', args=[bed.id]))
+        self.assertEqual(b_detail.status_code, 200)
+
+    def test_receptionist_cannot_view_floors_rooms_beds_of_unassigned_property(self):
+        other_property = self.create_property(self.tenant, name='Other Property')
+        other_floor = self.create_floor(other_property)
+        other_room = self.create_room(other_floor)
+        other_bed = self.create_bed(other_room)
+
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)  # not other_property
+        self.authenticate(receptionist)
+
+        # Floors
+        f_list = self.client.get(reverse('floor-list'), {'building': str(other_floor.building.id)})
+        self.assertEqual(f_list.status_code, 200)
+        self.assertEqual(len(f_list.data), 0)
+        self.assertEqual(self.client.get(reverse('floor-detail', args=[other_floor.id])).status_code, 404)
+
+        # Rooms
+        r_list = self.client.get(reverse('room-list'), {'floor': str(other_floor.id)})
+        self.assertEqual(r_list.status_code, 200)
+        self.assertEqual(len(r_list.data), 0)
+        self.assertEqual(self.client.get(reverse('room-detail', args=[other_room.id])).status_code, 404)
+
+        # Beds
+        b_list = self.client.get(reverse('bed-list'), {'room': str(other_room.id)})
+        self.assertEqual(b_list.status_code, 200)
+        self.assertEqual(len(b_list.data), 0)
+        self.assertEqual(self.client.get(reverse('bed-detail', args=[other_bed.id])).status_code, 404)
+
+    def test_receptionist_cannot_create_update_or_delete_floors_rooms_beds(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        # Floor mutations
+        self.assertEqual(self.client.post(reverse('floor-list'), {'building': str(self.building.id), 'name': '2nd Floor'}).status_code, 403)
+        self.assertEqual(self.client.patch(reverse('floor-detail', args=[floor.id]), {'name': 'Renamed'}).status_code, 403)
+        self.assertEqual(self.client.delete(reverse('floor-detail', args=[floor.id])).status_code, 403)
+
+        # Room mutations
+        self.assertEqual(self.client.post(reverse('room-list'), self._room_payload(floor)).status_code, 403)
+        self.assertEqual(self.client.patch(reverse('room-detail', args=[room.id]), {'room_number': '999'}).status_code, 403)
+        self.assertEqual(self.client.delete(reverse('room-detail', args=[room.id])).status_code, 403)
+
+        # Bed mutations
+        self.assertEqual(self.client.post(reverse('bed-list'), {'room': str(room.id), 'bed_number': '999-Z'}).status_code, 403)
+        self.assertEqual(self.client.patch(reverse('bed-detail', args=[bed.id]), {'bed_number': 'Renamed'}).status_code, 403)
+        self.assertEqual(self.client.delete(reverse('bed-detail', args=[bed.id])).status_code, 403)
 
     def test_manager_can_add_floor_to_assigned_property(self):
         manager = self.create_manager(self.tenant)
@@ -255,3 +332,141 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
         # Property occupancy_percent should also be 50%
         prop_resp = self.client.get(reverse('property-detail', args=[self.property.id]))
         self.assertEqual(prop_resp.data['occupancy_percent'], 50)
+
+    def _check_in_resident(self, bed, first_name='Ravi', phone='9000000001', contracted_rent='7500.00'):
+        with tenant_context(self.tenant.id):
+            resident = Resident.objects.create(
+                tenant_id=self.tenant.id,
+                property=self.property,
+                first_name=first_name,
+                last_name='Kumar',
+                phone=phone,
+                email='ravi@example.com',
+                status=Resident.Status.ACTIVE,
+            )
+            admission = Admission.objects.create(
+                tenant_id=self.tenant.id,
+                resident=resident,
+                bed=bed,
+                joining_date=date.today(),
+                billing_mode=Admission.BillingMode.MONTHLY,
+                food_preference=Admission.FoodPreference.WITH_FOOD,
+                contracted_sharing_type=bed.room.sharing_type,
+                contracted_room_category=bed.room.category,
+                contracted_rent=contracted_rent,
+            )
+            bed.status = Bed.Status.OCCUPIED
+            bed.save(update_fields=['status'])
+            allocation = Allocation.objects.create(
+                tenant_id=self.tenant.id,
+                resident=resident,
+                allocated_bed=bed,
+                contracted_sharing_type=admission.contracted_sharing_type,
+                contracted_room_category=admission.contracted_room_category,
+                contracted_rent=admission.contracted_rent,
+            )
+            return resident, allocation
+
+    def test_receptionist_bed_detail_omits_contracted_rent_and_history(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        self._check_in_resident(bed, contracted_rent='8000.00')
+
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        response = self.client.get(reverse('bed-detail', args=[bed.id]))
+        self.assertEqual(response.status_code, 200)
+
+        # Rack rates and inventory data remain present
+        self.assertIn('effective_rate_with_food', response.data)
+        self.assertIn('effective_rate_without_food', response.data)
+
+        # Current occupant is present, but rent is omitted
+        occupant = response.data.get('current_occupant')
+        self.assertIsNotNone(occupant)
+        self.assertEqual(occupant['first_name'], 'Ravi')
+        self.assertNotIn('rent', occupant)
+
+        # History is omitted
+        self.assertNotIn('history', response.data)
+
+    def test_owner_and_manager_bed_detail_includes_rent_and_history(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        self._check_in_resident(bed, contracted_rent='8000.00')
+
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+
+        for user in [self.owner, manager]:
+            self.authenticate(user)
+            response = self.client.get(reverse('bed-detail', args=[bed.id]))
+            self.assertEqual(response.status_code, 200)
+
+            # Contracted rent is present
+            occupant = response.data.get('current_occupant')
+            self.assertIsNotNone(occupant)
+            self.assertEqual(occupant['rent'], '8000.00')
+
+            # History is present with rate
+            history = response.data.get('history')
+            self.assertIsNotNone(history)
+            self.assertGreater(len(history), 0)
+            self.assertIn('rate', history[0])
+
+    def test_receptionist_room_list_omits_bed_rent_and_history(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        self._check_in_resident(bed, contracted_rent='8000.00')
+
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        response = self.client.get(reverse('room-list'), {'floor': str(floor.id)})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        room_data = response.data[0]
+        self.assertIn('rack_rate_with_food', room_data)
+        self.assertIn('beds', room_data)
+        self.assertEqual(len(room_data['beds']), 1)
+
+        bed_data = room_data['beds'][0]
+        self.assertIn('effective_rate_with_food', bed_data)
+
+        # Occupant rent omitted
+        occupant = bed_data.get('current_occupant')
+        self.assertIsNotNone(occupant)
+        self.assertNotIn('rent', occupant)
+
+        # Bed history omitted
+        self.assertNotIn('history', bed_data)
+
+    def test_owner_and_manager_room_list_includes_bed_rent_and_history(self):
+        floor = self.create_floor(self.property)
+        room = self.create_room(floor)
+        bed = self.create_bed(room)
+        self._check_in_resident(bed, contracted_rent='8000.00')
+
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+
+        for user in [self.owner, manager]:
+            self.authenticate(user)
+            response = self.client.get(reverse('room-list'), {'floor': str(floor.id)})
+            self.assertEqual(response.status_code, 200)
+
+            room_data = response.data[0]
+            bed_data = room_data['beds'][0]
+            occupant = bed_data.get('current_occupant')
+            self.assertIsNotNone(occupant)
+            self.assertEqual(occupant['rent'], '8000.00')
+            self.assertIn('history', bed_data)
+            self.assertIn('rate', bed_data['history'][0])
+

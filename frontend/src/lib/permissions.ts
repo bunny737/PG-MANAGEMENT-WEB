@@ -1,56 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { PERMISSIONS_KEY, getCurrentUser } from "@/lib/api";
-
-const CHANGE_EVENT = "storage";
-
-function subscribe(onChange: () => void) {
-  window.addEventListener(CHANGE_EVENT, onChange);
-  return () => window.removeEventListener(CHANGE_EVENT, onChange);
-}
+import { SIDEBAR_NAV_ITEMS } from "@/components/shared/NavItems";
+import { useSession } from "./session";
 
 /**
- * Permission codes from `/auth/me/` (the backend's PERMISSION_MATRIX), so the
- * UI gates on what the server will actually allow instead of on role names.
- * `ready` is false until the list is known; `can()` is false until then.
+ * Re-export usePermissions for backwards compatibility.
+ * Prefer `useSession()` from `@/lib/session`.
  */
 export function usePermissions() {
-  const stored = useSyncExternalStore(
-    subscribe,
-    () => localStorage.getItem(PERMISSIONS_KEY),
-    () => null
+  const { ready, can } = useSession();
+  return { ready, can };
+}
+
+/** Every signed-in user can reach their own profile, whatever their access. */
+export const PROFILE_ROUTE = "/profile";
+
+/**
+ * Where to send a user who can't see the page they asked for (or just logged in): the first
+ * nav destination their permissions allow, else their profile. Staff access is Owner-configured
+ * per person (module access), so no screen can be assumed reachable by role.
+ */
+export function firstAllowedRoute(permissions: readonly string[], exclude?: string): string {
+  const item = SIDEBAR_NAV_ITEMS.find(
+    (entry) =>
+      entry.href !== exclude && (!entry.permission || permissions.includes(entry.permission))
   );
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (stored !== null) return;
-    let cancelled = false;
-    // Sessions that logged in before permissions were cached at login.
-    getCurrentUser()
-      .then((me) => {
-        localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
-        window.dispatchEvent(new Event(CHANGE_EVENT));
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [stored]);
-
-  const permissions = useMemo<string[] | null>(() => {
-    if (stored === null) return failed ? [] : null;
-    try {
-      return JSON.parse(stored) as string[];
-    } catch {
-      return [];
-    }
-  }, [stored, failed]);
-
-  return {
-    ready: permissions !== null,
-    can: (code: string) => Boolean(permissions?.includes(code)),
-  };
+  return item?.href ?? PROFILE_ROUTE;
 }

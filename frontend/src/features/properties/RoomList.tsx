@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Search, FilterX, User, Wrench, ShieldAlert, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { getProperty, getFloor, listRooms, type Property, type Room, ApiError } from "@/lib/api";
 
 export function RoomList({ propertyId, floorId }: { propertyId: string; floorId: string }) {
@@ -126,13 +127,15 @@ export function RoomList({ propertyId, floorId }: { propertyId: string; floorId:
           <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">{t("title")}</h1>
         </div>
 
-        <Link
-          href={`/properties/${property.id}/floors/${floorId}/rooms/add`}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="size-4.5" />
-          {t("addRoom")}
-        </Link>
+        <PermissionGate permission="manage_rooms_beds">
+          <Link
+            href={`/properties/${property.id}/floors/${floorId}/rooms/add`}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="size-4.5" />
+            {t("addRoom")}
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* Filter panel */}

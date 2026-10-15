@@ -16,6 +16,8 @@ const ACCESS_TOKEN_KEY = "accessToken";
 const REFRESH_TOKEN_KEY = "refreshToken";
 /** Permission codes from /auth/me/ — read through `usePermissions()`. */
 export const PERMISSIONS_KEY = "userPermissions";
+/** Fired on any 403 so the session layer can refresh permissions right away. */
+export const PERMISSION_DENIED_EVENT = "permission-denied";
 /** sessionStorage prefix for a feature selection that failed to save after a property was created. */
 export const FEATURE_DRAFT_PREFIX = "featureDraft:";
 
@@ -91,10 +93,14 @@ export function clearSession() {
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");
   localStorage.removeItem("userName");
+  localStorage.removeItem("currentUser");
   localStorage.removeItem(PERMISSIONS_KEY);
   // Invariant F7: no tenant data survives logout.
   for (const key of Object.keys(sessionStorage)) {
     if (key.startsWith(FEATURE_DRAFT_PREFIX)) sessionStorage.removeItem(key);
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
   }
 }
 
@@ -161,6 +167,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   }
 
   if (!res.ok) {
+    if (res.status === 403 && typeof window !== "undefined") {
+      // The Owner may have just changed this user's access: lib/session.ts re-fetches
+      // /auth/me/ immediately (bypassing its focus throttle) so gated UI updates now.
+      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+    }
     throw new ApiError(res.status, await parseErrorBody(res));
   }
 
@@ -181,8 +192,34 @@ export async function login(email: string, password: string) {
   localStorage.setItem("userRole", me.role);
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
   localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  localStorage.setItem("currentUser", JSON.stringify(me));
   const effectiveLang = me.language_code || me.tenant?.default_language || "en";
   writeLocaleCookie(effectiveLang);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
+  }
+  return me;
+}
+
+export async function loginPhone(phone: string, password: string) {
+  const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login-phone/", {
+    method: "POST",
+    body: JSON.stringify({ phone, password }),
+    skipAuth: true,
+  });
+  setTokens(tokens.access, tokens.refresh);
+
+  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
+  localStorage.setItem("isLoggedIn", "true");
+  localStorage.setItem("userRole", me.role);
+  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
+  localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
+  localStorage.setItem("currentUser", JSON.stringify(me));
+  const effectiveLang = me.language_code || me.tenant?.default_language || "en";
+  writeLocaleCookie(effectiveLang);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("session-changed"));
+  }
   return me;
 }
 
@@ -435,7 +472,7 @@ export interface Bed {
     phone: string;
     status: string;
     joining_date: string | null;
-    rent: string;
+    rent?: string;
     initials: string;
   } | null;
   history?: Array<{
@@ -443,7 +480,7 @@ export interface Bed {
     term: string;
     moveIn: string;
     moveOut: string;
-    rate: string;
+    rate?: string;
     initials: string;
   }>;
   created_at: string;
@@ -654,15 +691,135 @@ export interface StaffUser {
   id: string;
   first_name: string;
   last_name: string;
-  email: string;
+  email: string | null;
+  phone: string;
   role: string;
   is_active: boolean;
+  email_verified?: boolean;
+  created_at?: string;
+}
+
+export interface CreateStaffPayload {
+  first_name: string;
+  last_name?: string;
+  email?: string | null;
+  phone: string;
+  role: "manager" | "receptionist";
+  password?: string;
+}
+
+export interface UpdateStaffPayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  role?: "manager" | "receptionist";
+  is_active?: boolean;
 }
 
 export function listStaff() {
   return apiFetch<StaffUser[] | { results: StaffUser[] }>("/api/v1/staff/").then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+export function createStaff(payload: CreateStaffPayload) {
+  return apiFetch<StaffUser>("/api/v1/staff/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateStaff(staffId: string, payload: UpdateStaffPayload) {
+  return apiFetch<StaffUser>(`/api/v1/staff/${staffId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function setStaffPassword(staffId: string, password: string) {
+  return apiFetch<{ detail: string }>(`/api/v1/staff/${staffId}/set-password/`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function getStaff(staffId: string) {
+  return apiFetch<StaffUser>(`/api/v1/staff/${staffId}/`);
+}
+
+/** off < view < full. Each module supports only some of these (see `levels`). */
+export type ModuleLevel = "off" | "view" | "full";
+
+export interface ModuleAccessEntry {
+  key: string;
+  /** Levels this module supports, lowest first; always starts with "off". */
+  levels: ModuleLevel[];
+  level: ModuleLevel;
+  default_level: ModuleLevel;
+}
+
+export interface StaffModuleAccess {
+  role: "manager" | "receptionist";
+  customized: boolean;
+  modules: ModuleAccessEntry[];
+}
+
+export function getStaffModuleAccess(staffId: string) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`);
+}
+
+/** Complete replacement: every module key must be present. `role` is the role the
+ * screen rendered — the server answers 409 ROLE_CHANGED if it has changed since. */
+export function saveStaffModuleAccess(
+  staffId: string,
+  role: StaffModuleAccess["role"],
+  levels: Record<string, ModuleLevel>
+) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`, {
+    method: "PUT",
+    body: JSON.stringify({ role, levels }),
+  });
+}
+
+export function resetStaffModuleAccess(staffId: string) {
+  return apiFetch<StaffModuleAccess>(`/api/v1/staff/${staffId}/module-access/`, {
+    method: "DELETE",
+  });
+}
+
+export interface PropertyStaffAssignment {
+  id: string;
+  staff: string;
+  staff_name: string;
+  property: string;
+  property_name: string;
+  created_at: string;
+}
+
+/** Which properties a Manager/Receptionist can access. Owners always see every
+ * property implicitly and are never assigned — see backend/apps/properties/models.py
+ * PropertyStaffAssignment. */
+export function listPropertyAssignments(filters?: { staff?: string; property?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.staff) params.set("staff", filters.staff);
+  if (filters?.property) params.set("property", filters.property);
+  const query = params.toString();
+  return apiFetch<PropertyStaffAssignment[] | { results: PropertyStaffAssignment[] }>(
+    `/api/v1/staff-property-assignments/${query ? `?${query}` : ""}`
+  ).then((data) => (Array.isArray(data) ? data : data.results));
+}
+
+export function assignStaffToProperty(staffId: string, propertyId: string) {
+  return apiFetch<PropertyStaffAssignment>("/api/v1/staff-property-assignments/", {
+    method: "POST",
+    body: JSON.stringify({ staff: staffId, property: propertyId }),
+  });
+}
+
+export function unassignStaffFromProperty(assignmentId: string) {
+  return apiFetch<void>(`/api/v1/staff-property-assignments/${assignmentId}/`, {
+    method: "DELETE",
+  });
 }
 
 export interface ComplaintComment {
@@ -923,16 +1080,105 @@ export interface FeatureRef {
   is_paid?: boolean;
 }
 
+const MOCK_FEATURE_CATALOG: FeatureCatalogItem[] = [
+  { id: "fc-1", code: "furnished_rooms", category: "rooms", category_label: "Rooms & Furnishing", label: "Furnished rooms", display_order: 1, is_popular: true, is_active: true },
+  { id: "fc-2", code: "attached_bathroom", category: "rooms", category_label: "Rooms & Furnishing", label: "Attached bathroom", display_order: 2, is_popular: true, is_active: true },
+  { id: "fc-3", code: "mess_food_provided", category: "food", category_label: "Food & Kitchen", label: "Food / mess provided", display_order: 3, is_popular: true, is_active: true },
+  { id: "fc-4", code: "refrigerator", category: "food", category_label: "Food & Kitchen", label: "Refrigerator", display_order: 4, is_popular: false, is_active: true },
+  { id: "fc-5", code: "washing_machine", category: "housekeeping", category_label: "Housekeeping & Laundry", label: "Washing machine", display_order: 5, is_popular: true, is_active: true },
+  { id: "fc-6", code: "wifi", category: "connectivity", category_label: "Internet & Entertainment", label: "Wi-Fi", display_order: 6, is_popular: true, is_active: true },
+  { id: "fc-7", code: "power_backup", category: "utilities", category_label: "Utilities & Comfort", label: "Power backup", display_order: 7, is_popular: true, is_active: true },
+  { id: "fc-8", code: "hot_water_geyser", category: "utilities", category_label: "Utilities & Comfort", label: "Hot water / geyser", display_order: 8, is_popular: true, is_active: true },
+  { id: "fc-9", code: "cctv", category: "safety", category_label: "Safety & Security", label: "CCTV surveillance", display_order: 9, is_popular: true, is_active: true },
+  { id: "fc-10", code: "gym", category: "recreation", category_label: "Recreation & Common Areas", label: "Gym / fitness room", display_order: 10, is_popular: false, is_active: true },
+];
+
+const MOCK_PROPERTY_FEATURES: Record<string, PropertyFeaturesState> = {
+  skyline: {
+    property: "skyline",
+    building: null,
+    items: [
+      {
+        id: "feat-skyline-1",
+        source: "property",
+        building: null,
+        feature_type: "catalog",
+        code: "wifi",
+        tenant_feature: null,
+        label: "Wi-Fi",
+        category: "connectivity",
+        category_label: "Internet & Entertainment",
+        is_paid: false,
+        is_active: true,
+      },
+      {
+        id: "feat-skyline-2",
+        source: "property",
+        building: null,
+        feature_type: "catalog",
+        code: "power_backup",
+        tenant_feature: null,
+        label: "Power backup",
+        category: "utilities",
+        category_label: "Utilities & Comfort",
+        is_paid: false,
+        is_active: true,
+      },
+      {
+        id: "feat-skyline-3",
+        source: "property",
+        building: null,
+        feature_type: "catalog",
+        code: "cctv",
+        tenant_feature: null,
+        label: "CCTV surveillance",
+        category: "safety",
+        category_label: "Safety & Security",
+        is_paid: false,
+        is_active: true,
+      },
+      {
+        id: "feat-skyline-4",
+        source: "property",
+        building: null,
+        feature_type: "catalog",
+        code: "washing_machine",
+        tenant_feature: null,
+        label: "Washing machine",
+        category: "housekeeping",
+        category_label: "Housekeeping & Laundry",
+        is_paid: true,
+        is_active: true,
+      },
+    ],
+    excluded: [],
+    derived: {
+      sharing_types: [1, 2],
+      room_categories: ["ac", "non_ac"],
+    },
+  },
+  sunset: {
+    property: "sunset",
+    building: null,
+    items: [],
+    excluded: [],
+    derived: {
+      sharing_types: [1, 2, 3],
+      room_categories: ["ac", "non_ac"],
+    },
+  },
+};
+
 export function listFeatureCatalog() {
-  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/").then(
-    (data) => (Array.isArray(data) ? data : data.results)
-  );
+  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/")
+    .then((data) => (Array.isArray(data) ? data : data.results))
+    .catch(() => MOCK_FEATURE_CATALOG);
 }
 
 export function listTenantFeatures() {
-  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/").then((data) =>
-    Array.isArray(data) ? data : data.results
-  );
+  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/")
+    .then((data) => (Array.isArray(data) ? data : data.results))
+    .catch(() => []);
 }
 
 /** Idempotent: returns the existing feature when one with the same name already exists. */
@@ -940,11 +1186,34 @@ export function createTenantFeature(label: string) {
   return apiFetch<TenantFeature>("/api/v1/tenant-features/", {
     method: "POST",
     body: JSON.stringify({ label }),
+  }).catch((err) => {
+    if (err instanceof ApiError && err.status === 400) throw err;
+    return {
+      id: `custom-${Date.now()}`,
+      label,
+      is_active: true,
+    };
   });
 }
 
 export function listPropertyFeatures(propertyId: string, buildingId?: string | null) {
-  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  if (!isUUID(propertyId)) {
+    const mock = MOCK_PROPERTIES_MAP[propertyId];
+    if (mock) {
+      const state = MOCK_PROPERTY_FEATURES[propertyId] || {
+        property: propertyId,
+        building: buildingId ?? null,
+        items: [],
+        excluded: [],
+        derived: { sharing_types: [1, 2], room_categories: ["ac", "non_ac"] },
+      };
+      return Promise.resolve({
+        ...state,
+        building: buildingId ?? null,
+      });
+    }
+    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  }
   const query = buildingId ? `?building=${buildingId}` : "";
   return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/${query}`);
 }
@@ -954,9 +1223,85 @@ export function replacePropertyFeatures(
   propertyId: string,
   payload: { building: string | null; items: FeatureRef[]; excluded?: FeatureRef[] }
 ) {
-  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  if (!isUUID(propertyId)) {
+    const mock = MOCK_PROPERTIES_MAP[propertyId];
+    if (mock) {
+      const items: PropertyFeature[] = (payload.items || []).map((ref, idx) => ({
+        id: `mock-feat-${idx}`,
+        source: payload.building ? ("building" as const) : ("property" as const),
+        building: payload.building,
+        feature_type: ref.code ? ("catalog" as const) : ("custom" as const),
+        code: ref.code ?? null,
+        tenant_feature: ref.tenant_feature ?? null,
+        label: ref.code ? ref.code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Custom feature",
+        category: "other",
+        category_label: "Other",
+        is_paid: ref.is_paid ?? false,
+        is_active: true,
+      }));
+      const newState: PropertyFeaturesState = {
+        property: propertyId,
+        building: payload.building,
+        items,
+        excluded: [],
+        derived: { sharing_types: [1, 2], room_categories: ["ac", "non_ac"] },
+      };
+      MOCK_PROPERTY_FEATURES[propertyId] = newState;
+      return Promise.resolve(newState);
+    }
+    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  }
   return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
+
+export interface Visitor {
+  id: string;
+  resident: string;
+  visitor_name: string;
+  mobile_number: string;
+  purpose: string;
+  entry_time: string;
+  exit_time: string | null;
+  is_checked_in: boolean;
+  logged_by?: string;
+  checked_out_by?: string | null;
+  approved_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VisitorPayload {
+  resident: string;
+  visitor_name: string;
+  mobile_number: string;
+  purpose: string;
+  entry_time?: string;
+}
+
+export function listVisitors(filters?: { resident?: string; mobile_number?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.resident) params.append("resident", filters.resident);
+  if (filters?.mobile_number) params.append("mobile_number", filters.mobile_number);
+  const q = params.toString();
+  return apiFetch<Visitor[] | { results: Visitor[] }>(`/api/v1/visitors/${q ? `?${q}` : ""}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function createVisitor(payload: VisitorPayload) {
+  return apiFetch<Visitor>("/api/v1/visitors/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function checkOutVisitor(id: string, exit_time?: string) {
+  return apiFetch<Visitor>(`/api/v1/visitors/${id}/check-out/`, {
+    method: "POST",
+    body: JSON.stringify(exit_time ? { exit_time } : {}),
+  });
+}
+

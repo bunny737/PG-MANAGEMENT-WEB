@@ -95,9 +95,19 @@ class DeviceRegisterView(APIView):
         result = services.register_installation(
             installation_id=data['installation_id'], sync_seq=data['sync_seq'],
             signed_in=data['signed_in'], fields=serializer.to_installation_fields(), user=user,
+            secret=request.META.get('HTTP_X_INSTALLATION_SECRET') or None,
         )
+        if result.rejected:
+            # The app lost (or never had) this install's secret: it must
+            # start over with a fresh installation_id (see Module 19 spec).
+            return Response(
+                {'detail': _('Installation secret missing or invalid.'), 'code': 'INSTALLATION_SECRET_INVALID'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # Only on the call that minted it — the app must store it securely.
+        secret = {'installation_secret': result.issued_secret} if result.issued_secret else {}
         if result.ignored:
-            return Response({'registered': True, 'ignored': result.ignored})
+            return Response({'registered': True, 'ignored': result.ignored, **secret})
         return Response(
             {
                 'installation_id': str(data['installation_id']),
@@ -107,6 +117,7 @@ class DeviceRegisterView(APIView):
                 # subscription, if any, is left untouched in that case.
                 'push': {'subscribed': result.push_subscribed},
                 'server_time': iso_z(timezone.now()),
+                **secret,
             },
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )

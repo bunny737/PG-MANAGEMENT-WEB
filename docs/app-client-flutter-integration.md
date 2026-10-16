@@ -9,7 +9,8 @@
 1. Send five `X-App-*` / `X-Installation-Id` headers on **every** request (§2).
 2. On launch and on resume, call `GET /app/version-policy/` and act on `update_mode` / `maintenance` (§3).
 3. Call `POST /devices/` to report the install on launch, on login, on logout, and when the FCM token / push
-   permission / app build / OS version changes (§4).
+   permission / app build / OS version changes (§4). Store the `installation_secret` it returns the first time
+   (secure storage) and send it as `X-Installation-Secret` on every later `POST /devices/` (§4.5).
 4. Call `DELETE /devices/{installation_id}/user/` on logout, **before** discarding tokens (§5).
 5. Push registration is part of `POST /devices/`: an authenticated call with `push.fcm_token` subscribes the device.
    Do **not** also call `push-subscriptions` (§6).
@@ -244,6 +245,7 @@ class DeviceSync {
 | `200` | same | updated |
 | `200` | `{"registered":true,"ignored":"stale_sync_seq"}` | your `sync_seq` was older than the server's. **Not an error** — a newer call already won. No `user_linked` key. |
 | `400` | DRF field errors, nested objects nest, e.g. `{"app":{"build_number":["…"]}}` | bug in the payload |
+| `403` | `{"detail","code":"INSTALLATION_SECRET_INVALID"}` | missing/wrong `X-Installation-Secret` — start over with a new `installation_id` (§4.5) |
 | `413` | `{"detail","code":"PAYLOAD_TOO_LARGE"}` | body > 8 KB |
 | `429` | + `Retry-After` header | throttled |
 
@@ -255,6 +257,32 @@ class DeviceSync {
   expired — don't treat it as logout).
 
 Also a suspended tenant's user is treated as anonymous here (no 401).
+
+### 4.5 Installation secret (proof of possession)
+`installation_id` is not secret, since it travels in every request header. So the server issues a per-install
+secret, and every later `POST /devices/` must prove it:
+
+- **Receiving it.** The first successful `POST /devices/` for a new install returns
+  `"installation_secret": "<random string>"`. An install registered before this feature receives it on its
+  next **authenticated** call by its signed-in user (otherwise that call gets a 403; see below). It is
+  returned **only once**. Store it in `flutter_secure_storage` right away, next to the
+  `installation_id`.
+- **Sending it.** Send it on every later `POST /devices/` as the header `X-Installation-Secret: <secret>`.
+- **On 403.** `403` with `code: INSTALLATION_SECRET_INVALID` means the secret is missing or wrong, for
+  example after secure storage was wiped while the `installation_id` survived. The server changed nothing.
+  Generate a **new** `installation_id`, drop the old secret, and register again as a new install. Don't
+  retry with the same id.
+- **Never log it.** Don't log it, and don't send it to analytics or crash reporting.
+
+```dart
+final secret = await secureStorage.read(key: 'installation_secret');
+final res = await _dio.post('/devices/', data: body, options: Options(headers: {
+  if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+  if (secret != null) 'X-Installation-Secret': secret,
+}));
+final issued = res.data['installation_secret'];
+if (issued != null) await secureStorage.write(key: 'installation_secret', value: issued);
+```
 
 ## 5. `DELETE /devices/{installation_id}/user/` — logout
 
@@ -355,6 +383,8 @@ any 426/503 w/ code → blocking screen (§7)
 
 - [ ] Headers sent on every request, including auth calls.
 - [ ] `installation_id` persisted once, same in header and body.
+- [ ] `installation_secret` stored in secure storage on first issue, sent as `X-Installation-Secret` on every
+      `POST /devices/`, never logged; `403 INSTALLATION_SECRET_INVALID` → new `installation_id`.
 - [ ] `sync_seq` persisted, increasing, serial queue, same value on retries.
 - [ ] `POST /devices/` never retried on 401, never triggers a token refresh.
 - [ ] Logout does §5: authenticated `DELETE /devices/{id}/user/?sync_seq=<next seq>` **before** clearing tokens,

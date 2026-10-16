@@ -38,6 +38,7 @@ Table: app_installations                       (apps.devices)
   screen_width_px, screen_height_px, pixel_ratio
   locale, utc_offset_minutes, timezone_abbr, network_type
   push_permission, fcm_token NULL UNIQUE        (a token belongs to one install)
+  secret_hash                                   (SHA-256 of the per-install secret; '' = legacy, unclaimed)
   last_sync_seq (bigint), first_seen_at, last_seen_at (indexed)
 
 Table: app_installation_history                (append-only)
@@ -75,6 +76,27 @@ The app also sends `X-App-Platform`, `X-App-Version`, `X-App-Build`,
   invalidated immediately when a policy is saved/deleted.
 
 ### POST /devices/
+- **Proof of possession.** `installation_id` is an identifier (it appears in
+  headers and log lines), not a credential:
+  - The first registration of an install mints a random secret. It is returned
+    once as `installation_secret` and only its SHA-256 is stored.
+  - Every later call must send `X-Installation-Secret`. A missing or wrong
+    secret returns `403 {"detail","code":"INSTALLATION_SECRET_INVALID"}` and
+    nothing is changed: no link change, no subscription change, no `sync_seq`
+    advance.
+  - A legacy install (registered before secrets existed, `secret_hash=''`) is
+    claimed by its next call, which receives a new secret. Only a caller with
+    a stake may claim it:
+    - the authenticated linked user;
+    - the authenticated owner of a push subscription on it;
+    - anyone, but only when it has neither a linked user nor a subscription
+      (nothing to take over).
+
+    Any other caller gets the 403 and the install stays unclaimed.
+  - On a 403 the app must generate a new `installation_id` and register as a
+    new install.
+  - The check runs before the stale-`sync_seq` check. A stale call that claims
+    a legacy install still returns the secret.
 - Auth is optional: a missing/expired/invalid token — or a user of a suspended
   tenant — is treated as anonymous (`OptionalTenantJWTAuthentication`).
 - User link: authenticated → `installation.user = request.user` (last writer
@@ -108,8 +130,9 @@ app must call it **before** discarding its tokens (refresh first if the
 access token expired) — anonymous syncs cannot remove subscriptions.
 
 Optional `?sync_seq=N`: the app allocates the next value of its device-sync
-counter for the logout. If the caller owns the install, it is stored as
-`last_sync_seq` (never lowered), so an authenticated `POST /devices/` that was
+counter for the logout. If the caller is the install's linked user, or a
+subscription of theirs on it was just removed (an anonymous sync may already
+have cleared the link), it is stored as `last_sync_seq` (never lowered), so an authenticated `POST /devices/` that was
 already in flight, with a lower seq, is ignored as stale. Without it, that
 late registration would re-subscribe the logged-out device.
 
@@ -206,11 +229,21 @@ command → `test_ops.py`.
   linked to the caller (otherwise ignored, like an unknown id). Linking replaces the install's
   subscription as super admin, so a bare UUID would have let anyone unsubscribe another device.
 - [DECISION 2026-10-16] Logout takes optional `sync_seq` and joins `POST /devices/` ordering (see above).
-- [OPEN] Installation UUIDs are identifiers, not credentials. An authenticated user who learns another
-  device's `installation_id` can `POST /devices/` with it, take over the install link and drop that
-  device's subscription (pre-existing last-writer-wins rule). Closing this needs a per-installation
-  secret issued at first registration and proven on every call, which is a client contract change and
-  needs an owner decision.
+- [DECISION 2026-10-16] **Per-installation secret** (owner approved; client contract change).
+  Installation UUIDs are identifiers, not credentials. Before this, anyone who learned another
+  device's `installation_id` could take over its link and drop its push subscription across tenants:
+  first an anonymous `signed_in:false` sync to clear the link, then an authenticated one. That
+  anonymous unlink is required for forced logout, so only proof of possession closes it.
+  - Only the hash is stored (SHA-256 suffices for a 256-bit random secret), compared in constant
+    time, never logged, and excluded from admin.
+  - A legacy install can only be claimed by a caller with a stake in it: its linked user, or the
+    owner of a subscription on it. An install with neither may be claimed by anyone. Plain trust on
+    first use was rejected in review because a cross-tenant caller could claim a linked install and,
+    in the same call, relink it and drop the owner's subscription.
+  - Trade-off: a legacy install whose owner's session has expired (anonymous call) can't be claimed.
+    The app gets a 403 and re-registers under a new `installation_id`.
+  - Logout (`DELETE /devices/{id}/user/`) needs no secret. It only acts for a caller with a stake
+    in the install (its linked user, or the owner of a subscription on it).
 
 ## Changelog
 - 2026-10-08  Module created: models, 3 endpoints + push-subscriptions `installation_id`, middleware,
@@ -220,3 +253,9 @@ command → `test_ops.py`.
 - 2026-10-16  Review fixes: logout `?sync_seq` (rejects in-flight registrations after logout, row lock);
   push-subscriptions `installation_id` must belong to the caller. Docker: `./secrets` mounted read-only
   at `/run/secrets` for the Firebase credential; test runs blank Firebase credentials. 6 new tests.
+- 2026-10-16  Per-installation secret: `AppInstallation.secret_hash` (migration 0003), `X-Installation-Secret`
+  required on `POST /devices/` for existing installs (403 `INSTALLATION_SECRET_INVALID`), secret returned
+  once as `installation_secret`. Logout stores `sync_seq` also when the caller's subscription was removed
+  after an anonymous unlink. `test_installation_secret.py` (8 tests) + 1 logout regression.
+- 2026-10-16  Legacy installs are claimable only by a stakeholder (linked user / subscription owner) or
+  when unowned; 4 regression tests incl. cross-tenant legacy claim.

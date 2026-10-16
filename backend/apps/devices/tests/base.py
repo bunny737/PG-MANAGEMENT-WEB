@@ -49,6 +49,9 @@ class DevicesAPITestCase(AuthAPITestCase):
     def setUp(self):
         super().setUp()
         cache.clear()  # policy cache + throttle counters
+        # installation_id -> secret, as the app would keep it: register()
+        # sends it back automatically, like a well-behaved client.
+        self.install_secrets = {}
 
     @staticmethod
     def create_policy(platform='android', flavor='prod', **overrides):
@@ -61,4 +64,15 @@ class DevicesAPITestCase(AuthAPITestCase):
         return AppVersionPolicy.objects.create(platform=platform, flavor=flavor, **values)
 
     def register(self, payload=None, **kwargs):
-        return self.client.post(reverse('device-register'), payload or device_payload(), format='json', **kwargs)
+        """POST /devices/ like the app: sends the install's stored secret
+        unless the test passes HTTP_X_INSTALLATION_SECRET itself, and stores
+        a newly issued one."""
+        payload = payload or device_payload()
+        install = payload.get('installation_id')
+        if 'HTTP_X_INSTALLATION_SECRET' not in kwargs and install in self.install_secrets:
+            kwargs['HTTP_X_INSTALLATION_SECRET'] = self.install_secrets[install]
+        response = self.client.post(reverse('device-register'), payload, format='json', **kwargs)
+        data = getattr(response, 'data', None)
+        if isinstance(data, dict) and data.get('installation_secret'):
+            self.install_secrets[install] = data['installation_secret']
+        return response

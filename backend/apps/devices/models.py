@@ -57,6 +57,14 @@ class AppInstallation(models.Model):
     # through notifications.PushSubscription, which registration reconciles.
     fcm_token = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
+    # SHA-256 of the per-install secret issued on first registration (the
+    # app keeps the secret; the server never stores it). installation_id is
+    # an identifier that shows up in logs/headers, so every later
+    # POST /devices/ must prove possession of the install with this secret.
+    # Blank = legacy install registered before secrets existed; the next
+    # call claims it (trust on first use).
+    secret_hash = models.CharField(max_length=64, blank=True)
+
     last_sync_seq = models.BigIntegerField(default=0)
     first_seen_at = models.DateTimeField(default=timezone.now)
     last_seen_at = models.DateTimeField(default=timezone.now, db_index=True)

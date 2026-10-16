@@ -227,6 +227,25 @@ class LogoutRemovesSubscriptionTests(DevicesAPITestCase):
         self.assertEqual(self.count(), 0)
         self.assertIsNone(AppInstallation.objects.get().user)
 
+    def test_logout_after_an_anonymous_unlink_still_rejects_in_flight_registration(self):
+        # An expired-token sync cleared installation.user but kept the
+        # owner's subscription; the owner then logs out properly.
+        self.client.credentials()
+        self.register(device_payload(
+            installation_id=self.payload['installation_id'], sync_seq=43, signed_in=False,
+            push={'fcm_token': 'tok-a', 'permission': 'granted'},
+        ))
+        self.assertIsNone(AppInstallation.objects.get().user)
+        self.assertEqual(self.count(), 1)
+        self.authenticate(self.owner)
+
+        self.assertEqual(self.unlink(sync_seq=45).status_code, 204)
+        response = self.late_sync(44)
+
+        self.assertEqual(response.data.get('ignored'), 'stale_sync_seq')
+        self.assertEqual(self.count(), 0)
+        self.assertEqual(AppInstallation.objects.get().last_sync_seq, 45)
+
     def test_a_later_login_after_logout_subscribes_again(self):
         self.unlink(sync_seq=44)
         self.late_sync(45)

@@ -466,12 +466,14 @@ pattern this should reuse, not duplicate).
 // Authenticated, BEFORE clearing tokens — removes this user's subscription
 // on this install and unlinks it. Always 204. `seq` is the next value of the
 // device-sync counter, so a registration still in flight can't re-subscribe.
-await api.delete('/api/v1/devices/$installationId/user/', queryParameters: {'sync_seq': seq});
+await api.delete('/api/v1/devices/$installationId/user/',
+    queryParameters: {'sync_seq': seq},
+    options: Options(headers: {'X-Installation-Secret': secret}));
 ```
-No subscription id to keep: the server finds the row by install. An
-anonymous `POST /devices/` (e.g. after the token already expired) does
-**not** remove the subscription — the next authenticated sync or login on
-the device does. See `app-client-flutter-integration.md` §5.
+No subscription id to keep: the server finds the row by install. When the
+token has already expired (forced logout), the anonymous
+`POST /devices/` with `signed_in: false` **and the installation secret**
+removes the subscription instead. See `app-client-flutter-integration.md` §5.
 
 ## 8. Testing checklist
 

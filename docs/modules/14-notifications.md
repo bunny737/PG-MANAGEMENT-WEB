@@ -322,16 +322,21 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   `AppInstallation` because that table is platform-level (no tenant_id/RLS)
   and web browsers have no installation row. Owner approved as part of the
   push plan (2026-10-16).
-- [DECISION 2026-10-16] **Only an authenticated owner removes a
-  subscription.** Anonymous `POST /devices/` (including expired/forged
-  tokens, which `OptionalTenantJWTAuthentication` treats as anonymous) never
-  deletes one. The single cross-user removal: on every authenticated device
-  sync, rows on that install belonging to anyone else are dropped, so an
-  account switch can't leave the previous user subscribed even after an
-  anonymous unlink. Accepted gap: an offline logout, or a session that ends
-  without reaching the server, leaves the subscription until the next
-  authenticated sync/login on that device. This is mitigated by generic
-  lock-screen push text, which is planned for the next PR.
+- [DECISION 2026-10-16] **Who can remove a subscription.**
+  - **The owner**, authenticated: logout, or a sync whose token is null.
+  - **The device itself, proven by its installation secret (Module 19).** An
+    anonymous `signed_in:false` sync removes every subscription on that
+    install. This covers forced or offline logout without relying on
+    `deleteToken()`.
+  - **On every authenticated device sync**, rows on that install that belong
+    to anyone else are dropped, so an account switch can't leave the previous
+    user subscribed.
+  - **Never** an anonymous call without that proof. Expired or forged tokens
+    are treated as anonymous by `OptionalTenantJWTAuthentication`, so they
+    can't remove anything.
+  - **Remaining gap:** installs registered by app builds without secrets.
+    Their forced logout leaves the subscription until the next signed-in sync
+    on that device. Generic lock-screen push text is planned for a later PR.
 - [DECISION 2026-10-16] `NotificationLog.notification_type` widened 25 → 50
   (matches every other notification model; upcoming type names exceed 25).
 - [OPEN] Password-reset and staff-invite emails (`apps.accounts.emails`)

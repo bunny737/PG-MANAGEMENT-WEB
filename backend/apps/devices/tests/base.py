@@ -1,4 +1,5 @@
 import copy
+import secrets
 import uuid
 
 from django.core.cache import cache
@@ -49,8 +50,8 @@ class DevicesAPITestCase(AuthAPITestCase):
     def setUp(self):
         super().setUp()
         cache.clear()  # policy cache + throttle counters
-        # installation_id -> secret, as the app would keep it: register()
-        # sends it back automatically, like a well-behaved client.
+        # installation_id -> the app-generated secret, as the app keeps it:
+        # register() makes one per install and sends it on every call.
         self.install_secrets = {}
 
     @staticmethod
@@ -63,16 +64,15 @@ class DevicesAPITestCase(AuthAPITestCase):
         values.update(overrides)
         return AppVersionPolicy.objects.create(platform=platform, flavor=flavor, **values)
 
+    def secret_for(self, installation_id):
+        return self.install_secrets.setdefault(installation_id, secrets.token_urlsafe(32))
+
     def register(self, payload=None, **kwargs):
-        """POST /devices/ like the app: sends the install's stored secret
-        unless the test passes HTTP_X_INSTALLATION_SECRET itself, and stores
-        a newly issued one."""
+        """POST /devices/ like a current app build: sends the install's own
+        generated secret unless the test passes HTTP_X_INSTALLATION_SECRET
+        itself ('' = a build that predates secrets)."""
         payload = payload or device_payload()
         install = payload.get('installation_id')
-        if 'HTTP_X_INSTALLATION_SECRET' not in kwargs and install in self.install_secrets:
-            kwargs['HTTP_X_INSTALLATION_SECRET'] = self.install_secrets[install]
-        response = self.client.post(reverse('device-register'), payload, format='json', **kwargs)
-        data = getattr(response, 'data', None)
-        if isinstance(data, dict) and data.get('installation_secret'):
-            self.install_secrets[install] = data['installation_secret']
-        return response
+        if 'HTTP_X_INSTALLATION_SECRET' not in kwargs and isinstance(install, str):
+            kwargs['HTTP_X_INSTALLATION_SECRET'] = self.secret_for(install)
+        return self.client.post(reverse('device-register'), payload, format='json', **kwargs)

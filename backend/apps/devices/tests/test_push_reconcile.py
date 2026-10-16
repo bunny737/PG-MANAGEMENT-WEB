@@ -108,30 +108,42 @@ class PushReconcileTests(DevicesAPITestCase):
         self.sync(token=None, user='other')
         self.assertEqual(self.subscriptions(), [])
 
-    def test_switch_after_anonymous_unlink_still_removes_the_previous_users_subscription(self):
-        # A's expired-token sync nulls installation.user but (correctly) leaves
-        # the subscription; B then signs in with notifications off. No owner
-        # change is detectable at that point, yet A's row must go.
+    # --- anonymous: only the device itself (its secret), only when signed out ---
+
+    def test_signed_out_device_sync_removes_every_subscription_on_the_install(self):
+        # Forced/offline logout: no valid token, but the app proves it is
+        # this device with its installation secret.
         self.sync(token='tok-a', user='owner')
-        self.sync(token='tok-a', signed_in=False, user=None)
-        self.assertIsNone(self.installation().user)
-        self.assertEqual(len(self.subscriptions()), 1)
-
-        self.sync(token=None, user='other')
-
-        self.assertEqual(self.subscriptions(), [])
-
-    # --- anonymous never removes ---
-
-    def test_anonymous_signed_out_sync_leaves_the_subscription(self):
-        self.sync(token='tok-a')
-        response = self.sync(token=None, signed_in=False, user=None)
+        response = self.sync(token='tok-a', signed_in=False, user=None)
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['push'], {'subscribed': False})
+        self.assertEqual(self.subscriptions(), [])
+        self.assertIsNone(self.installation().user)
+
+    def test_anonymous_signed_in_sync_leaves_the_subscription(self):
+        # Token merely expired; the app still believes it is signed in.
+        self.sync(token='tok-a')
+        response = self.sync(token='tok-a', signed_in=True, user=None)
+
         self.assertEqual(response.data['push'], {'subscribed': None})
         self.assertEqual(len(self.subscriptions()), 1)
 
-    def test_expired_or_malformed_credentials_cannot_remove_the_subscription(self):
+    def test_old_build_anonymous_sync_cannot_remove_the_subscription(self):
+        # An install registered by a build without secrets proves nothing.
+        old = device_payload(push={'fcm_token': 'tok-old', 'permission': 'granted'})
+        self.authenticate(self.owner)
+        self.register(old, HTTP_X_INSTALLATION_SECRET='')
+        self.client.credentials()
+
+        response = self.register(
+            {**old, 'sync_seq': 43, 'signed_in': False}, HTTP_X_INSTALLATION_SECRET='',
+        )
+
+        self.assertEqual(response.data.get('ignored'), 'unclaimed_install')
+        self.assertEqual([s.fcm_token for s in self.subscriptions()], ['tok-old'])
+
+    def test_bad_credentials_without_the_secret_cannot_remove_the_subscription(self):
         self.sync(token='tok-a')
         for bad in ('Bearer not-a-jwt', 'Bearer eyJhbGciOiJIUzI1NiJ9.e30.bad'):
             self.seq += 1
@@ -140,17 +152,35 @@ class PushReconcileTests(DevicesAPITestCase):
                 installation_id=self.payload['installation_id'], sync_seq=self.seq, signed_in=False,
                 push={'fcm_token': None, 'permission': 'denied'},
             )
-            self.assertEqual(self.register(body).status_code, 200)
+            self.assertEqual(self.register(body, HTTP_X_INSTALLATION_SECRET='').status_code, 403)
         self.assertEqual(len(self.subscriptions()), 1)
 
-    def test_suspended_tenant_sync_cannot_remove_the_subscription(self):
+    def test_suspended_tenant_sync_without_the_secret_cannot_remove_the_subscription(self):
         self.sync(token='tok-a')
         self.tenant.status = 'suspended'
         self.tenant.save(update_fields=['status'])
+        self.authenticate(self.owner)
+        self.seq += 1
+        body = device_payload(
+            installation_id=self.payload['installation_id'], sync_seq=self.seq, signed_in=False,
+            push={'fcm_token': None, 'permission': 'denied'},
+        )
 
-        self.sync(token=None, signed_in=False, user='owner')
-
+        self.assertEqual(self.register(body, HTTP_X_INSTALLATION_SECRET='').status_code, 403)
         self.assertEqual(len(self.subscriptions()), 1)
+
+    def test_previous_users_token_on_a_new_install_moves_to_the_new_user(self):
+        # Forced logout never reached the server; user B is refused on the
+        # old install and the app starts a new one with the same FCM token.
+        self.sync(token='tok-a', user='owner')
+        self.authenticate(self.other)
+        fresh = device_payload(push={'fcm_token': 'tok-a', 'permission': 'granted'})
+
+        self.assertEqual(self.register(fresh).status_code, 201)
+
+        [sub] = self.subscriptions()
+        self.assertEqual((sub.user_id, str(sub.installation.installation_id)),
+                         (self.other.id, fresh['installation_id']))
 
     def test_stale_sync_seq_does_not_touch_the_subscription(self):
         self.sync(token='tok-a')
@@ -227,24 +257,36 @@ class LogoutRemovesSubscriptionTests(DevicesAPITestCase):
         self.assertEqual(self.count(), 0)
         self.assertIsNone(AppInstallation.objects.get().user)
 
-    def test_logout_after_an_anonymous_unlink_still_rejects_in_flight_registration(self):
-        # An expired-token sync cleared installation.user but kept the
-        # owner's subscription; the owner then logs out properly.
+    def test_logout_with_the_secret_orders_even_when_nothing_is_left_to_remove(self):
+        # A signed-out device sync already removed everything and the link;
+        # a later logout still has to fence off an in-flight registration.
         self.client.credentials()
         self.register(device_payload(
             installation_id=self.payload['installation_id'], sync_seq=43, signed_in=False,
             push={'fcm_token': 'tok-a', 'permission': 'granted'},
         ))
-        self.assertIsNone(AppInstallation.objects.get().user)
-        self.assertEqual(self.count(), 1)
+        self.assertEqual(self.count(), 0)
         self.authenticate(self.owner)
 
-        self.assertEqual(self.unlink(sync_seq=45).status_code, 204)
+        secret = self.secret_for(self.payload['installation_id'])
+        url = reverse('device-unlink-user', args=[self.payload['installation_id']]) + '?sync_seq=45'
+        self.assertEqual(self.client.delete(url, HTTP_X_INSTALLATION_SECRET=secret).status_code, 204)
         response = self.late_sync(44)
 
         self.assertEqual(response.data.get('ignored'), 'stale_sync_seq')
         self.assertEqual(self.count(), 0)
         self.assertEqual(AppInstallation.objects.get().last_sync_seq, 45)
+
+    def test_logout_without_stake_or_secret_cannot_advance_sync_seq(self):
+        self.client.credentials()
+        self.register(device_payload(
+            installation_id=self.payload['installation_id'], sync_seq=43, signed_in=False,
+        ))
+        self.authenticate(self.other)
+
+        self.unlink(sync_seq=10_000)
+
+        self.assertEqual(AppInstallation.objects.get().last_sync_seq, 43)
 
     def test_a_later_login_after_logout_subscribes_again(self):
         self.unlink(sync_seq=44)

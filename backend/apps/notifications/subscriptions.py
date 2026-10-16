@@ -10,9 +10,10 @@ live in one place:
   dropped as super admin before the upsert.
 - A mobile install holds at most one subscription: a rotated token, or a
   previous user's row, on the same install is replaced.
-- Only an authenticated owner removes their own rows; the one cross-user
-  removal is `remove_foreign_for_installation`, run when someone else
-  authenticates on that install.
+- Only an authenticated owner removes their own rows. Cross-user removals:
+  `remove_foreign_for_installation` (someone else authenticates on that
+  install) and `remove_all_for_installation` (the device itself, proven by
+  its installation secret, reports it is signed out).
 """
 from django.db import transaction
 
@@ -57,6 +58,14 @@ def remove_foreign_for_installation(*, installation, keep_user):
     isn't detectable because an anonymous sync already cleared the link."""
     with tenant_context(is_super_admin=True):
         return PushSubscription.objects.filter(installation=installation).exclude(user=keep_user).delete()[0]
+
+
+def remove_all_for_installation(*, installation):
+    """Every row on this install, across tenants. Only for a caller that
+    proved it is the device itself (its installation secret) while signed
+    out — see apps.devices.services._reconcile_push_subscription."""
+    with tenant_context(is_super_admin=True):
+        return PushSubscription.objects.filter(installation=installation).delete()[0]
 
 
 def remove_subscription(*, user, subscription_id):

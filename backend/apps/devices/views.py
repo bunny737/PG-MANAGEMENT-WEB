@@ -16,6 +16,12 @@ from .serializers import DeviceRegistrationSerializer, UnlinkQuerySerializer, Ve
 from .throttles import DeviceRegisterInstallationThrottle, DeviceRegisterIPThrottle
 
 
+# X-Installation-Secret: the app's own random secret (32 random bytes,
+# base64url ≈ 43 chars). The floor rejects guessable values.
+SECRET_MIN_LENGTH = 32
+SECRET_MAX_LENGTH = 128
+
+
 class PayloadTooLarge(APIException):
     status_code = 413
     default_detail = _('Request body too large.')
@@ -92,22 +98,31 @@ class DeviceRegisterView(APIView):
         data = serializer.validated_data
         user = request.user if request.user and request.user.is_authenticated else None
 
+        # App-generated, sent on every call (absent from builds that predate
+        # it). Format-checked here so a weak value is never stored.
+        secret = request.META.get('HTTP_X_INSTALLATION_SECRET') or None
+        if secret is not None and not (
+            SECRET_MIN_LENGTH <= len(secret) <= SECRET_MAX_LENGTH and secret.isascii() and secret.isprintable()
+        ):
+            return Response(
+                {'detail': _('Installation secret is malformed.'), 'code': 'INSTALLATION_SECRET_MALFORMED'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         result = services.register_installation(
             installation_id=data['installation_id'], sync_seq=data['sync_seq'],
             signed_in=data['signed_in'], fields=serializer.to_installation_fields(), user=user,
-            secret=request.META.get('HTTP_X_INSTALLATION_SECRET') or None,
+            secret=secret,
         )
         if result.rejected:
-            # The app lost (or never had) this install's secret: it must
-            # start over with a fresh installation_id (see Module 19 spec).
+            # Wrong/missing secret for this install, or another user is
+            # signed in on an unclaimed one: the app must start over with a
+            # fresh installation_id and secret (see Module 19 spec).
             return Response(
                 {'detail': _('Installation secret missing or invalid.'), 'code': 'INSTALLATION_SECRET_INVALID'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        # Only on the call that minted it — the app must store it securely.
-        secret = {'installation_secret': result.issued_secret} if result.issued_secret else {}
         if result.ignored:
-            return Response({'registered': True, 'ignored': result.ignored, **secret})
+            return Response({'registered': True, 'ignored': result.ignored})
         return Response(
             {
                 'installation_id': str(data['installation_id']),
@@ -117,7 +132,6 @@ class DeviceRegisterView(APIView):
                 # subscription, if any, is left untouched in that case.
                 'push': {'subscribed': result.push_subscribed},
                 'server_time': iso_z(timezone.now()),
-                **secret,
             },
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
@@ -140,5 +154,6 @@ class DeviceUnlinkUserView(APIView):
         services.unlink_user(
             installation_id=installation_id, user=request.user,
             sync_seq=query.validated_data.get('sync_seq'),
+            secret=request.META.get('HTTP_X_INSTALLATION_SECRET') or None,
         )
         return Response(status=status.HTTP_204_NO_CONTENT)

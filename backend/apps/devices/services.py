@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import logging
-import secrets
 from dataclasses import dataclass
 from typing import Optional
 
@@ -13,6 +12,10 @@ from .models import AppInstallation, AppInstallationHistory
 logger = logging.getLogger(__name__)
 
 INVALID_SECRET = 'invalid_installation_secret'
+UNCLAIMED_INSTALL = 'unclaimed_install'
+
+# Possession outcomes for an existing install.
+_OK, _REJECT, _IGNORE = 'ok', 'reject', 'ignore'
 
 
 @dataclass
@@ -23,9 +26,6 @@ class RegistrationResult:
     # True/False once an authenticated sync reconciled the push subscription;
     # None when it wasn't evaluated (anonymous sync, stale sync_seq).
     push_subscribed: Optional[bool] = None
-    # Set when this call minted the install's secret (first registration, or
-    # claiming a legacy install). Returned to the app exactly once.
-    issued_secret: Optional[str] = None
     # INVALID_SECRET when the call could not prove possession of the install.
     rejected: Optional[str] = None
 
@@ -34,16 +34,11 @@ def _hash_secret(secret):
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
-def _new_secret():
-    return secrets.token_urlsafe(32)
-
-
-def _may_claim_legacy(installation, user):
-    """A legacy install (no secret yet) may only be claimed by someone with
-    a stake in it: its linked user, or the owner of a push subscription on
-    it. An install with neither is up for grabs (nothing to take over).
-    Otherwise anyone who learned the UUID could claim it and, in the same
-    call, relink it and drop the real owner's subscription."""
+def _is_stakeholder(installation, user):
+    """Who may use (and claim) an install that has no secret yet: its linked
+    user, or the owner of a push subscription on it. An install with neither
+    is open (nothing to take over). Otherwise anyone who learned the UUID
+    could relink it and drop the real owner's subscription."""
     from apps.core.tenancy import tenant_context
     from apps.notifications.models import PushSubscription
 
@@ -54,29 +49,43 @@ def _may_claim_legacy(installation, user):
     return user is not None and (installation.user_id == user.id or user.id in owners)
 
 
-def _verify_or_claim(installation, secret, user):
-    """Returns (ok, issued_secret). A claimed install must present its
-    secret; a legacy install with no secret yet is claimed by this call if
-    `_may_claim_legacy` allows it."""
+def _check_possession(installation, secret, user):
+    """The app generates its install secret itself and sends it on every
+    call (X-Installation-Secret); the server only ever stores its hash.
+
+    - Install has a secret → the call must present it (else _REJECT).
+    - Install has none yet (registered by a build that predates secrets) →
+      only a stakeholder is served. A stakeholder sending a secret claims the
+      install with it. A non-stakeholder is ignored when anonymous (e.g. the
+      owner's session just expired: no state change, the next signed-in
+      sync claims it) and rejected when authenticated (someone else is
+      signed in on this phone: the app must start a new install).
+
+    Returns (outcome, proved): `proved` is true when the call showed the
+    install's secret (matched, or just claimed with it) — i.e. it comes
+    from the device itself."""
     if installation.secret_hash:
         ok = bool(secret) and hmac.compare_digest(installation.secret_hash, _hash_secret(secret))
-        return ok, None
-    if not _may_claim_legacy(installation, user):
-        return False, None
-    issued = _new_secret()
-    installation.secret_hash = _hash_secret(issued)
-    AppInstallation.objects.filter(pk=installation.pk).update(secret_hash=installation.secret_hash)
-    return True, issued
+        return (_OK, True) if ok else (_REJECT, False)
+    if not _is_stakeholder(installation, user):
+        return (_IGNORE if user is None else _REJECT), False
+    if secret:
+        installation.secret_hash = _hash_secret(secret)
+        AppInstallation.objects.filter(pk=installation.pk).update(secret_hash=installation.secret_hash)
+        return _OK, True
+    return _OK, False
 
 
 def register_installation(*, installation_id, sync_seq, signed_in, fields, user, secret=None):
     """Upsert one install. `user` is the authenticated user or None (anonymous).
-    `secret` is the X-Installation-Secret header (None if absent).
+    `secret` is the app-generated X-Installation-Secret header (None if the
+    build predates secrets).
 
-    - Possession: an existing install must present its secret, or the whole
-      call is rejected (`rejected=INVALID_SECRET`) — the installation_id
-      alone is not a credential. A new install gets a secret minted here;
-      a legacy install with none is claimed by its next call.
+    - Possession (`_check_possession`): installation_id alone is not a
+      credential. A new install stores the hash of the secret it was created
+      with; a later call without it is rejected (`rejected=INVALID_SECRET`),
+      or ignored (`ignored=UNCLAIMED_INSTALL`) for an anonymous outsider on
+      a secret-less install.
     - Stale `sync_seq` (< stored) is ignored wholesale; equal is reprocessed.
     - Authenticated: link to `user` (last writer wins). Anonymous with
       signed_in=False: unlink. Anonymous with signed_in=True: leave as is.
@@ -90,16 +99,16 @@ def register_installation(*, installation_id, sync_seq, signed_in, fields, user,
         installation = (
             AppInstallation.objects.select_for_update().filter(installation_id=installation_id).first()
         )
-        issued_secret = None
         created = installation is None
         now = timezone.now()
+        proved = created and bool(secret)
         if created:
-            issued_secret = _new_secret()
             try:
                 with transaction.atomic():
                     installation = AppInstallation.objects.create(
                         installation_id=installation_id, user=user, last_sync_seq=sync_seq,
-                        first_seen_at=now, last_seen_at=now, secret_hash=_hash_secret(issued_secret),
+                        first_seen_at=now, last_seen_at=now,
+                        secret_hash=_hash_secret(secret) if secret else '',
                         **{**fields, 'fcm_token': None},
                     )
             except IntegrityError:
@@ -107,24 +116,24 @@ def register_installation(*, installation_id, sync_seq, signed_in, fields, user,
                 # which must then prove possession like any other.
                 installation = AppInstallation.objects.select_for_update().get(installation_id=installation_id)
                 created = False
-                issued_secret = None
             else:
                 _record_history(installation, now)
 
         if not created:
-            ok, issued_secret = _verify_or_claim(installation, secret, user)
-            if not ok:
+            outcome, proved = _check_possession(installation, secret, user)
+            if outcome == _REJECT:
                 logger.warning('rejected device sync without a valid installation secret installation_id=%s',
                                installation_id)
                 return RegistrationResult(installation=None, rejected=INVALID_SECRET)
+            if outcome == _IGNORE:
+                logger.info('ignored anonymous sync for an unclaimed install installation_id=%s', installation_id)
+                return RegistrationResult(installation=None, ignored=UNCLAIMED_INSTALL)
             if sync_seq < installation.last_sync_seq:
                 logger.info(
                     'ignored stale device sync installation_id=%s sync_seq=%s last_sync_seq=%s',
                     installation_id, sync_seq, installation.last_sync_seq,
                 )
-                return RegistrationResult(
-                    installation=installation, ignored='stale_sync_seq', issued_secret=issued_secret,
-                )
+                return RegistrationResult(installation=installation, ignored='stale_sync_seq')
 
         token = fields.get('fcm_token')
         if token:
@@ -152,24 +161,31 @@ def register_installation(*, installation_id, sync_seq, signed_in, fields, user,
             if changed:
                 _record_history(installation, now)
 
-        push_subscribed = _reconcile_push_subscription(installation=installation, user=user, token=token)
-        return RegistrationResult(
-            installation=installation, created=created, push_subscribed=push_subscribed,
-            issued_secret=issued_secret,
+        push_subscribed = _reconcile_push_subscription(
+            installation=installation, user=user, token=token, signed_in=signed_in, proved=proved,
         )
+        return RegistrationResult(installation=installation, created=created, push_subscribed=push_subscribed)
 
 
-def _reconcile_push_subscription(*, installation, user, token):
+def _reconcile_push_subscription(*, installation, user, token, signed_in, proved):
     """Keeps notifications.PushSubscription — the one record push delivery
-    reads — in step with what an authenticated device just reported, so the
-    app needs no second registration call.
+    reads — in step with what the device just reported, so the app needs no
+    second registration call.
 
-    Anonymous syncs never touch it: OptionalTenantJWTAuthentication treats an
-    expired/forged token as anonymous, so letting them remove subscriptions
-    would let anyone holding an installation_id unsubscribe that device."""
+    Anonymous syncs only ever remove, and only when they prove possession of
+    the install (its secret) and report `signed_in: false`: that is the
+    device itself after a forced/offline logout, so it must stop receiving
+    the previous user's pushes. Without the secret an anonymous call proves
+    nothing (OptionalTenantJWTAuthentication treats expired/forged tokens as
+    anonymous), so it leaves subscriptions alone."""
     from apps.notifications import subscriptions
 
-    if user is None or user.tenant_id is None:
+    if user is None:
+        if not signed_in and proved:
+            subscriptions.remove_all_for_installation(installation=installation)
+            return False
+        return None
+    if user.tenant_id is None:
         return None
     subscriptions.remove_foreign_for_installation(installation=installation, keep_user=user)
     if token:
@@ -188,7 +204,7 @@ def _record_history(installation, now):
     )
 
 
-def unlink_user(*, installation_id, user, sync_seq=None):
+def unlink_user(*, installation_id, user, sync_seq=None, secret=None):
     """Logout: remove `user`'s push subscription on this install and clear
     the user link if it is `user`'s. Silent otherwise.
 
@@ -197,9 +213,10 @@ def unlink_user(*, installation_id, user, sync_seq=None):
     `last_sync_seq`, so an authenticated registration that was already in
     flight (lower seq) is ignored as stale instead of re-subscribing a
     logged-out device. Only a caller with a stake in the install can advance
-    it: its linked user, or the owner of a subscription on it (an anonymous
-    sync may have cleared the link while deliberately keeping that
-    subscription)."""
+    it — otherwise anyone could push it out of reach and freeze the device's
+    syncs: its linked user, the owner of a subscription on it, or a caller
+    presenting the install's secret (the device itself, e.g. after a
+    signed-out sync already removed everything)."""
     from apps.notifications import subscriptions
 
     with transaction.atomic():
@@ -210,7 +227,10 @@ def unlink_user(*, installation_id, user, sync_seq=None):
             return
         removed = subscriptions.remove_for_installation(installation=installation, user=user)
         is_linked_user = installation.user_id == user.id
-        if not (is_linked_user or removed):
+        proved = bool(secret and installation.secret_hash) and hmac.compare_digest(
+            installation.secret_hash, _hash_secret(secret),
+        )
+        if not (is_linked_user or removed or proved):
             return
         update_fields = []
         if is_linked_user:

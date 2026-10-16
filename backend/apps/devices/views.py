@@ -12,7 +12,7 @@ from . import services
 from .authentication import OptionalTenantJWTAuthentication
 from .models import DEFAULT_CHECK_INTERVAL_SECONDS
 from .policy import get_policy, iso_z
-from .serializers import DeviceRegistrationSerializer, VersionPolicyQuerySerializer
+from .serializers import DeviceRegistrationSerializer, UnlinkQuerySerializer, VersionPolicyQuerySerializer
 from .throttles import DeviceRegisterInstallationThrottle, DeviceRegisterIPThrottle
 
 
@@ -120,7 +120,14 @@ class DeviceUnlinkUserView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses={204: OpenApiResponse()})
+    @extend_schema(
+        request=None, parameters=[UnlinkQuerySerializer], responses={204: OpenApiResponse()},
+    )
     def delete(self, request, installation_id):
-        services.unlink_user(installation_id=installation_id, user=request.user)
+        query = UnlinkQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        services.unlink_user(
+            installation_id=installation_id, user=request.user,
+            sync_seq=query.validated_data.get('sync_seq'),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)

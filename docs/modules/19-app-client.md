@@ -59,7 +59,7 @@ app_installations.fcm_token is a diagnostic mirror only — push is delivered fr
 ```
 GET     /app/version-policy/?platform=&build=&version=&flavor=   public; never 426/503
 POST    /devices/                                                optional auth; never 401
-DELETE  /devices/{installation_id}/user/                         auth required; always 204
+DELETE  /devices/{installation_id}/user/?sync_seq=N              auth required; always 204 (400 on a bad sync_seq)
 POST    /notifications/push-subscriptions/                       web clients; mobile should not call it (still accepted)
 ```
 The app also sends `X-App-Platform`, `X-App-Version`, `X-App-Build`,
@@ -101,11 +101,17 @@ The app also sends `X-App-Platform`, `X-App-Version`, `X-App-Build`,
 - Throttles: 30/hour per `installation_id`, 120/hour per IP (`429` + `Retry-After`).
 
 ### DELETE /devices/{installation_id}/user/
-Logout. In one transaction: removes the caller's push subscription on this
-install, then clears the link only if it is the caller's; unknown/other-owner
-installs are a silent no-op; always `204`. The app must call it **before**
-discarding its tokens (refresh first if the access token expired) — anonymous
-syncs cannot remove subscriptions.
+Logout. In one transaction (install row locked): removes the caller's push
+subscription on this install, then clears the link only if it is the
+caller's; unknown/other-owner installs are a silent no-op; always `204`. The
+app must call it **before** discarding its tokens (refresh first if the
+access token expired) — anonymous syncs cannot remove subscriptions.
+
+Optional `?sync_seq=N`: the app allocates the next value of its device-sync
+counter for the logout. If the caller owns the install, it is stored as
+`last_sync_seq` (never lowered), so an authenticated `POST /devices/` that was
+already in flight, with a lower seq, is ignored as stale. Without it, that
+late registration would re-subscribe the logged-out device.
 
 ## Middleware (`AppClientMiddleware`)
 1. Parses `X-App-*` leniently into `request.app_client` (`None` if nothing
@@ -196,11 +202,21 @@ command → `test_ops.py`.
 - [DECISION 2026-10-16] `POST /devices/` reconciles `PushSubscription` (Module 14's single delivery
   record), so mobile needs one registration call; only authenticated callers can remove subscriptions
   (see Module 14 Decisions for the accepted offline-logout gap).
-- [OPEN] `push-subscriptions` links to any existing `installation_id` regardless of its owner (metadata
-  only). Mobile no longer needs that endpoint; web sends no `installation_id`.
+- [DECISION 2026-10-16] `push-subscriptions` links an `installation_id` only if that install is already
+  linked to the caller (otherwise ignored, like an unknown id). Linking replaces the install's
+  subscription as super admin, so a bare UUID would have let anyone unsubscribe another device.
+- [DECISION 2026-10-16] Logout takes optional `sync_seq` and joins `POST /devices/` ordering (see above).
+- [OPEN] Installation UUIDs are identifiers, not credentials. An authenticated user who learns another
+  device's `installation_id` can `POST /devices/` with it, take over the install link and drop that
+  device's subscription (pre-existing last-writer-wins rule). Closing this needs a per-installation
+  secret issued at first registration and proven on every call, which is a client contract change and
+  needs an owner decision.
 
 ## Changelog
 - 2026-10-08  Module created: models, 3 endpoints + push-subscriptions `installation_id`, middleware,
   admin + audit + adoption report, retention task, seed command, 96 tests.
 - 2026-10-16  `POST /devices/` reconciles the push subscription (response gains `push.subscribed`);
   logout also removes the caller's subscription. `test_push_reconcile.py` (19 tests).
+- 2026-10-16  Review fixes: logout `?sync_seq` (rejects in-flight registrations after logout, row lock);
+  push-subscriptions `installation_id` must belong to the caller. Docker: `./secrets` mounted read-only
+  at `/run/secrets` for the Firebase credential; test runs blank Firebase credentials. 6 new tests.

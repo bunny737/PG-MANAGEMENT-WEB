@@ -115,14 +115,29 @@ def _record_history(installation, now):
     )
 
 
-def unlink_user(*, installation_id, user):
+def unlink_user(*, installation_id, user, sync_seq=None):
     """Logout: remove `user`'s push subscription on this install and clear
-    the user link if it is `user`'s. Silent otherwise."""
+    the user link if it is `user`'s. Silent otherwise.
+
+    `sync_seq` (the app's next device-sync counter value) makes logout take
+    part in the same ordering as POST /devices/: it is stored as
+    `last_sync_seq`, so an authenticated registration that was already in
+    flight (lower seq) is ignored as stale instead of re-subscribing a
+    logged-out device. Only the install's owner can advance it."""
     from apps.notifications import subscriptions
 
     with transaction.atomic():
-        installation = AppInstallation.objects.filter(installation_id=installation_id).first()
+        installation = (
+            AppInstallation.objects.select_for_update().filter(installation_id=installation_id).first()
+        )
         if installation is None:
             return
         subscriptions.remove_for_installation(installation=installation, user=user)
-        AppInstallation.objects.filter(pk=installation.pk, user=user).update(user=None)
+        if installation.user_id != user.id:
+            return
+        installation.user = None
+        update_fields = ['user']
+        if sync_seq is not None and sync_seq > installation.last_sync_seq:
+            installation.last_sync_seq = sync_seq
+            update_fields.append('last_sync_seq')
+        installation.save(update_fields=update_fields)

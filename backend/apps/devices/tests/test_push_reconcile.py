@@ -196,12 +196,54 @@ class LogoutRemovesSubscriptionTests(DevicesAPITestCase):
         self.authenticate(self.owner)
         self.register(self.payload)
 
-    def unlink(self):
-        return self.client.delete(reverse('device-unlink-user', args=[self.payload['installation_id']]))
+    def unlink(self, sync_seq=None):
+        url = reverse('device-unlink-user', args=[self.payload['installation_id']])
+        if sync_seq is not None:
+            url += f'?sync_seq={sync_seq}'
+        return self.client.delete(url)
 
     def count(self):
         with tenant_context(None, is_super_admin=True):
             return PushSubscription.objects.count()
+
+    def late_sync(self, sync_seq):
+        """An authenticated registration that was sent before logout but
+        arrives after it (same access token, still valid)."""
+        self.authenticate(self.owner)
+        body = device_payload(
+            installation_id=self.payload['installation_id'], sync_seq=sync_seq,
+            push={'fcm_token': 'tok-a', 'permission': 'granted'},
+        )
+        return self.register(body)
+
+    def test_in_flight_registration_cannot_resubscribe_after_logout(self):
+        # The registration in setUp used sync_seq 42; logout claims 44 while
+        # a request with 43 is still in flight.
+        self.assertEqual(self.unlink(sync_seq=44).status_code, 204)
+
+        response = self.late_sync(43)
+
+        self.assertEqual(response.data.get('ignored'), 'stale_sync_seq')
+        self.assertEqual(self.count(), 0)
+        self.assertIsNone(AppInstallation.objects.get().user)
+
+    def test_a_later_login_after_logout_subscribes_again(self):
+        self.unlink(sync_seq=44)
+        self.late_sync(45)
+        self.assertEqual(self.count(), 1)
+
+    def test_logout_sync_seq_never_moves_backwards(self):
+        self.unlink(sync_seq=1)
+        self.assertEqual(AppInstallation.objects.get().last_sync_seq, 42)
+
+    def test_another_users_logout_cannot_advance_sync_seq(self):
+        self.authenticate(self.other)
+        self.unlink(sync_seq=10_000)
+        self.assertEqual(AppInstallation.objects.get().last_sync_seq, 42)
+
+    def test_invalid_sync_seq_is_a_validation_error(self):
+        self.assertEqual(self.unlink(sync_seq='nope').status_code, 400)
+        self.assertEqual(self.count(), 1)
 
     def test_logout_removes_the_callers_subscription_and_is_idempotent(self):
         self.assertEqual(self.count(), 1)

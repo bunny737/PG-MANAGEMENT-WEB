@@ -65,9 +65,17 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         # `installation_id` is also the FK attname on the model (an int pk),
         # so it must be swapped for the resolved instance before save().
+        # Only an install already linked to the caller is accepted: linking
+        # replaces the install's existing subscription (as super admin, across
+        # tenants), so trusting a bare UUID would let anyone who learns
+        # another device's installation_id unsubscribe it. Anything else is
+        # ignored, same as an unknown id.
         install_uuid = attrs.pop('installation_id', None)
-        if install_uuid:
-            installation = AppInstallation.objects.filter(installation_id=install_uuid).first()
+        request = self.context.get('request')
+        if install_uuid and request is not None:
+            installation = AppInstallation.objects.filter(
+                installation_id=install_uuid, user_id=request.user.id,
+            ).first()
             if installation is not None:
                 attrs['installation'] = installation
         return attrs

@@ -264,7 +264,10 @@ user link if the install belongs to the caller; unknown ids and other users' ins
 **Always `204`** (so it never reveals ownership); idempotent.
 
 Logout sequence:
-1. `DELETE /devices/{installation_id}/user/` — this is what stops the device receiving the old user's pushes.
+1. Allocate the next `sync_seq` from the same persisted counter as §4.3 (inside the same serial queue), then
+   `DELETE /devices/{installation_id}/user/?sync_seq=<that value>`. This stops the device receiving the old
+   user's pushes, and the `sync_seq` makes the server ignore any authenticated `POST /devices/` that was
+   still in flight, which would otherwise re-subscribe the device.
 2. Clear local tokens/session.
 3. `POST /devices/` with `signed_in: false` and no `Authorization` (unlinks the install for diagnostics; it does
    **not** remove the push subscription).
@@ -354,8 +357,8 @@ any 426/503 w/ code → blocking screen (§7)
 - [ ] `installation_id` persisted once, same in header and body.
 - [ ] `sync_seq` persisted, increasing, serial queue, same value on retries.
 - [ ] `POST /devices/` never retried on 401, never triggers a token refresh.
-- [ ] Logout does §5: authenticated `DELETE /devices/{id}/user/` **before** clearing tokens, then the anonymous
-      `signed_in:false` sync.
+- [ ] Logout does §5: authenticated `DELETE /devices/{id}/user/?sync_seq=<next seq>` **before** clearing tokens,
+      then the anonymous `signed_in:false` sync.
 - [ ] No call to `/notifications/push-subscriptions/` — push registration rides on `POST /devices/`.
 - [ ] 426/503 handled by `code` on every request; plain 5xx is not "maintenance".
 - [ ] Version-policy failure fails open.

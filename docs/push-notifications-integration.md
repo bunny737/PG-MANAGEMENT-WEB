@@ -97,6 +97,15 @@ FIREBASE_CREDENTIALS_PATH=/run/secrets/firebase-service-account.json
 FIREBASE_CREDENTIALS_JSON={"type": "service_account", ...}
 ```
 
+**Local Docker:** the backend, `celery` and `celery-beat` containers only see
+`./backend` and `./secrets` (mounted read-only at `/run/secrets`). Put the
+service-account JSON at `./secrets/firebase-service-account.json` (the
+folder is gitignored) and set the **container** path:
+`FIREBASE_CREDENTIALS_PATH=/run/secrets/firebase-service-account.json`.
+A host path such as `D:/...json` does not exist inside the containers and
+makes Firebase init fail. Restart `backend` and `celery` after changing it,
+because a failed init stays disabled for the rest of that worker process.
+
 Leave both blank in dev — the push channel just logs `status=skipped` with
 a clear note (`"Push not configured (no Firebase credentials)"`), same
 fail-open discipline as every other channel. Nothing else to configure
@@ -132,7 +141,8 @@ Authorization: Bearer <access_token>
   subscription you registered before; it is deleted in the same transaction
   (only if it is yours), so rotation never leaves a duplicate. Write-only.
 - `installation_id` (optional, write-only) is still accepted for older app
-  builds; new clients don't send it.
+  builds, but only links an install already linked to the caller; anything
+  else is ignored. New clients don't send it.
 - Returns **201** with the created row on first registration.
 - Returns **200** if that exact `fcm_token` already exists (re-registering
   the same device upserts — safe to call this every time the client
@@ -454,8 +464,9 @@ pattern this should reuse, not duplicate).
 ### 7.6 Unregister on logout
 ```dart
 // Authenticated, BEFORE clearing tokens — removes this user's subscription
-// on this install and unlinks it. Always 204.
-await api.delete('/api/v1/devices/$installationId/user/');
+// on this install and unlinks it. Always 204. `seq` is the next value of the
+// device-sync counter, so a registration still in flight can't re-subscribe.
+await api.delete('/api/v1/devices/$installationId/user/', queryParameters: {'sync_seq': seq});
 ```
 No subscription id to keep: the server finds the row by install. An
 anonymous `POST /devices/` (e.g. after the token already expired) does

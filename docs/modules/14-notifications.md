@@ -410,3 +410,13 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   max_length 50. Migration 0008 (dedupes any existing per-install
   duplicates first). Doc drift fixed: `ScheduledNotification.status`
   includes `failed`. Full suite (879) green.
+- 2026-10-16  Review fixes on PR 1:
+  - The push-subscriptions `installation_id` now links only an install
+    already linked to the caller. Before, any user could displace another
+    device's subscription across tenants.
+  - Logout takes `?sync_seq` (Module 19).
+  - Docker mounts `./secrets` read-only at `/run/secrets` for the Firebase
+    service-account JSON. Before, the host path in `.env` was invisible to
+    the containers.
+  - `manage.py test` blanks the Firebase credentials (`config/settings/dev.py`)
+    so the suite can never reach real FCM.

@@ -1,3 +1,5 @@
+import sys
+
 from .base import *
 
 DEBUG = True
@@ -39,3 +41,10 @@ RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = True
 # prod.py does not set this — production requires the real `celery` worker.
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# `manage.py test` loads this module too. Never let the test suite reach the
+# real FCM project configured for local dev push (.env) — tests that need
+# Firebase patch `_get_firebase_app` explicitly.
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    FIREBASE_CREDENTIALS_PATH = ''
+    FIREBASE_CREDENTIALS_JSON = ''

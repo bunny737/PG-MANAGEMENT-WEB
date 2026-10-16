@@ -120,10 +120,11 @@ class AppInstallationAdmin(admin.ModelAdmin):
     date_hierarchy = 'last_seen_at'
     inlines = [AppInstallationHistoryInline]
     # fcm_token is never rendered raw: it is excluded and shown masked.
-    exclude = ('fcm_token',)
+    # secret_hash is never rendered at all.
+    exclude = ('fcm_token', 'secret_hash')
 
     def get_readonly_fields(self, request, obj=None):
-        names = [f.name for f in AppInstallation._meta.fields if f.name != 'fcm_token']
+        names = [f.name for f in AppInstallation._meta.fields if f.name not in self.exclude]
         return names + ['masked_fcm_token']
 
     @admin.display(description=_('FCM token'))

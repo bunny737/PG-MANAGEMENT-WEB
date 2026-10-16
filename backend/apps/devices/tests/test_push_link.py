@@ -85,6 +85,28 @@ class PushSubscriptionInstallationLinkTests(DevicesAPITestCase):
         self.assertEqual(AppInstallation.objects.count(), 0)
         self.assertIsNone(self.subscription().installation)
 
+    def test_cannot_link_to_another_users_install_or_displace_its_subscription(self):
+        # Victim (this tenant's owner) registers their phone with push.
+        payload = device_payload(push={'fcm_token': 'victim-tok', 'permission': 'granted'})
+        self.register(payload)
+        # Attacker in another tenant learns the installation_id.
+        attacker = self.create_owner(self.create_tenant('Other PG'), email='attacker@example.com')
+        self.authenticate(attacker)
+
+        response = self.client.post(
+            reverse('push-subscription-list'),
+            {'fcm_token': 'attacker-tok', 'device_type': 'android', 'installation_id': payload['installation_id']},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        with tenant_context(None, is_super_admin=True):
+            victim_sub = PushSubscription.objects.get(fcm_token='victim-tok')
+            attacker_sub = PushSubscription.objects.get(fcm_token='attacker-tok')
+        self.assertEqual(victim_sub.user_id, self.owner.id)
+        self.assertEqual(str(victim_sub.installation.installation_id), payload['installation_id'])
+        self.assertIsNone(attacker_sub.installation)
+
     def test_link_is_tenant_safe_other_tenants_cannot_see_the_subscription(self):
         payload = device_payload()
         self.register(payload)

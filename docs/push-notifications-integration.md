@@ -24,9 +24,11 @@
         │  channels/push.py│   │ (iOS + Android)│   │  (Serwist SW)   │
         └────────┬─────────┘   └───────┬────────┘   └────────┬────────┘
                  │  1. client gets FCM token from Firebase SDK, then
-                 │     registers it:
+                 │     registers it (one call per client):
                  │◄───────────────────────────────────────────┘
-                 │     POST /api/v1/notifications/push-subscriptions/
+                 │     web:     POST /api/v1/notifications/push-subscriptions/
+                 │     Flutter: POST /api/v1/devices/  (push.fcm_token, authenticated)
+                 │     — both write the same PushSubscription record
                  │
                  │  2. some business event happens (invoice issued,
                  │     trial reminder, ...) → apps.notifications.services
@@ -95,6 +97,15 @@ FIREBASE_CREDENTIALS_PATH=/run/secrets/firebase-service-account.json
 FIREBASE_CREDENTIALS_JSON={"type": "service_account", ...}
 ```
 
+**Local Docker:** the backend, `celery` and `celery-beat` containers only see
+`./backend` and `./secrets` (mounted read-only at `/run/secrets`). Put the
+service-account JSON at `./secrets/firebase-service-account.json` (the
+folder is gitignored) and set the **container** path:
+`FIREBASE_CREDENTIALS_PATH=/run/secrets/firebase-service-account.json`.
+A host path such as `D:/...json` does not exist inside the containers and
+makes Firebase init fail. Restart `backend` and `celery` after changing it,
+because a failed init stays disabled for the rest of that worker process.
+
 Leave both blank in dev — the push channel just logs `status=skipped` with
 a clear note (`"Push not configured (no Firebase credentials)"`), same
 fail-open discipline as every other channel. Nothing else to configure
@@ -107,7 +118,14 @@ All endpoints require the same JWT auth as the rest of the app
 (`Authorization: Bearer <access_token>`, obtained from
 `POST /api/v1/auth/login/`). There is no separate "push" auth.
 
-### Register / refresh a device token
+> **Flutter app:** don't use this endpoint. The app registers, rotates and
+> revokes its token through `POST /api/v1/devices/` (`push.fcm_token`, with a
+> Bearer token) and unsubscribes on logout through
+> `DELETE /api/v1/devices/{installation_id}/user/` — see
+> [app-client-flutter-integration.md](app-client-flutter-integration.md) §4–§6.
+> The endpoints below are for the **web** client.
+
+### Register / refresh a device token (web)
 ```
 POST /api/v1/notifications/push-subscriptions/
 Content-Type: application/json
@@ -115,14 +133,16 @@ Authorization: Bearer <access_token>
 
 {
   "fcm_token": "<token from the Firebase SDK>",
-  "device_type": "web" | "android" | "ios",
-  "installation_id": "<uuid>"          // optional — Flutter app only
+  "device_type": "web",
+  "replaces": "<previous subscription id>"   // optional — on token rotation
 }
 ```
-- `installation_id` is the app's install UUID (see
-  [modules/19-app-client.md](modules/19-app-client.md)). If an install with that
-  id has been registered via `POST /api/v1/devices/` the subscription is linked to
-  it; an unknown id is ignored. Write-only (not echoed back).
+- `replaces`: when the browser's token changed, pass the id of the
+  subscription you registered before; it is deleted in the same transaction
+  (only if it is yours), so rotation never leaves a duplicate. Write-only.
+- `installation_id` (optional, write-only) is still accepted for older app
+  builds, but only links an install already linked to the caller; anything
+  else is ignored. New clients don't send it.
 - Returns **201** with the created row on first registration.
 - Returns **200** if that exact `fcm_token` already exists (re-registering
   the same device upserts — safe to call this every time the client
@@ -388,12 +408,18 @@ Future<void> initPushNotifications(ApiClient api) async {
     },
   );
 
+  // Registration rides on the authenticated POST /devices/ sync (see
+  // app-client-flutter-integration.md §4): pass the current token as
+  // push.fcm_token. No separate push-subscriptions call.
   final token = await messaging.getToken();
-  if (token != null) await _registerToken(api, token);
+  await deviceSync.sync(signedIn: true, accessToken: api.accessToken, fcmToken: token,
+      pushPermission: settings.authorizationStatus.name);
 
   // FCM tokens can change (app reinstall, Firebase-internal rotation) —
-  // re-register whenever this fires, not just once at startup.
-  messaging.onTokenRefresh.listen((newToken) => _registerToken(api, newToken));
+  // re-sync whenever this fires; the server replaces the old subscription.
+  messaging.onTokenRefresh.listen((newToken) => deviceSync.sync(
+      signedIn: true, accessToken: api.accessToken, fcmToken: newToken,
+      pushPermission: settings.authorizationStatus.name));
 
   // Foreground: build the visible notification yourself.
   FirebaseMessaging.onMessage.listen((message) {
@@ -426,13 +452,10 @@ Future<void> initPushNotifications(ApiClient api) async {
   }
 }
 
-Future<void> _registerToken(ApiClient api, String token) async {
-  await api.post('/api/v1/notifications/push-subscriptions/', data: {
-    'fcm_token': token,
-    'device_type': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
-  });
-}
 ```
+`deviceSync` is the serial `DeviceSync` queue from
+`app-client-flutter-integration.md` §4.3 — reuse it so token updates can't
+overtake other device syncs.
 Call `initPushNotifications(api)` once the user is logged in and you have
 an authenticated `ApiClient` (same JWT the rest of the app uses — see
 `docs/frontend-plan.md` §3.1a for the login/token-refresh/secure-storage
@@ -440,11 +463,17 @@ pattern this should reuse, not duplicate).
 
 ### 7.6 Unregister on logout
 ```dart
-await api.delete('/api/v1/notifications/push-subscriptions/$subscriptionId/');
+// Authenticated, BEFORE clearing tokens — removes this user's subscription
+// on this install and unlinks it. Always 204. `seq` is the next value of the
+// device-sync counter, so a registration still in flight can't re-subscribe.
+await api.delete('/api/v1/devices/$installationId/user/',
+    queryParameters: {'sync_seq': seq},
+    options: Options(headers: {'X-Installation-Secret': secret}));
 ```
-Keep the subscription `id` from the registration response (or `GET` the
-list and match by the device's current token) so logout can clean it up —
-same reasoning as the web client in §6.4.
+No subscription id to keep: the server finds the row by install. When the
+token has already expired (forced logout), the anonymous
+`POST /devices/` with `signed_in: false` **and the installation secret**
+removes the subscription instead. See `app-client-flutter-integration.md` §5.
 
 ## 8. Testing checklist
 
@@ -464,8 +493,11 @@ same reasoning as the web client in §6.4.
       `NotificationLog` — the second attempt logs `skipped` with `'All
       registered devices were unregistered.'` and the stale
       `PushSubscription` row is gone.
-- [ ] Log out → confirm the `DELETE` call fires and the row disappears from
+- [ ] Log out → confirm the `DELETE` call fires (web: push-subscriptions;
+      Flutter: `/devices/{id}/user/`) and the row disappears from
       `GET /api/v1/notifications/push-subscriptions/`.
+- [ ] Flutter: log in as user B on a device last used by user A → A's
+      subscription is gone and only B's remains.
 - [ ] Disable push for `invoice_issued` via
       `POST /api/v1/notifications/preferences/
       {"notification_type": "invoice_issued", "channel": "push", "enabled": false}`
@@ -479,7 +511,7 @@ same reasoning as the web client in §6.4.
 | `POST /push-subscriptions/` returns 401 | Access token missing/expired — same auth as every other endpoint, not push-specific. |
 | Push never arrives, `NotificationLog` shows `skipped: "Push not configured (no Firebase credentials)"` | Backend `.env` has neither `FIREBASE_CREDENTIALS_PATH` nor `FIREBASE_CREDENTIALS_JSON` set. |
 | `skipped: "Recipient has no linked login account..."` | The recipient is a `Resident`, not a `User` — expected today, see §5. |
-| `skipped: "No registered push devices for this user."` | The client never called (or the call failed) `POST /push-subscriptions/` for that account. |
+| `skipped: "No registered push devices for this user."` | Web: the client never called (or the call failed) `POST /push-subscriptions/` for that account. Flutter: the last `POST /devices/` was anonymous or sent `push.fcm_token: null` — check its response's `push.subscribed`. |
 | Web: no push in foreground, but background works | Expected — `onMessage` (foreground) and the SW's `onBackgroundMessage` are separate handlers; you must implement both (§6.2, §6.3). |
 | Flutter: notification arrives but tapping it does nothing | Check `data.reference` is actually read in `onMessageOpenedApp`/`getInitialMessage` (backgrounded/terminated) vs. your `flutter_local_notifications` `payload` callback (foreground) — these are three different code paths for the same "user tapped it" outcome. |
 | iOS: never receives anything, no error | Almost always the APNs key (§2 step 6) — confirm it's uploaded in Firebase console under the correct Team ID/Key ID, and that the Push Notifications capability is enabled in Xcode. |

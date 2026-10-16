@@ -83,6 +83,14 @@ class DeviceRegistrationSerializer(serializers.Serializer):
         }
 
 
+class UnlinkQuerySerializer(serializers.Serializer):
+    """Query of DELETE /devices/{id}/user/. `sync_seq` is optional so older
+    builds keep working, but without it a registration already in flight
+    can still re-link the device after logout."""
+
+    sync_seq = serializers.IntegerField(min_value=0, max_value=2**53, required=False)
+
+
 class VersionPolicyQuerySerializer(serializers.Serializer):
     platform = serializers.ChoiceField(choices=Platform.choices)
     build = serializers.IntegerField(min_value=0, max_value=2**31 - 1)

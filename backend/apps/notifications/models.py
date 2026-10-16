@@ -36,7 +36,9 @@ class NotificationLog(TenantModelMixin):
         SKIPPED = 'skipped', _('Skipped')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    notification_type = models.CharField(max_length=25, choices=NotificationType.choices)
+    # 50 like every other notification model — 25 could not fit names such
+    # as 'subscription_payment_failed'.
+    notification_type = models.CharField(max_length=50, choices=NotificationType.choices)
     channel = models.CharField(max_length=10, choices=Channel.choices, default=Channel.EMAIL)
     recipient_email = models.EmailField(blank=True)
     # Set whenever the recipient is a real login account (an `accounts.User`
@@ -150,7 +152,11 @@ class PushSubscription(TenantModelMixin):
     `channels/push.py` and `docs/push-notifications-integration.md`).
     `user` is an `accounts.User`, not a `Resident`: residents have no login
     account yet, so they can't register a device (see that limitation
-    documented in `channels/push.py`)."""
+    documented in `channels/push.py`).
+
+    This is the ONE delivery record for push: the sender reads only this
+    table (`AppInstallation.fcm_token` is a diagnostic mirror it never
+    reads). Every write goes through `apps.notifications.subscriptions`."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='push_subscriptions')
@@ -173,6 +179,14 @@ class PushSubscription(TenantModelMixin):
 
     class Meta:
         db_table = 'push_subscriptions'
+        constraints = [
+            # One subscription per mobile install: a rotated token replaces
+            # the install's row instead of piling up beside it.
+            models.UniqueConstraint(
+                fields=['installation'], condition=models.Q(installation__isnull=False),
+                name='pushsub_one_per_installation',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.user_id} [{self.device_type}]'

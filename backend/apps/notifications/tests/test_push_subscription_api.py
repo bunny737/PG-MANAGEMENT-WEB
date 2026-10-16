@@ -60,6 +60,47 @@ class PushSubscriptionAPITests(AuthAPITestCase):
         with tenant_context(self.tenant.id):
             self.assertFalse(PushSubscription.objects.filter(fcm_token='abc123').exists())
 
+    def test_replaces_swaps_the_old_subscription_atomically(self):
+        old = self.client.post(reverse('push-subscription-list'), {'fcm_token': 'old', 'device_type': 'web'})
+
+        response = self.client.post(
+            reverse('push-subscription-list'),
+            {'fcm_token': 'new', 'device_type': 'web', 'replaces': old.data['id']}, format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn('replaces', response.data)  # write-only
+        with tenant_context(self.tenant.id):
+            self.assertEqual(list(PushSubscription.objects.values_list('fcm_token', flat=True)), ['new'])
+
+    def test_replaces_cannot_delete_another_users_subscription(self):
+        other_owner = self.create_owner(self.create_tenant('Other PG'), email='other@example.com')
+        with tenant_context(other_owner.tenant_id):
+            theirs = PushSubscription.objects.create(
+                tenant_id=other_owner.tenant_id, user=other_owner, fcm_token='theirs', device_type='web',
+            )
+
+        self.client.post(
+            reverse('push-subscription-list'),
+            {'fcm_token': 'mine', 'device_type': 'web', 'replaces': str(theirs.id)}, format='json',
+        )
+
+        with tenant_context(is_super_admin=True):
+            self.assertTrue(PushSubscription.objects.filter(pk=theirs.pk).exists())
+
+    def test_cannot_delete_another_users_subscription(self):
+        other_owner = self.create_owner(self.create_tenant('Other PG'), email='other@example.com')
+        with tenant_context(other_owner.tenant_id):
+            theirs = PushSubscription.objects.create(
+                tenant_id=other_owner.tenant_id, user=other_owner, fcm_token='theirs', device_type='web',
+            )
+
+        response = self.client.delete(reverse('push-subscription-detail', args=[theirs.id]))
+
+        self.assertEqual(response.status_code, 404)
+        with tenant_context(is_super_admin=True):
+            self.assertTrue(PushSubscription.objects.filter(pk=theirs.pk).exists())
+
     def test_token_last_used_under_another_tenant_moves_to_the_new_user(self):
         other_tenant = self.create_tenant('Other PG')
         other_owner = self.create_owner(other_tenant, email='other@example.com')

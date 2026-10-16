@@ -12,8 +12,14 @@ from . import services
 from .authentication import OptionalTenantJWTAuthentication
 from .models import DEFAULT_CHECK_INTERVAL_SECONDS
 from .policy import get_policy, iso_z
-from .serializers import DeviceRegistrationSerializer, VersionPolicyQuerySerializer
+from .serializers import DeviceRegistrationSerializer, UnlinkQuerySerializer, VersionPolicyQuerySerializer
 from .throttles import DeviceRegisterInstallationThrottle, DeviceRegisterIPThrottle
+
+
+# X-Installation-Secret: the app's own random secret (32 random bytes,
+# base64url ≈ 43 chars). The floor rejects guessable values.
+SECRET_MIN_LENGTH = 32
+SECRET_MAX_LENGTH = 128
 
 
 class PayloadTooLarge(APIException):
@@ -92,10 +98,29 @@ class DeviceRegisterView(APIView):
         data = serializer.validated_data
         user = request.user if request.user and request.user.is_authenticated else None
 
+        # App-generated, sent on every call (absent from builds that predate
+        # it). Format-checked here so a weak value is never stored.
+        secret = request.META.get('HTTP_X_INSTALLATION_SECRET') or None
+        if secret is not None and not (
+            SECRET_MIN_LENGTH <= len(secret) <= SECRET_MAX_LENGTH and secret.isascii() and secret.isprintable()
+        ):
+            return Response(
+                {'detail': _('Installation secret is malformed.'), 'code': 'INSTALLATION_SECRET_MALFORMED'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         result = services.register_installation(
             installation_id=data['installation_id'], sync_seq=data['sync_seq'],
             signed_in=data['signed_in'], fields=serializer.to_installation_fields(), user=user,
+            secret=secret,
         )
+        if result.rejected:
+            # Wrong/missing secret for this install, or another user is
+            # signed in on an unclaimed one: the app must start over with a
+            # fresh installation_id and secret (see Module 19 spec).
+            return Response(
+                {'detail': _('Installation secret missing or invalid.'), 'code': 'INSTALLATION_SECRET_INVALID'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if result.ignored:
             return Response({'registered': True, 'ignored': result.ignored})
         return Response(
@@ -103,6 +128,9 @@ class DeviceRegisterView(APIView):
                 'installation_id': str(data['installation_id']),
                 'registered': True,
                 'user_linked': user is not None,
+                # null when not evaluated (anonymous sync): the existing
+                # subscription, if any, is left untouched in that case.
+                'push': {'subscribed': result.push_subscribed},
                 'server_time': iso_z(timezone.now()),
             },
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
@@ -110,12 +138,22 @@ class DeviceRegisterView(APIView):
 
 
 class DeviceUnlinkUserView(APIView):
-    """Logout: detach the current user from this install. Always 204 so the
-    response never reveals whether the install exists or who owns it."""
+    """Logout: remove the current user's push subscription on this install
+    and detach the user from it. Always 204 so the response never reveals
+    whether the install exists or who owns it. The app must call this before
+    discarding its credentials — anonymous calls never remove subscriptions."""
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses={204: OpenApiResponse()})
+    @extend_schema(
+        request=None, parameters=[UnlinkQuerySerializer], responses={204: OpenApiResponse()},
+    )
     def delete(self, request, installation_id):
-        services.unlink_user(installation_id=installation_id, user=request.user)
+        query = UnlinkQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        services.unlink_user(
+            installation_id=installation_id, user=request.user,
+            sync_seq=query.validated_data.get('sync_seq'),
+            secret=request.META.get('HTTP_X_INSTALLATION_SECRET') or None,
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -9,9 +9,11 @@
 1. Send five `X-App-*` / `X-Installation-Id` headers on **every** request (§2).
 2. On launch and on resume, call `GET /app/version-policy/` and act on `update_mode` / `maintenance` (§3).
 3. Call `POST /devices/` to report the install on launch, on login, on logout, and when the FCM token / push
-   permission / app build / OS version changes (§4).
-4. Call `DELETE /devices/{installation_id}/user/` on logout (§5).
-5. Pass `installation_id` when registering the FCM token with `push-subscriptions` (§6).
+   permission / app build / OS version changes (§4). Generate an install secret once (secure storage) and send
+   it as `X-Installation-Secret` on every `POST /devices/` (§4.5).
+4. Call `DELETE /devices/{installation_id}/user/` on logout, **before** discarding tokens (§5).
+5. Push registration is part of `POST /devices/`: an authenticated call with `push.fcm_token` subscribes the device.
+   Do **not** also call `push-subscriptions` (§6).
 6. Treat **only** two server responses as blocking: `426` + `code: APP_UPDATE_REQUIRED` and `503` + `code: MAINTENANCE` (§7).
 
 Builds released before this feature (`0.1.0+1`) send no headers and **cannot** be force-updated. Only builds that
@@ -190,6 +192,18 @@ Do **not** send name, phone, email, location or advertising IDs — the backend 
 (removed from any other install that held it); `null` clears the stored token. So always send the current token
 when you have one.
 
+**Push subscription.** This call is also how the device subscribes to push:
+- valid token + `push.fcm_token` → the signed-in user is subscribed on this install (a rotated token replaces the
+  old one);
+- valid token + `push.fcm_token: null` (permission denied/revoked) → the user's subscription on this install is
+  removed;
+- any authenticated call also removes subscriptions on this install that belong to a *different* user, so an
+  account switch never leaves the previous user receiving pushes;
+- no/expired/invalid token + `signed_in: false` + the correct installation secret (§4.5) → **every** subscription
+  on this install is removed. This is how a forced or offline logout stops the previous user's pushes, even if
+  `deleteToken()` failed;
+- any other anonymous call (`signed_in: true`, or no valid secret) never changes subscriptions.
+
 ### 4.3 `sync_seq` — ordering (important)
 `sync_seq` is a counter stored **on the device** that increases by one for every `POST /devices/` the app makes
 (persist it; it must survive restarts). The server ignores any request whose `sync_seq` is **lower** than the last
@@ -230,10 +244,13 @@ class DeviceSync {
 ### 4.4 Responses
 | Status | Body | Meaning |
 |---|---|---|
-| `201` | `{"installation_id","registered":true,"user_linked":bool,"server_time"}` | first registration |
+| `201` | `{"installation_id","registered":true,"user_linked":bool,"push":{"subscribed":bool\|null},"server_time"}` | first registration. `push.subscribed`: `true`/`false` after an authenticated call, `null` for anonymous (subscription left untouched) |
 | `200` | same | updated |
 | `200` | `{"registered":true,"ignored":"stale_sync_seq"}` | your `sync_seq` was older than the server's. **Not an error** — a newer call already won. No `user_linked` key. |
+| `200` | `{"registered":true,"ignored":"unclaimed_install"}` | anonymous sync on an install not yet claimed with a secret (§4.5). Not an error; nothing changed. |
 | `400` | DRF field errors, nested objects nest, e.g. `{"app":{"build_number":["…"]}}` | bug in the payload |
+| `400` | `{"detail","code":"INSTALLATION_SECRET_MALFORMED"}` | `X-Installation-Secret` not 32–128 printable ASCII chars |
+| `403` | `{"detail","code":"INSTALLATION_SECRET_INVALID"}` | missing/wrong secret, or another user on an unclaimed install — start over with a new `installation_id` + secret (§4.5) |
 | `413` | `{"detail","code":"PAYLOAD_TOO_LARGE"}` | body > 8 KB |
 | `429` | + `Retry-After` header | throttled |
 
@@ -246,34 +263,89 @@ class DeviceSync {
 
 Also a suspended tenant's user is treated as anonymous here (no 401).
 
-## 5. `DELETE /devices/{installation_id}/user/` — logout
+### 4.5 Installation secret (proof of possession)
+`installation_id` is not secret, since it travels in every request header. So the app also keeps a private
+per-install secret and sends it on every `POST /devices/`. The server stores only a hash and never sends it back.
 
-Requires `Authorization: Bearer <access>`. Call it **before discarding the tokens** during logout. It clears the
-user link only if the install belongs to the caller; unknown ids and other users' installs are a silent no-op.
-**Always `204`** (so it never reveals ownership); idempotent.
+- **Generating it.** The app generates it itself:
+  - when it creates the `installation_id`;
+  - on first launch of this build, if it already has an `installation_id` from an older build but no secret.
 
-Logout sequence:
-1. `DELETE /devices/{installation_id}/user/` (best effort; ignore failures/timeouts).
-2. `DELETE /notifications/push-subscriptions/{id}/` (existing endpoint) so the token stops receiving the old user's pushes.
-3. Clear local tokens/session.
-4. `POST /devices/` with `signed_in: false` and no `Authorization` (also covers step 1 failing offline).
+  Use 32 bytes from `Random.secure()`, base64url-encoded (about 43 characters). Store it in secure storage next
+  to the `installation_id`, before the first request that uses it.
+- **Sending it.** Send `X-Installation-Secret: <secret>` on **every** `POST /devices/`, including the first. A retry
+  after a lost response just resends the same secret; the server accepts it.
+- **Format.** 32–128 printable ASCII characters, or `400 INSTALLATION_SECRET_MALFORMED`.
+- **Installs registered by older builds.** These have no secret yet. The first signed-in sync from this build
+  claims the install with the app's secret and keeps the same `installation_id`.
+- **`ignored: "unclaimed_install"`.** An anonymous sync (for example, an expired session) on an install that isn't
+  claimed yet gets `200 {"registered":true,"ignored":"unclaimed_install"}`. Nothing to do, and the next signed-in
+  sync claims the install. Do record it as a completed sync for throttling purposes (unlike `stale_sync_seq`).
+  Otherwise every app start or resume resends it until the user signs in.
+- **Unowned installs.** An install with no linked user and no push subscription can be claimed by whichever caller
+  sends a secret first, because there is nothing to take over. If someone else claimed yours, your next sync gets
+  the 403 below and the app starts a new install. That's harmless.
+- **Read failures.** If reading the secret (or the `installation_id`) from secure storage throws, treat it as
+  missing. Generate a new id and secret and keep going, rather than disabling device sync. On Android, consider
+  excluding secure storage from Auto Backup: a restored copy can't be decrypted on another device.
+- **On 403.** `403` with `code: INSTALLATION_SECRET_INVALID` means the server changed nothing. Either the secret is
+  missing or wrong (for example, storage was restored or partly wiped), or a different user is signed in on an
+  unclaimed install.
+  1. Generate a **new** `installation_id` and a new secret.
+  2. Reset `sync_seq`.
+  3. Schedule a new sync **immediately**, so push doesn't stay unregistered until the next scheduled sync. Inside the
+     serial sync queue, don't *await* the call that schedules it: if it returns the running sync loop, awaiting it
+     there deadlocks. Mark the state dirty and queue another run instead.
 
-If the logout was forced (refresh failed, `subscription_suspended`, etc.), skip 1–2 (the token is dead) and do 3–4.
-`401` here just means the token was already invalid — treat as done.
+  Don't retry with the same id.
+- **Never log it.** Don't log it, and don't send it to analytics or crash reporting.
 
-## 6. Push subscription — new optional `installation_id`
+```dart
+Future<String> installationSecret() async {
+  var secret = await secureStorage.read(key: 'installation_secret');
+  if (secret == null) {
+    final bytes = List<int>.generate(32, (_) => Random.secure().nextInt(256));
+    secret = base64Url.encode(bytes).replaceAll('=', '');
+    await secureStorage.write(key: 'installation_secret', value: secret);
+  }
+  return secret;
+}
 
-`POST /notifications/push-subscriptions/` (existing, authenticated) now also accepts `installation_id`:
-
-```json
-{ "fcm_token": "<token>", "device_type": "android", "installation_id": "<uuid>" }
+final res = await _dio.post('/devices/', data: body, options: Options(headers: {
+  if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+  'X-Installation-Secret': await installationSecret(),
+}));
 ```
 
-- Optional and write-only (not echoed back). If an install with that id exists, the subscription is linked to it;
-  an unknown id is silently ignored. A malformed UUID is a `400`.
-- **Order matters:** `POST /devices/` first (so the install exists), then the push-subscription call.
-- Everything else (201 create / 200 upsert, `device_type`, delete on logout) is unchanged — see
-  [push-notifications-integration.md](push-notifications-integration.md).
+## 5. `DELETE /devices/{installation_id}/user/` — logout
+
+Requires `Authorization: Bearer <access>`. Call it **before discarding the tokens** during logout. It's best effort:
+send the access token you have, and don't refresh it just for this call. If it has expired the call gets 401; treat
+that as done (the subscription is then cleaned up as in the forced-logout case below). It removes the caller's push
+subscription on this install and clears the user link if the install belongs to the caller; unknown ids and other
+users' installs are a silent no-op. **Always `204`** (so it never reveals ownership); idempotent.
+
+Logout sequence:
+1. Take a `sync_seq` **higher than every `POST /devices/` already sent**: the next value of the same persisted
+   counter as §4.3. Taking it inside the sync queue or from a shared counter both work.
+2. Call `DELETE /devices/{installation_id}/user/?sync_seq=<that value>` with the access token and
+   `X-Installation-Secret`. This stops the device receiving the old user's pushes. The `sync_seq` makes the server
+   ignore any authenticated `POST /devices/` that was still in flight, which would otherwise re-subscribe the
+   device. The secret lets the server record that `sync_seq` even when nothing else ties the caller to the
+   install.
+3. Clear local tokens/session and call `FirebaseMessaging.instance.deleteToken()`.
+4. `POST /devices/` with `signed_in: false`, no `Authorization` and the installation secret. Because it proves this
+   is the device, the server also removes **every** push subscription left on this install.
+
+If the logout was forced (refresh failed, `subscription_suspended`, etc.), skip step 2 (the token is dead) and do
+steps 3 and 4. Step 4 alone removes the subscription on the server. `401` from step 2 just means the token was
+already invalid — treat as done.
+
+## 6. Push subscription — handled by `POST /devices/`
+
+The app registers, rotates and revokes its FCM token through `POST /devices/` (§4.2) — no separate call.
+`POST /notifications/push-subscriptions/` is the **web** client's endpoint; it still accepts `installation_id`
+for older app builds that call it, but new builds should not.
 
 ## 7. Server-side gate — handling `426` and `503` on any request
 
@@ -319,9 +391,9 @@ cold start
  ├─ POST /devices/ (signed_in = hasSession, Bearer if any, no refresh)
  └─ continue to login / home
 
-login success      → POST /devices/ (signed_in:true, Bearer) → POST /notifications/push-subscriptions/ (+installation_id)
-FCM token refresh  → POST /devices/ (new token) → push-subscriptions upsert
-push permission    → POST /devices/ (push.permission changed)
+login success      → POST /devices/ (signed_in:true, Bearer, push.fcm_token)   ← subscribes to push
+FCM token refresh  → POST /devices/ (Bearer, new token)                        ← replaces the subscription
+push permission    → POST /devices/ (Bearer, push.permission changed; token null if denied)
 logout             → §5 sequence
 resume (> check_interval_seconds) → GET /app/version-policy/
 any 426/503 w/ code → blocking screen (§7)
@@ -348,9 +420,20 @@ any 426/503 w/ code → blocking screen (§7)
 
 - [ ] Headers sent on every request, including auth calls.
 - [ ] `installation_id` persisted once, same in header and body.
+- [ ] App-generated install secret (32 random bytes, base64url), stored in secure storage before first use, sent
+      as `X-Installation-Secret` on every `POST /devices/`, never logged. `ignored: unclaimed_install` is treated
+      like any `ignored`. On `403 INSTALLATION_SECRET_INVALID`: new `installation_id` + secret, then a resync that
+      is queued (not awaited inside the sync loop).
 - [ ] `sync_seq` persisted, increasing, serial queue, same value on retries.
 - [ ] `POST /devices/` never retried on 401, never triggers a token refresh.
-- [ ] Logout does §5 (incl. final anonymous `signed_in:false` sync).
+- [ ] Logout does §5:
+  - `DELETE /devices/{id}/user/?sync_seq=<next seq>` with the access token and `X-Installation-Secret`,
+    **before** clearing tokens;
+  - then `deleteToken()`;
+  - then the anonymous `signed_in:false` sync carrying the secret.
+
+  A forced logout still sends that last sync.
+- [ ] No call to `/notifications/push-subscriptions/` — push registration rides on `POST /devices/`.
 - [ ] 426/503 handled by `code` on every request; plain 5xx is not "maintenance".
 - [ ] Version-policy failure fails open.
 - [ ] Build numbers strictly increase per platform/flavor in CI.

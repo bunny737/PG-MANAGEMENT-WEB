@@ -10,8 +10,9 @@
 2. On launch and on resume, call `GET /app/version-policy/` and act on `update_mode` / `maintenance` (§3).
 3. Call `POST /devices/` to report the install on launch, on login, on logout, and when the FCM token / push
    permission / app build / OS version changes (§4).
-4. Call `DELETE /devices/{installation_id}/user/` on logout (§5).
-5. Pass `installation_id` when registering the FCM token with `push-subscriptions` (§6).
+4. Call `DELETE /devices/{installation_id}/user/` on logout, **before** discarding tokens (§5).
+5. Push registration is part of `POST /devices/`: an authenticated call with `push.fcm_token` subscribes the device.
+   Do **not** also call `push-subscriptions` (§6).
 6. Treat **only** two server responses as blocking: `426` + `code: APP_UPDATE_REQUIRED` and `503` + `code: MAINTENANCE` (§7).
 
 Builds released before this feature (`0.1.0+1`) send no headers and **cannot** be force-updated. Only builds that
@@ -190,6 +191,15 @@ Do **not** send name, phone, email, location or advertising IDs — the backend 
 (removed from any other install that held it); `null` clears the stored token. So always send the current token
 when you have one.
 
+**Push subscription (authenticated calls only).** This call is also how the device subscribes to push:
+- valid token + `push.fcm_token` → the signed-in user is subscribed on this install (a rotated token replaces the
+  old one);
+- valid token + `push.fcm_token: null` (permission denied/revoked) → the user's subscription on this install is
+  removed;
+- any authenticated call also removes subscriptions on this install that belong to a *different* user, so an
+  account switch never leaves the previous user receiving pushes;
+- anonymous calls (no/expired/invalid token) **never** change subscriptions.
+
 ### 4.3 `sync_seq` — ordering (important)
 `sync_seq` is a counter stored **on the device** that increases by one for every `POST /devices/` the app makes
 (persist it; it must survive restarts). The server ignores any request whose `sync_seq` is **lower** than the last
@@ -230,7 +240,7 @@ class DeviceSync {
 ### 4.4 Responses
 | Status | Body | Meaning |
 |---|---|---|
-| `201` | `{"installation_id","registered":true,"user_linked":bool,"server_time"}` | first registration |
+| `201` | `{"installation_id","registered":true,"user_linked":bool,"push":{"subscribed":bool\|null},"server_time"}` | first registration. `push.subscribed`: `true`/`false` after an authenticated call, `null` for anonymous (subscription left untouched) |
 | `200` | same | updated |
 | `200` | `{"registered":true,"ignored":"stale_sync_seq"}` | your `sync_seq` was older than the server's. **Not an error** — a newer call already won. No `user_linked` key. |
 | `400` | DRF field errors, nested objects nest, e.g. `{"app":{"build_number":["…"]}}` | bug in the payload |
@@ -248,32 +258,26 @@ Also a suspended tenant's user is treated as anonymous here (no 401).
 
 ## 5. `DELETE /devices/{installation_id}/user/` — logout
 
-Requires `Authorization: Bearer <access>`. Call it **before discarding the tokens** during logout. It clears the
-user link only if the install belongs to the caller; unknown ids and other users' installs are a silent no-op.
+Requires `Authorization: Bearer <access>`. Call it **before discarding the tokens** during logout (refresh the
+access token first if it has expired). It removes the caller's push subscription on this install and clears the
+user link if the install belongs to the caller; unknown ids and other users' installs are a silent no-op.
 **Always `204`** (so it never reveals ownership); idempotent.
 
 Logout sequence:
-1. `DELETE /devices/{installation_id}/user/` (best effort; ignore failures/timeouts).
-2. `DELETE /notifications/push-subscriptions/{id}/` (existing endpoint) so the token stops receiving the old user's pushes.
-3. Clear local tokens/session.
-4. `POST /devices/` with `signed_in: false` and no `Authorization` (also covers step 1 failing offline).
+1. `DELETE /devices/{installation_id}/user/` — this is what stops the device receiving the old user's pushes.
+2. Clear local tokens/session.
+3. `POST /devices/` with `signed_in: false` and no `Authorization` (unlinks the install for diagnostics; it does
+   **not** remove the push subscription).
 
-If the logout was forced (refresh failed, `subscription_suspended`, etc.), skip 1–2 (the token is dead) and do 3–4.
-`401` here just means the token was already invalid — treat as done.
+If the logout was forced (refresh failed, `subscription_suspended`, etc.), skip 1 (the token is dead) and do 2–3.
+The subscription then stays until the next authenticated `POST /devices/` or login on this device, which cleans
+it up. `401` from step 1 just means the token was already invalid — treat as done.
 
-## 6. Push subscription — new optional `installation_id`
+## 6. Push subscription — handled by `POST /devices/`
 
-`POST /notifications/push-subscriptions/` (existing, authenticated) now also accepts `installation_id`:
-
-```json
-{ "fcm_token": "<token>", "device_type": "android", "installation_id": "<uuid>" }
-```
-
-- Optional and write-only (not echoed back). If an install with that id exists, the subscription is linked to it;
-  an unknown id is silently ignored. A malformed UUID is a `400`.
-- **Order matters:** `POST /devices/` first (so the install exists), then the push-subscription call.
-- Everything else (201 create / 200 upsert, `device_type`, delete on logout) is unchanged — see
-  [push-notifications-integration.md](push-notifications-integration.md).
+The app registers, rotates and revokes its FCM token through `POST /devices/` (§4.2) — no separate call.
+`POST /notifications/push-subscriptions/` is the **web** client's endpoint; it still accepts `installation_id`
+for older app builds that call it, but new builds should not.
 
 ## 7. Server-side gate — handling `426` and `503` on any request
 
@@ -319,9 +323,9 @@ cold start
  ├─ POST /devices/ (signed_in = hasSession, Bearer if any, no refresh)
  └─ continue to login / home
 
-login success      → POST /devices/ (signed_in:true, Bearer) → POST /notifications/push-subscriptions/ (+installation_id)
-FCM token refresh  → POST /devices/ (new token) → push-subscriptions upsert
-push permission    → POST /devices/ (push.permission changed)
+login success      → POST /devices/ (signed_in:true, Bearer, push.fcm_token)   ← subscribes to push
+FCM token refresh  → POST /devices/ (Bearer, new token)                        ← replaces the subscription
+push permission    → POST /devices/ (Bearer, push.permission changed; token null if denied)
 logout             → §5 sequence
 resume (> check_interval_seconds) → GET /app/version-policy/
 any 426/503 w/ code → blocking screen (§7)
@@ -350,7 +354,9 @@ any 426/503 w/ code → blocking screen (§7)
 - [ ] `installation_id` persisted once, same in header and body.
 - [ ] `sync_seq` persisted, increasing, serial queue, same value on retries.
 - [ ] `POST /devices/` never retried on 401, never triggers a token refresh.
-- [ ] Logout does §5 (incl. final anonymous `signed_in:false` sync).
+- [ ] Logout does §5: authenticated `DELETE /devices/{id}/user/` **before** clearing tokens, then the anonymous
+      `signed_in:false` sync.
+- [ ] No call to `/notifications/push-subscriptions/` — push registration rides on `POST /devices/`.
 - [ ] 426/503 handled by `code` on every request; plain 5xx is not "maintenance".
 - [ ] Version-policy failure fails open.
 - [ ] Build numbers strictly increase per platform/flavor in CI.

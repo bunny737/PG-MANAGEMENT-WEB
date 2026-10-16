@@ -87,7 +87,12 @@ Table: push_subscriptions                        (RLS enforced, app: apps.notifi
   fcm_token               varchar(255), unique
   device_type             web | android | ios
   installation            FK -> devices.AppInstallation, NULL, SET NULL   (Module 19)
+                          partial UNIQUE where not null (one subscription per install)
   last_seen_at            datetime, auto_now
+  # The ONE delivery record for push — the sender never reads
+  # AppInstallation.fcm_token. All writes go through
+  # apps.notifications.subscriptions (both the web endpoint below and the
+  # mobile POST /devices/ reconcile through it).
 
 Table: scheduled_notifications                    (RLS enforced, app: apps.notifications)  [V2]
   id                    uuid PK
@@ -97,7 +102,7 @@ Table: scheduled_notifications                    (RLS enforced, app: apps.notif
   context                  JSON — rendered into the template
   channels                 JSON list — empty means "use the registry default for this type"
   send_at                  datetime, indexed
-  status                   pending | sent | cancelled
+  status                   pending | sent | cancelled | failed
   created_by               FK -> accounts.User, null (ops author, via admin)
 
 Table: platform_config  (Module 01, extended by MVP)
@@ -119,9 +124,14 @@ GET     /api/v1/notifications/history/                 — current user's own No
 GET     /api/v1/notifications/preferences/              — effective opt-in state for optional types
 POST    /api/v1/notifications/preferences/              — upsert one or more preference rows
 GET     /api/v1/notifications/push-subscriptions/       — current user's registered devices
-POST    /api/v1/notifications/push-subscriptions/       — register/refresh an FCM token (upserts on token)
-DELETE  /api/v1/notifications/push-subscriptions/{id}/  — unregister a device
+POST    /api/v1/notifications/push-subscriptions/       — register/refresh an FCM token (upserts on token);
+                                                          optional write-only `replaces` (previous id, web rotation)
+DELETE  /api/v1/notifications/push-subscriptions/{id}/  — unregister a device (own rows only)
 ```
+This endpoint is the **web** client's registration call. The mobile app
+registers its token through `POST /devices/` only (Module 19), which
+reconciles the same `PushSubscription` row — it should not also call this
+endpoint (still accepted, for backward compatibility).
 `NotificationLog` itself (the full, cross-recipient view), `NotificationTemplate`
 (content), and `ScheduledNotification` (one-off authoring) remain Django-admin
 only — matching the MVP's original "no dedicated cross-tenant API" decision
@@ -181,6 +191,13 @@ only — matching the MVP's original "no dedicated cross-tenant API" decision
     `django-celery-beat` `IntervalSchedule`, seeded by migration 0004) sends
     every `PENDING` `ScheduledNotification` whose `send_at` has passed,
     through the same `services.notify()` path, then flips it to `SENT`.
+10a. `PushSubscription` is the single delivery record; every write goes
+    through `apps.notifications.subscriptions`. The latest login owns a token
+    (other users'/tenants' rows for it are dropped as super admin); a mobile
+    install holds at most one subscription (rotation replaces it); `replaces`
+    deletes the caller's previous web subscription in the same transaction
+    and can never delete another user's row. Tests:
+    `test_push_subscription_api.py`, `apps/devices/tests/test_push_reconcile.py`.
 11. All RLS-enforced tables here (`notification_logs`,
     `notification_preferences`, `push_subscriptions`,
     `scheduled_notifications`) have an isolation test.
@@ -296,6 +313,27 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   three content-building functions are superseded by `NotificationTemplate`
   rows (seeded from their exact former content); nothing else imported this
   module.
+- [DECISION 2026-10-16] **`PushSubscription` is the one push delivery
+  record.** Before, the mobile token lived on `AppInstallation.fcm_token`
+  (never read by the sender) and needed a second call to
+  `/push-subscriptions/` to be deliverable. `POST /devices/` now reconciles
+  `PushSubscription` in the same transaction; `AppInstallation.fcm_token`
+  stays as a diagnostic mirror only. Chosen over sending to
+  `AppInstallation` because that table is platform-level (no tenant_id/RLS)
+  and web browsers have no installation row. Owner approved as part of the
+  push plan (2026-10-16).
+- [DECISION 2026-10-16] **Only an authenticated owner removes a
+  subscription.** Anonymous `POST /devices/` (including expired/forged
+  tokens, which `OptionalTenantJWTAuthentication` treats as anonymous) never
+  deletes one. The single cross-user removal: on every authenticated device
+  sync, rows on that install belonging to anyone else are dropped, so an
+  account switch can't leave the previous user subscribed even after an
+  anonymous unlink. Accepted gap: an offline logout, or a session that ends
+  without reaching the server, leaves the subscription until the next
+  authenticated sync/login on that device. This is mitigated by generic
+  lock-screen push text, which is planned for the next PR.
+- [DECISION 2026-10-16] `NotificationLog.notification_type` widened 25 → 50
+  (matches every other notification model; upcoming type names exceed 25).
 - [OPEN] Password-reset and staff-invite emails (`apps.accounts.emails`)
   stay synchronous and outside `NotificationLog`/the template system —
   unchanged from MVP's original scope decision.
@@ -363,3 +401,12 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   `ScheduledNotification.Status.FAILED`, migration 0006) and claims each row
   with `select_for_update(skip_locked=True)` so overlapping runs can't
   double-send. Tests added for each.
+- 2026-10-16  Push plan PR 1 (single delivery record). New
+  `apps.notifications.subscriptions` service (upsert / remove-own /
+  remove-foreign-on-install / remove-by-id) used by
+  `PushSubscriptionViewSet` and `devices.register_installation`;
+  `PushSubscription` partial unique on `installation`; optional `replaces`
+  on the push-subscriptions API; `NotificationLog.notification_type`
+  max_length 50. Migration 0008 (dedupes any existing per-install
+  duplicates first). Doc drift fixed: `ScheduledNotification.status`
+  includes `failed`. Full suite (879) green.

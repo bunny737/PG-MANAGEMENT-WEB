@@ -50,7 +50,9 @@ Table: app_version_policies
   maintenance_enabled, maintenance_message, maintenance_expires_at
   check_interval_seconds (default 21600), updated_by FK SET NULL, updated_at
 
-push_subscriptions (Module 14) gained:  installation_id FK → app_installations NULL, SET NULL
+push_subscriptions (Module 14) gained:  installation_id FK → app_installations NULL, SET NULL,
+                                        partial UNIQUE (one subscription per install)
+app_installations.fcm_token is a diagnostic mirror only — push is delivered from push_subscriptions.
 ```
 
 ## API endpoints (all under `/api/v1/`)
@@ -58,7 +60,7 @@ push_subscriptions (Module 14) gained:  installation_id FK → app_installations
 GET     /app/version-policy/?platform=&build=&version=&flavor=   public; never 426/503
 POST    /devices/                                                optional auth; never 401
 DELETE  /devices/{installation_id}/user/                         auth required; always 204
-POST    /notifications/push-subscriptions/                       (existing) + optional installation_id
+POST    /notifications/push-subscriptions/                       web clients; mobile should not call it (still accepted)
 ```
 The app also sends `X-App-Platform`, `X-App-Version`, `X-App-Build`,
 `X-App-Flavor`, `X-Installation-Id` on every request.
@@ -85,12 +87,25 @@ The app also sends `X-App-Platform`, `X-App-Version`, `X-App-Build`,
   first sighting and whenever `build_number` or `os.version` changes.
 - A non-null `push.fcm_token` is nulled on every other install; a null/blank
   token clears the stored one (the body carries the full device state). Never logged.
+- **Push subscription reconciliation** (authenticated syncs only, create and
+  update paths alike, same transaction as the install upsert):
+  1. drop every `PushSubscription` on this install owned by someone else
+     (cross-tenant, super admin) — so an account switch never leaves the
+     previous user subscribed, even if an anonymous sync already cleared the link;
+  2. token present → upsert the caller's subscription (`device_type` = platform);
+     token null/blank → remove the caller's subscription on this install.
+  Anonymous syncs and stale `sync_seq` never touch subscriptions. Response adds
+  `push: {"subscribed": true|false|null}` (`null` = not evaluated, anonymous).
+  This is the app's only push registration call.
 - Body ≤ 8 KB (`413`), strings length-capped, unknown keys ignored, DRF field-error shape.
 - Throttles: 30/hour per `installation_id`, 120/hour per IP (`429` + `Retry-After`).
 
 ### DELETE /devices/{installation_id}/user/
-Clears the link only if it is the caller's; unknown/other-owner installs are a
-silent no-op; always `204`.
+Logout. In one transaction: removes the caller's push subscription on this
+install, then clears the link only if it is the caller's; unknown/other-owner
+installs are a silent no-op; always `204`. The app must call it **before**
+discarding its tokens (refresh first if the access token expired) — anonymous
+syncs cannot remove subscriptions.
 
 ## Middleware (`AppClientMiddleware`)
 1. Parses `X-App-*` leniently into `request.app_client` (`None` if nothing
@@ -142,8 +157,11 @@ Policy modes/no-row/bad params/maintenance/caching → `test_version_policy.py`.
 expired token, signed_in, sync_seq, token move, history, validation, size, throttles) → `test_register.py`.
 Unlink (owner / non-owner / unknown) → `test_unlink.py`. Middleware (426/503 codes, plain 500, exempt paths,
 garbage headers, off/log/on, login gated, bypass, fail-open) → `test_middleware.py`. Push link and the
-tenant-isolation test (`test_link_is_tenant_safe…`) → `test_push_link.py`. Retention, reports, admin
-(masking, audit, confirmation), seed command → `test_ops.py`.
+tenant-isolation test (`test_link_is_tenant_safe…`) → `test_push_link.py`. Subscription reconciliation
+(token present/null on create and update, rotation, token move, account switch incl. after an anonymous
+unlink, anonymous/expired/malformed/suspended cannot remove, stale seq, rollback, isolation) and logout
+removal → `test_push_reconcile.py`. Retention, reports, admin (masking, audit, confirmation), seed
+command → `test_ops.py`.
 
 ## Privacy
 - Tables hold no PII; `installation_id` + user link is personal data. **Add to the privacy policy.**
@@ -175,8 +193,14 @@ tenant-isolation test (`test_link_is_tenant_safe…`) → `test_push_link.py`. R
   lines carry the app build; previously none was configured.
 - [OPEN] Telugu/other-locale translations of the 426/503 `detail` strings (gettext-wrapped; `.po` entries not
   added — the app switches on `code`, not the text).
-- [OPEN] `push-subscriptions` links to any existing `installation_id` regardless of its owner (metadata only).
+- [DECISION 2026-10-16] `POST /devices/` reconciles `PushSubscription` (Module 14's single delivery
+  record), so mobile needs one registration call; only authenticated callers can remove subscriptions
+  (see Module 14 Decisions for the accepted offline-logout gap).
+- [OPEN] `push-subscriptions` links to any existing `installation_id` regardless of its owner (metadata
+  only). Mobile no longer needs that endpoint; web sends no `installation_id`.
 
 ## Changelog
 - 2026-10-08  Module created: models, 3 endpoints + push-subscriptions `installation_id`, middleware,
   admin + audit + adoption report, retention task, seed command, 96 tests.
+- 2026-10-16  `POST /devices/` reconciles the push subscription (response gains `push.subscribed`);
+  logout also removes the caller's subscription. `test_push_reconcile.py` (19 tests).

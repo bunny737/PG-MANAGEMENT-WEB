@@ -53,6 +53,8 @@ class AppInstallation(models.Model):
     push_permission = models.CharField(max_length=32, blank=True)
     # A token belongs to exactly one install: registration nulls it on any
     # other holder first. NULLs don't collide under the unique constraint.
+    # Diagnostic mirror only — the push sender never reads it; delivery goes
+    # through notifications.PushSubscription, which registration reconciles.
     fcm_token = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
     last_sync_seq = models.BigIntegerField(default=0)

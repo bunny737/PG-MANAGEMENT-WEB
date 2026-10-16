@@ -103,6 +103,9 @@ class DeviceRegisterView(APIView):
                 'installation_id': str(data['installation_id']),
                 'registered': True,
                 'user_linked': user is not None,
+                # null when not evaluated (anonymous sync): the existing
+                # subscription, if any, is left untouched in that case.
+                'push': {'subscribed': result.push_subscribed},
                 'server_time': iso_z(timezone.now()),
             },
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
@@ -110,8 +113,10 @@ class DeviceRegisterView(APIView):
 
 
 class DeviceUnlinkUserView(APIView):
-    """Logout: detach the current user from this install. Always 204 so the
-    response never reveals whether the install exists or who owns it."""
+    """Logout: remove the current user's push subscription on this install
+    and detach the user from it. Always 204 so the response never reveals
+    whether the install exists or who owns it. The app must call this before
+    discarding its credentials — anonymous calls never remove subscriptions."""
 
     permission_classes = [IsAuthenticated]
 

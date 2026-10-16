@@ -47,13 +47,19 @@ class NotificationPreferenceUpdateSerializer(serializers.Serializer):
 
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):
+    # Declared explicitly so DRF adds no UniqueValidator: re-registering a
+    # known token is an upsert (apps.notifications.subscriptions), not a 400.
+    fcm_token = serializers.CharField(max_length=255)
     # Optional: the mobile app's install UUID (apps.devices). Links the
     # subscription to that install when it exists; an unknown id is ignored.
     installation_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    # Optional: the caller's previous subscription id. On web token rotation
+    # it is deleted in the same transaction as the new token's upsert.
+    replaces = serializers.UUIDField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = PushSubscription
-        fields = ['id', 'fcm_token', 'device_type', 'installation_id', 'last_seen_at']
+        fields = ['id', 'fcm_token', 'device_type', 'installation_id', 'replaces', 'last_seen_at']
         read_only_fields = ['id', 'last_seen_at']
 
     def validate(self, attrs):

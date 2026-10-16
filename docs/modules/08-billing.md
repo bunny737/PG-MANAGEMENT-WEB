@@ -60,6 +60,18 @@ POST             /api/v1/invoices/bulk-generate/         generate drafts for a p
 POST             /api/v1/invoices/{id}/line-items/       add an ad-hoc line (draft only)  manage_invoices
 PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (draft only) manage_invoices
 ```
+List filters (2026-10-16, UX roadmap D3): `?property=&resident=&billing_mode=
+&period=YYYY-MM&search=&status=` where `status` is a comma list of stored
+statuses (draft, issued, partially_paid, paid) or one of the derived aliases
+`outstanding` (issued/partially-paid with balance > 0 — the same definition
+as `/invoices/outstanding/` and the analytics `outstanding_total`) or
+`overdue` (outstanding past its due date). Unknown values → 400
+`INVALID_STATUS`; `period` must be `YYYY-MM`. Rows now also carry
+`resident_name, property, property_name, room_number, bed_number` and
+`capped_allocated` = min(amount_paid, max(total, 0)) — the per-invoice
+contribution to analytics `period_collected`. Money figures for filters and
+analytics come from `apps/billing/selectors.py` (DB annotations), so a list
+and the summary that drills into it share one definition.
 
 ## Business rules (each maps to a test)
 1. Generation creates a draft invoice with an **accommodation** line whose
@@ -195,3 +207,11 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
   `GET`/`HEAD`/`OPTIONS` (incl. `outstanding`) need `view_finance`, every write (incl. `issue`,
   `bulk-generate`, line items) needs the `manage_*` code. Role defaults are unchanged (Owner/Manager
   have both). See Module 01 `[DECISION 2026-10-12]`.
+- 2026-10-16  UX roadmap D3: `InvoiceFilter` (`apps/billing/filters.py`) with
+  property / period / search / status incl. derived `outstanding` and
+  `overdue` aliases; `/invoices/outstanding/` now uses the same DB-side
+  definition (`apps/billing/selectors.py`) and honours the list filters;
+  invoice rows gained resident/property/room/bed context and
+  `capped_allocated`; `is_overdue` uses the product-timezone date
+  (`core.periods.local_today`) instead of the container clock. Tests:
+  `billing/tests/test_list_filters.py`.

@@ -223,6 +223,25 @@ class Bed(TenantModelMixin):
         max_digits=12, decimal_places=2, null=True, blank=True
     )
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.AVAILABLE)
+    # Set only while status == reserved (D9). Who the bed is held for, and
+    # until when — informational except that admission accepts a reserved bed
+    # only for this resident (or for anyone when it is blank).
+    reserved_for = models.ForeignKey(
+        'residents.Resident', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='reserved_beds',
+    )
+    reserved_until = models.DateField(null=True, blank=True)
+
+    # Availability changes a plain PATCH may make (D9). Everything touching
+    # `occupied` belongs to the admission / transfer / vacate / absconded
+    # workflows, which set the status directly, never through the API field.
+    MANUAL_TRANSITIONS = {
+        (Status.AVAILABLE, Status.MAINTENANCE), (Status.MAINTENANCE, Status.AVAILABLE),
+        (Status.AVAILABLE, Status.RESERVED), (Status.RESERVED, Status.AVAILABLE),
+        (Status.RESERVED, Status.MAINTENANCE), (Status.MAINTENANCE, Status.RESERVED),
+    }
+    # A new bed may start in any state a workflow didn't create.
+    CREATABLE_STATUSES = (Status.AVAILABLE, Status.RESERVED, Status.MAINTENANCE)
 
     class Meta:
         db_table = 'beds'

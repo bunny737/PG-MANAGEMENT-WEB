@@ -153,6 +153,15 @@ class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
+def bed_admits(bed, resident):
+    """Can `resident` be checked in to `bed`? An available bed, or a reserved
+    bed held for this resident or for nobody in particular (D9, owner
+    decision 2026-10-16). Reserved -> occupied happens only here."""
+    if bed.status == Bed.Status.AVAILABLE:
+        return True
+    return bed.status == Bed.Status.RESERVED and bed.reserved_for_id in (None, resident.pk)
+
+
 class AdmissionSerializer(serializers.ModelSerializer):
     advance_refundable = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
@@ -195,7 +204,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 {'bed': _('This bed is not in the same property as the resident.')},
                 code='bed_property_mismatch',
             )
-        if bed.status != Bed.Status.AVAILABLE:
+        if not bed_admits(bed, resident):
             raise serializers.ValidationError(
                 {'bed': _('This bed is not available.')},
                 code='bed_not_available',

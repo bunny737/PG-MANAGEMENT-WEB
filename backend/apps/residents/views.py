@@ -1,3 +1,4 @@
+import django_filters
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -8,14 +9,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
+from apps.billing.filters import resident_search
 from apps.core.permissions import require_permission
+from apps.core.redaction import Redactor
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 from apps.subscriptions.services import check_resident_limit
 
 from . import services
+from .finance import resident_finance
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
 from .serializers import (
+    bed_admits,
     AbscondedRecordCreateSerializer,
     AbscondedRecordSerializer,
     AdmissionSerializer,
@@ -34,6 +39,32 @@ from .serializers import (
 )
 
 
+class ResidentFilter(django_filters.FilterSet):
+    """D3: ?property=&status=&search=. `status` takes a comma-separated list
+    (e.g. active,notice_period); `search` matches name or phone."""
+
+    property = django_filters.UUIDFilter(field_name='property_id')
+    status = django_filters.CharFilter(method='filter_status')
+    search = django_filters.CharFilter(method='filter_search')
+
+    class Meta:
+        model = Resident
+        fields = ['property', 'status', 'search']
+
+    def filter_status(self, queryset, name, value):
+        values = [v.strip() for v in value.split(',') if v.strip()]
+        unknown = [v for v in values if v not in Resident.Status.values]
+        if unknown:
+            raise ValidationError(
+                {'status': [_('Unknown status: %(values)s.') % {'values': ', '.join(unknown)}]},
+                code='invalid_status',
+            )
+        return queryset.filter(status__in=values) if values else queryset
+
+    def filter_search(self, queryset, name, value):
+        return resident_search(queryset, '', value)
+
+
 class ResidentViewSet(viewsets.ModelViewSet):
     """Resident profiles (PRD Module 5). Read access follows
     `view_resident_profile` (Super Admin/Owner/Manager/Receptionist);
@@ -43,7 +74,17 @@ class ResidentViewSet(viewsets.ModelViewSet):
 
     serializer_class = ResidentSerializer
     http_method_names = ['get', 'post', 'patch']
-    filterset_fields = ['property', 'status']
+    filterset_class = ResidentFilter
+
+    def retrieve(self, request, *args, **kwargs):
+        """Detail adds the D6 `finance` block (needs view_finance; null and
+        listed in `redacted` otherwise). Lists stay lean — no per-row money."""
+        resident = self.get_object()
+        data = dict(self.get_serializer(resident).data)
+        redactor = Redactor(request.user)
+        data['finance'] = redactor.group('finance', ['view_finance'], lambda: resident_finance(resident))
+        data['redacted'] = redactor.redacted
+        return Response(data)
 
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'change_status'):
@@ -187,7 +228,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             .select_related('room__floor__building__property')
             .get(pk=bed.pk)
         )
-        if bed.status != Bed.Status.AVAILABLE:
+        if not bed_admits(bed, resident):
             raise ValidationError(
                 {'bed': _('This bed is not available.')}, code='bed_not_available'
             )
@@ -206,6 +247,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         )
 
         bed.status = Bed.Status.OCCUPIED
+        bed.reserved_for = None  # a hold ends when the bed is taken (D9)
+        bed.reserved_until = None
         bed.save()  # also syncs the room's status (Module 02)
 
         before_status = resident.status

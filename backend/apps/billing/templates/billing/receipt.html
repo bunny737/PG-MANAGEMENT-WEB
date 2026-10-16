@@ -1,0 +1,50 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="{{ language_code }}">
+<head>
+  <meta charset="utf-8">
+  <title>{% translate "Payment Receipt" %} {{ payment.receipt_number|default:"" }}</title>
+  <style>
+    @page { size: A5; margin: 14mm; }
+    body { font-family: "Noto Sans", "Noto Sans Telugu", sans-serif; font-size: 11px; color: #1f2933; }
+    h1 { font-size: 18px; margin: 0 0 2px; color: #166534; }
+    .muted { color: #6b7280; }
+    .header { border-bottom: 2px solid #166534; padding-bottom: 8px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 5px 0; vertical-align: top; }
+    td.label { color: #6b7280; width: 42%; }
+    .amount { font-size: 22px; font-weight: bold; margin: 12px 0; }
+    .totals td { border-top: 1px solid #e5e7eb; }
+    .footer { margin-top: 18px; font-size: 9px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>{% translate "Payment Receipt" %}</h1>
+    <div><strong>{{ property.name }}</strong></div>
+    <div class="muted">{{ property.address_line }}, {{ property.city }}{% if property.pincode %} - {{ property.pincode }}{% endif %}</div>
+    <div class="muted">{{ property.contact_number }}</div>
+  </div>
+
+  <table>
+    <tr><td class="label">{% translate "Receipt number" %}</td><td><strong>{{ payment.receipt_number|default:"—" }}</strong></td></tr>
+    <tr><td class="label">{% translate "Payment date" %}</td><td>{{ payment.payment_date|date:"d M Y" }}</td></tr>
+    <tr><td class="label">{% translate "Received from" %}</td><td>{{ resident }}</td></tr>
+    {% if room_number %}<tr><td class="label">{% translate "Room / Bed" %}</td><td>{{ room_number }} / {{ bed_number }}</td></tr>{% endif %}
+    <tr><td class="label">{% translate "Billing period" %}</td><td>{{ invoice.period_start|date:"d M Y" }} – {{ invoice.period_end|date:"d M Y" }}</td></tr>
+    <tr><td class="label">{% translate "Payment mode" %}</td><td>{{ payment_mode_label }}</td></tr>
+    {% if payment.reference %}<tr><td class="label">{% translate "Reference" %}</td><td>{{ payment.reference }}</td></tr>{% endif %}
+  </table>
+
+  <div class="amount">₹{{ payment.amount }}</div>
+
+  <table class="totals">
+    <tr><td class="label">{% translate "Invoice total" %}</td><td>₹{{ invoice_total }}</td></tr>
+    <tr><td class="label">{% translate "Paid so far" %}</td><td>₹{{ invoice_paid }}</td></tr>
+    <tr><td class="label">{% translate "Balance due" %}</td><td>₹{{ invoice_balance_due }}</td></tr>
+  </table>
+
+  <div class="footer">
+    {% if recorded_by_name %}{% blocktranslate with name=recorded_by_name %}Recorded by {{ name }}{% endblocktranslate %} · {% endif %}{% translate "This is a computer-generated receipt." %}
+  </div>
+</body>
+</html>

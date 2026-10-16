@@ -3,6 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import User
+from apps.core.exceptions import Conflict
 from apps.core.roles import STAFF_ROLES, permissions_for_user
 
 from . import feature_services, services
@@ -215,7 +216,8 @@ class BedSerializer(serializers.ModelSerializer):
             'id', 'room', 'bed_number',
             'rack_rate_with_food_override', 'rack_rate_without_food_override',
             'effective_rate_with_food', 'effective_rate_without_food',
-            'status', 'current_occupant', 'history', 'created_at', 'updated_at',
+            'status', 'reserved_for', 'reserved_until',
+            'current_occupant', 'history', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -356,7 +358,69 @@ class BedSerializer(serializers.ModelSerializer):
                     {'room': _('This room already has its full sharing-type capacity of beds.')},
                     code='bed_capacity_exceeded',
                 )
+        if self.instance is not None and 'room' in attrs and attrs['room'] != self.instance.room:
+            raise serializers.ValidationError(
+                {'room': _('A bed cannot be moved to another room.')}, code='bed_room_immutable',
+            )
+        self._validate_status(attrs)
+        self._validate_reservation(attrs, room)
         return attrs
+
+    def _validate_status(self, attrs):
+        """D9: only the MANUAL_TRANSITIONS are allowed here; anything into or
+        out of `occupied` goes through its workflow. 409, not 400 — the body
+        is valid, the bed's current state forbids it."""
+        if 'status' not in attrs:
+            return
+        new = attrs['status']
+        if self.instance is None:
+            if new not in Bed.CREATABLE_STATUSES:
+                raise serializers.ValidationError(
+                    {'status': _('A new bed cannot start as occupied — admit a resident instead.')},
+                    code='bed_status_not_allowed',
+                )
+            return
+        current = self.instance.status
+        if new != current and (current, new) not in Bed.MANUAL_TRANSITIONS:
+            if current == Bed.Status.OCCUPIED:
+                message = _('An occupied bed changes only through transfer, vacate or absconded.')
+            elif new == Bed.Status.OCCUPIED:
+                message = _('A bed becomes occupied only through admission or transfer.')
+            else:
+                message = _('This bed status change is not allowed.')
+            raise Conflict(message, code='bed_transition_not_allowed')
+
+    def _validate_reservation(self, attrs, room):
+        """reserved_for / reserved_until only make sense on a reserved bed;
+        leaving `reserved` clears them (in update())."""
+        status = attrs.get('status', getattr(self.instance, 'status', Bed.Status.AVAILABLE))
+        touched = {'reserved_for', 'reserved_until'} & set(attrs)
+        if status != Bed.Status.RESERVED:
+            if any(attrs.get(field) for field in touched):
+                raise serializers.ValidationError(
+                    {'reserved_for': _('Only a reserved bed can be held for someone.')},
+                    code='bed_not_reserved',
+                )
+            return
+        resident = attrs.get('reserved_for')
+        if resident is not None:
+            from apps.residents.models import Resident
+            if room is None or resident.property_id != room.floor.building.property_id:
+                raise serializers.ValidationError(
+                    {'reserved_for': _('This resident belongs to another property.')},
+                    code='reserved_for_property_mismatch',
+                )
+            if resident.status not in (Resident.Status.INQUIRY, Resident.Status.RESERVED):
+                raise serializers.ValidationError(
+                    {'reserved_for': _('A bed can only be held for an inquiry or reserved resident.')},
+                    code='reserved_for_not_eligible',
+                )
+
+    def update(self, instance, validated_data):
+        if validated_data.get('status', instance.status) != Bed.Status.RESERVED:
+            validated_data['reserved_for'] = None
+            validated_data['reserved_until'] = None
+        return super().update(instance, validated_data)
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -367,11 +431,15 @@ class RoomSerializer(serializers.ModelSerializer):
     # in the same transaction. Off by default so existing callers that add
     # beds one by one are unaffected.
     auto_create_beds = serializers.BooleanField(write_only=True, required=False, default=False)
+    # Read-only ancestry so a room list (?property=) renders and links
+    # without walking floor -> building -> property client-side.
+    building = serializers.UUIDField(source='floor.building_id', read_only=True)
+    property = serializers.UUIDField(source='floor.building.property_id', read_only=True)
 
     class Meta:
         model = Room
         fields = [
-            'id', 'floor', 'room_number', 'sharing_type', 'category',
+            'id', 'property', 'building', 'floor', 'room_number', 'sharing_type', 'category',
             'rack_rate_with_food', 'rack_rate_without_food', 'status',
             'auto_create_beds', 'current_occupancy', 'bed_capacity', 'beds',
             'created_at', 'updated_at',
@@ -403,6 +471,23 @@ class RoomSerializer(serializers.ModelSerializer):
                 {'room_number': _('Room number is too long to auto-create beds.')},
                 code='room_number_too_long',
             )
+        # The sharing type is the room's bed capacity: it can't drop below
+        # the beds that exist (remove a vacant bed first). That also keeps it
+        # at or above the occupied + reserved beds the roadmap requires (D9).
+        if (
+            self.instance is not None and 'sharing_type' in attrs
+            and attrs['sharing_type'] < self.instance.beds.count()
+        ):
+            raise serializers.ValidationError(
+                {'sharing_type': _('This room has more beds than that. Remove a vacant bed first.')},
+                code='room_capacity_below_beds',
+            )
+        if self.instance is not None and 'floor' in attrs and attrs['floor'] != self.instance.floor:
+            if attrs['floor'].building.property_id != self.instance.floor.building.property_id:
+                raise serializers.ValidationError(
+                    {'floor': _('A room cannot be moved to another property.')},
+                    code='room_property_immutable',
+                )
         return attrs
 
     def create(self, validated_data):

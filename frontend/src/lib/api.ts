@@ -1822,6 +1822,34 @@ export function getExpenseSummary(filters: { property?: string; month?: string }
   return apiFetch<ExpenseSummary>(`/api/v1/expenses/summary/${buildQuery(filters)}`);
 }
 
+// --- Exports (D7, Module 17) ---
+
+export type ExportFiletype = "csv" | "xlsx" | "pdf";
+
+export function exportResidents(filetype: ExportFiletype, property?: string) {
+  return apiDownload(`/api/v1/exports/residents/${buildQuery({ filetype, property })}`);
+}
+
+export function exportPayments(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/payments/${buildQuery({ filetype, month, property })}`);
+}
+
+export function exportOutstandingDues(filetype: ExportFiletype, period?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/outstanding-dues/${buildQuery({ filetype, period, property })}`);
+}
+
+export function exportOccupancy(filetype: ExportFiletype, property?: string) {
+  return apiDownload(`/api/v1/exports/occupancy/${buildQuery({ filetype, property })}`);
+}
+
+export function exportExpenses(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/expenses/${buildQuery({ filetype, month, property })}`);
+}
+
+export function exportCashFlowStatement(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/pnl/${buildQuery({ filetype, month, property })}`);
+}
+
 // --- PG features (Module 18) ---
 
 export interface FeatureCatalogItem {

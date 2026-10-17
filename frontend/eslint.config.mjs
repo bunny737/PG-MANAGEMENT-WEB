@@ -48,6 +48,11 @@ const eslintConfig = defineConfig([
               "statuses",
               "anyOf",
               "allOf",
+              // Recharts props: data keys / CSS values, not UI text.
+              "dataKey",
+              "stroke",
+              "fill",
+              "strokeDasharray",
             ],
           },
           "object-properties": {
@@ -120,6 +125,11 @@ const eslintConfig = defineConfig([
               "statuses",
               "anyOf",
               "allOf",
+              // Recharts props: data keys / CSS values, not UI text.
+              "dataKey",
+              "stroke",
+              "fill",
+              "strokeDasharray",
             ],
           },
           "object-properties": {

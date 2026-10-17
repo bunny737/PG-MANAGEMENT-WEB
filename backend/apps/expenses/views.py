@@ -1,4 +1,5 @@
 import django_filters
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.conf import settings
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -18,6 +19,7 @@ from apps.properties.services import scoped_property_ids, visible_property_ids
 
 from . import services
 from .models import Expense, ExpenseCategory
+from .schema import ExpenseAttachmentResponseSerializer, ExpenseSummaryResponseSerializer
 from .serializers import ExpenseCategorySerializer, ExpenseSerializer
 
 
@@ -72,6 +74,13 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             raise MethodNotAllowed(request.method)  # PUT is only for the attachment
         return super().update(request, *args, **kwargs)
 
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'Idempotency-Key', str, OpenApiParameter.HEADER, required=False,
+            description='<= 100 chars; one per user intent. A retry with the same key, fields and '
+                        'attachment returns 200 with `Idempotent-Replayed: true` and the original expense.',
+        )],
+    )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -102,6 +111,13 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         services.delete_expense(expense=instance, actor=self.request.user, request=self.request)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('property', str, description='Property UUID; default is every assigned property.'),
+            OpenApiParameter('month', str, description='YYYY-MM; default is the current month.'),
+        ],
+        responses=ExpenseSummaryResponseSerializer,
+    )
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """{total, count, by_category[]} for ?property=&month= (default this
@@ -112,6 +128,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         return Response({'month': month_key(first), 'property': request.query_params.get('property') or None,
                          **services.summary(queryset)})
 
+    @extend_schema(methods=['GET'], responses=ExpenseAttachmentResponseSerializer)
+    @extend_schema(methods=['PUT', 'DELETE'], responses=ExpenseSerializer)
     @action(detail=True, methods=['get', 'put', 'delete'], parser_classes=[MultiPartParser, FormParser])
     def attachment(self, request, pk=None):
         """GET a short-lived signed URL; PUT (multipart `attachment`) replaces

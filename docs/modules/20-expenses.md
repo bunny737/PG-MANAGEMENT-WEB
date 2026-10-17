@@ -132,9 +132,20 @@ and the staff module-access endpoints automatically (registry-driven).
   (`use_attachment_endpoint`) so replacing the file is always the explicit
   `PUT …/attachment/` that audits it.
 - [OPEN] Recurring expense presets live in the app only for now.
+- [DECISION 2026-10-17] **Schema annotations for the web client.**
+  `expenses/summary/` and `GET expenses/{id}/attachment/` build a plain dict
+  by hand, so `/api/schema/` described them as an untyped `{}`. Both now
+  carry `@extend_schema(responses=...)` pointing at schema-only serializers
+  in the new `apps/expenses/schema.py` (never instantiated for a real
+  response); the attachment action's PUT/DELETE keep their real
+  `ExpenseSerializer` response via a second `@extend_schema(methods=[...])`
+  on the same view method. See Module 21's 2026-10-17 decision for the full
+  list and the test that guards it.
 
 ## Changelog
 - 2026-10-16  Built: `apps.expenses` (ExpenseCategory, Expense, RLS), CRUD +
   summary + attachment + categories endpoints, permission codes and module
   access entry, data migration for customized staff, export (Module 17),
   analytics inputs (Module 21). Tests in `apps/expenses/tests/`.
+- 2026-10-17  Web-client follow-up (S0b): schema-only response types for
+  `summary/` and the attachment GET (see Decisions).

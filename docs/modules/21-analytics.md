@@ -146,8 +146,22 @@ detail only (not on the list). Drafts never count.
 - [DECISION 2026-10-16] Balances are always as of now; no `as_of` parameter
   in v1 (would have to land on summaries, invoices, payments, expenses and
   exports together).
+- [DECISION 2026-10-17] **Schema annotations for the web client.**
+  `analytics/summary/` and `analytics/trend/` (like the property layout,
+  cash movements, payment receipt, expense summary/attachment and the
+  resident finance block) build a plain dict by hand — nothing here was ever
+  a `ModelSerializer`, so `/api/schema/` described their response as an
+  untyped `{}` and `openapi-typescript` would generate `unknown` for the web
+  client. Both views now carry `@extend_schema(responses=...)` pointing at
+  schema-only serializer classes in each app's new `schema.py` (never
+  instantiated to serialize a real response — `apps/reporting/schema.py` for
+  these two). `apps/reporting/tests/test_schema.py` generates the schema and
+  fails if any of the eight annotated operations drifts back to untyped.
 
 ## Changelog
 - 2026-10-16  Built: analytics summary/trend, property layout, resident finance
   block, shared selectors/periods/redaction helpers, tenant fiscal-year
   setting, `payment_due_soon_days` config. Tests listed above.
+- 2026-10-17  Web-client follow-up (S0b): schema-only response types for the
+  six dict-shaped endpoints (see Decisions), `allowed_transitions` on beds
+  (Module 02), and discount report columns/filter (Module 07).

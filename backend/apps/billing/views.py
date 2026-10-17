@@ -1,5 +1,6 @@
 from datetime import date
 
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
@@ -19,8 +20,9 @@ from apps.properties.services import scoped_property_ids, visible_property_ids
 from apps.residents.models import Resident
 
 from . import receipts, selectors, services
-from .filters import InvoiceFilter, PaymentFilter
+from .filters import DiscountFilter, InvoiceFilter, PaymentFilter
 from .models import Discount, Invoice, InvoiceLineItem, Payment
+from .schema import CashMovementsResponseSerializer, ReceiptResponseSerializer
 from .serializers import (
     DiscountSerializer,
     InvoiceBulkGenerateSerializer,
@@ -41,7 +43,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
     serializer_class = DiscountSerializer
     permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_discounts')]
     http_method_names = ['get', 'post', 'patch']
-    filterset_fields = ['resident', 'reason', 'discount_type']
+    filterset_class = DiscountFilter
 
     @staticmethod
     def _lock_resident(resident_id):
@@ -67,7 +69,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
         ids = visible_property_ids(self.request.user)
         return (
             Discount.objects.filter(resident__property_id__in=ids)
-            .select_related('resident', 'approved_by')
+            .select_related('resident__property', 'resident__allocation__allocated_bed__room', 'approved_by')
         )
 
     def perform_create(self, serializer):
@@ -296,6 +298,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return PaymentWriteSerializer
         return PaymentSerializer
 
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'Idempotency-Key', str, OpenApiParameter.HEADER, required=False,
+            description='<= 100 chars; one per user intent. A retry with the same key and body '
+                        'returns 200 with `Idempotent-Replayed: true` and the original payment.',
+        )],
+    )
     def create(self, request, *args, **kwargs):
         key = idempotency_key(request)
         if key:
@@ -345,6 +354,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         services.delete_payment(payment=instance, actor=self.request.user, request=self.request)
 
+    @extend_schema(
+        parameters=[OpenApiParameter('filetype', str, description='"pdf" for the printable receipt; default JSON.')],
+        responses=ReceiptResponseSerializer,
+    )
     @action(detail=True, methods=['get'])
     def receipt(self, request, pk=None):
         """Receipt for one payment (PRD Module 10, D4). JSON by default (the
@@ -365,6 +378,15 @@ class CashMovementView(APIView):
 
     permission_classes = [IsAuthenticated, require_permission('view_finance')]
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('property', str, description='Property UUID; default is every assigned property.'),
+            OpenApiParameter('month', str, description='YYYY-MM; default is the current month.'),
+            OpenApiParameter('from', str, description='YYYY-MM-DD; overrides the month start.'),
+            OpenApiParameter('to', str, description='YYYY-MM-DD; overrides the month end.'),
+        ],
+        responses=CashMovementsResponseSerializer,
+    )
     def get(self, request):
         params = request.query_params
         first = parse_month(params.get('month'), default=month_start(local_today()))

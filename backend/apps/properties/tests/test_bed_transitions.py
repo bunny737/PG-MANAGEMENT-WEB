@@ -32,6 +32,28 @@ class BedTransitionTests(ResidentAPITestCase):
             self.assertEqual(response.status_code, 200, (status, response.data))
             self.assertEqual(response.data['status'], status)
 
+    def test_allowed_transitions_matches_what_patch_accepts(self):
+        """The serialized `allowed_transitions` is not just documentation —
+        every value in it must actually succeed via PATCH, and every other
+        status must be rejected, for every starting status (F8)."""
+        for start in (Bed.Status.AVAILABLE, Bed.Status.RESERVED, Bed.Status.MAINTENANCE, Bed.Status.OCCUPIED):
+            self.set_status(self.bed, start)
+            allowed = self.client.get(reverse('bed-detail', args=[self.bed.id])).data['allowed_transitions']
+            for target in Bed.Status.values:
+                if target == start:
+                    continue
+                response = self.patch(self.bed, status=target)
+                if target in allowed:
+                    self.assertEqual(response.status_code, 200, (start, target, response.data))
+                else:
+                    self.assertEqual(response.status_code, 409, (start, target, response.data))
+                self.set_status(self.bed, start)  # reset for the next target
+
+    def test_occupied_bed_has_no_allowed_transitions(self):
+        self.set_status(self.bed, Bed.Status.OCCUPIED)
+        response = self.client.get(reverse('bed-detail', args=[self.bed.id]))
+        self.assertEqual(response.data['allowed_transitions'], [])
+
     def test_occupied_bed_cannot_change_by_patch(self):
         self.set_status(self.bed, Bed.Status.OCCUPIED)
         for status in ('maintenance', 'reserved', 'available'):

@@ -1,4 +1,5 @@
 import django_filters
+from drf_spectacular.utils import extend_schema
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -19,6 +20,7 @@ from apps.subscriptions.services import check_resident_limit
 from . import services
 from .finance import resident_finance
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
+from .schema import ResidentDetailResponseSerializer
 from .serializers import (
     bed_admits,
     AbscondedRecordCreateSerializer,
@@ -76,6 +78,7 @@ class ResidentViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch']
     filterset_class = ResidentFilter
 
+    @extend_schema(responses=ResidentDetailResponseSerializer)
     def retrieve(self, request, *args, **kwargs):
         """Detail adds the D6 `finance` block (needs view_finance; null and
         listed in `redacted` otherwise). Lists stay lean — no per-row money."""

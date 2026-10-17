@@ -1,3 +1,4 @@
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -8,6 +9,7 @@ from apps.core.periods import local_today, month_key, month_start, parse_month
 from apps.core.permissions import require_any_permission, require_permission
 
 from . import analytics, export, services
+from .schema import AnalyticsSummarySerializer, AnalyticsTrendSerializer
 
 
 def _requested_month(request, param='month'):
@@ -41,6 +43,13 @@ class AnalyticsSummaryView(APIView):
 
     permission_classes = [IsAuthenticated, require_any_permission(*ANALYTICS_ENTRY_PERMISSIONS)]
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('property', str, description='Property UUID; default is every assigned property.'),
+            OpenApiParameter('month', str, description='YYYY-MM; default is the current month.'),
+        ],
+        responses=AnalyticsSummarySerializer,
+    )
     def get(self, request):
         params = request.query_params
         return Response(analytics.summary(request.user, params.get('property'), params.get('month')))
@@ -53,6 +62,14 @@ class AnalyticsTrendView(APIView):
 
     permission_classes = [IsAuthenticated, require_any_permission(*ANALYTICS_ENTRY_PERMISSIONS)]
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('property', str, description='Property UUID; default is every assigned property.'),
+            OpenApiParameter('end', str, description='YYYY-MM; default is the current month.'),
+            OpenApiParameter('months', int, description='1-24; default 6.'),
+        ],
+        responses=AnalyticsTrendSerializer,
+    )
     def get(self, request):
         params = request.query_params
         return Response(analytics.trend(

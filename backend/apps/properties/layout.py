@@ -3,9 +3,11 @@ one response, replacing the per-floor/per-room walkers the clients used.
 
 Each bed carries three INDEPENDENT attributes:
 
-    availability  the bed's own status (available / occupied / reserved / maintenance)
-    resident      the CURRENT occupant (Active or Notice Period allocation), or null
-    payment       that occupant's payment state for the requested period, or null
+    availability        the bed's own status (available / occupied / reserved / maintenance)
+    allowed_transitions status values a plain PATCH /beds/{id}/ may move it to from
+                        here (D9, Bed.allowed_transitions) — the client never infers this
+    resident            the CURRENT occupant (Active or Notice Period allocation), or null
+    payment             that occupant's payment state for the requested period, or null
 
 `payment.status` (first match wins):
     overdue     the resident has any overdue balance (any period)
@@ -184,6 +186,7 @@ def build_layout(prop, user, period_first):
             'id': str(bed.id),
             'bed_number': bed.bed_number,
             'availability': bed.status,
+            'allowed_transitions': bed.allowed_transitions(),
             'reserved_for': reserved_for,
             'reserved_until': bed.reserved_until,
             'rack_rate_with_food': _money(bed.rack_rate(with_food=True)),

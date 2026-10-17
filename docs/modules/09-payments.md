@@ -165,6 +165,13 @@ Module 08.
   Module 17 WeasyPrint renderer.
 - [DECISION 2026-10-16] Receipt number format `RCT-` + 6 digits, per tenant,
   not per property or financial year — simplest unique, human-quotable id.
+- [DECISION 2026-10-17] **Schema annotations for the web client.**
+  `/cash-movements/` and `GET /payments/{id}/receipt/` build a plain dict by
+  hand, so `/api/schema/` described them as an untyped `{}`. Both now carry
+  `@extend_schema(responses=...)` pointing at schema-only serializers in the
+  new `apps/billing/schema.py` (never instantiated for a real response) —
+  see Module 21's 2026-10-17 decision for the full list and the test that
+  guards it.
 
 ## Changelog
 - 2026-06-xx  Created stub.

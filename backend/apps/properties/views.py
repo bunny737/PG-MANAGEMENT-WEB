@@ -1,4 +1,5 @@
 import django_filters
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
@@ -19,6 +20,7 @@ from apps.subscriptions.services import check_property_limit
 
 from . import feature_services, services
 from .layout import build_layout
+from .schema import PropertyLayoutResponseSerializer
 from .models import (
     Bed,
     Building,
@@ -225,6 +227,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
             )
         return Response(after)
 
+    @extend_schema(
+        parameters=[OpenApiParameter('period', str, description='YYYY-MM; default is the current month.')],
+        responses=PropertyLayoutResponseSerializer,
+    )
     @action(detail=True, methods=['get'], url_path='layout', url_name='layout')
     def layout(self, request, pk=None):
         """D2 — the whole bed grid in one call: buildings -> floors -> rooms

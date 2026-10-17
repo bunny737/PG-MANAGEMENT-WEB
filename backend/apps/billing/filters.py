@@ -12,7 +12,7 @@ from rest_framework.exceptions import ValidationError
 from apps.core.periods import local_today, month_end, parse_month
 
 from . import selectors
-from .models import Invoice, Payment
+from .models import Discount, Invoice, Payment
 
 # Aliases accepted by ?status= on top of the stored statuses. Both are
 # derived (never stored) — see apps/billing/selectors.py.
@@ -113,3 +113,18 @@ class PaymentFilter(django_filters.FilterSet):
 # `from` / `to` are Python keywords, so they can't be class attributes.
 PaymentFilter.base_filters['from'] = django_filters.DateFilter(field_name='payment_date', lookup_expr='gte')
 PaymentFilter.base_filters['to'] = django_filters.DateFilter(field_name='payment_date', lookup_expr='lte')
+
+
+class DiscountFilter(django_filters.FilterSet):
+    """?property= for the discount report (UX roadmap FE-07) — the other
+    filters (resident, reason, discount_type) were already plain
+    `filterset_fields` and keep working unchanged."""
+
+    resident = django_filters.UUIDFilter(field_name='resident_id')
+    property = django_filters.UUIDFilter(field_name='resident__property_id')
+    reason = django_filters.ChoiceFilter(choices=Discount._meta.get_field('reason').choices)
+    discount_type = django_filters.ChoiceFilter(choices=Discount._meta.get_field('discount_type').choices)
+
+    class Meta:
+        model = Discount
+        fields = ['resident', 'property', 'reason', 'discount_type']

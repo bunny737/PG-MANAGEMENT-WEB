@@ -19,16 +19,60 @@ def _windows_overlap(from1, until1, from2, until2):
     return end is None or start <= end
 
 
-class DiscountSerializer(serializers.ModelSerializer):
+def _location(resident):
+    """(room_number, bed_number) of the resident's current allocation."""
+    allocation = getattr(resident, 'allocation', None)
+    if allocation is None:
+        return None, None
+    bed = allocation.allocated_bed
+    return bed.room.room_number, bed.bed_number
+
+
+class ResidentContextMixin(serializers.Serializer):
+    """Who/where columns for finance lists, so a row renders without a
+    second lookup. `_resident(obj)` returns the row's resident."""
+
+    resident_name = serializers.SerializerMethodField()
+    property = serializers.SerializerMethodField()
+    property_name = serializers.SerializerMethodField()
+    room_number = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
+
+    def get_resident_name(self, obj) -> str:
+        return str(self._resident(obj))
+
+    def get_property(self, obj) -> str:
+        return str(self._resident(obj).property_id)
+
+    def get_property_name(self, obj) -> str:
+        return self._resident(obj).property.name
+
+    def get_room_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[0]
+
+    def get_bed_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[1]
+
+
+class DiscountSerializer(ResidentContextMixin, serializers.ModelSerializer):
+    """Per-resident discounts (PRD Module 8). `ResidentContextMixin` gives
+    the discount report the same who/where columns as invoices and payments
+    (UX roadmap FE-07), so a row renders without a second lookup."""
+
     class Meta:
         model = Discount
         fields = [
-            'id', 'resident', 'discount_type', 'discount_value', 'reason',
+            'id', 'resident', 'resident_name', 'property', 'property_name',
+            'room_number', 'bed_number', 'discount_type', 'discount_value', 'reason',
             'note', 'valid_from', 'valid_until', 'approved_by',
             'created_at', 'updated_at',
         ]
         # approved_by is stamped from the request user server-side.
         read_only_fields = ['id', 'approved_by', 'created_at', 'updated_at']
+
+    @staticmethod
+    def _resident(obj):
+        return obj.resident
 
     def validate_resident(self, value):
         request = self.context['request']

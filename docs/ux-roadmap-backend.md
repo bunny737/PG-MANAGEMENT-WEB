@@ -123,6 +123,31 @@ reserved bed held for that resident or for nobody. Delete: occupied/reserved →
 `PATCH rooms/{id}/` can't drop `sharing_type` below the bed count
 (`ROOM_CAPACITY_BELOW_BEDS`).
 
+Every bed object — on `GET/PATCH beds/{id}/` and inside `layout/` — carries
+`allowed_transitions: string[]`: the availability values a plain PATCH may
+move *this* bed to right now (`[]` for `occupied`). A client never hardcodes
+the table above; it renders only what `allowed_transitions` lists, and PATCH
+is the final authority regardless.
+
+## Web client note (2026-10-17)
+This contract backs a Next.js web client (`frontend/`) in addition to the
+Flutter app the roadmap was written for — same API, no per-client branching
+(frontend-plan.md §3.1a). Two additions landed for it, both backward
+compatible (existing fields unchanged):
+- `allowed_transitions` on beds (D9, above) — the frontend invariant F8
+  ("the frontend never invents transitions") needs a served source instead
+  of a copy of the table above.
+- `@extend_schema` response annotations on every endpoint in this doc that
+  returns a hand-built dict rather than a `ModelSerializer` (analytics
+  summary/trend, the property layout, cash-movements, the payment receipt,
+  the expense summary and attachment GET, and the resident finance block) —
+  so `/api/schema/` → `openapi-typescript` gives the web client a real type
+  instead of `unknown`. See each module's 2026-10-17 Decisions entry (hub:
+  Module 21) and `apps/reporting/tests/test_schema.py`.
+- The discount list (`GET /discounts/`) gained the same `resident_name,
+  property, property_name, room_number, bed_number` columns as invoices and
+  payments, plus a `?property=` filter — see Module 07.
+
 ## D5 — expenses
 See [20-expenses.md](modules/20-expenses.md). Permissions `view_expenses` /
 `manage_expenses` appear in `/auth/me/` `permissions` and as module `expenses`

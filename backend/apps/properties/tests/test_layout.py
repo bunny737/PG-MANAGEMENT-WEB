@@ -58,6 +58,12 @@ class LayoutTests(BillingAPITestCase):
         self.assertEqual(len(room['beds']), 4)
         self.assertEqual(data['buildings'][0]['floors'][0]['counts']['total'], 4)
         self.assertEqual(data['redacted'], [])
+        # allowed_transitions (D9/F8) travels with every bed in the layout too.
+        self.assertEqual(self.bed_row(data, self.beds[0])['allowed_transitions'], [])  # occupied
+        self.assertEqual(
+            sorted(self.bed_row(data, self.beds[1])['allowed_transitions']),  # maintenance
+            ['available', 'reserved'],
+        )
 
     def test_occupancy_rate_null_when_every_bed_is_under_maintenance(self):
         with tenant_context(self.tenant.id):

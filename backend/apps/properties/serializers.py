@@ -209,6 +209,7 @@ class BedSerializer(serializers.ModelSerializer):
     effective_rate_without_food = serializers.SerializerMethodField()
     current_occupant = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Bed
@@ -216,7 +217,7 @@ class BedSerializer(serializers.ModelSerializer):
             'id', 'room', 'bed_number',
             'rack_rate_with_food_override', 'rack_rate_without_food_override',
             'effective_rate_with_food', 'effective_rate_without_food',
-            'status', 'reserved_for', 'reserved_until',
+            'status', 'allowed_transitions', 'reserved_for', 'reserved_until',
             'current_occupant', 'history', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -261,6 +262,9 @@ class BedSerializer(serializers.ModelSerializer):
             if ret.get('current_occupant') and 'rent' in ret['current_occupant']:
                 ret['current_occupant'].pop('rent', None)
         return ret
+
+    def get_allowed_transitions(self, obj) -> list:
+        return obj.allowed_transitions()
 
     def get_effective_rate_with_food(self, obj) -> str:
         return str(obj.rack_rate(with_food=True))

@@ -253,6 +253,15 @@ class Bed(TenantModelMixin):
     def __str__(self):
         return f'{self.room.room_number} - {self.bed_number}'
 
+    def allowed_transitions(self):
+        """Status values a plain PATCH may move this bed to from here (D9).
+        Empty for `occupied` — those changes only happen through the
+        admission / transfer / vacate / absconded workflows. Both
+        BedSerializer and the property layout (D2) call this, so the two
+        can never serialize a transition PATCH would then reject."""
+        targets = {to for frm, to in self.MANUAL_TRANSITIONS if frm == self.status}
+        return [choice for choice, _label in self.Status.choices if choice in targets]
+
     def rack_rate(self, with_food):
         if with_food:
             return self.rack_rate_with_food_override or self.room.rack_rate_with_food

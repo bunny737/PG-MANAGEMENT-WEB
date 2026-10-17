@@ -462,3 +462,15 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
     just occupied + reserved — a room never has more beds than its sharing
     type (the existing `bed_capacity_exceeded` rule), so remove a vacant bed
     first.
+- 2026-10-17  UX roadmap web-client follow-up (S0b): both `BedSerializer`
+  and the layout's bed objects now carry a read-only `allowed_transitions`
+  (`Bed.allowed_transitions()`) — the status values a plain `PATCH
+  /beds/{id}/` may move *this* bed to right now, derived from
+  `MANUAL_TRANSITIONS`; `[]` for an occupied bed. One client (frontend-plan.md
+  F8: "the frontend never invents transitions") needs this because nothing in
+  the response otherwise says which of the four statuses a PATCH would
+  accept — the client would have to hardcode a copy of `MANUAL_TRANSITIONS`
+  and the two would drift. `test_bed_transitions.py::
+  test_allowed_transitions_matches_what_patch_accepts` asserts every value in
+  it actually succeeds via PATCH and every other value is rejected, for every
+  starting status — so the two can't drift silently.

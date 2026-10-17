@@ -46,6 +46,8 @@ const eslintConfig = defineConfig([
               "permission",
               "fallback",
               "statuses",
+              "anyOf",
+              "allOf",
             ],
           },
           "object-properties": {
@@ -116,6 +118,8 @@ const eslintConfig = defineConfig([
               "permission",
               "fallback",
               "statuses",
+              "anyOf",
+              "allOf",
             ],
           },
           "object-properties": {

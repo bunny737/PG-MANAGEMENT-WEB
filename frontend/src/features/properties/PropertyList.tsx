@@ -115,7 +115,7 @@ export function PropertyList() {
             <div className="p-5 space-y-4">
               <div>
                 <h3 className="text-lg font-bold text-ink hover:text-accent transition-colors">
-                  <Link href={`/properties/${property.id}/buildings`}>{property.name}</Link>
+                  <Link href={`/properties/${property.id}`}>{property.name}</Link>
                 </h3>
                 <p className="text-xs text-ink-muted mt-1 flex items-center gap-1.5">
                   <MapPin className="size-3.5 text-ink-faint shrink-0" />

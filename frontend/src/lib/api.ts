@@ -566,6 +566,8 @@ export interface Room {
   updated_at: string;
 }
 
+export type BedAvailability = "available" | "occupied" | "reserved" | "maintenance";
+
 export interface Bed {
   id: string;
   room: string;
@@ -574,7 +576,12 @@ export interface Bed {
   rack_rate_without_food_override: string | null;
   effective_rate_with_food: string;
   effective_rate_without_food: string;
-  status: "available" | "occupied" | "reserved" | "maintenance";
+  status: BedAvailability;
+  /** D9/F8 — the only statuses a plain PATCH may move this bed to right
+   * now; the client never infers this itself. Empty for `occupied`. */
+  allowed_transitions: BedAvailability[];
+  reserved_for?: string | null;
+  reserved_until?: string | null;
   current_occupant?: {
     id: string;
     first_name: string;
@@ -659,6 +666,104 @@ export function updateBed(bedId: string, payload: Partial<Bed>) {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+export function deleteBed(bedId: string) {
+  return apiFetch<void>(`/api/v1/beds/${bedId}/`, { method: "DELETE" });
+}
+
+// --- Property layout (D2; apps/properties/layout.py) ---
+
+export interface LayoutBedCounts {
+  total: number;
+  occupied: number;
+  reserved: number;
+  maintenance: number;
+  available: number;
+  occupancy_rate: number | null;
+}
+
+export interface LayoutResident {
+  id: string;
+  name: string;
+  phone: string;
+  status: string;
+  on_notice: boolean;
+  notice_date: string | null;
+  expected_vacate_date: string | null;
+  is_temporary: boolean;
+}
+
+export type LayoutPaymentStatus = "paid" | "upcoming" | "due" | "overdue" | "no_invoice";
+
+export interface LayoutPayment {
+  status: LayoutPaymentStatus;
+  period_balance: string;
+  overdue_balance: string;
+}
+
+export interface LayoutBed {
+  id: string;
+  bed_number: string;
+  availability: BedAvailability;
+  allowed_transitions: BedAvailability[];
+  reserved_for: { id: string; name: string | null } | null;
+  reserved_until: string | null;
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+  resident: LayoutResident | null;
+  payment: LayoutPayment | null;
+}
+
+export interface LayoutRoom {
+  id: string;
+  room_number: string;
+  sharing_type: number;
+  category: string;
+  status: string;
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+  counts: LayoutBedCounts;
+  beds: LayoutBed[];
+}
+
+export interface LayoutFloor {
+  id: string;
+  name: string;
+  order: number;
+  counts: LayoutBedCounts;
+  rooms: LayoutRoom[];
+}
+
+export interface LayoutBuilding {
+  id: string;
+  name: string;
+  order: number;
+  counts: LayoutBedCounts;
+  floors: LayoutFloor[];
+}
+
+export interface LayoutFinance {
+  outstanding_total: string;
+  overdue_total: string;
+  open_invoice_count: number;
+  residents_with_balance_count: number;
+  occupied_beds_with_balance_count: number;
+}
+
+export interface PropertyLayout {
+  property: { id: string; name: string };
+  period: string;
+  as_of: string;
+  due_soon_days: number;
+  counts: LayoutBedCounts;
+  finance: LayoutFinance | null;
+  buildings: LayoutBuilding[];
+  redacted: string[];
+}
+
+export function getPropertyLayout(propertyId: string, period?: string) {
+  return apiFetch<PropertyLayout>(`/api/v1/properties/${propertyId}/layout/${buildQuery({ period })}`);
 }
 
 /** D6 (GET /residents/{id}/, detail only) — apps/residents/finance.py. */

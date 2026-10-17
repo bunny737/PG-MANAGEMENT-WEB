@@ -15,6 +15,15 @@
     "successToast": "टेनेंट की डिफ़ॉल्ट भाषा सफलतापूर्वक अपडेट की गई।",
     "errorToast": "टेनेंट की डिफ़ॉल्ट भाषा अपडेट नहीं की जा सकी।"
   },
+  "fiscalYear": {
+    "title": "Fiscal Year",
+    "subtitle": "The month your financial year starts — drives the Year-to-Date figures on Reports.",
+    "label": "Fiscal Year Start Month",
+    "button": "Update Fiscal Year",
+    "saving": "Saving...",
+    "successToast": "Fiscal year start month updated successfully.",
+    "errorToast": "Could not update the fiscal year start month."
+  },
   "global": {
     "profilesTitle": "संपत्ति कॉन्फ़िगरेशन प्रोफ़ाइल",
     "profilesSub": "सेटअप और बिलिंग नीतियों को कॉन्फ़िगर करने के लिए सेटिंग्स डैशबोर्ड चुनें।",

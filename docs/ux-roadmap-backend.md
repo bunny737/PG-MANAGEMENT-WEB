@@ -148,6 +148,14 @@ compatible (existing fields unchanged):
   property, property_name, room_number, bed_number` columns as invoices and
   payments, plus a `?property=` filter — see Module 07.
 
+**The web client itself** (`/billing`, `/expenses`, `/reports`, the
+`/properties/{id}` bed grid, the residents/dashboard rework) is `feature/
+ux-roadmap-web`, branched from this one — see `docs/frontend-plan.md` §11's
+2026-10-17 rows for what shipped, what was deliberately deferred (invoice
+PDF, waive-with-note, refunds/credits, a reserve-for-resident dialog), and
+the type-generation reversal (schema generated and committed, but existing
+hand-written types in `lib/api.ts` weren't migrated to it).
+
 ## D5 — expenses
 See [20-expenses.md](modules/20-expenses.md). Permissions `view_expenses` /
 `manage_expenses` appear in `/auth/me/` `permissions` and as module `expenses`

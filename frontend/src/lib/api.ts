@@ -1186,6 +1186,8 @@ export interface TenantDetails {
   status: string;
   default_language: string;
   trial_ends_at?: string;
+  /** 1-12 (default 4, April) — drives analytics' YTD window (D0/D1). */
+  fiscal_year_start_month: number;
 }
 
 export interface CurrentUser {
@@ -1222,6 +1224,17 @@ export function updateTenantDefaultLanguage(default_language: string) {
   return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
     method: "PATCH",
     body: JSON.stringify({ default_language }),
+  });
+}
+
+export function getCurrentTenant() {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/");
+}
+
+export function updateTenantFiscalYearStart(fiscal_year_start_month: number) {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
+    method: "PATCH",
+    body: JSON.stringify({ fiscal_year_start_month }),
   });
 }
 

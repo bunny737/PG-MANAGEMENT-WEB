@@ -301,18 +301,19 @@ class CurrentTenantView(RetrieveUpdateAPIView):
 
     def partial_update(self, request, *args, **kwargs):
         tenant = self.get_object()
-        old_lang = tenant.default_language
+        audited = TenantUpdateSerializer.Meta.fields
+        old = {field: getattr(tenant, field) for field in audited}
         serializer = self.get_serializer(tenant, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        new_lang = serializer.validated_data.get('default_language', None)
         serializer.save()
-        if new_lang is not None and old_lang != new_lang:
+        changed = [field for field in audited if getattr(tenant, field) != old[field]]
+        if changed:
             audit_log.record(
                 action='tenant.updated',
                 actor=request.user,
                 obj=tenant,
-                before={'default_language': old_lang},
-                after={'default_language': new_lang},
+                before={field: old[field] for field in changed},
+                after={field: getattr(tenant, field) for field in changed},
                 request=request,
             )
         return Response(TenantSerializer(tenant).data)

@@ -13,7 +13,9 @@ export interface OccupancySummary {
 
 export interface FinancialsSummary {
   monthlyRevenue: string;
-  revenueDelta: { direction: "up" | "down"; label: string };
+  /** Omitted: computing it needs a second analytics call (last month's
+   * cash_collected) the dashboard doesn't make yet — see Decisions. */
+  revenueDelta?: { direction: "up" | "down"; label: string };
   outstandingDues: string;
   securityDeposits: string;
 }

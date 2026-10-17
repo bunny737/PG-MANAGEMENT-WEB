@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'apps.audit',
     'apps.reporting',
     'apps.devices',
+    'apps.expenses',
 ]
 
 MIDDLEWARE = [
@@ -278,6 +279,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Expense receipts/bills (Module 20). Upload size is a technical limit, not a
+# plan limit. Attachments are only ever handed out as signed URLs with this
+# lifetime (S3); local dev storage serves plain media URLs.
+EXPENSE_ATTACHMENT_MAX_BYTES = env.int('EXPENSE_ATTACHMENT_MAX_BYTES', default=5 * 1024 * 1024)
+EXPENSE_ATTACHMENT_URL_TTL_SECONDS = env.int('EXPENSE_ATTACHMENT_URL_TTL_SECONDS', default=300)
 
 # AWS S3 (locked stack — resident ID document uploads etc.). Falls back to
 # local filesystem storage when no bucket is configured (dev/test), so this

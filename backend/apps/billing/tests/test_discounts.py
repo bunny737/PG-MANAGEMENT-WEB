@@ -176,3 +176,60 @@ class DiscountManagementTests(BillingAPITestCase):
         self.authenticate(other_owner)
         response = self.client.get(reverse('discount-detail', args=[discount.id]))
         self.assertEqual(response.status_code, 404)
+
+
+class DiscountReportTests(BillingAPITestCase):
+    """UX roadmap FE-07: the discount report needs the same who/where
+    columns as invoices and payments, plus a ?property= filter."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.resident = self.create_resident(self.property)
+        bed = self.create_bed(self.create_room(self.create_floor(self.property), room_number='101'))
+        self.check_in(self.resident, bed)
+        self.discount = self.create_discount(self.resident)
+        self.authenticate(self.owner)
+
+    def test_row_carries_resident_and_location_context(self):
+        row = self.client.get(reverse('discount-list')).data[0]
+        self.assertEqual(row['resident_name'], str(self.resident))
+        self.assertEqual(row['property'], str(self.property.id))
+        self.assertEqual(row['property_name'], self.property.name)
+        self.assertEqual(row['room_number'], '101')
+        self.assertIsNotNone(row['bed_number'])
+
+    def test_property_filter(self):
+        other_property = self.create_property(self.tenant, name='Other Property')
+        other_resident = self.create_resident(other_property, phone='9000000003')
+        self.create_discount(other_resident)
+
+        response = self.client.get(reverse('discount-list'), {'property': str(self.property.id)})
+        self.assertEqual([row['id'] for row in response.data], [str(self.discount.id)])
+
+        response = self.client.get(reverse('discount-list'), {'property': str(other_property.id)})
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]['resident']), str(other_resident.id))
+
+    def test_list_does_not_n_plus_one(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as before:
+            self.client.get(reverse('discount-list'))
+
+        for i in range(3):
+            resident = self.create_resident(self.property, phone=f'90000000{i:02d}')
+            floor = self.create_floor(self.property, order=i + 1)  # setUp's floor already used order=0
+            bed = self.create_bed(self.create_room(floor, room_number=f'20{i}'))
+            self.check_in(resident, bed)
+            self.create_discount(resident, valid_from=self.discount.valid_from)
+
+        with CaptureQueriesContext(connection) as after:
+            self.client.get(reverse('discount-list'))
+
+        # 4x the rows must not mean 4x the queries — select_related covers
+        # the resident/property/room/bed walk the context mixin needs.
+        self.assertEqual(len(after.captured_queries), len(before.captured_queries))

@@ -49,6 +49,10 @@ class PlatformConfig(models.Model):
     # sent to Razorpay at all (invariant 10 — Razorpay's minimum chargeable
     # amount is a platform config value, not a literal in services.py).
     min_billable_amount = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    # Property layout (D2): an unpaid invoice whose due date is at most this
+    # many days away (or already passed but not yet overdue) shows as "due"
+    # rather than "upcoming" on the bed grid.
+    payment_due_soon_days = models.PositiveIntegerField(default=7)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

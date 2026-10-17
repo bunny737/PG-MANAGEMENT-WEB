@@ -11,6 +11,9 @@
     "staff": "Staff",
     "complaints": "Complaints",
     "financials": "Financials",
+    "billing": "Billing",
+    "expenses": "Expenses",
+    "reports": "Reports",
     "settings": "Settings",
     "more": "More"
   },
@@ -52,6 +55,20 @@
   "emptyState": {
     "noData": "No items found",
     "noDataSub": "There are no entries to display at this time."
+  },
+  "propertyFilter": {
+    "all": "All properties",
+    "accessRevoked": "Your access to the previously selected property was removed — showing All properties."
+  },
+  "sectionState": {
+    "error": "Couldn't load this.",
+    "retry": "Retry"
+  },
+  "contactActions": {
+    "group": "Contact",
+    "call": "Call",
+    "whatsapp": "WhatsApp",
+    "sms": "SMS"
   }
 }
 

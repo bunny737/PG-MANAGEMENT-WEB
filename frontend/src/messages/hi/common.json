@@ -11,6 +11,9 @@
     "staff": "स्टाफ",
     "complaints": "शिकायतें",
     "financials": "वित्तीय विवरण",
+    "billing": "Billing",
+    "expenses": "Expenses",
+    "reports": "Reports",
     "settings": "सेटिंग्स",
     "more": "अधिक"
   },
@@ -52,5 +55,19 @@
   "emptyState": {
     "noData": "कोई आइटम नहीं मिला",
     "noDataSub": "इस समय प्रदर्शित करने के लिए कोई प्रविष्टि नहीं है।"
+  },
+  "propertyFilter": {
+    "all": "सभी प्रॉपर्टी",
+    "accessRevoked": "पहले चुनी गई प्रॉपर्टी तक आपकी पहुंच हटा दी गई — सभी प्रॉपर्टी दिखाई जा रही हैं।"
+  },
+  "sectionState": {
+    "error": "इसे लोड नहीं किया जा सका।",
+    "retry": "पुनः प्रयास करें"
+  },
+  "contactActions": {
+    "group": "संपर्क करें",
+    "call": "कॉल करें",
+    "whatsapp": "व्हाट्सऐप",
+    "sms": "एसएमएस"
   }
 }

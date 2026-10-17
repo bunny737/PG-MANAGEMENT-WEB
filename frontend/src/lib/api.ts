@@ -9,6 +9,7 @@
 // this app is exposed beyond a developer's machine.
 
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
+import { awaitPendingPurge, runSessionCleanups } from "@/lib/sessionPurge";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -87,7 +88,18 @@ export function setTokens(access: string, refresh: string) {
   localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
 }
 
-export function clearSession() {
+/**
+ * Purges the session (invariant F7 — no tenant data survives logout or an
+ * account switch). Tokens/permissions/session keys are removed and
+ * `session-changed` is dispatched synchronously, before anything is
+ * awaited, so no request already in flight can authenticate as the old
+ * user once this starts. It then awaits every other registered cleanup
+ * step (query cache, Zustand stores, Cache Storage, IndexedDB — see
+ * lib/sessionPurge.ts) through `Promise.allSettled`, so one failing step
+ * never skips the rest. Callers should `await` this before navigating
+ * away, so the next screen never renders with the old session's cache.
+ */
+export async function clearSession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem("isLoggedIn");
@@ -95,13 +107,13 @@ export function clearSession() {
   localStorage.removeItem("userName");
   localStorage.removeItem("currentUser");
   localStorage.removeItem(PERMISSIONS_KEY);
-  // Invariant F7: no tenant data survives logout.
   for (const key of Object.keys(sessionStorage)) {
     if (key.startsWith(FEATURE_DRAFT_PREFIX)) sessionStorage.removeItem(key);
   }
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("session-changed"));
   }
+  await runSessionCleanups();
 }
 
 async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
@@ -161,7 +173,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   if (res.status === 401 && !options.skipAuth && !_isRetry) {
     const newToken = await refreshAccessToken();
     if (newToken) return apiFetch<T>(path, options, true);
-    clearSession();
+    await clearSession();
     if (typeof window !== "undefined") window.location.href = "/login";
     throw new ApiError(401, { detail: "Session expired" });
   }
@@ -179,7 +191,106 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   return (await res.json()) as T;
 }
 
+/**
+ * Like `apiFetch`, but also returns the response headers and status —
+ * for endpoints a plain JSON body doesn't fully describe, such as
+ * `Idempotent-Replayed: true` on a replayed `POST /payments/` or
+ * `POST /expenses/`. Shares `apiFetch`'s auth/401-refresh handling by
+ * delegating the actual request to a private helper isn't worth the
+ * duplication here, so this re-implements the same flow; keep the two in
+ * sync if that logic changes.
+ */
+export async function apiFetchWithMeta<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+  _isRetry = false
+): Promise<{ data: T; headers: Headers; status: number }> {
+  const isFormData = options.body instanceof FormData;
+  const headers = new Headers(options.headers);
+  if (!isFormData && options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", currentLocale);
+  }
+  if (!options.skipAuth) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch {
+    throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
+  }
+
+  if (res.status === 401 && !options.skipAuth && !_isRetry) {
+    const newToken = await refreshAccessToken();
+    if (newToken) return apiFetchWithMeta<T>(path, options, true);
+    await clearSession();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new ApiError(401, { detail: "Session expired" });
+  }
+
+  if (!res.ok) {
+    if (res.status === 403 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+    }
+    throw new ApiError(res.status, await parseErrorBody(res));
+  }
+
+  const data = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  return { data, headers: res.headers, status: res.status };
+}
+
+/**
+ * Downloads a binary export (CSV/XLSX/PDF) and returns it as a blob plus
+ * the filename from `Content-Disposition`, for `/exports/*` and the PDF
+ * receipt (`?filetype=pdf`). Callers turn the blob into an anchor-click
+ * download or a `navigator.share` call.
+ */
+export async function apiDownload(
+  path: string
+): Promise<{ blob: Blob; filename: string }> {
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  headers.set("Accept-Language", currentLocale);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  } catch {
+    throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
+  }
+
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers.set("Authorization", `Bearer ${newToken}`);
+      res = await fetch(`${API_BASE_URL}${path}`, { headers });
+    } else {
+      await clearSession();
+      if (typeof window !== "undefined") window.location.href = "/login";
+      throw new ApiError(401, { detail: "Session expired" });
+    }
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorBody(res));
+  }
+
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const filename = match?.[1] ?? "download";
+  return { blob: await res.blob(), filename };
+}
+
 export async function login(email: string, password: string) {
+  await awaitPendingPurge();
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login/", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -202,6 +313,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function loginPhone(phone: string, password: string) {
+  await awaitPendingPurge();
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login-phone/", {
     method: "POST",
     body: JSON.stringify({ phone, password }),
@@ -454,6 +566,8 @@ export interface Room {
   updated_at: string;
 }
 
+export type BedAvailability = "available" | "occupied" | "reserved" | "maintenance";
+
 export interface Bed {
   id: string;
   room: string;
@@ -462,7 +576,12 @@ export interface Bed {
   rack_rate_without_food_override: string | null;
   effective_rate_with_food: string;
   effective_rate_without_food: string;
-  status: "available" | "occupied" | "reserved" | "maintenance";
+  status: BedAvailability;
+  /** D9/F8 — the only statuses a plain PATCH may move this bed to right
+   * now; the client never infers this itself. Empty for `occupied`. */
+  allowed_transitions: BedAvailability[];
+  reserved_for?: string | null;
+  reserved_until?: string | null;
   current_occupant?: {
     id: string;
     first_name: string;
@@ -549,6 +668,133 @@ export function updateBed(bedId: string, payload: Partial<Bed>) {
   });
 }
 
+export function deleteBed(bedId: string) {
+  return apiFetch<void>(`/api/v1/beds/${bedId}/`, { method: "DELETE" });
+}
+
+// --- Property layout (D2; apps/properties/layout.py) ---
+
+export interface LayoutBedCounts {
+  total: number;
+  occupied: number;
+  reserved: number;
+  maintenance: number;
+  available: number;
+  occupancy_rate: number | null;
+}
+
+export interface LayoutResident {
+  id: string;
+  name: string;
+  phone: string;
+  status: string;
+  on_notice: boolean;
+  notice_date: string | null;
+  expected_vacate_date: string | null;
+  is_temporary: boolean;
+}
+
+export type LayoutPaymentStatus = "paid" | "upcoming" | "due" | "overdue" | "no_invoice";
+
+export interface LayoutPayment {
+  status: LayoutPaymentStatus;
+  period_balance: string;
+  overdue_balance: string;
+}
+
+export interface LayoutBed {
+  id: string;
+  bed_number: string;
+  availability: BedAvailability;
+  allowed_transitions: BedAvailability[];
+  reserved_for: { id: string; name: string | null } | null;
+  reserved_until: string | null;
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+  resident: LayoutResident | null;
+  payment: LayoutPayment | null;
+}
+
+export interface LayoutRoom {
+  id: string;
+  room_number: string;
+  sharing_type: number;
+  category: string;
+  status: string;
+  rack_rate_with_food: string;
+  rack_rate_without_food: string;
+  counts: LayoutBedCounts;
+  beds: LayoutBed[];
+}
+
+export interface LayoutFloor {
+  id: string;
+  name: string;
+  order: number;
+  counts: LayoutBedCounts;
+  rooms: LayoutRoom[];
+}
+
+export interface LayoutBuilding {
+  id: string;
+  name: string;
+  order: number;
+  counts: LayoutBedCounts;
+  floors: LayoutFloor[];
+}
+
+export interface LayoutFinance {
+  outstanding_total: string;
+  overdue_total: string;
+  open_invoice_count: number;
+  residents_with_balance_count: number;
+  occupied_beds_with_balance_count: number;
+}
+
+export interface PropertyLayout {
+  property: { id: string; name: string };
+  period: string;
+  as_of: string;
+  due_soon_days: number;
+  counts: LayoutBedCounts;
+  finance: LayoutFinance | null;
+  buildings: LayoutBuilding[];
+  redacted: string[];
+}
+
+export function getPropertyLayout(propertyId: string, period?: string) {
+  return apiFetch<PropertyLayout>(`/api/v1/properties/${propertyId}/layout/${buildQuery({ period })}`);
+}
+
+/** D6 (GET /residents/{id}/, detail only) — apps/residents/finance.py. */
+export interface ResidentFinanceCurrentPeriodInvoice {
+  id: string;
+  period_start: string;
+  period_end: string;
+  total: string;
+  paid: string;
+  balance: string;
+  due_date: string;
+  status: InvoiceStatus;
+  is_overdue: boolean;
+}
+
+export interface ResidentFinance {
+  current_period: {
+    period: string;
+    invoices: ResidentFinanceCurrentPeriodInvoice[];
+    total: string;
+    paid: string;
+    balance: string;
+    status: "no_invoice" | "paid" | "partially_paid" | "unpaid" | "overdue";
+    has_draft: boolean;
+  };
+  outstanding_total: string;
+  overdue_total: string;
+  prior_outstanding: string;
+  last_payment_date: string | null;
+}
+
 export interface Resident {
   id: string;
   property: string;
@@ -569,25 +815,29 @@ export interface Resident {
   passport_number: string;
   employee_id: string;
   student_id: string;
+  /** "Room {n}" / "Not Allocated" — a display string, not a raw room number. */
   unit?: string;
+  /** The building name, or "" when unallocated. */
   block?: string;
   move_in_date?: string;
-  joining_date?: string;
-  rent?: string;
-  deposit?: string;
-  rent_type?: string;
-  invoices?: Array<{
-    id: string;
-    invoice_number?: string;
-    billing_period_start?: string;
-    billing_period_end?: string;
-    total_amount?: string;
-    status: string;
-    payment_mode?: string;
-  }>;
-  complaints?: Complaint[];
+  /** Present only with view_finance. */
+  contracted_rent?: string | null;
+  /** Present only with view_finance. */
+  billing_mode?: string | null;
+  food_preference?: string | null;
+  joining_date?: string | null;
+  /** Present only with view_finance or manage_deposits. */
+  security_deposit_amount?: string | null;
+  advance_amount?: string | null;
+  advance_refundable?: boolean | null;
+  room_number?: string | null;
+  bed_number?: string | null;
   created_at: string;
   updated_at: string;
+  /** Detail only (GET /residents/{id}/): present with view_finance, else
+   * null and "finance" is listed in `redacted`. */
+  finance?: ResidentFinance | null;
+  redacted?: string[];
 }
 
 export interface Admission {
@@ -608,15 +858,16 @@ export interface Admission {
   updated_at: string;
 }
 
-export function listResidents(propertyId?: string, status?: string) {
+export function listResidents(propertyId?: string, status?: string, search?: string) {
   if (propertyId && !isUUID(propertyId)) return Promise.resolve([]);
   let url = "/api/v1/residents/";
   const params = new URLSearchParams();
   if (propertyId) params.append("property", propertyId);
   if (status && status !== "all") params.append("status", status);
+  if (search) params.append("search", search);
   const q = params.toString();
   if (q) url += `?${q}`;
-  
+
   return apiFetch<Resident[] | { results: Resident[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -935,6 +1186,8 @@ export interface TenantDetails {
   status: string;
   default_language: string;
   trial_ends_at?: string;
+  /** 1-12 (default 4, April) — drives analytics' YTD window (D0/D1). */
+  fiscal_year_start_month: number;
 }
 
 export interface CurrentUser {
@@ -974,42 +1227,362 @@ export function updateTenantDefaultLanguage(default_language: string) {
   });
 }
 
-export interface Invoice {
+export function getCurrentTenant() {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/");
+}
+
+export function updateTenantFiscalYearStart(fiscal_year_start_month: number) {
+  return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
+    method: "PATCH",
+    body: JSON.stringify({ fiscal_year_start_month }),
+  });
+}
+
+// --- Billing (UX roadmap D3/D4/D6/D7; see docs/ux-roadmap-backend.md) ---
+
+export type InvoiceStatus = "draft" | "issued" | "partially_paid" | "paid";
+export type PaymentMode = "upi" | "cash" | "bank_transfer" | "card" | "cheque";
+export type LineType =
+  | "accommodation"
+  | "food"
+  | "electricity"
+  | "water"
+  | "laundry"
+  | "addon"
+  | "additional"
+  | "discount";
+
+export interface InvoiceLineItem {
   id: string;
+  line_type: LineType;
+  label: string;
+  amount: string;
+  order: number;
+}
+
+/** Every finance list row (invoices, payments, discounts) carries these so
+ * it renders without a second lookup (ResidentContextMixin on the backend). */
+interface ResidentContext {
   resident: string;
+  resident_name: string;
+  property: string;
+  property_name: string;
+  room_number: string | null;
+  bed_number: string | null;
+}
+
+export interface Invoice extends ResidentContext {
+  id: string;
   period_start: string;
   period_end: string;
   billing_mode: string;
-  issue_date: string;
+  issue_date: string | null;
   due_date: string;
-  status: "draft" | "issued" | "paid" | "partially_paid" | "void";
+  status: InvoiceStatus;
+  notes: string;
+  created_by: string | null;
+  line_items: InvoiceLineItem[];
   total: string;
   amount_paid: string;
   balance_due: string;
+  /** min(amount_paid, total) — sums to analytics' period_collected under ?period= (D0). */
+  capped_allocated: string;
   is_overdue: boolean;
   created_at: string;
+  updated_at: string;
 }
 
-export interface Payment {
+export interface Payment extends ResidentContext {
   id: string;
+  receipt_number: string | null;
   invoice: string;
-  payment_date: string;
-  payment_mode: string;
+  invoice_period_start: string;
+  invoice_period_end: string;
   amount: string;
-  reference_number?: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference: string;
+  recorded_by: string | null;
+  recorded_by_name: string | null;
   created_at: string;
+  updated_at: string;
 }
 
+export interface InvoiceFilters {
+  property?: string;
+  resident?: string;
+  /** Comma list of draft/issued/partially_paid/paid, or the alias "outstanding"/"overdue" alone. */
+  status?: string;
+  /** YYYY-MM */
+  period?: string;
+  billing_mode?: string;
+  search?: string;
+  [key: string]: string | undefined;
+}
+
+function buildQuery(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.append(key, value);
+  }
+  const q = search.toString();
+  return q ? `?${q}` : "";
+}
+
+export function listInvoicesFiltered(filters: InvoiceFilters = {}) {
+  const url = `/api/v1/invoices/${buildQuery(filters)}`;
+  return apiFetch<Invoice[] | { results: Invoice[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+/** Back-compat alias: the dashboard's existing unfiltered call. */
 export function listInvoices() {
-  return apiFetch<Invoice[] | { results: Invoice[] }>("/api/v1/invoices/").then((data) =>
+  return listInvoicesFiltered();
+}
+
+export function getInvoice(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/`);
+}
+
+export interface InvoiceGeneratePayload {
+  resident: string;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+  billing_mode?: string;
+}
+
+export function generateInvoice(payload: InvoiceGeneratePayload) {
+  return apiFetch<Invoice>("/api/v1/invoices/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface InvoiceBulkGeneratePayload {
+  property: string;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+}
+
+export function bulkGenerateInvoices(payload: InvoiceBulkGeneratePayload) {
+  return apiFetch<{ created: number; invoices: Invoice[] }>("/api/v1/invoices/bulk-generate/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInvoiceDraft(id: string, payload: { due_date?: string; notes?: string }) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteInvoiceDraft(id: string) {
+  return apiFetch<void>(`/api/v1/invoices/${id}/`, { method: "DELETE" });
+}
+
+export function issueInvoice(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/issue/`, { method: "POST" });
+}
+
+export function addInvoiceLineItem(
+  invoiceId: string,
+  payload: { line_type: LineType; label: string; amount: string; order?: number }
+) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInvoiceLineItem(
+  invoiceId: string,
+  lineId: string,
+  payload: Partial<{ line_type: LineType; label: string; amount: string; order: number }>
+) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/${lineId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteInvoiceLineItem(invoiceId: string, lineId: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/${lineId}/`, { method: "DELETE" });
+}
+
+export interface PaymentFilters {
+  property?: string;
+  resident?: string;
+  invoice?: string;
+  payment_mode?: string;
+  /** YYYY-MM */
+  month?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+  [key: string]: string | undefined;
+}
+
+export function listPaymentsFiltered(filters: PaymentFilters = {}) {
+  const url = `/api/v1/payments/${buildQuery(filters)}`;
+  return apiFetch<Payment[] | { results: Payment[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
 }
 
+/** Back-compat alias: the dashboard's existing unfiltered call. */
 export function listPayments() {
-  return apiFetch<Payment[] | { results: Payment[] }>("/api/v1/payments/").then((data) =>
+  return listPaymentsFiltered();
+}
+
+export interface PaymentCreatePayload {
+  invoice: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference?: string;
+}
+
+/** Records a payment with the given Idempotency-Key. Returns the payment
+ * plus whether this call replayed an earlier one with the same key (D3) —
+ * both a 201 and a 200 replay resolve here; only OVERPAYMENT/
+ * IDEMPOTENCY_KEY_REUSED (409) and validation errors throw. */
+export async function createPayment(payload: PaymentCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<Payment>("/api/v1/payments/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
+export function deletePayment(id: string) {
+  return apiFetch<void>(`/api/v1/payments/${id}/`, { method: "DELETE" });
+}
+
+export interface Receipt {
+  receipt_for: string;
+  receipt_number: string | null;
+  resident: string;
+  resident_id: string;
+  property: string;
+  property_name: string;
+  room_number: string | null;
+  bed_number: string | null;
+  invoice: string;
+  period_start: string;
+  period_end: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference: string;
+  recorded_by: string | null;
+  recorded_by_name: string | null;
+  created_at: string;
+  invoice_total: string;
+  invoice_paid: string;
+  invoice_balance_due: string;
+  invoice_status: InvoiceStatus;
+}
+
+export function getReceipt(paymentId: string) {
+  return apiFetch<Receipt>(`/api/v1/payments/${paymentId}/receipt/`);
+}
+
+export function downloadReceiptPdf(paymentId: string) {
+  return apiDownload(`/api/v1/payments/${paymentId}/receipt/?filetype=pdf`);
+}
+
+export interface CashMovementRow {
+  type: "payment";
+  id: string;
+  date: string;
+  amount: string;
+  receipt_number: string | null;
+  payment_mode: PaymentMode;
+  invoice: string;
+  resident: string;
+  resident_name: string;
+  property: string;
+  property_name: string;
+}
+
+export interface CashMovements {
+  from: string;
+  to: string;
+  gross_receipts: string;
+  refunds_paid: string;
+  total: string;
+  count: number;
+  results: CashMovementRow[];
+}
+
+export function getCashMovements(filters: { property?: string; month?: string; from?: string; to?: string } = {}) {
+  return apiFetch<CashMovements>(`/api/v1/cash-movements/${buildQuery(filters)}`);
+}
+
+export type DiscountType = "fixed" | "percentage";
+export type DiscountReason = "loyalty" | "referral" | "corporate" | "negotiated" | "seasonal" | "other";
+
+export interface Discount extends ResidentContext {
+  id: string;
+  discount_type: DiscountType;
+  discount_value: string;
+  reason: DiscountReason;
+  note: string;
+  valid_from: string;
+  valid_until: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscountFilters {
+  property?: string;
+  resident?: string;
+  reason?: string;
+  discount_type?: string;
+  [key: string]: string | undefined;
+}
+
+export function listDiscountsFiltered(filters: DiscountFilters = {}) {
+  const url = `/api/v1/discounts/${buildQuery(filters)}`;
+  return apiFetch<Discount[] | { results: Discount[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+export interface DiscountCreatePayload {
+  resident: string;
+  discount_type: DiscountType;
+  discount_value: string;
+  reason: DiscountReason;
+  note?: string;
+  valid_from: string;
+  valid_until?: string;
+}
+
+export function createDiscount(payload: DiscountCreatePayload) {
+  return apiFetch<Discount>("/api/v1/discounts/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateDiscount(id: string, payload: Partial<DiscountCreatePayload>) {
+  return apiFetch<Discount>(`/api/v1/discounts/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Discounts have no delete endpoint — "end" one by setting valid_until. */
+export function endDiscount(id: string, validUntil: string) {
+  return updateDiscount(id, { valid_until: validUntil });
 }
 
 export function listAdmissions() {
@@ -1028,6 +1601,266 @@ export function listAllBeds() {
   return apiFetch<Bed[] | { results: Bed[] }>("/api/v1/beds/").then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+// --- Analytics (D0/D1; apps/reporting/analytics.py) ---
+
+export interface AnalyticsOccupancy {
+  total: number;
+  occupied: number;
+  reserved: number;
+  maintenance: number;
+  available: number;
+  occupancy_rate: number | null;
+}
+
+export interface AnalyticsFinance {
+  gross_receipts: string;
+  refunds_paid: string;
+  cash_collected: string;
+  period_invoiced: string;
+  period_collected: string;
+  collection_rate: number | null;
+  outstanding_total: string;
+  period_outstanding: string;
+  overdue_total: string;
+  open_invoice_count: number;
+  residents_with_balance_count: number;
+  occupied_beds_with_balance_count: number;
+  deposits_held: string;
+  ytd_cash_collected: string;
+}
+
+export interface AnalyticsExpenses {
+  expenses_paid: string;
+  ytd_expenses_paid: string;
+}
+
+export interface AnalyticsCashFlow {
+  net_cash_flow: string;
+  ytd_net_cash_flow: string;
+}
+
+export interface AnalyticsSummary {
+  month: string;
+  property: string | null;
+  timezones: string[];
+  balances_as_of: string;
+  ytd: { start: string; end: string };
+  occupancy: AnalyticsOccupancy;
+  finance: AnalyticsFinance | null;
+  expenses: AnalyticsExpenses | null;
+  cash_flow: AnalyticsCashFlow | null;
+  redacted: string[];
+}
+
+export function getAnalyticsSummary(filters: { property?: string; month?: string } = {}) {
+  return apiFetch<AnalyticsSummary>(`/api/v1/analytics/summary/${buildQuery(filters)}`);
+}
+
+export interface AnalyticsTrendPoint {
+  month: string;
+  finance: Pick<AnalyticsFinance, "gross_receipts" | "refunds_paid" | "cash_collected" | "period_invoiced" | "period_collected" | "collection_rate"> | null;
+  expenses: AnalyticsExpenses | null;
+  cash_flow: AnalyticsCashFlow | null;
+}
+
+export interface AnalyticsTrend {
+  end: string;
+  months: number;
+  property: string | null;
+  timezones: string[];
+  series: AnalyticsTrendPoint[];
+  redacted: string[];
+}
+
+export function getAnalyticsTrend(filters: { property?: string; end?: string; months?: string } = {}) {
+  return apiFetch<AnalyticsTrend>(`/api/v1/analytics/trend/${buildQuery(filters)}`);
+}
+
+// --- Expenses (D5, Module 20) ---
+
+export type ExpenseMode = "upi" | "cash" | "bank_transfer" | "card" | "cheque" | "other";
+
+export interface ExpenseCategory {
+  id: string;
+  code: string;
+  name: string;
+  label: string;
+  is_system: boolean;
+  is_archived: boolean;
+  order: number;
+  created_at: string;
+}
+
+export interface Expense {
+  id: string;
+  property: string;
+  property_name: string;
+  category: string;
+  category_name: string;
+  category_code: string | null;
+  amount: string;
+  date: string;
+  payment_mode: ExpenseMode;
+  note: string;
+  has_attachment: boolean;
+  attachment_content_type: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Idempotent replay (D5) — not a server field; set by createExpense(). */
+  replayed?: boolean;
+}
+
+export interface ExpenseFilters {
+  property?: string;
+  category?: string;
+  payment_mode?: string;
+  search?: string;
+  /** YYYY-MM */
+  month?: string;
+  from?: string;
+  to?: string;
+  [key: string]: string | undefined;
+}
+
+export function listExpensesFiltered(filters: ExpenseFilters = {}) {
+  const url = `/api/v1/expenses/${buildQuery(filters)}`;
+  return apiFetch<Expense[] | { results: Expense[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listExpenseCategories() {
+  return apiFetch<ExpenseCategory[] | { results: ExpenseCategory[] }>(
+    "/api/v1/expense-categories/?include_archived=true"
+  ).then((data) => (Array.isArray(data) ? data : data.results));
+}
+
+export function createExpenseCategory(name: string) {
+  return apiFetch<ExpenseCategory>("/api/v1/expense-categories/", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function archiveExpenseCategory(id: string) {
+  return apiFetch<ExpenseCategory>(`/api/v1/expense-categories/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_archived: true }),
+  });
+}
+
+export interface ExpenseCreatePayload {
+  property: string;
+  category: string;
+  amount: string;
+  date: string;
+  payment_mode: ExpenseMode;
+  note?: string;
+  attachment?: File;
+}
+
+function expenseFormData(payload: ExpenseCreatePayload | Partial<ExpenseCreatePayload>): FormData {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    form.append(key, value instanceof File ? value : String(value));
+  }
+  return form;
+}
+
+/** Records an expense with the given Idempotency-Key. Returns the expense
+ * plus whether this call replayed an earlier one with the same key (D5). */
+export async function createExpense(payload: ExpenseCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<Expense>("/api/v1/expenses/", {
+    method: "POST",
+    body: expenseFormData(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { expense: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
+export function updateExpense(id: string, payload: Partial<Omit<ExpenseCreatePayload, "attachment">>) {
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteExpense(id: string) {
+  return apiFetch<void>(`/api/v1/expenses/${id}/`, { method: "DELETE" });
+}
+
+export interface ExpenseAttachment {
+  url: string;
+  content_type: string;
+  expires_in: number;
+}
+
+export function getExpenseAttachment(id: string) {
+  return apiFetch<ExpenseAttachment>(`/api/v1/expenses/${id}/attachment/`);
+}
+
+export function replaceExpenseAttachment(id: string, file: File) {
+  const form = new FormData();
+  form.append("attachment", file);
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/attachment/`, { method: "PUT", body: form });
+}
+
+export function removeExpenseAttachment(id: string) {
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/attachment/`, { method: "DELETE" });
+}
+
+export interface ExpenseCategoryTotal {
+  category: string;
+  name: string;
+  code: string | null;
+  total: string;
+  count: number;
+}
+
+export interface ExpenseSummary {
+  month: string;
+  property: string | null;
+  total: string;
+  count: number;
+  by_category: ExpenseCategoryTotal[];
+}
+
+export function getExpenseSummary(filters: { property?: string; month?: string } = {}) {
+  return apiFetch<ExpenseSummary>(`/api/v1/expenses/summary/${buildQuery(filters)}`);
+}
+
+// --- Exports (D7, Module 17) ---
+
+export type ExportFiletype = "csv" | "xlsx" | "pdf";
+
+export function exportResidents(filetype: ExportFiletype, property?: string) {
+  return apiDownload(`/api/v1/exports/residents/${buildQuery({ filetype, property })}`);
+}
+
+export function exportPayments(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/payments/${buildQuery({ filetype, month, property })}`);
+}
+
+export function exportOutstandingDues(filetype: ExportFiletype, period?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/outstanding-dues/${buildQuery({ filetype, period, property })}`);
+}
+
+export function exportOccupancy(filetype: ExportFiletype, property?: string) {
+  return apiDownload(`/api/v1/exports/occupancy/${buildQuery({ filetype, property })}`);
+}
+
+export function exportExpenses(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/expenses/${buildQuery({ filetype, month, property })}`);
+}
+
+export function exportCashFlowStatement(filetype: ExportFiletype, month?: string, property?: string) {
+  return apiDownload(`/api/v1/exports/pnl/${buildQuery({ filetype, month, property })}`);
 }
 
 // --- PG features (Module 18) ---

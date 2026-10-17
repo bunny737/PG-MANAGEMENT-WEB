@@ -41,6 +41,11 @@
   },
   "activity": {
     "title": "నేటి యాక్టివిటీ",
-    "noActivity": "ఈరోజు ఎలాంటి యాక్టివిటీ నమోదు కాలేదు."
+    "noActivity": "ఈరోజు ఎలాంటి యాక్టివిటీ నమోదు కాలేదు.",
+    "residentFallback": "నివాసితుడు",
+    "roomFallback": "రూమ్",
+    "checkedIn": "కొత్త నివాసితుడు {name} {room}కి చెక్ ఇన్ అయ్యారు.",
+    "paymentReceived": "{room} కోసం అద్దె చెల్లింపు అందింది ({amount}).",
+    "complaintLogged": "{room} కోసం కొత్త ఫిర్యాదు నమోదు చేయబడింది ({category})."
   }
 }

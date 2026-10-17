@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.db.models import F, Q
 from django.db.models.functions import Lower
@@ -28,6 +29,12 @@ class Tenant(models.Model):
     name = models.CharField(_('business name'), max_length=200)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.TRIAL)
     default_language = models.CharField(max_length=8, choices=settings.LANGUAGES, default='en')
+    # First month of the reporting year for YTD analytics (D0): 4 = the Indian
+    # financial year (April–March), 1 = calendar year. A tenant preference,
+    # not a plan limit.
+    fiscal_year_start_month = models.PositiveSmallIntegerField(
+        default=4, validators=[MinValueValidator(1), MaxValueValidator(12)],
+    )
     # Computed at signup from PlatformConfig.trial_days — never from a constant.
     trial_ends_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)

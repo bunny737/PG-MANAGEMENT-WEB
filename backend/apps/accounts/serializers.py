@@ -338,14 +338,14 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class TenantSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
-        fields = ['id', 'name', 'status', 'default_language', 'trial_ends_at']
+        fields = ['id', 'name', 'status', 'default_language', 'fiscal_year_start_month', 'trial_ends_at']
         read_only_fields = fields
 
 
 class TenantUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
-        fields = ['default_language']
+        fields = ['default_language', 'fiscal_year_start_month']
 
 
 class MeSerializer(serializers.ModelSerializer):

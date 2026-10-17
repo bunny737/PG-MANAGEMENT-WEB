@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { SideNav } from "@/components/shared/SideNav";
 import { clearSession } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { ensureFreshSession, useSession } from "@/lib/session";
 
 const ALLOWED_ROLES = ["owner", "manager", "receptionist"];
@@ -42,8 +44,10 @@ export default function OwnerLayout({
     if (role && !ALLOWED_ROLES.includes(role)) {
       // Rejects super_admin or resident accounts that have no portal shell here,
       // avoiding redirect loops by clearing session before bouncing to login.
-      clearSession();
-      router.replace("/login");
+      void (async () => {
+        await clearSession();
+        router.replace("/login");
+      })();
     }
   }, [ready, authenticated, role, router]);
 
@@ -61,10 +65,12 @@ export default function OwnerLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <SideNav />
-      <div className="flex-1 pb-20 md:pb-0">{children}</div>
-      <BottomNav />
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <div className="flex min-h-screen">
+        <SideNav />
+        <div className="flex-1 pb-20 md:pb-0">{children}</div>
+        <BottomNav />
+      </div>
+    </QueryClientProvider>
   );
 }

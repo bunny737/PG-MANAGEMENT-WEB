@@ -178,3 +178,10 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   advance, see Module 10 update). A collected amount (advance or deposit > 0)
   requires its date and mode (400 otherwise); negatives rejected. Response adds
   read-only `advance_applied_amount` and `advance_refundable`.
+- 2026-10-16  Admission accepts a **reserved** bed when it is held for this
+  resident or for nobody (`bed.reserved_for` empty) — the only reserved →
+  occupied path (Module 02 D9). A bed held for someone else stays
+  `bed_not_available`. Check-in clears `reserved_for` / `reserved_until`.
+  Re-checked under the bed row lock as before (`serializers.bed_admits`).
+  [DECISION 2026-10-16, owner] "Allow if for this resident".
+  Tests: `properties/tests/test_bed_transitions.py::AdmissionToReservedBedTests`.

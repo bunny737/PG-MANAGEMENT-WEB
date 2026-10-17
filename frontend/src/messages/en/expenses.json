@@ -1,0 +1,65 @@
+{
+  "title": "Expenses",
+  "subtitle": "PG expenses, by category and month.",
+  "add": "Add expense",
+  "filters": {
+    "property": "Property",
+    "allProperties": "All properties",
+    "category": "Category",
+    "allCategories": "All categories",
+    "search": "Search note or category"
+  },
+  "total": "Total this month",
+  "manageCategories": "Manage categories",
+  "table": {
+    "date": "Date",
+    "category": "Category",
+    "note": "Note",
+    "amount": "Amount",
+    "mode": "Mode"
+  },
+  "repeat": "Repeat",
+  "edit": "Edit",
+  "delete": "Delete",
+  "deleteConfirmTitle": "Delete this expense?",
+  "deleteConfirmBody": "This soft-deletes it — it's excluded from every total and export from now on.",
+  "emptyTitle": "No expenses this month",
+  "emptyDesc": "Add the PG's first expense for this period, or try a different month or property.",
+  "errLoadFailed": "Couldn't load expenses.",
+  "attachment": {
+    "view": "View attachment",
+    "replace": "Replace",
+    "remove": "Remove",
+    "errLoadFailed": "Couldn't load the attachment.",
+    "tooLarge": "The file is larger than 5 MB.",
+    "wrongType": "Attach a JPEG, PNG, WebP or PDF file."
+  },
+  "form": {
+    "addTitle": "Add an expense",
+    "editTitle": "Edit expense",
+    "property": "Property",
+    "propertyRequired": "Choose a property",
+    "category": "Category",
+    "amount": "Amount",
+    "date": "Date",
+    "mode": "Payment mode",
+    "note": "Note",
+    "attachment": "Attachment (optional)",
+    "attachmentHint": "JPEG, PNG, WebP or PDF, up to 5 MB.",
+    "submit": "Save expense",
+    "submitting": "Saving...",
+    "success": "Expense saved.",
+    "savedToMonth": "Saved to {month} — View",
+    "replayed": "This expense was already saved — showing the original."
+  },
+  "categoryManager": {
+    "title": "Expense categories",
+    "addPlaceholder": "New category name",
+    "add": "Add",
+    "archive": "Archive",
+    "systemBadge": "Built-in",
+    "archivedBadge": "Archived",
+    "errInUse": "This category is used by expenses. Archive it instead.",
+    "errSystem": "Built-in categories cannot be deleted."
+  }
+}

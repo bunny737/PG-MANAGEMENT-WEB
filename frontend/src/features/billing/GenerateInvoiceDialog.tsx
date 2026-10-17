@@ -22,11 +22,25 @@ type FormValues = z.infer<typeof schema>;
 interface GenerateInvoiceDialogProps {
   onClose: () => void;
   onCreated: (invoice: Invoice) => void;
+  /** Pre-selects and locks the resident (e.g. opened from a resident's
+   * finance card) instead of offering the ResidentPicker. */
+  residentId?: string;
+  residentName?: string;
+  /** Overrides the active-property scope for the ResidentPicker — needed
+   * when opened from a resident whose property isn't the active selection. */
+  propertyId?: string | null;
 }
 
-export function GenerateInvoiceDialog({ onClose, onCreated }: GenerateInvoiceDialogProps) {
+export function GenerateInvoiceDialog({
+  onClose,
+  onCreated,
+  residentId,
+  residentName,
+  propertyId: propertyIdProp,
+}: GenerateInvoiceDialogProps) {
   const t = useTranslations("billing.generateDialog");
-  const { propertyId } = useActiveProperty();
+  const { propertyId: activePropertyId } = useActiveProperty();
+  const propertyId = propertyIdProp ?? activePropertyId;
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -35,7 +49,10 @@ export function GenerateInvoiceDialog({ onClose, onCreated }: GenerateInvoiceDia
     watch,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: residentId ? { resident: residentId } : undefined,
+  });
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
@@ -62,12 +79,21 @@ export function GenerateInvoiceDialog({ onClose, onCreated }: GenerateInvoiceDia
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-1.5">
           <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{t("resident")}</label>
-          <ResidentPicker
-            propertyId={propertyId}
-            value={watch("resident") ?? ""}
-            onChange={(id) => setValue("resident", id, { shouldValidate: true })}
-            placeholder={t("residentPlaceholder")}
-          />
+          {residentId ? (
+            <input
+              type="text"
+              disabled
+              value={residentName ?? residentId}
+              className="w-full rounded-xl border border-border bg-surface-page px-3 py-2 text-sm text-ink-muted"
+            />
+          ) : (
+            <ResidentPicker
+              propertyId={propertyId}
+              value={watch("resident") ?? ""}
+              onChange={(id) => setValue("resident", id, { shouldValidate: true })}
+              placeholder={t("residentPlaceholder")}
+            />
+          )}
           {errors.resident && <p className="text-xs text-status-critical">{errors.resident.message}</p>}
         </div>
         <div className="grid grid-cols-2 gap-3">

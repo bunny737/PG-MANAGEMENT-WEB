@@ -41,6 +41,11 @@
   },
   "activity": {
     "title": "Today's Activity",
-    "noActivity": "No activity logged today."
+    "noActivity": "No activity logged today.",
+    "residentFallback": "Resident",
+    "roomFallback": "Room",
+    "checkedIn": "New resident {name} checked into {room}.",
+    "paymentReceived": "Rent payment received for {room} ({amount}).",
+    "complaintLogged": "New complaint logged for {room} ({category})."
   }
 }

@@ -661,6 +661,35 @@ export function updateBed(bedId: string, payload: Partial<Bed>) {
   });
 }
 
+/** D6 (GET /residents/{id}/, detail only) — apps/residents/finance.py. */
+export interface ResidentFinanceCurrentPeriodInvoice {
+  id: string;
+  period_start: string;
+  period_end: string;
+  total: string;
+  paid: string;
+  balance: string;
+  due_date: string;
+  status: InvoiceStatus;
+  is_overdue: boolean;
+}
+
+export interface ResidentFinance {
+  current_period: {
+    period: string;
+    invoices: ResidentFinanceCurrentPeriodInvoice[];
+    total: string;
+    paid: string;
+    balance: string;
+    status: "no_invoice" | "paid" | "partially_paid" | "unpaid" | "overdue";
+    has_draft: boolean;
+  };
+  outstanding_total: string;
+  overdue_total: string;
+  prior_outstanding: string;
+  last_payment_date: string | null;
+}
+
 export interface Resident {
   id: string;
   property: string;
@@ -681,25 +710,29 @@ export interface Resident {
   passport_number: string;
   employee_id: string;
   student_id: string;
+  /** "Room {n}" / "Not Allocated" — a display string, not a raw room number. */
   unit?: string;
+  /** The building name, or "" when unallocated. */
   block?: string;
   move_in_date?: string;
-  joining_date?: string;
-  rent?: string;
-  deposit?: string;
-  rent_type?: string;
-  invoices?: Array<{
-    id: string;
-    invoice_number?: string;
-    billing_period_start?: string;
-    billing_period_end?: string;
-    total_amount?: string;
-    status: string;
-    payment_mode?: string;
-  }>;
-  complaints?: Complaint[];
+  /** Present only with view_finance. */
+  contracted_rent?: string | null;
+  /** Present only with view_finance. */
+  billing_mode?: string | null;
+  food_preference?: string | null;
+  joining_date?: string | null;
+  /** Present only with view_finance or manage_deposits. */
+  security_deposit_amount?: string | null;
+  advance_amount?: string | null;
+  advance_refundable?: boolean | null;
+  room_number?: string | null;
+  bed_number?: string | null;
   created_at: string;
   updated_at: string;
+  /** Detail only (GET /residents/{id}/): present with view_finance, else
+   * null and "finance" is listed in `redacted`. */
+  finance?: ResidentFinance | null;
+  redacted?: string[];
 }
 
 export interface Admission {
@@ -720,15 +753,16 @@ export interface Admission {
   updated_at: string;
 }
 
-export function listResidents(propertyId?: string, status?: string) {
+export function listResidents(propertyId?: string, status?: string, search?: string) {
   if (propertyId && !isUUID(propertyId)) return Promise.resolve([]);
   let url = "/api/v1/residents/";
   const params = new URLSearchParams();
   if (propertyId) params.append("property", propertyId);
   if (status && status !== "all") params.append("status", status);
+  if (search) params.append("search", search);
   const q = params.toString();
   if (q) url += `?${q}`;
-  
+
   return apiFetch<Resident[] | { results: Resident[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -1449,6 +1483,81 @@ export function listAllBeds() {
   return apiFetch<Bed[] | { results: Bed[] }>("/api/v1/beds/").then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+// --- Analytics (D0/D1; apps/reporting/analytics.py) ---
+
+export interface AnalyticsOccupancy {
+  total: number;
+  occupied: number;
+  reserved: number;
+  maintenance: number;
+  available: number;
+  occupancy_rate: number | null;
+}
+
+export interface AnalyticsFinance {
+  gross_receipts: string;
+  refunds_paid: string;
+  cash_collected: string;
+  period_invoiced: string;
+  period_collected: string;
+  collection_rate: number | null;
+  outstanding_total: string;
+  period_outstanding: string;
+  overdue_total: string;
+  open_invoice_count: number;
+  residents_with_balance_count: number;
+  occupied_beds_with_balance_count: number;
+  deposits_held: string;
+  ytd_cash_collected: string;
+}
+
+export interface AnalyticsExpenses {
+  expenses_paid: string;
+  ytd_expenses_paid: string;
+}
+
+export interface AnalyticsCashFlow {
+  net_cash_flow: string;
+  ytd_net_cash_flow: string;
+}
+
+export interface AnalyticsSummary {
+  month: string;
+  property: string | null;
+  timezones: string[];
+  balances_as_of: string;
+  ytd: { start: string; end: string };
+  occupancy: AnalyticsOccupancy;
+  finance: AnalyticsFinance | null;
+  expenses: AnalyticsExpenses | null;
+  cash_flow: AnalyticsCashFlow | null;
+  redacted: string[];
+}
+
+export function getAnalyticsSummary(filters: { property?: string; month?: string } = {}) {
+  return apiFetch<AnalyticsSummary>(`/api/v1/analytics/summary/${buildQuery(filters)}`);
+}
+
+export interface AnalyticsTrendPoint {
+  month: string;
+  finance: Pick<AnalyticsFinance, "gross_receipts" | "refunds_paid" | "cash_collected" | "period_invoiced" | "period_collected" | "collection_rate"> | null;
+  expenses: AnalyticsExpenses | null;
+  cash_flow: AnalyticsCashFlow | null;
+}
+
+export interface AnalyticsTrend {
+  end: string;
+  months: number;
+  property: string | null;
+  timezones: string[];
+  series: AnalyticsTrendPoint[];
+  redacted: string[];
+}
+
+export function getAnalyticsTrend(filters: { property?: string; end?: string; months?: string } = {}) {
+  return apiFetch<AnalyticsTrend>(`/api/v1/analytics/trend/${buildQuery(filters)}`);
 }
 
 // --- PG features (Module 18) ---

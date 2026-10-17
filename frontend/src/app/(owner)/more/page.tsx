@@ -24,8 +24,8 @@ export default function MorePage() {
   const roleLabel = role ? t(`roles.${role}`) : "";
   const initials = ((user?.first_name?.[0] || "") + (user?.last_name?.[0] || "")).toUpperCase() || (role ? role.slice(0, 2).toUpperCase() : "U");
 
-  const handleLogout = () => {
-    clearSession();
+  const handleLogout = async () => {
+    await clearSession();
     router.replace("/login");
   };
 

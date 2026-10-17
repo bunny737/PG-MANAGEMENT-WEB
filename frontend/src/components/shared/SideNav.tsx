@@ -84,8 +84,8 @@ export function SideNav() {
           </div>
         </Link>
         <button
-          onClick={() => {
-            clearSession();
+          onClick={async () => {
+            await clearSession();
             window.location.href = "/login";
           }}
           className="shrink-0 cursor-pointer rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-status-critical-soft hover:text-status-critical"

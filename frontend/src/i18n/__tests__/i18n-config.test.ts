@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { test } from "vitest";
 import { LOCALES, isActiveLocale } from "../config";
 import commonEn from "../../messages/en/common.json";
 import commonHi from "../../messages/hi/common.json";
@@ -70,5 +71,4 @@ export function testI18nConfig() {
   }
 }
 
-// Auto-run test suite on module import/execution
-testI18nConfig();
+test("locale config + message catalogs: active locales and full key parity", testI18nConfig);

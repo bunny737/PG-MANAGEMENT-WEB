@@ -9,6 +9,7 @@
 // this app is exposed beyond a developer's machine.
 
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
+import { awaitPendingPurge, runSessionCleanups } from "@/lib/sessionPurge";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -87,7 +88,18 @@ export function setTokens(access: string, refresh: string) {
   localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
 }
 
-export function clearSession() {
+/**
+ * Purges the session (invariant F7 — no tenant data survives logout or an
+ * account switch). Tokens/permissions/session keys are removed and
+ * `session-changed` is dispatched synchronously, before anything is
+ * awaited, so no request already in flight can authenticate as the old
+ * user once this starts. It then awaits every other registered cleanup
+ * step (query cache, Zustand stores, Cache Storage, IndexedDB — see
+ * lib/sessionPurge.ts) through `Promise.allSettled`, so one failing step
+ * never skips the rest. Callers should `await` this before navigating
+ * away, so the next screen never renders with the old session's cache.
+ */
+export async function clearSession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem("isLoggedIn");
@@ -95,13 +107,13 @@ export function clearSession() {
   localStorage.removeItem("userName");
   localStorage.removeItem("currentUser");
   localStorage.removeItem(PERMISSIONS_KEY);
-  // Invariant F7: no tenant data survives logout.
   for (const key of Object.keys(sessionStorage)) {
     if (key.startsWith(FEATURE_DRAFT_PREFIX)) sessionStorage.removeItem(key);
   }
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("session-changed"));
   }
+  await runSessionCleanups();
 }
 
 async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
@@ -161,7 +173,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   if (res.status === 401 && !options.skipAuth && !_isRetry) {
     const newToken = await refreshAccessToken();
     if (newToken) return apiFetch<T>(path, options, true);
-    clearSession();
+    await clearSession();
     if (typeof window !== "undefined") window.location.href = "/login";
     throw new ApiError(401, { detail: "Session expired" });
   }
@@ -179,7 +191,106 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   return (await res.json()) as T;
 }
 
+/**
+ * Like `apiFetch`, but also returns the response headers and status —
+ * for endpoints a plain JSON body doesn't fully describe, such as
+ * `Idempotent-Replayed: true` on a replayed `POST /payments/` or
+ * `POST /expenses/`. Shares `apiFetch`'s auth/401-refresh handling by
+ * delegating the actual request to a private helper isn't worth the
+ * duplication here, so this re-implements the same flow; keep the two in
+ * sync if that logic changes.
+ */
+export async function apiFetchWithMeta<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+  _isRetry = false
+): Promise<{ data: T; headers: Headers; status: number }> {
+  const isFormData = options.body instanceof FormData;
+  const headers = new Headers(options.headers);
+  if (!isFormData && options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", currentLocale);
+  }
+  if (!options.skipAuth) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch {
+    throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
+  }
+
+  if (res.status === 401 && !options.skipAuth && !_isRetry) {
+    const newToken = await refreshAccessToken();
+    if (newToken) return apiFetchWithMeta<T>(path, options, true);
+    await clearSession();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new ApiError(401, { detail: "Session expired" });
+  }
+
+  if (!res.ok) {
+    if (res.status === 403 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+    }
+    throw new ApiError(res.status, await parseErrorBody(res));
+  }
+
+  const data = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  return { data, headers: res.headers, status: res.status };
+}
+
+/**
+ * Downloads a binary export (CSV/XLSX/PDF) and returns it as a blob plus
+ * the filename from `Content-Disposition`, for `/exports/*` and the PDF
+ * receipt (`?filetype=pdf`). Callers turn the blob into an anchor-click
+ * download or a `navigator.share` call.
+ */
+export async function apiDownload(
+  path: string
+): Promise<{ blob: Blob; filename: string }> {
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
+  headers.set("Accept-Language", currentLocale);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  } catch {
+    throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
+  }
+
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers.set("Authorization", `Bearer ${newToken}`);
+      res = await fetch(`${API_BASE_URL}${path}`, { headers });
+    } else {
+      await clearSession();
+      if (typeof window !== "undefined") window.location.href = "/login";
+      throw new ApiError(401, { detail: "Session expired" });
+    }
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorBody(res));
+  }
+
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const filename = match?.[1] ?? "download";
+  return { blob: await res.blob(), filename };
+}
+
 export async function login(email: string, password: string) {
+  await awaitPendingPurge();
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login/", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -202,6 +313,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function loginPhone(phone: string, password: string) {
+  await awaitPendingPurge();
   const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login-phone/", {
     method: "POST",
     body: JSON.stringify({ phone, password }),

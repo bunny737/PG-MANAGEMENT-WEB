@@ -8,6 +8,7 @@ import {
   Building,
   UserCheck,
   ClipboardList,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
   { href: "/staff", labelKey: "nav.staff", icon: UserCheck, permission: "manage_staff_accounts" },
   { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle, permission: "manage_complaints" },
   { href: "/billing", labelKey: "nav.billing", icon: Receipt, permission: "view_finance" },
+  { href: "/expenses", labelKey: "nav.expenses", icon: Wallet, permission: "view_expenses" },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
 ];
 

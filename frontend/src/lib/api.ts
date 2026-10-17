@@ -1665,6 +1665,163 @@ export function getAnalyticsTrend(filters: { property?: string; end?: string; mo
   return apiFetch<AnalyticsTrend>(`/api/v1/analytics/trend/${buildQuery(filters)}`);
 }
 
+// --- Expenses (D5, Module 20) ---
+
+export type ExpenseMode = "upi" | "cash" | "bank_transfer" | "card" | "cheque" | "other";
+
+export interface ExpenseCategory {
+  id: string;
+  code: string;
+  name: string;
+  label: string;
+  is_system: boolean;
+  is_archived: boolean;
+  order: number;
+  created_at: string;
+}
+
+export interface Expense {
+  id: string;
+  property: string;
+  property_name: string;
+  category: string;
+  category_name: string;
+  category_code: string | null;
+  amount: string;
+  date: string;
+  payment_mode: ExpenseMode;
+  note: string;
+  has_attachment: boolean;
+  attachment_content_type: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Idempotent replay (D5) — not a server field; set by createExpense(). */
+  replayed?: boolean;
+}
+
+export interface ExpenseFilters {
+  property?: string;
+  category?: string;
+  payment_mode?: string;
+  search?: string;
+  /** YYYY-MM */
+  month?: string;
+  from?: string;
+  to?: string;
+  [key: string]: string | undefined;
+}
+
+export function listExpensesFiltered(filters: ExpenseFilters = {}) {
+  const url = `/api/v1/expenses/${buildQuery(filters)}`;
+  return apiFetch<Expense[] | { results: Expense[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function listExpenseCategories() {
+  return apiFetch<ExpenseCategory[] | { results: ExpenseCategory[] }>(
+    "/api/v1/expense-categories/?include_archived=true"
+  ).then((data) => (Array.isArray(data) ? data : data.results));
+}
+
+export function createExpenseCategory(name: string) {
+  return apiFetch<ExpenseCategory>("/api/v1/expense-categories/", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function archiveExpenseCategory(id: string) {
+  return apiFetch<ExpenseCategory>(`/api/v1/expense-categories/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_archived: true }),
+  });
+}
+
+export interface ExpenseCreatePayload {
+  property: string;
+  category: string;
+  amount: string;
+  date: string;
+  payment_mode: ExpenseMode;
+  note?: string;
+  attachment?: File;
+}
+
+function expenseFormData(payload: ExpenseCreatePayload | Partial<ExpenseCreatePayload>): FormData {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    form.append(key, value instanceof File ? value : String(value));
+  }
+  return form;
+}
+
+/** Records an expense with the given Idempotency-Key. Returns the expense
+ * plus whether this call replayed an earlier one with the same key (D5). */
+export async function createExpense(payload: ExpenseCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<Expense>("/api/v1/expenses/", {
+    method: "POST",
+    body: expenseFormData(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { expense: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
+export function updateExpense(id: string, payload: Partial<Omit<ExpenseCreatePayload, "attachment">>) {
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteExpense(id: string) {
+  return apiFetch<void>(`/api/v1/expenses/${id}/`, { method: "DELETE" });
+}
+
+export interface ExpenseAttachment {
+  url: string;
+  content_type: string;
+  expires_in: number;
+}
+
+export function getExpenseAttachment(id: string) {
+  return apiFetch<ExpenseAttachment>(`/api/v1/expenses/${id}/attachment/`);
+}
+
+export function replaceExpenseAttachment(id: string, file: File) {
+  const form = new FormData();
+  form.append("attachment", file);
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/attachment/`, { method: "PUT", body: form });
+}
+
+export function removeExpenseAttachment(id: string) {
+  return apiFetch<Expense>(`/api/v1/expenses/${id}/attachment/`, { method: "DELETE" });
+}
+
+export interface ExpenseCategoryTotal {
+  category: string;
+  name: string;
+  code: string | null;
+  total: string;
+  count: number;
+}
+
+export interface ExpenseSummary {
+  month: string;
+  property: string | null;
+  total: string;
+  count: number;
+  by_category: ExpenseCategoryTotal[];
+}
+
+export function getExpenseSummary(filters: { property?: string; month?: string } = {}) {
+  return apiFetch<ExpenseSummary>(`/api/v1/expenses/summary/${buildQuery(filters)}`);
+}
+
 // --- PG features (Module 18) ---
 
 export interface FeatureCatalogItem {

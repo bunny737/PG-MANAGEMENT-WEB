@@ -1086,42 +1086,351 @@ export function updateTenantDefaultLanguage(default_language: string) {
   });
 }
 
-export interface Invoice {
+// --- Billing (UX roadmap D3/D4/D6/D7; see docs/ux-roadmap-backend.md) ---
+
+export type InvoiceStatus = "draft" | "issued" | "partially_paid" | "paid";
+export type PaymentMode = "upi" | "cash" | "bank_transfer" | "card" | "cheque";
+export type LineType =
+  | "accommodation"
+  | "food"
+  | "electricity"
+  | "water"
+  | "laundry"
+  | "addon"
+  | "additional"
+  | "discount";
+
+export interface InvoiceLineItem {
   id: string;
+  line_type: LineType;
+  label: string;
+  amount: string;
+  order: number;
+}
+
+/** Every finance list row (invoices, payments, discounts) carries these so
+ * it renders without a second lookup (ResidentContextMixin on the backend). */
+interface ResidentContext {
   resident: string;
+  resident_name: string;
+  property: string;
+  property_name: string;
+  room_number: string | null;
+  bed_number: string | null;
+}
+
+export interface Invoice extends ResidentContext {
+  id: string;
   period_start: string;
   period_end: string;
   billing_mode: string;
-  issue_date: string;
+  issue_date: string | null;
   due_date: string;
-  status: "draft" | "issued" | "paid" | "partially_paid" | "void";
+  status: InvoiceStatus;
+  notes: string;
+  created_by: string | null;
+  line_items: InvoiceLineItem[];
   total: string;
   amount_paid: string;
   balance_due: string;
+  /** min(amount_paid, total) — sums to analytics' period_collected under ?period= (D0). */
+  capped_allocated: string;
   is_overdue: boolean;
   created_at: string;
+  updated_at: string;
 }
 
-export interface Payment {
+export interface Payment extends ResidentContext {
   id: string;
+  receipt_number: string | null;
   invoice: string;
-  payment_date: string;
-  payment_mode: string;
+  invoice_period_start: string;
+  invoice_period_end: string;
   amount: string;
-  reference_number?: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference: string;
+  recorded_by: string | null;
+  recorded_by_name: string | null;
   created_at: string;
+  updated_at: string;
 }
 
+export interface InvoiceFilters {
+  property?: string;
+  resident?: string;
+  /** Comma list of draft/issued/partially_paid/paid, or the alias "outstanding"/"overdue" alone. */
+  status?: string;
+  /** YYYY-MM */
+  period?: string;
+  billing_mode?: string;
+  search?: string;
+  [key: string]: string | undefined;
+}
+
+function buildQuery(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.append(key, value);
+  }
+  const q = search.toString();
+  return q ? `?${q}` : "";
+}
+
+export function listInvoicesFiltered(filters: InvoiceFilters = {}) {
+  const url = `/api/v1/invoices/${buildQuery(filters)}`;
+  return apiFetch<Invoice[] | { results: Invoice[] }>(url).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+/** Back-compat alias: the dashboard's existing unfiltered call. */
 export function listInvoices() {
-  return apiFetch<Invoice[] | { results: Invoice[] }>("/api/v1/invoices/").then((data) =>
+  return listInvoicesFiltered();
+}
+
+export function getInvoice(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/`);
+}
+
+export interface InvoiceGeneratePayload {
+  resident: string;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+  billing_mode?: string;
+}
+
+export function generateInvoice(payload: InvoiceGeneratePayload) {
+  return apiFetch<Invoice>("/api/v1/invoices/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface InvoiceBulkGeneratePayload {
+  property: string;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+}
+
+export function bulkGenerateInvoices(payload: InvoiceBulkGeneratePayload) {
+  return apiFetch<{ created: number; invoices: Invoice[] }>("/api/v1/invoices/bulk-generate/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInvoiceDraft(id: string, payload: { due_date?: string; notes?: string }) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteInvoiceDraft(id: string) {
+  return apiFetch<void>(`/api/v1/invoices/${id}/`, { method: "DELETE" });
+}
+
+export function issueInvoice(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/issue/`, { method: "POST" });
+}
+
+export function addInvoiceLineItem(
+  invoiceId: string,
+  payload: { line_type: LineType; label: string; amount: string; order?: number }
+) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInvoiceLineItem(
+  invoiceId: string,
+  lineId: string,
+  payload: Partial<{ line_type: LineType; label: string; amount: string; order: number }>
+) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/${lineId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteInvoiceLineItem(invoiceId: string, lineId: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${invoiceId}/line-items/${lineId}/`, { method: "DELETE" });
+}
+
+export interface PaymentFilters {
+  property?: string;
+  resident?: string;
+  invoice?: string;
+  payment_mode?: string;
+  /** YYYY-MM */
+  month?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+  [key: string]: string | undefined;
+}
+
+export function listPaymentsFiltered(filters: PaymentFilters = {}) {
+  const url = `/api/v1/payments/${buildQuery(filters)}`;
+  return apiFetch<Payment[] | { results: Payment[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
 }
 
+/** Back-compat alias: the dashboard's existing unfiltered call. */
 export function listPayments() {
-  return apiFetch<Payment[] | { results: Payment[] }>("/api/v1/payments/").then((data) =>
+  return listPaymentsFiltered();
+}
+
+export interface PaymentCreatePayload {
+  invoice: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference?: string;
+}
+
+/** Records a payment with the given Idempotency-Key. Returns the payment
+ * plus whether this call replayed an earlier one with the same key (D3) —
+ * both a 201 and a 200 replay resolve here; only OVERPAYMENT/
+ * IDEMPOTENCY_KEY_REUSED (409) and validation errors throw. */
+export async function createPayment(payload: PaymentCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<Payment>("/api/v1/payments/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
+export function deletePayment(id: string) {
+  return apiFetch<void>(`/api/v1/payments/${id}/`, { method: "DELETE" });
+}
+
+export interface Receipt {
+  receipt_for: string;
+  receipt_number: string | null;
+  resident: string;
+  resident_id: string;
+  property: string;
+  property_name: string;
+  room_number: string | null;
+  bed_number: string | null;
+  invoice: string;
+  period_start: string;
+  period_end: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: PaymentMode;
+  reference: string;
+  recorded_by: string | null;
+  recorded_by_name: string | null;
+  created_at: string;
+  invoice_total: string;
+  invoice_paid: string;
+  invoice_balance_due: string;
+  invoice_status: InvoiceStatus;
+}
+
+export function getReceipt(paymentId: string) {
+  return apiFetch<Receipt>(`/api/v1/payments/${paymentId}/receipt/`);
+}
+
+export function downloadReceiptPdf(paymentId: string) {
+  return apiDownload(`/api/v1/payments/${paymentId}/receipt/?filetype=pdf`);
+}
+
+export interface CashMovementRow {
+  type: "payment";
+  id: string;
+  date: string;
+  amount: string;
+  receipt_number: string | null;
+  payment_mode: PaymentMode;
+  invoice: string;
+  resident: string;
+  resident_name: string;
+  property: string;
+  property_name: string;
+}
+
+export interface CashMovements {
+  from: string;
+  to: string;
+  gross_receipts: string;
+  refunds_paid: string;
+  total: string;
+  count: number;
+  results: CashMovementRow[];
+}
+
+export function getCashMovements(filters: { property?: string; month?: string; from?: string; to?: string } = {}) {
+  return apiFetch<CashMovements>(`/api/v1/cash-movements/${buildQuery(filters)}`);
+}
+
+export type DiscountType = "fixed" | "percentage";
+export type DiscountReason = "loyalty" | "referral" | "corporate" | "negotiated" | "seasonal" | "other";
+
+export interface Discount extends ResidentContext {
+  id: string;
+  discount_type: DiscountType;
+  discount_value: string;
+  reason: DiscountReason;
+  note: string;
+  valid_from: string;
+  valid_until: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscountFilters {
+  property?: string;
+  resident?: string;
+  reason?: string;
+  discount_type?: string;
+  [key: string]: string | undefined;
+}
+
+export function listDiscountsFiltered(filters: DiscountFilters = {}) {
+  const url = `/api/v1/discounts/${buildQuery(filters)}`;
+  return apiFetch<Discount[] | { results: Discount[] }>(url).then((data) =>
     Array.isArray(data) ? data : data.results
   );
+}
+
+export interface DiscountCreatePayload {
+  resident: string;
+  discount_type: DiscountType;
+  discount_value: string;
+  reason: DiscountReason;
+  note?: string;
+  valid_from: string;
+  valid_until?: string;
+}
+
+export function createDiscount(payload: DiscountCreatePayload) {
+  return apiFetch<Discount>("/api/v1/discounts/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateDiscount(id: string, payload: Partial<DiscountCreatePayload>) {
+  return apiFetch<Discount>(`/api/v1/discounts/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Discounts have no delete endpoint — "end" one by setting valid_until. */
+export function endDiscount(id: string, validUntil: string) {
+  return updateDiscount(id, { valid_until: validUntil });
 }
 
 export function listAdmissions() {

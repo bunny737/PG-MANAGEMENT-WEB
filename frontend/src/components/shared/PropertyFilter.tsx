@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { listProperties } from "@/lib/api";
@@ -21,6 +22,9 @@ import { cn } from "@/lib/utils";
 export function useActiveProperty() {
   const { user, ready } = useSession();
   const store = useActivePropertyStore();
+  const searchParams = useSearchParams();
+  const urlPropertyId = searchParams.get("property");
+  const appliedUrlProperty = useRef<string | null>(null);
 
   useEffect(() => {
     if (ready && user) store.hydrate(user.tenant_id ?? "", user.id);
@@ -29,6 +33,16 @@ export function useActiveProperty() {
   }, [ready, user?.tenant_id, user?.id]);
 
   const hydrated = ready && !!user && store.scope?.userId === user.id;
+
+  // A drill-down link (e.g. "/billing?property=X&status=outstanding") sets
+  // the active-property selection once, so every list on the page scopes
+  // to it — not just read by whichever component happens to parse the URL.
+  useEffect(() => {
+    if (hydrated && urlPropertyId && appliedUrlProperty.current !== urlPropertyId) {
+      appliedUrlProperty.current = urlPropertyId;
+      store.setPropertyId(urlPropertyId);
+    }
+  }, [hydrated, urlPropertyId, store]);
 
   const { data: properties = [], isSuccess: listLoaded } = useQuery({
     queryKey: queryKeys.properties.list,

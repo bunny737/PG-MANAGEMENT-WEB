@@ -26,7 +26,7 @@ export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
   { href: "/visitors", labelKey: "nav.visitors", icon: ClipboardList, permission: "manage_visitors" },
   { href: "/staff", labelKey: "nav.staff", icon: UserCheck, permission: "manage_staff_accounts" },
   { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle, permission: "manage_complaints" },
-  { href: "/financials", labelKey: "nav.financials", icon: Receipt, permission: "view_finance" },
+  { href: "/billing", labelKey: "nav.billing", icon: Receipt, permission: "view_finance" },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
 ];
 

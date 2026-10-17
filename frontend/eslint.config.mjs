@@ -45,6 +45,7 @@ const eslintConfig = defineConfig([
               "dot",
               "permission",
               "fallback",
+              "statuses",
             ],
           },
           "object-properties": {
@@ -66,6 +67,11 @@ const eslintConfig = defineConfig([
               "indexOf",
               "endsWith",
               "startsWith",
+              // react-hook-form field-name identifiers, not UI text.
+              "register",
+              "setValue",
+              "watch",
+              "getValues",
             ],
           },
         },
@@ -109,6 +115,7 @@ const eslintConfig = defineConfig([
               "dot",
               "permission",
               "fallback",
+              "statuses",
             ],
           },
           "object-properties": {
@@ -130,6 +137,11 @@ const eslintConfig = defineConfig([
               "indexOf",
               "endsWith",
               "startsWith",
+              // react-hook-form field-name identifiers, not UI text.
+              "register",
+              "setValue",
+              "watch",
+              "getValues",
             ],
           },
         },

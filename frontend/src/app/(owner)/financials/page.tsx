@@ -1,14 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { RequirePermission } from "@/components/shared/RequirePermission";
-import { FinancialsDashboard } from "@/features/financials/FinancialsDashboard";
-
-export default function FinancialsPage() {
-  return (
-    <RequirePermission permission="view_finance">
-      <main className="mx-auto w-full max-w-5xl px-4 py-8 md:px-8">
-        <FinancialsDashboard />
-      </main>
-    </RequirePermission>
-  );
+// /billing replaces this mock-driven page (UX roadmap S2) — see
+// docs/frontend-plan.md's route map and Decisions.
+export default function FinancialsRedirect() {
+  redirect("/billing");
 }

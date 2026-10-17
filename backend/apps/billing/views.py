@@ -1,11 +1,11 @@
 from datetime import date
-from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.fields import SkipField, empty
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -316,11 +316,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
         existing = self.get_queryset().filter(idempotency_key=key).first()
         if existing is None:
             return None
+        # Parse with the serializer's own fields (so "5000" == "5000.00" and
+        # date formats match) but skip its business rules — a replay must
+        # not be re-judged against the invoice's current balance.
+        fields = PaymentWriteSerializer().fields
+        inputs = {}
         try:
-            amount = Decimal(str(request.data.get('amount')))
-        except (InvalidOperation, TypeError):
+            for name in ('amount', 'payment_date', 'payment_mode'):
+                inputs[name] = fields[name].run_validation(fields[name].get_value(request.data))
+            reference = fields['reference'].get_value(request.data)
+            inputs['reference'] = '' if reference is empty else fields['reference'].run_validation(reference)
+        except (ValidationError, SkipField):
             raise key_reused()
-        if str(existing.invoice_id) != str(request.data.get('invoice')) or existing.amount != amount:
+        if not services.payment_matches(existing, invoice_id=request.data.get('invoice'), **inputs):
             raise key_reused()
         return self._payment_response(existing, replayed=True)
 

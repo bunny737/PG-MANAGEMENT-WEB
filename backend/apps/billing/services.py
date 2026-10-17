@@ -163,13 +163,28 @@ def next_receipt_number(tenant_id):
     return ReceiptCounter.format(counter.last_number)
 
 
-def find_replayed_payment(*, tenant_id, idempotency_key, invoice_id, amount):
+def payment_matches(existing, *, invoice_id, amount, payment_date, payment_mode, reference):
+    """True when a request carries exactly the inputs `existing` persisted."""
+    return (
+        str(existing.invoice_id) == str(invoice_id)
+        and existing.amount == amount
+        and existing.payment_date == payment_date
+        and existing.payment_mode == payment_mode
+        and existing.reference == reference
+    )
+
+
+def find_replayed_payment(*, tenant_id, idempotency_key, invoice_id, amount,
+                          payment_date, payment_mode, reference):
     """The payment an earlier request with this key created, or None. A key
-    reused with a different invoice or amount is a client bug: 409."""
+    reused with any different persisted input is a client bug: 409."""
     existing = Payment.objects.filter(tenant_id=tenant_id, idempotency_key=idempotency_key).first()
     if existing is None:
         return None
-    if str(existing.invoice_id) != str(invoice_id) or existing.amount != amount:
+    if not payment_matches(
+        existing, invoice_id=invoice_id, amount=amount, payment_date=payment_date,
+        payment_mode=payment_mode, reference=reference,
+    ):
         raise key_reused()
     return existing
 
@@ -194,7 +209,8 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
     if idempotency_key:
         existing = find_replayed_payment(
             tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
-            invoice_id=invoice.pk, amount=amount,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
         )
         if existing is not None:
             existing.replayed = True
@@ -233,7 +249,8 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
             raise
         existing = find_replayed_payment(
             tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
-            invoice_id=invoice.pk, amount=amount,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
         )
         if existing is None:
             raise

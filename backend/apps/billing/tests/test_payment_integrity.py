@@ -61,6 +61,22 @@ class PaymentIntegrityTests(BillingAPITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['code'], 'IDEMPOTENCY_KEY_REUSED')
 
+    def test_key_reused_with_any_changed_input_is_409(self):
+        body = {
+            'invoice': str(self.invoice.id), 'amount': '1000.00', 'payment_date': '2026-07-05',
+            'payment_mode': 'cash', 'reference': 'TXN-1',
+        }
+        post = lambda **changes: self.client.post(  # noqa: E731
+            reverse('payment-list'), {**body, **changes}, HTTP_IDEMPOTENCY_KEY='k-3',
+        )
+        self.assertEqual(post().status_code, 201)
+        self.assertEqual(post(amount='1000').status_code, 200)  # same value, other spelling
+        for changes in ({'payment_date': '2026-07-06'}, {'payment_mode': 'upi'}, {'reference': 'TXN-2'},
+                        {'reference': ''}, {'payment_date': 'not-a-date'}):
+            self.assertEqual(post(**changes).status_code, 409, changes)
+        with tenant_context(self.tenant.id):
+            self.assertEqual(Payment.objects.count(), 1)
+
     def test_keys_are_per_tenant(self):
         self.assertEqual(self.post('1000.00', key='shared').status_code, 201)
         other = self.create_tenant('Other')

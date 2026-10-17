@@ -93,9 +93,10 @@ Module 08.
     exceed it: exactly one succeeds (`ConcurrentOverpaymentTests`).
 13. (2026-10-16) `Idempotency-Key`: a retry with the same key returns the
     original payment (200, `Idempotent-Replayed: true`) even if the invoice is
-    now fully paid; the same key with a different invoice/amount is 409
-    `IDEMPOTENCY_KEY_REUSED`. Keys are unique per tenant
-    (`unique_payment_idempotency_key`).
+    now fully paid; the same key with any different persisted input (invoice,
+    amount, payment date, mode or reference) is 409 `IDEMPOTENCY_KEY_REUSED`
+    (2026-10-17: previously only invoice/amount were compared). Keys are
+    unique per tenant (`unique_payment_idempotency_key`).
 14. (2026-10-16) Every new payment gets a per-tenant sequential
     `receipt_number` (`RCT-000001`…) under the `receipt_counters` row lock;
     numbers are never reused, even after a payment is deleted. Existing

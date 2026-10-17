@@ -131,6 +131,44 @@ class ExpenseCrudTests(ExpenseAPITestCase):
         }, HTTP_IDEMPOTENCY_KEY='exp-1')
         self.assertEqual(clash.status_code, 409)
 
+    def test_replay_with_any_changed_input_is_a_conflict(self):
+        body = {
+            'property': str(self.prop.id), 'category': self.categories['gas'], 'amount': '800.00',
+            'date': '2026-09-02', 'payment_mode': 'cash', 'note': 'cylinder',
+        }
+        post = lambda **changes: self.client.post(  # noqa: E731
+            reverse('expense-list'), {**body, **changes}, HTTP_IDEMPOTENCY_KEY='exp-2',
+        )
+        self.assertEqual(post().status_code, 201)
+        self.assertEqual(post().status_code, 200)
+        for changes in (
+            {'category': self.categories['water']}, {'payment_mode': 'upi'}, {'note': 'other'},
+            {'property': str(self.other_prop.id)}, {'date': '2026-09-03'},
+        ):
+            self.assertEqual(post(**changes).status_code, 409, changes)
+        with_file = self.client.post(
+            reverse('expense-list'),
+            {**body, 'attachment': SimpleUploadedFile('b.png', PNG, content_type='image/png')},
+            format='multipart', HTTP_IDEMPOTENCY_KEY='exp-2',
+        )
+        self.assertEqual(with_file.status_code, 409)
+
+    def test_replay_compares_the_attachment(self):
+        body = {
+            'property': str(self.prop.id), 'category': self.categories['gas'], 'amount': '800.00',
+            'date': '2026-09-02', 'payment_mode': 'cash',
+        }
+        post = lambda content: self.client.post(  # noqa: E731
+            reverse('expense-list'), {**body, 'attachment': SimpleUploadedFile('b.png', content)},
+            format='multipart', HTTP_IDEMPOTENCY_KEY='exp-3',
+        )
+        self.assertEqual(post(PNG).status_code, 201)
+        self.assertEqual(post(PNG).status_code, 200)
+        self.assertEqual(post(PNG + b'1').status_code, 409)
+        self.assertEqual(
+            self.client.post(reverse('expense-list'), body, HTTP_IDEMPOTENCY_KEY='exp-3').status_code, 409,
+        )
+
 
 @override_settings(EXPENSE_ATTACHMENT_MAX_BYTES=1024)
 class ExpenseAttachmentTests(ExpenseAPITestCase):
@@ -154,6 +192,36 @@ class ExpenseAttachmentTests(ExpenseAPITestCase):
         response = self.create(attachment=fake)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['attachment'][0].code, 'attachment_type_not_allowed')
+
+    def test_invalid_replacement_keeps_the_existing_file(self):
+        created = self.create(attachment=SimpleUploadedFile('bill.png', PNG, content_type='image/png'))
+        url = reverse('expense-attachment', args=[created.data['id']])
+        with tenant_context(self.tenant.id):
+            stored = Expense.objects.get(pk=created.data['id']).attachment
+            storage, name = stored.storage, stored.name
+        for bad in (SimpleUploadedFile('x.png', b'MZ\x90\x00'), SimpleUploadedFile('big.pdf', b'%PDF-' + b'0' * 2048)):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(self.client.put(url, {'attachment': bad}, format='multipart').status_code, 400)
+            self.assertTrue(storage.exists(name))
+        self.assertEqual(self.client.get(url).data['content_type'], 'image/png')
+
+    def test_replaced_and_removed_files_are_deleted_only_after_commit(self):
+        created = self.create(attachment=SimpleUploadedFile('bill.png', PNG, content_type='image/png'))
+        url = reverse('expense-attachment', args=[created.data['id']])
+        with tenant_context(self.tenant.id):
+            stored = Expense.objects.get(pk=created.data['id']).attachment
+            storage, first = stored.storage, stored.name
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            self.client.put(url, {'attachment': SimpleUploadedFile('b.pdf', PDF)}, format='multipart')
+        self.assertTrue(storage.exists(first))  # nothing is deleted before the commit
+        for callback in callbacks:
+            callback()
+        self.assertFalse(storage.exists(first))
+        with tenant_context(self.tenant.id):
+            second = Expense.objects.get(pk=created.data['id']).attachment.name
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.delete(url)
+        self.assertFalse(storage.exists(second))
 
     def test_size_limit(self):
         big = SimpleUploadedFile('big.pdf', b'%PDF-' + b'0' * 2048)

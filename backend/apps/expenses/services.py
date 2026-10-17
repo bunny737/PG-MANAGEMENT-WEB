@@ -1,5 +1,6 @@
 """Expense writes and queries (UX roadmap D5). Views stay thin; every
 mutation is audit-logged here (invariant 9)."""
+import hashlib
 from decimal import Decimal
 
 from django.conf import settings
@@ -70,11 +71,30 @@ def sniff_attachment(upload):
     )
 
 
+def _delete_file_on_commit(previous):
+    """Storage deletes are irreversible and not rolled back with the database,
+    so a file is only removed once the change that orphans it has committed."""
+    if previous is not None:
+        storage, name = previous
+        transaction.on_commit(lambda: storage.delete(name))
+
+
 def _store_attachment(expense, upload):
-    if expense.attachment:
-        expense.attachment.delete(save=False)
-    expense.attachment_content_type = sniff_attachment(upload)
+    """Validate, then store `upload` on `expense`. Returns the previous
+    (storage, name) or None; the caller deletes it only after committing."""
+    content_type = sniff_attachment(upload)  # before anything is touched
+    previous = (expense.attachment.storage, expense.attachment.name) if expense.attachment else None
+    expense.attachment_content_type = content_type
     expense.attachment.save(upload.name or 'attachment', upload, save=False)
+    return previous
+
+
+def _digest(file):
+    sha = hashlib.sha256()
+    for chunk in file.chunks():
+        sha.update(chunk)
+    file.seek(0)
+    return sha.hexdigest()
 
 
 @transaction.atomic
@@ -82,7 +102,7 @@ def create_expense(*, data, attachment=None, actor, request=None, idempotency_ke
     if idempotency_key:
         existing = live_expenses().filter(idempotency_key=idempotency_key).first()
         if existing is not None:
-            return _replay(existing, data)
+            return _replay(existing, data, attachment)
     expense = Expense(
         tenant_id=actor.tenant_id, created_by=actor, updated_by=actor,
         idempotency_key=idempotency_key, **data,
@@ -99,7 +119,7 @@ def create_expense(*, data, attachment=None, actor, request=None, idempotency_ke
         existing = Expense.objects.filter(idempotency_key=idempotency_key).first()
         if existing is None:
             raise
-        return _replay(existing, data)
+        return _replay(existing, data, attachment)
     if attachment is not None:
         _store_attachment(expense, attachment)
         expense.save(update_fields=['attachment', 'attachment_content_type', 'updated_at'])
@@ -110,12 +130,19 @@ def create_expense(*, data, attachment=None, actor, request=None, idempotency_ke
     return expense
 
 
-def _replay(existing, data):
-    same = (
-        existing.property_id == data['property'].pk
-        and existing.amount == data['amount']
-        and existing.date == data['date']
-    )
+def _replay(existing, data, attachment):
+    """The earlier request's expense, provided this one carries exactly the
+    same persisted inputs (fields and attachment); otherwise 409."""
+    candidate = Expense(**data)  # fills model defaults for omitted optional fields
+    same = all(getattr(existing, field) == getattr(candidate, field) for field in AUDIT_FIELDS)
+    if same:
+        if attachment is None:
+            same = not existing.attachment
+        elif not existing.attachment:
+            same = False
+        else:
+            with existing.attachment.open('rb') as stored:
+                same = _digest(stored) == _digest(attachment)
     if not same:
         raise key_reused()
     existing.replayed = True
@@ -150,20 +177,26 @@ def delete_expense(*, expense, actor, request=None):
 
 @transaction.atomic
 def replace_attachment(*, expense, upload, actor, request=None):
-    _store_attachment(expense, upload)
-    expense.updated_by = actor
-    expense.save(update_fields=['attachment', 'attachment_content_type', 'updated_by', 'updated_at'])
-    audit_log.record(
-        action='expense.attachment_replaced', actor=actor, obj=expense,
-        after={'content_type': expense.attachment_content_type}, request=request,
-    )
+    previous = _store_attachment(expense, upload)  # validates before touching the stored file
+    new_name = expense.attachment.name
+    try:
+        expense.updated_by = actor
+        expense.save(update_fields=['attachment', 'attachment_content_type', 'updated_by', 'updated_at'])
+        audit_log.record(
+            action='expense.attachment_replaced', actor=actor, obj=expense,
+            after={'content_type': expense.attachment_content_type}, request=request,
+        )
+    except Exception:
+        expense.attachment.storage.delete(new_name)  # the row rolls back; don't orphan the new file
+        raise
+    _delete_file_on_commit(previous)
     return expense
 
 
 @transaction.atomic
 def remove_attachment(*, expense, actor, request=None):
     if expense.attachment:
-        expense.attachment.delete(save=False)
+        _delete_file_on_commit((expense.attachment.storage, expense.attachment.name))
     expense.attachment = None
     expense.attachment_content_type = ''
     expense.updated_by = actor

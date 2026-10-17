@@ -61,7 +61,8 @@ GET           /api/v1/exports/expenses/               CSV/XLSX/PDF (Module 17)
 List filters: `?property=&month=YYYY-MM&category=&payment_mode=&search=&from=&to=`.
 `POST /expenses/` accepts JSON or multipart (optional `attachment`) and an
 `Idempotency-Key` header (replay → 200 + `Idempotent-Replayed: true`; same
-key, different property/amount/date → 409 `IDEMPOTENCY_KEY_REUSED`).
+key, any different property/category/amount/date/mode/note or attachment
+content → 409 `IDEMPOTENCY_KEY_REUSED`).
 `PUT /expenses/{id}/` (full replace) → 405; PUT is only for the attachment.
 
 ## Business rules (each maps to a test — `apps/expenses/tests/test_expenses.py`)
@@ -106,6 +107,14 @@ and the staff module-access endpoints automatically (registry-driven).
   only by deleted expenses still can't be hard-deleted (archive instead).
 
 ## Open questions / Decisions
+- [DECISION 2026-10-17] **Attachment replace/remove never deletes a stored file
+  before the database change commits.** A replacement is validated (size, magic
+  bytes) first, the new file is saved, and the old file is deleted via
+  `transaction.on_commit` — so an invalid upload returns 400 and leaves the
+  existing receipt intact. Remove defers its delete the same way.
+- [DECISION 2026-10-17] **Idempotent replay compares every persisted input**,
+  including the attachment (presence + SHA-256 of the stored file vs the
+  upload), so a reused key with altered details is 409, not a silent 200.
 - [DECISION 2026-10-16] **Owner approved the module and its defaults**:
   Manager full, Receptionist off; staff whose module access was already
   customized get the Manager default via data migration

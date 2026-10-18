@@ -39,6 +39,9 @@ const notoSansTelugu = Noto_Sans_Telugu({
 export const metadata: Metadata = {
   title: "PropManager",
   description: "PG/hostel property management",
+  // The signed-in app must never be indexed. The public marketing pages opt back
+  // in from their own layout (app/(marketing)/layout.tsx).
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
@@ -53,7 +56,10 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const locale = await getLocale();
-  const messages = await getMessages();
+  // The marketing copy is only rendered by server components, so keep it out of
+  // the payload every signed-in page ships to the browser.
+  const { marketing: _marketing, ...messages } = await getMessages();
+  void _marketing;
   const dir = getLocaleDirection(locale);
 
   return (

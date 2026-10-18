@@ -17,10 +17,15 @@ export interface SessionSnapshot {
   role: string | null;
   permissions: string[];
   userName: string;
+  /** /auth/me/ has confirmed this session in the current page load (not just a cached
+   * localStorage flag). False until the first successful refresh, and again after logout. */
+  validated: boolean;
 }
 
 let inMemoryUser: CurrentUser | null = null;
 let inFlightPromise: Promise<CurrentUser | null> | null = null;
+/** Role of the last user /auth/me/ confirmed; null until then and after logout. */
+let validatedRole: string | null = null;
 
 function computeSnapshot(): SessionSnapshot {
   if (typeof window === "undefined") {
@@ -31,6 +36,7 @@ function computeSnapshot(): SessionSnapshot {
       role: null,
       permissions: [],
       userName: "",
+      validated: false,
     };
   }
 
@@ -43,6 +49,7 @@ function computeSnapshot(): SessionSnapshot {
       role: null,
       permissions: [],
       userName: "",
+      validated: false,
     };
   }
 
@@ -84,6 +91,7 @@ function computeSnapshot(): SessionSnapshot {
     role,
     permissions,
     userName,
+    validated: validatedRole !== null && validatedRole === role,
   };
 }
 
@@ -91,6 +99,11 @@ let cachedSnapshot: SessionSnapshot = computeSnapshot();
 const listeners = new Set<() => void>();
 
 function updateSnapshot() {
+  // A cleared session must not leave a confirmation behind for whoever logs in next.
+  if (typeof window !== "undefined" && localStorage.getItem("isLoggedIn") !== "true") {
+    validatedRole = null;
+    inMemoryUser = null;
+  }
   cachedSnapshot = computeSnapshot();
   listeners.forEach((listener) => listener());
 }
@@ -118,6 +131,7 @@ const SERVER_SNAPSHOT: SessionSnapshot = {
   role: null,
   permissions: [],
   userName: "",
+  validated: false,
 };
 
 function getServerSnapshot(): SessionSnapshot {
@@ -146,6 +160,7 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
     .then((me) => {
       lastRefreshedAt = Date.now();
       inMemoryUser = me;
+      validatedRole = me.role;
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userRole", me.role);
       localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
@@ -210,6 +225,7 @@ export function useSession() {
     role: snapshot.role,
     permissions: snapshot.permissions,
     userName: snapshot.userName,
+    validated: snapshot.validated,
     can,
   };
 }

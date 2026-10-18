@@ -188,6 +188,8 @@ app uses, with no proxy layer:
 
 ```
 app/
+├── (marketing)/                Public site at pglive.in — `/` landing, features, pricing, app (QR target),
+│                               contact, privacy, terms (§12). Server-rendered, no session required.
 ├── (auth)/                     login, signup (tenant onboarding + 45-day trial),
 │                               verify-email, otp, forgot-password, reset-password
 ├── (owner)/                    Owner, Manager, and Receptionist portal (nav filtered by permission matrix)
@@ -277,7 +279,9 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
 ### 5.1 Baseline (MVP)
 
 - **Manifest** (`app/manifest.ts`): standalone display, portrait, theme/background colors,
-  192/512 icons + maskable variants, `start_url: /` (server redirects to role home).
+  192/512 icons + maskable variants, `start_url: /login` (or `/dashboard`) — **not `/`**, which is
+  the public marketing landing page since 2026-10-18 (§12). The precache, offline fallback and
+  tenant-scoped runtime caches (F7) must exclude every `(marketing)` route.
 - **Service worker** via Serwist:
   - Precache: app shell, fonts, offline fallback page.
   - `CacheFirst` — hashed Next.js static chunks, fonts.
@@ -399,6 +403,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-17 | Export | 🟨 (residents/payments/outstanding-dues/occupancy/expenses/pnl, csv/xlsx/pdf, each gated on its own endpoint permission; the PRD's "async job status" is obsolete — exports are synchronous) |
 | FE-20 | Expenses (Module 20) | ✅ (month nav, category chips from expenses/summary/, add/edit sheet with idempotent create + attachment upload, category manager) |
 | FE-21 | Reports / Analytics (Module 21) | ✅ (/reports: Overview/Collections/Occupancy/Exports tabs, 6-month trend chart) |
+| FE-M | Public marketing site (§12) | 🟨 (all routes, en + te, per-surface availability matrix, QR/app page, public plans + support contacts, SEO files built 2026-10-18; **launch blocked** on company identity env vars, real support contacts configured in Super Admin, legal review, the deploy gate and signup (CTA stays "Request early access" until `SIGNUP_ENABLED`)) |
 | FE-P1 | PWA hardening | ⬜ |
 | FE-R1 | Resident portal | ⬜ |
 
@@ -449,7 +454,7 @@ Small additions to note in the relevant module specs when built:
 | i18n library | next-intl, not PRD's next-i18next | next-i18next targets the Pages Router; next-intl is the maintained App Router standard. PRD i18n requirements (per-module JSON, externalised strings, Noto fonts) are met identically |
 | PWA tooling | Serwist, not next-pwa | next-pwa is unmaintained; Serwist is its actively maintained successor on Workbox |
 | Token storage | httpOnly cookies via BFF proxy | Keeps JWTs out of JS (XSS), avoids CORS, lets the service worker treat API as same-origin |
-| Locale in URL | No — cookie/profile based | Authed dashboard, no SEO need; PRD stores `language_code` per user |
+| Locale in URL | No — cookie/profile based (still true after 2026-10-18; see §12 for the marketing consequence) | Authed dashboard, no SEO need; PRD stores `language_code` per user. The public site stays cookie-based too, so **English is the only indexed language**; `/te/...` URLs would reverse this row and need owner sign-off |
 | Offline writes | None in MVP | Money mutations must not replay/conflict; PRD has no offline requirement. Read-only offline + V2 Background Sync for non-money modules |
 | Mobile app | PWA covers residents for MVP; Flutter next (Android + iOS together) | PRD lists mobile apps as V2; PWA delivers "mobile-first resident experience" (PRD §2) now |
 | Mobile client build order (2026-07-05) | Web/PWA -> Android -> iOS, all as clients of one Django API | Owner confirmed sequencing; avoids building two native apps in parallel and confirms the API needs no per-client redesign (§3.1a) |
@@ -468,3 +473,78 @@ Small additions to note in the relevant module specs when built:
 | Reports access vs. export access are two different checks (2026-10-17) | The `/reports` nav item and route need `view_reports` (`view_dashboard`-only users get the same figures inline on `/dashboard` instead); each export button on the Exports tab, and the context-export buttons on `/billing`/`/residents`/`/expenses`, are gated only by that export's own endpoint permission — `view_reports` is never required to export | Matches the backend exactly: `ResidentExportView`/`PaymentExportView`/etc. check `view_resident_profile`/`view_finance`/etc., not `view_reports`. A Manager with Finance access but no Reports module access can still export payments from `/billing`. |
 | Dashboard revenue delta dropped for now (2026-10-17) | `FinancialsSummary.revenueDelta` is optional and the dashboard doesn't populate it | Computing "vs last month" needs a second `analytics/summary/` call (last month's `cash_collected`); the old client-side version summed raw payment lists instead (an invariant F1 violation this round removed). Left as follow-up rather than adding a second round-trip to this pass. |
 
+
+---
+
+## 12. Public marketing site (pglive.in)
+
+Added 2026-10-18 on owner request (domain `pglive.in`; brand **PGLive**; Android app "in review / coming soon").
+It lives **inside this Next.js app** as the `(marketing)` route group — shared tokens, next-intl and deploy —
+and deliberately deviates from §3.2 (which had `/` redirecting to login) and the old "no SEO need" stance.
+
+### 12.1 Routes
+`/` landing · `/features` (per-surface availability) · `/pricing` · `/app` (Android landing + QR target) ·
+`/contact` · `/privacy` · `/terms` · app-wide 404. `robots.ts` / `sitemap.ts` / `opengraph-image` / `icon.svg`.
+The root layout sends `noindex` for everything; `(marketing)/layout.tsx` opts back in. `robots.txt` also
+disallows the owner routes (keep `APP_PATHS` in `app/robots.ts` in step with `app/(owner)`).
+
+### 12.2 Rendering & caching (decision: cookie locale, dynamic HTML, English indexed)
+Locale comes from `cookies()` (`i18n/request.ts`), so every page is rendered per request. We accept that rather
+than pretend: HTML is **not** CDN-cacheable; `proxy.ts` skips marketing paths only so anonymous visitors get no
+`Set-Cookie`. Data is cached instead — `fetch(..., { next: { revalidate: 300 } })` for the two public API calls.
+Telugu is a visitor convenience, not an SEO surface. Alternatives rejected for now: a separate English-only static
+layout, and `/en` `/te` URL prefixes (best SEO/CDN, but reverses the §11 "Locale in URL" row).
+
+### 12.3 Primary CTA
+Login only serves existing accounts and signup is unbuilt (FE-01), so the CTA never points at `/login`.
+`SIGNUP_ENABLED=false` (default): **"Request early access"** → WhatsApp (pre-filled) → email → `/contact`, from the
+Super-Admin-managed contacts. `SIGNUP_ENABLED=true`: **"Start free trial"** → `/signup` (build that route first).
+Logic: `features/marketing/cta.ts`. The header shows **"Open dashboard"** instead of "Log in" only for a session
+re-validated by `ensureFreshSession()` and only for roles that have a portal (owner/manager/receptionist).
+
+### 12.4 Public data (no baked-in values — invariant 10 / F4)
+- Plans: `GET /api/v1/public/plans/` → `{currency, trial_days, updated_at, plans[]}` (Module 13).
+- Contacts: `GET /api/v1/support/` (Module 01) — edited in Super Admin, no deploy.
+- Fetched server-side from `INTERNAL_API_URL` (e.g. `http://backend:8000`; `localhost` inside the container is
+  the frontend). 3 s timeout, Zod-validated, 5-min revalidate. On failure: last validated response, else
+  **"Pricing temporarily unavailable"** / "contact details are being set up". There is no static price fallback.
+
+### 12.5 Truthful claims
+`features/marketing/content/features.ts` is the single source for what is usable, per surface
+(`ownerWeb`, `residentWeb`, `mobileApp`) with states `available | preview | comingSoon | notPlanned`; copy lives in
+`messages/<locale>/marketing.json`. **Update it whenever a §7 status changes.** Tests forbid marking the Android app
+or the resident web portal `available` until that is deliberately changed. App screens are labelled
+"Concept preview", name their role, and say where that experience exists today.
+
+### 12.6 Android app page (`/app`)
+Permanent landing page, never a redirect. QR (`public/qr-app.svg`) encodes `https://pglive.in/app`, so it can be
+printed before the Play listing exists. States (`APP_STATUS`): `comingSoon` (default; early-access "notify me")
+and `live` (requires `PLAY_STORE_URL` on play.google.com, else it falls back to `comingSoon` and fails the launch
+gate). Swap the text button for Google's official badge artwork when the listing is live.
+Regenerate the QR with the `qrcode` npm package (v1.5.4, `QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 2 })`) in a scratch directory — it is intentionally not a project dependency. Scan-test the result before committing.
+
+### 12.7 Configuration (server env, read at runtime)
+| Variable | Meaning | Default |
+|---|---|---|
+| `SITE_URL` | canonical origin (https) | `https://pglive.in` |
+| `SITE_ENV` | `production` or `staging` (staging: no launch gate, `robots.txt` disallows all) | `production` |
+| `COMPANY_NAME`, `COMPANY_ADDRESS` | legal identity for footer / privacy / terms / JSON-LD | **required in production** |
+| `APP_STATUS`, `PLAY_STORE_URL` | `comingSoon` \| `live`, and the store link | `comingSoon` |
+| `SIGNUP_ENABLED` | flips the CTA to the trial | `false` |
+| `INTERNAL_API_URL` | server-side Django origin | falls back to `NEXT_PUBLIC_API_URL` |
+
+### 12.8 Launch gates
+1. **Config gate:** `next build` (`next.config.ts`) and server start (`instrumentation.ts`) fail in production while
+   company identity is missing or `APP_STATUS=live` lacks a valid Play URL. Staging builds set `SITE_ENV=staging`.
+2. **Contacts:** a Super Admin must set support email/phone/WhatsApp (`PlatformConfig`) — otherwise `/contact`
+   shows "being set up" and the CTA falls back to `/contact`.
+3. **Legal:** Privacy/Terms are drafts (banner shown) pending legal review; Telugu falls back to English for them.
+4. **Security headers:** baseline (nosniff, referrer, frame, permissions) is on. **CSP is not enabled** — inventory
+   Razorpay, Google Maps, Firebase, API/image/font origins, run `Content-Security-Policy-Report-Only`, then enforce
+   only after the owner app is verified under it.
+5. **Deployability (nothing exists yet):** production Dockerfile (`output: "standalone"`, not `npm run dev`),
+   TLS + apex↔`www` redirect, Django `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / CORS for the new origin and a
+   separate API host, health checks, rollback, cache headers for static assets.
+6. **Translations:** Telugu copy needs native-speaker review; legal text needs a Telugu translation or an explicit
+   "English governs" statement.
+7. **Brand:** the app still says "PropManager" (`messages/*/common.json`); align once the name is confirmed.

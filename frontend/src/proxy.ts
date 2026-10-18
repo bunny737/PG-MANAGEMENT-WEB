@@ -18,6 +18,13 @@ export function proxy(request: NextRequest) {
   return response;
 }
 
+// The public marketing pages are skipped: they must not hand every anonymous
+// visitor a Set-Cookie. They render in the default language until the visitor
+// picks one with the language switcher (which writes the cookie itself).
+// NOTE: this keeps responses cookie-free but does not make them CDN-cacheable;
+// pages are still rendered per request because the locale comes from cookies().
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/((?!$|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|opengraph-image|icon|apple-icon|(?:features|pricing|app|contact|privacy|terms)(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };

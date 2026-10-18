@@ -1,0 +1,507 @@
+{
+  "brand": {
+    "name": "PGLive",
+    "tagline": "మీ PG లేదా హాస్టల్‌ను ఒకే చోట నుండి నిర్వహించండి"
+  },
+  "meta": {
+    "home": {
+      "title": "PGLive — భారతదేశం కోసం PG & హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్",
+      "description": "PG మరియు హాస్టల్ యజమానుల కోసం రూపొందించిన ఒకే వ్యవస్థలో ప్రాపర్టీలు, నివాసితులు, అద్దె ఇన్వాయిస్‌లు, చెల్లింపులు మరియు ఫిర్యాదులను నిర్వహించండి."
+    },
+    "features": {
+      "title": "ఫీచర్లు — PGLive",
+      "description": "PG మరియు హాస్టల్ యజమానుల కోసం PGLive చేసే ప్రతిదీ, మరియు ప్రతి ఫీచర్ ఈరోజు ఎక్కడ అందుబాటులో ఉందో."
+    },
+    "pricing": {
+      "title": "ధరలు — PGLive",
+      "description": "PG మరియు హాస్టల్ యజమానుల కోసం సరళమైన నెలవారీ ప్లాన్‌లు, ఉచిత ట్రయల్‌తో, ప్రారంభించడానికి కార్డ్ అవసరం లేదు."
+    },
+    "app": {
+      "title": "ఆండ్రాయిడ్ యాప్ — PGLive",
+      "description": "PGLive ఆండ్రాయిడ్ యాప్ త్వరలో రాబోతోంది. QR కోడ్ స్కాన్ చేయండి లేదా డౌన్‌లోడ్ లింక్ కోసం ఇక్కడ మళ్లీ చూడండి."
+    },
+    "contact": {
+      "title": "సంప్రదించండి — PGLive",
+      "description": "ఫోన్, వాట్సాప్ లేదా ఇమెయిల్ ద్వారా PGLive బృందంతో మాట్లాడండి."
+    },
+    "privacy": {
+      "title": "గోప్యతా విధానం — PGLive",
+      "description": "PGLive డేటాను ఎలా సేకరిస్తుంది, ఉపయోగిస్తుంది మరియు రక్షిస్తుంది."
+    },
+    "terms": {
+      "title": "సేవా నిబంధనలు — PGLive",
+      "description": "మీరు PGLive ఉపయోగించినప్పుడు వర్తించే నిబంధనలు."
+    },
+    "notFound": {
+      "title": "పేజీ కనుగొనబడలేదు — PGLive"
+    }
+  },
+  "nav": {
+    "features": "ఫీచర్లు",
+    "pricing": "ధరలు",
+    "app": "ఆండ్రాయిడ్ యాప్",
+    "contact": "సంప్రదించండి",
+    "login": "లాగిన్",
+    "openDashboard": "డాష్‌బోర్డ్ తెరవండి",
+    "menu": "మెనూ తెరవండి",
+    "closeMenu": "మెనూ మూసివేయండి",
+    "language": "భాష",
+    "skipToContent": "కంటెంట్‌కు వెళ్ళండి",
+    "primary": "ప్రధాన నావిగేషన్",
+    "home": "PGLive హోమ్"
+  },
+  "cta": {
+    "requestAccess": "ముందస్తు యాక్సెస్ కోరండి",
+    "startTrial": "ఉచిత ట్రయల్ ప్రారంభించండి",
+    "seeFeatures": "అన్ని ఫీచర్లు చూడండి",
+    "seePricing": "ధరలు చూడండి",
+    "contactUs": "మమ్మల్ని సంప్రదించండి",
+    "whatsappMessage": "నమస్తే PGLive, నేను PG/హాస్టల్ నడుపుతున్నాను మరియు ముందస్తు యాక్సెస్ కావాలనుకుంటున్నాను.",
+    "emailSubject": "PGLive ముందస్తు యాక్సెస్ అభ్యర్థన"
+  },
+  "hero": {
+    "eyebrow": "భారతదేశంలోని PG & హాస్టల్ యజమానుల కోసం రూపొందించబడింది",
+    "title": "ప్రతి బెడ్, బిల్లు మరియు ఫిర్యాదును ఒకే చోట నిర్వహించండి",
+    "subtitle": "నోట్‌బుక్‌లు మరియు స్ప్రెడ్‌షీట్‌ల స్థానంలో ప్రాపర్టీలు, నివాసితులు, అద్దె ఇన్వాయిస్‌లు, చెల్లింపులు మరియు రోజువారీ నిర్వహణ కోసం PGLive ఒకే వ్యవస్థను అందిస్తుంది.",
+    "noteEarlyAccess": "ముందస్తు యాక్సెస్ తెరిచి ఉంది. మీ ఖాతాను మేము మీతో కలిసి సెటప్ చేస్తాము.",
+    "noteTrial": "ఉచిత ట్రయల్. ప్రారంభించడానికి కార్డ్ అవసరం లేదు.",
+    "cardOccupancy": "ఆక్యుపెన్సీ",
+    "cardCollected": "ఈ నెలలో వసూలైనది",
+    "cardDue": "బాకీ ఉన్న మొత్తం",
+    "illustrative": "నమూనా గణాంకాలతో ఉదాహరణ చిత్రం"
+  },
+  "trust": {
+    "title": "యజమానులు నమ్మదగిన నియమాలపై నిర్మించబడింది",
+    "items": {
+      "isolation": {
+        "title": "మీ డేటా మీదే",
+        "body": "ప్రతి వ్యాపారం డేటాబేస్ స్థాయిలోనే వేరు చేయబడుతుంది, కాబట్టి ఒక యజమాని డేటాను మరొకరు ఎప్పటికీ చూడలేరు."
+      },
+      "rent": {
+        "title": "అంగీకరించిన అద్దెతోనే బిల్లింగ్",
+        "body": "ప్రవేశ సమయంలో అంగీకరించిన అద్దెతోనే ప్రతి నివాసికి బిల్లు వేయబడుతుంది, గది మారినా కూడా. డిస్కౌంట్లు విడి లైన్‌గా కనిపిస్తాయి."
+      },
+      "audit": {
+        "title": "ప్రతి ముఖ్యమైన మార్పు నమోదవుతుంది",
+        "body": "కీలక చర్యలు ముందు మరియు తరువాత విలువలు, ఎవరు చేశారు, ఎప్పుడు, ఎక్కడి నుండి అనే వివరాలతో నమోదవుతాయి."
+      },
+      "languages": {
+        "title": "ఇంగ్లీష్ మరియు తెలుగు",
+        "body": "మీ బృందానికి సౌకర్యవంతమైన భాషలో వ్యవస్థను ఉపయోగించండి. మరిన్ని భారతీయ భాషలు ప్రణాళికలో ఉన్నాయి."
+      }
+    }
+  },
+  "roles": {
+    "title": "మొత్తం బృందం కోసం ఒకే వ్యవస్థ",
+    "owner": {
+      "title": "యజమానులు",
+      "body": "అన్ని ప్రాపర్టీలలో ఆక్యుపెన్సీ, వసూళ్లు మరియు బాకీలను చూడండి, సిబ్బందిని నిర్వహించండి మరియు ప్లాన్ ఎంచుకోండి."
+    },
+    "manager": {
+      "title": "మేనేజర్లు",
+      "body": "తమకు కేటాయించిన ప్రాపర్టీలకు నివాసితులను చేర్చుకోవడం, బెడ్‌లు కేటాయించడం, ఇన్వాయిస్‌లు సృష్టించడం మరియు చెల్లింపులు నమోదు చేయడం."
+    },
+    "receptionist": {
+      "title": "ఫ్రంట్ డెస్క్",
+      "body": "సందర్శకుల రాక మరియు పోకను నమోదు చేయండి, నివాసితులను చూడండి — బిల్లింగ్‌కు ప్రవేశం లేకుండా."
+    },
+    "resident": {
+      "title": "నివాసితులు",
+      "body": "తమ సొంత లాగిన్‌లో ఇన్వాయిస్‌లు, రసీదులు మరియు ఫిర్యాదులు.",
+      "note": "నివాసి లాగిన్ త్వరలో రాబోతోంది."
+    }
+  },
+  "features": {
+    "title": "PG నడపడానికి కావలసిన ప్రతిదీ",
+    "subtitle": "ప్రతి ఫీచర్ ఈరోజు ఎక్కడ వాడుకోవచ్చో చూపిస్తుంది. మీరు ఇప్పుడే తెరవగలిగితేనే మేము దానిని అందుబాటులో ఉన్నట్లు గుర్తిస్తాము.",
+    "highlightsTitle": "PGLive ఏం చేస్తుంది",
+    "legendTitle": "బ్యాడ్జ్‌లను ఎలా చదవాలి",
+    "surfaces": {
+      "ownerWeb": "యజమాని వెబ్",
+      "residentWeb": "నివాసి వెబ్",
+      "mobileApp": "ఆండ్రాయిడ్ యాప్"
+    },
+    "states": {
+      "available": "అందుబాటులో ఉంది",
+      "preview": "ప్రివ్యూలో",
+      "comingSoon": "త్వరలో",
+      "notPlanned": "వర్తించదు"
+    },
+    "legend": {
+      "available": "ఈరోజే వాడుకోవచ్చు.",
+      "preview": "పాక్షికంగా పూర్తయింది, లేదా కాన్సెప్ట్ ప్రివ్యూ. మార్పులు ఉండవచ్చు.",
+      "comingSoon": "ప్రణాళికలో ఉంది. ఇంకా వాడలేరు.",
+      "notPlanned": "ఉత్పత్తిలోని ఈ భాగానికి వర్తించదు."
+    },
+    "groups": {
+      "properties": "ప్రాపర్టీలు & డాష్‌బోర్డ్‌లు",
+      "residents": "నివాసితులు & ప్రవేశాలు",
+      "money": "బిల్లింగ్ & డబ్బు",
+      "operations": "రోజువారీ నిర్వహణ",
+      "platform": "రిపోర్టులు & ప్లాట్‌ఫామ్"
+    },
+    "items": {
+      "propertySetup": {
+        "title": "ప్రాపర్టీ సెటప్",
+        "description": "ప్రాపర్టీలు, భవనాలు, అంతస్తులు, గదులు మరియు బెడ్‌లు — AC, నాన్-AC, భోజనంతో లేదా లేకుండా రేట్లతో."
+      },
+      "amenities": {
+        "title": "సౌకర్యాల జాబితా",
+        "description": "Wi-Fi, పవర్ బ్యాకప్, CCTV వంటి 72 సాధారణ PG సౌకర్యాల నుండి ఎంచుకోండి, లేదా సొంతవి జోడించండి — ప్రాపర్టీ లేదా భవనం వారీగా."
+      },
+      "dashboard": {
+        "title": "ఆక్యుపెన్సీ & ఆర్థిక డాష్‌బోర్డ్‌లు",
+        "description": "నిండిన మరియు ఖాళీ బెడ్‌లు, వసూళ్లు మరియు బాకీలు ఒక్క చూపులో — ఒక ప్రాపర్టీకి లేదా అన్నింటికీ."
+      },
+      "residents": {
+        "title": "నివాసితుల రికార్డులు",
+        "description": "ప్రొఫైల్‌లు, అత్యవసర సంప్రదింపులు, ID పత్రాలు మరియు విచారణ నుండి ఖాళీ చేసే వరకు స్పష్టమైన స్థితి."
+      },
+      "admissions": {
+        "title": "ప్రవేశాలు & చెక్-ఇన్",
+        "description": "నివాసి చేరినప్పుడు బిల్లింగ్ విధానం, ఆహార ఎంపిక, అడ్వాన్స్ మరియు అంగీకరించిన అద్దెను నమోదు చేయండి."
+      },
+      "allocations": {
+        "title": "బెడ్ కేటాయింపు & బదిలీలు",
+        "description": "బెడ్‌లు కేటాయించండి, నివాసితులను గదుల మధ్య మార్చండి మరియు పూర్తి బదిలీ చరిత్రను ఉంచండి."
+      },
+      "depositsExit": {
+        "title": "డిపాజిట్లు & నిష్క్రమణ",
+        "description": "నోటీసు కాలం, మినహాయింపులు, రీఫండ్‌లు మరియు చెప్పకుండా వెళ్లిపోయిన వారి రికార్డు."
+      },
+      "billing": {
+        "title": "అద్దె ఇన్వాయిస్‌లు",
+        "description": "ఒకేసారి మొత్తం ప్రాపర్టీకి ఇన్వాయిస్‌లు సృష్టించండి. అద్దె, డిస్కౌంట్లు, విద్యుత్, నీరు మరియు ఇతర ఛార్జీలు విడి లైన్లుగా కనిపిస్తాయి."
+      },
+      "payments": {
+        "title": "చెల్లింపులు & రసీదులు",
+        "description": "UPI, నగదు, బ్యాంక్ బదిలీ, కార్డ్ లేదా చెక్ చెల్లింపులను, పాక్షిక చెల్లింపులతో సహా నమోదు చేయండి, ఎవరు ఎంత బాకీ ఉన్నారో చూడండి."
+      },
+      "discounts": {
+        "title": "డిస్కౌంట్లు",
+        "description": "కారణం మరియు చెల్లుబాటు కాలంతో నివాసికి స్థిర లేదా శాతం డిస్కౌంట్ ఇవ్వండి."
+      },
+      "expenses": {
+        "title": "ఖర్చులు",
+        "description": "ప్రతి నెలా మీరు చేసే ఖర్చులను వర్గం వారీగా, రసీదులతో సహా ట్రాక్ చేయండి."
+      },
+      "complaints": {
+        "title": "ఫిర్యాదుల ట్రాకింగ్",
+        "description": "సమస్యలను నమోదు చేయండి, కేటాయించండి, పురోగతిని అనుసరించండి మరియు ఫోటోలు, వ్యాఖ్యలను ఒకే థ్రెడ్‌లో ఉంచండి."
+      },
+      "visitors": {
+        "title": "సందర్శకుల లాగ్",
+        "description": "ఎవరు ఎవరిని కలిశారో స్పష్టమైన రికార్డుతో ఫ్రంట్-డెస్క్ చెక్-ఇన్ మరియు చెక్-అవుట్."
+      },
+      "staff": {
+        "title": "సిబ్బంది యాక్సెస్",
+        "description": "మేనేజర్లు, రిసెప్షనిస్టులను చేర్చండి, ప్రాపర్టీలకు కేటాయించండి మరియు ఒక్కొక్కరు ఏ మాడ్యూళ్లు వాడవచ్చో నియంత్రించండి."
+      },
+      "reports": {
+        "title": "రిపోర్టులు & ఎగుమతులు",
+        "description": "వసూళ్లు మరియు ఆక్యుపెన్సీ ట్రెండ్‌లు, అలాగే నివాసితుల జాబితాలు, చెల్లింపుల చరిత్ర మరియు బాకీలు CSV, Excel లేదా PDFగా."
+      },
+      "languages": {
+        "title": "ఇంగ్లీష్ & తెలుగు",
+        "description": "ఉత్పత్తి ఈరోజు ఇంగ్లీష్ మరియు తెలుగులో పనిచేస్తుంది, మరిన్ని భారతీయ భాషలు ప్రణాళికలో ఉన్నాయి."
+      },
+      "subscription": {
+        "title": "ప్లాన్ & బిల్లింగ్",
+        "description": "మీ ప్లాన్‌తో పోల్చి బెడ్ వినియోగాన్ని చూడండి, ప్లాన్‌లు మార్చండి మరియు ఆన్‌లైన్‌లో సురక్షితంగా చెల్లించండి."
+      }
+    }
+  },
+  "how": {
+    "title": "నాలుగు దశల్లో ప్రారంభించండి",
+    "steps": [
+      {
+        "title": "మీ ప్రాపర్టీని జోడించండి",
+        "body": "మీ ప్రాపర్టీని సృష్టించి భవనాలు, అంతస్తులు, గదులు మరియు బెడ్‌లను అమర్చండి."
+      },
+      {
+        "title": "నివాసితులను చేర్చుకోండి",
+        "body": "ప్రతి నివాసిని వారి అంగీకరించిన అద్దె, అడ్వాన్స్ మరియు ID పత్రాలతో నమోదు చేయండి."
+      },
+      {
+        "title": "బిల్లు వేసి వసూలు చేయండి",
+        "body": "ఒకేసారి ఇన్వాయిస్‌లు సృష్టించి, చెల్లింపులు వచ్చినప్పుడు నమోదు చేయండి."
+      },
+      {
+        "title": "అన్నీ సజావుగా నడపండి",
+        "body": "ఫిర్యాదులు, సందర్శకులు మరియు ఖర్చులను ట్రాక్ చేయండి, ఆక్యుపెన్సీ మరియు బాకీలను గమనించండి."
+      }
+    ]
+  },
+  "app": {
+    "eyebrow": "ఆండ్రాయిడ్ యాప్",
+    "title": "మీ ఫోన్‌లో PGLive",
+    "subtitle": "మా ఆండ్రాయిడ్ యాప్ సమీక్షలో ఉంది మరియు త్వరలో రాబోతోంది. ఇవి మేము నిర్మిస్తున్న దానికి కాన్సెప్ట్ ప్రివ్యూలు.",
+    "subtitleLive": "PGLive ఆండ్రాయిడ్ యాప్‌ను Google Play నుండి డౌన్‌లోడ్ చేసుకోండి.",
+    "badgeComingSoon": "త్వరలో వస్తోంది",
+    "badgeLive": "Google Playలో అందుబాటులో ఉంది",
+    "scanTitle": "డౌన్‌లోడ్ పేజీ తెరవడానికి స్కాన్ చేయండి",
+    "scanBody": "మీ ఫోన్ కెమెరాను కోడ్ వైపు పెట్టండి. ఇది ఎప్పుడూ pglive.in/app తెరుస్తుంది, కాబట్టి లాంచ్ తర్వాత కూడా పనిచేస్తుంది.",
+    "qrAlt": "PGLive ఆండ్రాయిడ్ యాప్ పేజీని తెరిచే QR కోడ్",
+    "openPage": "యాప్ పేజీ తెరవండి",
+    "getOnPlay": "Google Playలో పొందండి",
+    "previewLabel": "కాన్సెప్ట్ ప్రివ్యూ",
+    "previewNote": "ఉదాహరణ స్క్రీన్‌లు మాత్రమే, ప్రస్తుత యాప్ స్క్రీన్‌షాట్‌లు కావు. తుది స్క్రీన్‌లు భిన్నంగా ఉంటాయి.",
+    "notifyTitle": "లాంచ్ అయినప్పుడు తెలుసుకోవాలనుకుంటున్నారా?",
+    "notifyBody": "మాకు సందేశం పంపండి, అది అందుబాటులోకి వచ్చిన రోజే చెబుతాము.",
+    "notifyCta": "నాకు తెలియజేయండి",
+    "notifyMessage": "నమస్తే PGLive, ఆండ్రాయిడ్ యాప్ అందుబాటులోకి వచ్చినప్పుడు దయచేసి నాకు తెలియజేయండి.",
+    "notifySubject": "PGLive ఆండ్రాయిడ్ యాప్ లాంచ్",
+    "requirementsTitle": "తెలుసుకోవాల్సినవి",
+    "requirements": [
+      "ప్రస్తుతానికి ఆండ్రాయిడ్ మాత్రమే. ఐఫోన్ యాప్ ఇంకా అందుబాటులో లేదు.",
+      "వెబ్‌లో వాడే అదే ఖాతాతో సైన్ ఇన్ అవుతారు.",
+      "ఇక్కడ చూపిన కొన్ని స్క్రీన్‌లు యాప్ కోసం ప్రణాళికలో ఉన్నాయి, ఇంకా నిర్మించలేదు. యజమాని డాష్‌బోర్డ్ ఇప్పటికే వెబ్‌లో పనిచేస్తోంది."
+    ],
+    "screens": {
+      "residentHome": {
+        "role": "నివాసి వీక్షణ",
+        "title": "హోమ్",
+        "availability": "నివాసి మొబైల్ అనుభవం ప్రణాళికలో ఉంది."
+      },
+      "invoice": {
+        "role": "నివాసి వీక్షణ",
+        "title": "ఇన్వాయిస్",
+        "availability": "నివాసి మొబైల్ అనుభవం ప్రణాళికలో ఉంది."
+      },
+      "complaint": {
+        "role": "నివాసి వీక్షణ",
+        "title": "ఫిర్యాదు",
+        "availability": "నివాసి మొబైల్ అనుభవం ప్రణాళికలో ఉంది."
+      },
+      "ownerDashboard": {
+        "role": "యజమాని వీక్షణ",
+        "title": "డాష్‌బోర్డ్",
+        "availability": "యజమాని డాష్‌బోర్డ్ ఈరోజు వెబ్‌లో అందుబాటులో ఉంది."
+      }
+    },
+    "sample": {
+      "greeting": "నమస్తే, రవి",
+      "rentDue": "చెల్లించాల్సిన అద్దె",
+      "dueOn": "గడువు 5 నవంబర్",
+      "status": {
+        "due": "బాకీ",
+        "paid": "చెల్లించారు",
+        "assigned": "కేటాయించారు"
+      },
+      "recent": "ఇటీవలి చెల్లింపులు",
+      "october": "అక్టోబర్ అద్దె",
+      "invoiceTitle": "ఇన్వాయిస్, నవంబర్",
+      "lineRent": "అద్దె",
+      "lineDiscount": "డిస్కౌంట్",
+      "lineElectricity": "విద్యుత్",
+      "lineTotal": "మొత్తం",
+      "complaintTitle": "ఫ్యాన్ పనిచేయడం లేదు",
+      "complaintRoom": "గది 204",
+      "stepOpen": "నమోదు చేశారు",
+      "stepAssigned": "నిర్వహణ విభాగానికి కేటాయించారు",
+      "stepProgress": "పురోగతిలో ఉంది",
+      "occupancy": "ఆక్యుపెన్సీ",
+      "occupiedBeds": "100 బెడ్‌లలో 82 నిండాయి",
+      "collected": "వసూలైనది",
+      "pending": "పెండింగ్"
+    }
+  },
+  "pricing": {
+    "title": "సరళమైన ధరలు, నెలవారీ బిల్లింగ్",
+    "subtitle": "మీరు నిర్వహించే బెడ్‌ల సంఖ్యకు సరిపోయే ప్లాన్ ఎంచుకోండి. ప్రతి ప్లాన్‌లో ప్రస్తుత అన్ని ఫీచర్లు ఉంటాయి.",
+    "perMonth": "నెలకు",
+    "upToBeds": "{beds} బెడ్‌ల వరకు",
+    "unlimitedBeds": "అపరిమిత బెడ్‌లు",
+    "trialBadge": "మీ ఉచిత ట్రయల్ ఈ ప్లాన్‌తో ప్రారంభమవుతుంది",
+    "trialDays": "{days} రోజుల ఉచిత ట్రయల్, కార్డ్ అవసరం లేదు",
+    "perBed": {
+      "title": "బెడ్‌కు చెల్లించండి",
+      "firstBeds": "మొదటి {beds} బెడ్‌లు",
+      "nextBeds": "తదుపరి బెడ్‌లు {beds} వరకు",
+      "restBeds": "ఆ తరువాత",
+      "free": "ఉచితం",
+      "rate": "బెడ్‌కు నెలకు {rate}"
+    },
+    "notesTitle": "బిల్లింగ్ ఎలా పనిచేస్తుంది",
+    "notes": {
+      "beds": "మీ ఖాతాలో సెటప్ చేసిన బెడ్‌లను లెక్కిస్తాము — అవి నిండి ఉన్నాయా లేదా అనేది పట్టింపు కాదు.",
+      "changePlan": "మరొక స్థిర నెలవారీ ప్లాన్‌కు మారడం కొత్త ప్లాన్ చెల్లించిన తర్వాతే అమల్లోకి వస్తుంది. బెడ్‌కు చెల్లించే ప్లాన్‌ను ఎంచుకున్న వెంటనే అది ప్రారంభమవుతుంది.",
+      "razorpay": "సబ్‌స్క్రిప్షన్‌లు Razorpay ద్వారా INRలో బిల్ చేయబడతాయి. నివాసితుల అద్దె PGLive ద్వారా ఎప్పుడూ వసూలు చేయబడదు.",
+      "suspended": "చెల్లింపు విఫలమైతే ఖాతా నిలిపివేయడానికి ముందు కొద్ది గ్రేస్ వ్యవధి ఉంటుంది. మీ డేటా భద్రంగా ఉంటుంది.",
+      "billingTiming": "స్థిర నెలవారీ ప్లాన్‌లకు నెల ముందే బిల్లు వేస్తారు. బెడ్‌కు చెల్లించే ప్లాన్‌లకు ప్రతి నెల చివర, మీకు ఉన్న బెడ్‌లకు రోజు వారీ నిష్పత్తిలో బిల్లు వేస్తారు."
+    },
+    "unavailable": {
+      "title": "ధరలు తాత్కాలికంగా అందుబాటులో లేవు",
+      "body": "మా ప్రస్తుత ప్లాన్‌లను లోడ్ చేయలేకపోయాము. దయచేసి కొన్ని నిమిషాల్లో మళ్లీ ప్రయత్నించండి, లేదా మమ్మల్ని సంప్రదిస్తే ధరలు తెలియజేస్తాము."
+    }
+  },
+  "faq": {
+    "title": "యజమానులు అడిగే ప్రశ్నలు",
+    "items": [
+      {
+        "q": "PGLive ఎవరి కోసం?",
+        "a": "భారతదేశంలోని PGలు, హాస్టళ్లు మరియు ఇలాంటి పేయింగ్-గెస్ట్ ప్రాపర్టీల యజమానులు మరియు మేనేజర్ల కోసం — ఒకే భవనం నుండి అనేక ప్రాపర్టీల వరకు."
+      },
+      {
+        "q": "ఉచిత ట్రయల్ ఉందా?",
+        "a": "ఉంది. కొత్త ఖాతాలకు కార్డ్ అవసరం లేకుండా ఉచిత ట్రయల్ లభిస్తుంది. ట్రయల్ వ్యవధి ధరల పేజీలో చూపబడుతుంది."
+      },
+      {
+        "q": "నివాసితులు PGLive ద్వారా అద్దె చెల్లిస్తారా?",
+        "a": "లేదు. నివాసితులు మీకు UPI, నగదు లేదా బ్యాంక్ బదిలీ ద్వారా చెల్లిస్తారు, మీరు దాన్ని PGLiveలో నమోదు చేస్తారు. Razorpay మీ PGLive సబ్‌స్క్రిప్షన్ కోసం మాత్రమే వాడతాము."
+      },
+      {
+        "q": "నా ప్లాన్ కోసం బెడ్‌లను ఎలా లెక్కిస్తారు?",
+        "a": "మీ ఖాతాలో మీరు సెటప్ చేసిన ప్రతి బెడ్ లెక్కలోకి వస్తుంది, అది నిండి ఉన్నా లేకపోయినా."
+      },
+      {
+        "q": "మొబైల్ యాప్ ఉందా?",
+        "a": "ఆండ్రాయిడ్ యాప్ సమీక్షలో ఉంది మరియు త్వరలో రాబోతోంది. వెబ్ యాప్ ఈరోజే ఏ ఫోన్ బ్రౌజర్‌లోనైనా పనిచేస్తుంది. ఐఫోన్ యాప్ ఇంకా అందుబాటులో లేదు."
+      },
+      {
+        "q": "ఏ భాషలు మద్దతు ఇస్తాయి?",
+        "a": "ఈరోజు ఇంగ్లీష్ మరియు తెలుగు. హిందీ, తమిళం మరియు మలయాళం ప్రణాళికలో ఉన్నాయి."
+      },
+      {
+        "q": "నా డేటా సురక్షితమేనా?",
+        "a": "ప్రతి వ్యాపారం యొక్క డేటా డేటాబేస్ స్థాయిలోనే వేరు చేయబడుతుంది మరియు కీలక మార్పులు ఆడిట్ ట్రెయిల్‌లో నమోదవుతాయి."
+      }
+    ]
+  },
+  "finalCta": {
+    "title": "మీ PGని ఒకే స్క్రీన్‌పైకి తేవడానికి సిద్ధమా?",
+    "body": "మీ ప్రాపర్టీ గురించి మాకు చెప్పండి, ప్రారంభించడానికి మేము సహాయం చేస్తాము."
+  },
+  "contact": {
+    "title": "మాతో మాట్లాడండి",
+    "subtitle": "ఫీచర్లు, ధరలు లేదా ప్రారంభించడం గురించి ప్రశ్నలు ఉన్నాయా? సహాయం చేయడానికి మేము సంతోషిస్తాము.",
+    "email": "ఇమెయిల్",
+    "phone": "ఫోన్",
+    "whatsapp": "వాట్సాప్",
+    "website": "సహాయ కేంద్రం",
+    "hours": "సమయాలు",
+    "address": "చిరునామా",
+    "chatOnWhatsapp": "వాట్సాప్‌లో చాట్ చేయండి",
+    "unavailable": {
+      "title": "సంప్రదింపు వివరాలు సిద్ధమవుతున్నాయి",
+      "body": "మా సంప్రదింపు మార్గాలు త్వరలో ఇక్కడ కనిపిస్తాయి. దయచేసి కొద్దిసేపటి తర్వాత చూడండి."
+    },
+    "earlyAccess": {
+      "title": "ముందస్తు యాక్సెస్",
+      "body": "మీ ప్రాపర్టీ పేరు మరియు బెడ్‌ల సంఖ్యతో మాకు సందేశం పంపండి, మీ ఖాతాను మేము మీతో కలిసి సెటప్ చేస్తాము."
+    }
+  },
+  "footer": {
+    "about": "భారతదేశం కోసం PG మరియు హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్.",
+    "product": "ఉత్పత్తి",
+    "company": "సంప్రదించండి",
+    "legal": "చట్టపరమైన",
+    "privacy": "గోప్యతా విధానం",
+    "terms": "సేవా నిబంధనలు",
+    "copyright": "© {year} {company}. అన్ని హక్కులూ ప్రత్యేకించబడ్డాయి."
+  },
+  "notFound": {
+    "title": "ఆ పేజీ మాకు దొరకలేదు",
+    "body": "లింక్ పాతది కావచ్చు లేదా తప్పుగా టైప్ చేసి ఉండవచ్చు.",
+    "home": "హోమ్‌కు తిరిగి వెళ్ళండి"
+  },
+  "legal": {
+    "draftNotice": "Draft pending legal review. This text may change before launch.",
+    "privacy": {
+      "title": "Privacy Policy",
+      "intro": "This policy explains what information PGLive collects, why, and the choices you have. \"We\" means {company}.",
+      "sections": [
+        {
+          "heading": "Information we collect",
+          "body": "Account details (name, email, phone, password), details of your business and properties, and the records you enter about residents, such as contact details, emergency contacts and ID documents. We also collect basic technical data such as device and app version."
+        },
+        {
+          "heading": "How we use it",
+          "body": "To provide the service, send invoices and notifications, keep accounts secure, prevent misuse, provide support and improve the product."
+        },
+        {
+          "heading": "Your residents' information",
+          "body": "You decide what you record about your residents. You are responsible for having a lawful basis and any needed consent to collect it. We process it on your behalf and do not use it for our own marketing."
+        },
+        {
+          "heading": "Browser storage and cookies",
+          "body": "We store your sign-in session and preferences in your browser's local storage, and your language choice in a cookie named NEXT_LOCALE. These are needed for the service to work."
+        },
+        {
+          "heading": "Mobile app",
+          "body": "The Android app registers an installation identifier, your app version and, if you allow notifications, a push token, and links them to your account so we can deliver notifications and enforce updates."
+        },
+        {
+          "heading": "Payments",
+          "body": "Subscription payments are processed by Razorpay. We do not store your card or UPI details. Resident rent is not collected through PGLive."
+        },
+        {
+          "heading": "Notifications",
+          "body": "We send service emails and, where you allow it, push notifications about your account, invoices and receipts."
+        },
+        {
+          "heading": "Service providers",
+          "body": "We use providers for hosting and file storage, email delivery, push notifications and payments. They process data only to provide those services to us."
+        },
+        {
+          "heading": "Retention",
+          "body": "We keep your data while your account is active. After cancellation we keep it for a limited period (currently 30 days) so you can come back, and then it becomes eligible for deletion."
+        },
+        {
+          "heading": "Your rights and contact",
+          "body": "You can ask to access, correct or delete your data. Use the contact details on our Contact page."
+        },
+        {
+          "heading": "Changes",
+          "body": "We will post any changes to this policy on this page."
+        }
+      ]
+    },
+    "terms": {
+      "title": "Terms of Service",
+      "intro": "These terms apply when you use PGLive, provided by {company}. By creating an account or using the service you agree to them.",
+      "sections": [
+        {
+          "heading": "The service",
+          "body": "PGLive is software for managing PG and hostel properties, residents, billing and operations. Features are described on our website and may change over time."
+        },
+        {
+          "heading": "Accounts",
+          "body": "You are responsible for your account, for keeping your password secure and for the actions of the staff you add."
+        },
+        {
+          "heading": "Free trial and subscription",
+          "body": "New accounts start with a free trial. After that, a fixed monthly plan is billed monthly in advance through Razorpay and renews automatically until cancelled. A change to another fixed plan takes effect once the new plan is paid; there is no proration or refund of the previous period. A per-bed plan starts when you select it and is billed monthly in arrears for the beds you had, prorated by day."
+        },
+        {
+          "heading": "Non-payment",
+          "body": "If a payment fails we allow a short grace period. After that the account is paused and sign-in is blocked, while your data is kept."
+        },
+        {
+          "heading": "Your data",
+          "body": "You own the data you enter. You grant us permission to process it to provide the service. You are responsible for the lawfulness of the resident data you collect."
+        },
+        {
+          "heading": "Acceptable use",
+          "body": "Do not misuse the service, attempt to access other businesses' data, or use it for unlawful purposes."
+        },
+        {
+          "heading": "Availability",
+          "body": "We work to keep the service available but do not guarantee uninterrupted operation."
+        },
+        {
+          "heading": "Liability",
+          "body": "To the extent permitted by law, our liability is limited to the fees you paid in the three months before the claim."
+        },
+        {
+          "heading": "Governing law",
+          "body": "These terms are governed by the laws of India."
+        },
+        {
+          "heading": "Changes and contact",
+          "body": "We may update these terms and will post the new version here. Contact us using the details on our Contact page."
+        }
+      ]
+    }
+  }
+}

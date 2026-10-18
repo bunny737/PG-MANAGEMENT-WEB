@@ -96,6 +96,8 @@ services:
       - ./backend/apps/properties/tests/fixtures:/backend/apps/properties/tests/fixtures:ro
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Server-side (marketing site) fetches: localhost inside this container is not Django.
+      - INTERNAL_API_URL=http://backend:8000
       - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
       - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY:-}
       - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}

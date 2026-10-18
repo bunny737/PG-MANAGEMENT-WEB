@@ -506,6 +506,8 @@ export interface CreateRoomPayload {
   category: "ac" | "non_ac";
   rack_rate_with_food: string;
   rack_rate_without_food: string;
+  /** Create the room's beds in the same transaction (all-or-nothing against the plan bed limit). */
+  auto_create_beds?: boolean;
 }
 
 export function createRoom(payload: CreateRoomPayload) {
@@ -527,13 +529,6 @@ export function listBeds(roomId: string) {
   return apiFetch<Bed[] | { results: Bed[] }>(`/api/v1/beds/?room=${roomId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
-}
-
-export function createBed(payload: { room: string; bed_number: string }) {
-  return apiFetch<Bed>("/api/v1/beds/", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
 }
 
 export function getBed(bedId: string) {

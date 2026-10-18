@@ -38,8 +38,11 @@ Table: plans                                    (NOT under RLS — platform cata
   pricing_type          flat_monthly | per_bed_monthly, default flat_monthly
   max_properties        int, null                (null = Unlimited; PER_BED_MONTHLY plans must be null — no cap, usage-based)
   max_residents_per_property  int, null           (null = Unlimited; same PER_BED_MONTHLY constraint)
+  max_beds              int, null                (null = Unlimited; total provisioned beds across the tenant;
+                                                  PER_BED_MONTHLY plans must be null)
   price_per_month       decimal(10,2), null       (null for PER_BED_MONTHLY — see plan_bed_tiers)
-  is_trial_plan         bool, default False       (which plan's limits a trial tenant borrows)
+  is_trial_plan         bool, default False       (which plan's limits a trial tenant borrows;
+                                                  partial unique constraint single_trial_plan: at most one True)
   is_active             bool, default True        (retire without deleting)
   razorpay_plan_id       varchar(100), blank       (lazily created on first select_plan; FLAT_MONTHLY only)
   created_at / updated_at
@@ -61,6 +64,7 @@ Table: subscriptions                            (NOT under RLS — see Decisions
   payment_failed_at     datetime, null          (start of the 5-day grace period)
   max_properties_override    int, null          (Super Admin manual override)
   max_residents_override     int, null
+  max_beds_override          int, null
   created_at / updated_at
 
 Table: subscription_payments                    (RLS enforced, app: apps.subscriptions)
@@ -170,8 +174,10 @@ frontend always reaches a tenant's subscription via
    already-suspended tenant (`already_suspended`); `reactivate` requires the
    tenant currently be `suspended` or `payment_failed`
    (`tenant_not_suspended`) and always lands on `active`.
-10. A Plan with any `Subscription` referencing it cannot be deleted
-    (`plan_in_use`) — retire it (`is_active=False`) instead.
+10. A **locked** plan (it has a `razorpay_plan_id` or any `Subscription`
+    referencing it) and the trial plan cannot be deleted (`plan_in_use`; the
+    admin hides delete and bulk delete for them) — retire it
+    (`is_active=False`) instead. See rule 23.
 11. Plan selection, override, suspend, reactivate, and every tenant status
     change (webhook- or command-driven) are audit logged.
 12. `manage_subscription` (Super Admin, Owner) gates the tenant-facing
@@ -220,6 +226,35 @@ frontend always reaches a tenant's subscription via
     idempotent on `razorpay_payment_id` — a replayed webhook can no longer
     create a duplicate `SubscriptionPayment` (this was a pre-existing gap,
     fixed in the same change that added the second event family).
+21. **Bed hard block** (`check_bed_limit`, hooked into
+    `BedViewSet.perform_create` and `RoomViewSet.perform_create` when
+    `auto_create_beds` is set, which checks `adding=sharing_type` so a room
+    is created with all its beds or not at all): rejected
+    (`bed_limit_reached`) once the tenant's total `Bed` count (provisioned,
+    not occupied — rule 14's basis) would exceed `effective_max_beds()`.
+    Resolves like rule 4 (override → plan → trial plan → unlimited).
+    `max_beds` applies to FLAT_MONTHLY plans only; a PER_BED_MONTHLY plan
+    must leave it null.
+22. **Plan selection checks beds first.** `select_plan` re-reads the
+    subscription under the same row lock the limit checks take, and rejects a
+    plan whose `max_beds` is below the tenant's current bed count
+    (`plan_bed_limit_exceeded`) **before any Razorpay call**. Bed creation and
+    plan selection therefore serialize: a downgrade can never commit while
+    bed N+1 is being added.
+23. **A locked plan's pricing is frozen.** Once a plan has a
+    `razorpay_plan_id` or any subscriber, `price_per_month`, `pricing_type`
+    and (for per-bed plans) its `PlanBedTier` rows reject changes
+    (`plan_pricing_locked`; the admin tier inline turns read-only). To
+    reprice, create a new plan and retire the old one. `max_beds`, `name` and
+    `is_active` stay editable.
+24. **Exactly one trial plan.** Saving a plan with `is_trial_plan=True` moves
+    the flag off every other plan in the same transaction; the current trial
+    plan can't be un-flagged or retired (`trial_plan_required`) — hand the
+    flag to another plan first. `single_trial_plan` is the database backstop.
+25. **Launch lineup (data, seeded by migration 0006):** Basic — flat ₹149/month,
+    `max_beds=500`, the trial plan; Unlimited — flat ₹249/month,
+    `max_beds=null`. Properties and residents are uncapped on both. The trial
+    is 45 days (`PlatformConfig.trial_days`).
 
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
@@ -423,8 +458,61 @@ frontend always reaches a tenant's subscription via
   `ResidentViewSet.change_status` were wrapped in `transaction.atomic` so the
   lock is held through the insert; `AdmissionViewSet.perform_create` already
   was.
+- [DECISION 2026-10-18] **Bed cap on flat plans.** Owner asked for a ₹149/month
+  Basic plan up to 500 beds and a ₹249/month Unlimited plan above that, with
+  beds as the only limit. New `Plan.max_beds` / `Subscription.max_beds_override`,
+  enforced by `check_bed_limit` at both bed-creation sites. It counts
+  provisioned beds (rule 14's basis), not occupied ones, so the cap and a
+  per-bed bill agree on what a "bed" is. A cap on PER_BED_MONTHLY plans is
+  rejected: usage-based billing stays uncapped.
+- [DECISION 2026-10-18] **The limit-check lock is now join-free.**
+  `_subscription_for_limit_check` used `select_for_update(of=('self',))` with
+  `select_related('plan', 'tenant')`. When the lock waits on a concurrent plan
+  change, PostgreSQL re-checks only the locked row, so the already-fetched plan
+  could be pre-commit and a limit check could pass against stale limits. It
+  now locks the bare subscription row and loads plan/tenant afterwards. Covers
+  the property/resident checks too. Verified by removing the lock and watching
+  `test_bed_limit_concurrency` fail.
+- [DECISION 2026-10-18] **Downgrades are checked against current beds, under
+  the lock.** Without that, "plan allows 500" could be defeated by selecting
+  Basic while a tenant holds 600 beds, or by racing a bed create against the
+  switch. The check runs before any Razorpay call so a refused switch has no
+  external side effects.
+- [DECISION 2026-10-18] **Live plans are immutable in price; they are retired,
+  not edited or deleted.** Razorpay can't reprice an existing plan, and
+  `select_plan` only creates the Razorpay plan when `razorpay_plan_id` is empty,
+  so editing `price_per_month` afterwards would make the database show one
+  price while customers pay another. "Locked" means a Razorpay ID **or** any
+  subscriber (per-bed plans never get a Razorpay ID). The admin and API both
+  enforce it; tier-inline deletes skip `clean()`, so admin *permissions* are what
+  block them, and bulk delete is removed. `max_beds`, `name` and `is_active`
+  stay editable: they're entitlements/labels, not what Razorpay charges.
+- [DECISION 2026-10-18] **One trial plan, always.** The flag moves on save, the
+  current trial plan can't be cleared or retired, and a partial unique
+  constraint backs it. Without that, an admin un-flagging Basic would silently
+  make every trial tenant unlimited (`effective_plan()` returns `None`). The
+  one remaining path to "none" is faking the seed migration. The DRF serializer
+  drops the auto-generated uniqueness validator for `is_trial_plan` because
+  hand-over, not rejection, is the intended behaviour; plan-protection errors
+  are raised from the viewset (a serializer `validate()` loses the error code).
+- [DECISION 2026-10-18] **Seed migration 0006 is strict and one-way.** Fixed UUIDs
+  for Basic/Unlimited; a re-run accepts rows that match exactly, and aborts
+  with a clear message on a UUID holding other data or a different plan using
+  the name — it never overwrites or merges. Reverse is a no-op: deleting plans
+  would fail once tenants subscribe (PROTECT), and restoring `trial_days`
+  would clobber later Super Admin edits. The trial changes 60 → 45 days (owner
+  decision; the PRD still says 60). Existing tenants keep their `trial_ends_at`.
+- [DECISION 2026-10-18] **Frontend room creation is atomic.** `AddRoomForm`
+  created the room, then one `POST /beds/` per bed in parallel; near the cap
+  that could leave a room with only some of its beds. It now sends
+  `auto_create_beds: true` and reads the beds from the response.
 
 ## Changelog
+- 2026-10-18  Basic (₹149, 500 beds, trial) + Unlimited (₹249) launch plans,
+  `max_beds` cap, 45-day trial, live-plan price lock, single trial plan; see
+  rules 21-25 and the Decisions above. Backend tests added in
+  `test_bed_limits`, `test_plan_protection`, `test_bed_limit_concurrency`,
+  `test_seed_migration` (+ override and signup cases).
 - 2026-06-xx  Created stub.
 - 2026-07-04  Built: `Plan` (platform catalog) + `Subscription` (1:1 per
   tenant, deliberately outside RLS) + `SubscriptionPayment` (RLS) in

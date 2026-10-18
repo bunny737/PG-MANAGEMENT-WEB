@@ -1369,9 +1369,54 @@ msgstr ""
 
 #: apps/subscriptions/models.py:76
 msgid ""
-"Per-bed plans cannot also cap properties or residents — billing is already "
-"usage-based."
+"Per-bed plans cannot also cap properties, residents or beds — billing is "
+"already usage-based."
 msgstr ""
+"పర్-బెడ్ ప్లాన్‌లలో ప్రాపర్టీలు, నివాసులు లేదా బెడ్‌లపై పరిమితి విధించలేరు — "
+"బిల్లింగ్ ఇప్పటికే వినియోగ ఆధారితం."
+
+#: apps/subscriptions/models.py
+msgid ""
+"Tenants are using this plan. Create a new plan and retire this one to change "
+"its pricing."
+msgstr ""
+"టెనెంట్లు ఈ ప్లాన్‌ను ఉపయోగిస్తున్నారు. ధరను మార్చడానికి కొత్త ప్లాన్‌ను సృష్టించి, "
+"దీనిని రిటైర్ చేయండి."
+
+#: apps/subscriptions/models.py
+msgid ""
+"The trial plan must stay active. Mark another plan as the trial plan first."
+msgstr ""
+"ట్రయల్ ప్లాన్ యాక్టివ్‌గా ఉండాలి. ముందుగా మరో ప్లాన్‌ను ట్రయల్ ప్లాన్‌గా గుర్తించండి."
+
+#: apps/subscriptions/models.py
+msgid "A trial plan is required. Mark another plan as the trial plan first."
+msgstr ""
+"ట్రయల్ ప్లాన్ తప్పనిసరి. ముందుగా మరో ప్లాన్‌ను ట్రయల్ ప్లాన్‌గా గుర్తించండి."
+
+#: apps/subscriptions/services.py
+#, python-format
+msgid "Your plan allows a maximum of %(max)s beds. Upgrade to add more."
+msgstr ""
+"మీ ప్లాన్ గరిష్టంగా %(max)s బెడ్‌లను అనుమతిస్తుంది. మరిన్ని జోడించడానికి "
+"అప్‌గ్రేడ్ చేయండి."
+
+#: apps/subscriptions/services.py
+#, python-format
+msgid ""
+"You have %(count)s beds, but this plan allows %(max)s. Remove beds or choose "
+"a larger plan."
+msgstr ""
+"మీకు %(count)s బెడ్‌లు ఉన్నాయి, కానీ ఈ ప్లాన్ %(max)s మాత్రమే అనుమతిస్తుంది. "
+"బెడ్‌లను తొలగించండి లేదా పెద్ద ప్లాన్‌ను ఎంచుకోండి."
+
+#: apps/subscriptions/views.py
+msgid ""
+"This plan is live or is the trial plan, so it cannot be deleted. Retire it by "
+"marking it inactive instead."
+msgstr ""
+"ఈ ప్లాన్ వినియోగంలో ఉంది లేదా ట్రయల్ ప్లాన్, కాబట్టి దీనిని తొలగించలేరు. "
+"బదులుగా దీనిని నిష్క్రియంగా గుర్తించి రిటైర్ చేయండి."
 
 #: apps/subscriptions/models.py:83
 msgid "Per-bed plans require at least one bed tier."

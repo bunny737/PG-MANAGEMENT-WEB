@@ -36,12 +36,13 @@ def _subscription_for_limit_check(tenant_id):
     check below is otherwise a race — the PRD's 'hard block' could be sailed
     past by parallel requests). Outside a transaction (direct calls, tests)
     it degrades to an unlocked read."""
-    qs = Subscription.objects.filter(tenant_id=tenant_id).select_related('plan', 'tenant')
+    qs = Subscription.objects.filter(tenant_id=tenant_id)
     if connection.in_atomic_block:
-        # of=('self',): lock only the subscription row, not the joined plan /
-        # tenant rows (locking `plans` would serialize unrelated tenants).
-        qs = qs.select_for_update(of=('self',))
-    return qs.first()
+        # Lock the bare row; plan/tenant load lazily once the lock is held. A
+        # joined read would be evaluated against pre-commit plan rows when the
+        # lock waits on a concurrent plan change, so its limits could be stale.
+        return qs.select_for_update().first()
+    return qs.select_related('plan', 'tenant').first()
 
 
 def check_property_limit(tenant_id):
@@ -70,6 +71,23 @@ def get_total_beds(tenant_id):
     matches Google Workspace's per-seat-provisioned basis, and excluding
     e.g. `maintenance` beds would be an easy way to game the bill)."""
     return Bed.objects.filter(tenant_id=tenant_id).count()
+
+
+def check_bed_limit(tenant_id, adding=1):
+    """Hard block on total provisioned beds across the tenant (same basis as
+    `get_total_beds`). Fail-open like the other limits."""
+    subscription = _subscription_for_limit_check(tenant_id)
+    if subscription is None:
+        return
+    max_beds = subscription.effective_max_beds()
+    if max_beds is None:
+        return
+    if get_total_beds(tenant_id) + adding > max_beds:
+        raise ValidationError(
+            {'detail': _('Your plan allows a maximum of %(max)s beds. Upgrade to add more.')
+             % {'max': max_beds}},
+            code='bed_limit_reached',
+        )
 
 
 def estimate_current_cycle(subscription):
@@ -137,6 +155,20 @@ def select_plan(*, subscription, plan, actor, request=None):
     plan selection activates the tenant immediately once the Razorpay
     customer exists. See the Module 13 spec's Decisions for why the two
     pricing types differ on activation timing."""
+    # Same lock as the limit checks, so a downgrade can't interleave with a
+    # bed create; the bed check runs before any Razorpay side effect.
+    subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+    max_beds = subscription.max_beds_on(plan)
+    if max_beds is not None:
+        bed_count = get_total_beds(subscription.tenant_id)
+        if bed_count > max_beds:
+            raise ValidationError(
+                {'detail': _(
+                    'You have %(count)s beds, but this plan allows %(max)s. '
+                    'Remove beds or choose a larger plan.'
+                ) % {'count': bed_count, 'max': max_beds}},
+                code='plan_bed_limit_exceeded',
+            )
     before_plan = subscription.plan.name if subscription.plan else None
     tenant = subscription.tenant
 
@@ -376,20 +408,29 @@ def datetime_from_epoch(seconds):
     return datetime.fromtimestamp(seconds, tz=dt_timezone.utc).date()
 
 
-def override_limits(*, subscription, max_properties_override, max_residents_override, actor, request=None):
+def override_limits(*, subscription, max_properties_override, max_residents_override,
+                    max_beds_override, actor, request=None):
     """Super Admin manual override 'for a specific tenant if needed (e.g.
     grace period, enterprise negotiation)' (PRD §4)."""
     before = {
         'max_properties_override': subscription.max_properties_override,
         'max_residents_override': subscription.max_residents_override,
+        'max_beds_override': subscription.max_beds_override,
     }
     subscription.max_properties_override = max_properties_override
     subscription.max_residents_override = max_residents_override
-    subscription.save(update_fields=['max_properties_override', 'max_residents_override', 'updated_at'])
+    subscription.max_beds_override = max_beds_override
+    subscription.save(update_fields=[
+        'max_properties_override', 'max_residents_override', 'max_beds_override', 'updated_at',
+    ])
     audit_log.record(
         action='subscription.limits_overridden', actor=actor, tenant_id=subscription.tenant_id,
         obj=subscription, before=before,
-        after={'max_properties_override': max_properties_override, 'max_residents_override': max_residents_override},
+        after={
+            'max_properties_override': max_properties_override,
+            'max_residents_override': max_residents_override,
+            'max_beds_override': max_beds_override,
+        },
         request=request,
     )
     return subscription

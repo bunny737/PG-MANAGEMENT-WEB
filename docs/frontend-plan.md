@@ -188,7 +188,7 @@ app uses, with no proxy layer:
 
 ```
 app/
-├── (auth)/                     login, signup (tenant onboarding + 60-day trial),
+├── (auth)/                     login, signup (tenant onboarding + 45-day trial),
 │                               verify-email, otp, forgot-password, reset-password
 ├── (owner)/                    Owner, Manager, and Receptionist portal (nav filtered by permission matrix)
 │   ├── dashboard/              occupancy + financial dashboards (Owner, Manager)

@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from apps.audit import log as audit_log
 from apps.core.permissions import require_permission
 from apps.core.roles import Role, permissions_for
-from apps.subscriptions.services import check_property_limit
+from apps.subscriptions.services import check_bed_limit, check_property_limit
 
 from . import feature_services, services
 from .models import (
@@ -375,7 +375,10 @@ class RoomViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Room.objects.filter(floor__building__property_id__in=ids).select_related('floor')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        if serializer.validated_data.get('auto_create_beds'):
+            check_bed_limit(self.request.user.tenant_id, adding=serializer.validated_data['sharing_type'])
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):
@@ -403,7 +406,9 @@ class BedViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Bed.objects.filter(room__floor__building__property_id__in=ids).select_related('room')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        check_bed_limit(self.request.user.tenant_id)
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):

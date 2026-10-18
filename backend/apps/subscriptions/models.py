@@ -1,13 +1,16 @@
 import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F
 from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import Tenant
 from apps.core.models import TenantModelMixin
 
+PRICING_LOCKED_MESSAGE = _(
+    'Tenants are using this plan. Create a new plan and retire this one to change its pricing.'
+)
 
 class Plan(models.Model):
     """A pricing tier (PRD §4 'Subscription & Pricing Model'). Platform-level
@@ -34,6 +37,8 @@ class Plan(models.Model):
     name = models.CharField(max_length=100, unique=True)
     max_properties = models.PositiveIntegerField(null=True, blank=True)
     max_residents_per_property = models.PositiveIntegerField(null=True, blank=True)
+    # Every Bed row under the tenant (provisioned capacity, like per-bed billing).
+    max_beds = models.PositiveIntegerField(null=True, blank=True)
     pricing_type = models.CharField(
         max_length=20, choices=PricingType.choices, default=PricingType.FLAT_MONTHLY
     )
@@ -52,11 +57,63 @@ class Plan(models.Model):
     class Meta:
         db_table = 'plans'
         ordering = [F('price_per_month').asc(nulls_last=True), 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_trial_plan'], condition=models.Q(is_trial_plan=True), name='single_trial_plan',
+            ),
+        ]
 
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        # Flagging a plan as the trial default moves the flag here, so there is
+        # never more than one (the single_trial_plan constraint is the backstop).
+        with transaction.atomic():
+            if self.is_trial_plan:
+                Plan.objects.filter(is_trial_plan=True).exclude(pk=self.pk).update(is_trial_plan=False)
+            super().save(*args, **kwargs)
+
+    def validate_constraints(self, exclude=None):
+        # save() resolves trial-flag conflicts, so forms must not reject them first.
+        super().validate_constraints(exclude={*(exclude or ()), 'is_trial_plan'})
+
+    def is_locked(self):
+        """Live plans: Razorpay holds the price, or tenants are billed on it."""
+        if self._state.adding:
+            return False
+        return bool(self.razorpay_plan_id) or self.subscriptions.exists()
+
+    def is_deletable(self):
+        return not self.is_trial_plan and not self.is_locked()
+
+    def validate_protected_changes(self):
+        """Pricing of a live plan is frozen (Razorpay can't reprice a plan), and
+        the trial default can only be handed over, never cleared."""
+        def error(field, message, code):
+            return DjangoValidationError({field: DjangoValidationError(message, code=code)})
+
+        if self.is_trial_plan and not self.is_active:
+            raise error('is_active', _(
+                'The trial plan must stay active. Mark another plan as the trial plan first.'
+            ), 'trial_plan_required')
+        if self._state.adding:
+            return
+        stored = Plan.objects.filter(pk=self.pk).first()
+        if stored is None:
+            return
+        if stored.is_trial_plan and not self.is_trial_plan:
+            raise error('is_trial_plan', _(
+                'A trial plan is required. Mark another plan as the trial plan first.'
+            ), 'trial_plan_required')
+        pricing_changed = (
+            stored.price_per_month != self.price_per_month or stored.pricing_type != self.pricing_type
+        )
+        if pricing_changed and stored.is_locked():
+            raise error('price_per_month', PRICING_LOCKED_MESSAGE, 'plan_pricing_locked')
+
     def clean(self):
+        self.validate_protected_changes()
         if self.pricing_type == self.PricingType.FLAT_MONTHLY:
             if self.price_per_month is None:
                 raise DjangoValidationError(
@@ -71,9 +128,12 @@ class Plan(models.Model):
                 )
         elif self.pricing_type == self.PricingType.PER_BED_MONTHLY:
             # Google-style seat billing has no cap — you pay for what you provision.
-            if self.max_properties is not None or self.max_residents_per_property is not None:
+            if (
+                self.max_properties is not None or self.max_residents_per_property is not None
+                or self.max_beds is not None
+            ):
                 raise DjangoValidationError(
-                    _('Per-bed plans cannot also cap properties or residents — '
+                    _('Per-bed plans cannot also cap properties, residents or beds — '
                       'billing is already usage-based.')
                 )
             if self.pk:
@@ -122,6 +182,8 @@ class PlanBedTier(models.Model):
     def clean(self):
         if self.plan_id and self.plan.pricing_type == Plan.PricingType.FLAT_MONTHLY:
             raise DjangoValidationError(_('Flat-monthly plans cannot have bed tiers.'))
+        if self.plan_id and self.plan.is_locked():
+            raise DjangoValidationError(PRICING_LOCKED_MESSAGE, code='plan_pricing_locked')
 
 
 class Subscription(models.Model):
@@ -148,6 +210,7 @@ class Subscription(models.Model):
     # grace period, enterprise negotiation)" — null defers to the plan.
     max_properties_override = models.PositiveIntegerField(null=True, blank=True)
     max_residents_override = models.PositiveIntegerField(null=True, blank=True)
+    max_beds_override = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -178,6 +241,14 @@ class Subscription(models.Model):
             return self.max_residents_override
         plan = self.effective_plan()
         return plan.max_residents_per_property if plan else None
+
+    def max_beds_on(self, plan):
+        if self.max_beds_override is not None:
+            return self.max_beds_override
+        return plan.max_beds if plan else None
+
+    def effective_max_beds(self):
+        return self.max_beds_on(self.effective_plan())
 
 
 class SubscriptionPayment(TenantModelMixin):

@@ -39,6 +39,28 @@ class OverrideLimitsTests(SubscriptionAPITestCase):
         self.assertEqual(response.data['max_properties_override'], 5)
         self.assertEqual(response.data['max_residents_override'], 20)
 
+    def test_bed_override_alone_leaves_the_other_overrides_untouched(self):
+        self.subscription.max_properties_override = 3
+        self.subscription.max_residents_override = 20
+        self.subscription.save()
+        self.authenticate(self.super_admin)
+
+        response = self._override(max_beds_override=800)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['max_beds_override'], 800)
+        self.assertEqual(response.data['max_properties_override'], 3)
+        self.assertEqual(response.data['max_residents_override'], 20)
+
+    def test_other_overrides_leave_the_bed_override_untouched(self):
+        self.subscription.max_beds_override = 800
+        self.subscription.save()
+        self.authenticate(self.super_admin)
+
+        response = self._override(max_properties_override=5)
+
+        self.assertEqual(response.data['max_beds_override'], 800)
+
     def test_override_is_audit_logged(self):
         self.authenticate(self.super_admin)
         self._override(max_properties_override=5)

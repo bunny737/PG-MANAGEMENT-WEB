@@ -20,10 +20,13 @@ class PlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = Plan
         fields = [
-            'id', 'name', 'pricing_type', 'max_properties', 'max_residents_per_property',
+            'id', 'name', 'pricing_type', 'max_properties', 'max_residents_per_property', 'max_beds',
             'price_per_month', 'bed_tiers', 'is_trial_plan', 'is_active', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+        # Plan.save() moves the trial flag, so a second trial plan is a hand-over,
+        # not a uniqueness conflict (DRF would otherwise reject it).
+        extra_kwargs = {'is_trial_plan': {'validators': []}}
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -38,6 +41,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     properties_used = serializers.SerializerMethodField()
     max_properties = serializers.SerializerMethodField()
     max_residents_per_property = serializers.SerializerMethodField()
+    max_beds = serializers.SerializerMethodField()
     property_usage = serializers.SerializerMethodField()
     bed_count = serializers.SerializerMethodField()
     current_cycle_estimate = serializers.SerializerMethodField()
@@ -47,9 +51,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'tenant', 'plan', 'tenant_status', 'trial_ends_at',
             'razorpay_subscription_id', 'current_period_start', 'current_period_end',
-            'payment_failed_at', 'max_properties_override', 'max_residents_override',
+            'payment_failed_at', 'max_properties_override', 'max_residents_override', 'max_beds_override',
             'properties_used', 'max_properties', 'max_residents_per_property', 'property_usage',
-            'bed_count', 'current_cycle_estimate', 'created_at', 'updated_at',
+            'bed_count', 'max_beds', 'current_cycle_estimate', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
 
@@ -71,6 +75,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     def get_max_residents_per_property(self, obj):
         return obj.effective_max_residents_per_property()
+
+    def get_max_beds(self, obj) -> int | None:
+        return obj.effective_max_beds()
 
     def get_property_usage(self, obj):
         max_residents = obj.effective_max_residents_per_property()
@@ -98,6 +105,7 @@ class OverrideLimitsSerializer(serializers.Serializer):
 
     max_properties_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     max_residents_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    max_beds_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
 
 
 class SubscriptionInvoiceLineSerializer(serializers.ModelSerializer):

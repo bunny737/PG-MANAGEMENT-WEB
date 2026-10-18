@@ -23,14 +23,34 @@ class PlanBedTierInline(admin.TabularInline):
     model = PlanBedTier
     extra = 1
 
+    # Inline deletes never call clean(), so permissions are what freeze a live
+    # plan's pricing ladder.
+    def has_add_permission(self, request, obj=None):
+        return super().has_add_permission(request, obj) and not (obj and obj.is_locked())
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_change_permission(request, obj) and not (obj and obj.is_locked())
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and not (obj and obj.is_locked())
+
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'pricing_type', 'price_per_month',
-        'max_properties', 'max_residents_per_property', 'is_active',
+        'name', 'pricing_type', 'price_per_month', 'max_beds',
+        'max_properties', 'max_residents_per_property', 'is_trial_plan', 'is_active',
     ]
     inlines = [PlanBedTierInline]
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and (obj is None or obj.is_deletable())
+
+    def get_actions(self, request):
+        # Bulk delete skips the per-object check above.
+        actions = super().get_actions(request)
+        actions.pop('delete_selected', None)
+        return actions
 
 
 @admin.register(PlanBedTier)

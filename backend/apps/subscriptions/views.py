@@ -1,3 +1,6 @@
+import copy
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
@@ -46,10 +49,31 @@ class PlanViewSet(viewsets.ModelViewSet):
             return Plan.objects.prefetch_related('bed_tiers').all()
         return Plan.objects.prefetch_related('bed_tiers').filter(is_active=True)
 
+    def _enforce_plan_protection(self, serializer):
+        # Plan.clean() never runs on DRF saves; raised here (not in the
+        # serializer) so the machine-readable code reaches the client.
+        candidate = copy.copy(serializer.instance) if serializer.instance is not None else Plan()
+        for field, value in serializer.validated_data.items():
+            setattr(candidate, field, value)
+        try:
+            candidate.validate_protected_changes()
+        except DjangoValidationError as exc:
+            error = next(iter(exc.error_dict.values()))[0]
+            raise ValidationError({'detail': error.messages[0]}, code=error.code)
+
+    def perform_create(self, serializer):
+        self._enforce_plan_protection(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._enforce_plan_protection(serializer)
+        serializer.save()
+
     def perform_destroy(self, instance):
-        if instance.subscriptions.exists():
+        if not instance.is_deletable():
             raise ValidationError(
-                {'detail': _('Cannot delete a plan that tenants are subscribed to.')},
+                {'detail': _('This plan is live or is the trial plan, so it cannot be deleted. '
+                             'Retire it by marking it inactive instead.')},
                 code='plan_in_use',
             )
         instance.delete()
@@ -136,6 +160,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
             subscription=subscription,
             max_properties_override=data.get('max_properties_override', subscription.max_properties_override),
             max_residents_override=data.get('max_residents_override', subscription.max_residents_override),
+            max_beds_override=data.get('max_beds_override', subscription.max_beds_override),
             actor=request.user, request=request,
         )
         return Response(SubscriptionSerializer(self.get_object()).data)

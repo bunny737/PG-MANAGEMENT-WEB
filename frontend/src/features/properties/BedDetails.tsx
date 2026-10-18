@@ -2,10 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Wrench, CheckCircle, User, Calendar, CheckCircle2, LoaderCircle, AlertTriangle } from "lucide-react";
+import { ChevronRight, Wrench, CheckCircle, User, Calendar, CheckCircle2, LoaderCircle, AlertTriangle, BedSingle, Lock } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
-import { getProperty, getFloor, getRoom, getBed, updateBed, type Property, type Floor, type Room, type Bed, ApiError } from "@/lib/api";
+import { getProperty, getFloor, getRoom, getBed, updateBed, type Property, type Floor, type Room, type Bed, type BedAvailability, ApiError } from "@/lib/api";
+
+const TRANSITION_ICONS: Record<BedAvailability, typeof CheckCircle> = {
+  available: CheckCircle,
+  maintenance: Wrench,
+  reserved: Lock,
+  occupied: BedSingle,
+};
 
 export function BedDetails({
   propertyId,
@@ -20,6 +27,7 @@ export function BedDetails({
 }) {
   const t = useTranslations("properties.beds");
   const tCommon = useTranslations("common");
+  const tStatus = useTranslations("status");
   const [property, setProperty] = useState<Property | null>(null);
   const [floor, setFloor] = useState<Floor | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
@@ -69,33 +77,20 @@ export function BedDetails({
     };
   }, [propertyId, floorId, roomId, bedId, t]);
 
-  const handleResolveMaintenance = async () => {
+  // F8/D9: the only targets offered are whatever the backend's
+  // `allowed_transitions` lists for this bed right now — never a
+  // client-side guess at what PATCH would accept.
+  const handleTransition = async (target: BedAvailability) => {
     setIsUpdating(true);
     try {
-      const updated = await updateBed(bedId, { status: "available" });
+      const updated = await updateBed(bedId, { status: target });
       setBed(updated);
       setBedStatus(updated.status);
-      setSuccessMsg(t("toastResolvedMsg"));
+      setSuccessMsg(t("toastTransitioned", { status: tStatus(target) }));
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
       console.error(err);
-      alert(t("toastErrResolve") + (err instanceof ApiError ? err.message : "Error"));
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetMaintenance = async () => {
-    setIsUpdating(true);
-    try {
-      const updated = await updateBed(bedId, { status: "maintenance" });
-      setBed(updated);
-      setBedStatus(updated.status);
-      setSuccessMsg(t("toastFlaggedMsg"));
-      setTimeout(() => setSuccessMsg(null), 4000);
-    } catch (err) {
-      console.error(err);
-      alert(t("toastErrFlag") + (err instanceof ApiError ? err.message : "Error"));
+      alert(t("toastErrTransition") + (err instanceof ApiError ? err.message : "Error"));
     } finally {
       setIsUpdating(false);
     }
@@ -178,30 +173,32 @@ export function BedDetails({
           <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">{t("title", { number: bed.bed_number })}</h1>
         </div>
 
-        {/* Resolve maintenance actions */}
-        <PermissionGate permission="manage_rooms_beds">
-          <div className="flex gap-2">
-            {bedStatus === "maintenance" ? (
-              <button
-                onClick={handleResolveMaintenance}
-                disabled={isUpdating}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page cursor-pointer shadow-sm transition-colors disabled:opacity-50"
-              >
-                <CheckCircle className="size-3.5 text-emerald-600" />
-                {t("resolveMaintenance")}
-              </button>
-            ) : (
-              <button
-                onClick={handleSetMaintenance}
-                disabled={isUpdating}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse cursor-pointer transition-all disabled:opacity-50"
-              >
-                <Wrench className="size-3.5" />
-                {t("flagMaintenance")}
-              </button>
-            )}
-          </div>
-        </PermissionGate>
+        {/* D9/F8: only the statuses allowed_transitions lists */}
+        {bed.allowed_transitions.length > 0 && (
+          <PermissionGate permission="manage_rooms_beds">
+            <div className="flex gap-2">
+              {bed.allowed_transitions.map((target) => {
+                const Icon = TRANSITION_ICONS[target];
+                const isDestructive = target === "maintenance";
+                return (
+                  <button
+                    key={target}
+                    onClick={() => handleTransition(target)}
+                    disabled={isUpdating}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold cursor-pointer transition-all disabled:opacity-50 ${
+                      isDestructive
+                        ? "border border-status-critical/30 bg-status-critical-soft text-status-critical hover:bg-status-critical hover:text-ink-inverse"
+                        : "border border-border bg-surface-card text-ink hover:bg-surface-page shadow-sm"
+                    }`}
+                  >
+                    <Icon className="size-3.5" />
+                    {t("transitionTo", { status: tStatus(target) })}
+                  </button>
+                );
+              })}
+            </div>
+          </PermissionGate>
+        )}
       </div>
 
       {/* Bed Selector Switcher */}

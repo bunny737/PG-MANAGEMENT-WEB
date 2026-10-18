@@ -15,6 +15,15 @@
     "successToast": "टेनेंट की डिफ़ॉल्ट भाषा सफलतापूर्वक अपडेट की गई।",
     "errorToast": "टेनेंट की डिफ़ॉल्ट भाषा अपडेट नहीं की जा सकी।"
   },
+  "fiscalYear": {
+    "title": "Fiscal Year",
+    "subtitle": "The month your financial year starts — drives the Year-to-Date figures on Reports.",
+    "label": "Fiscal Year Start Month",
+    "button": "Update Fiscal Year",
+    "saving": "Saving...",
+    "successToast": "Fiscal year start month updated successfully.",
+    "errorToast": "Could not update the fiscal year start month."
+  },
   "global": {
     "profilesTitle": "संपत्ति कॉन्फ़िगरेशन प्रोफ़ाइल",
     "profilesSub": "सेटअप और बिलिंग नीतियों को कॉन्फ़िगर करने के लिए सेटिंग्स डैशबोर्ड चुनें।",
@@ -47,28 +56,8 @@
     "errConfirmMatch": "पासवर्ड मेल नहीं खाते हैं"
   },
   "subscription": {
-    "premiumTag": "प्रीमियम सास प्लान",
-    "proTitle": "प्रॉपमैनेजर प्रो",
-    "perMonth": "प्रति माह बिलिंग",
-    "paymentMethod": "भुगतान विधि",
-    "mastercardEnding": "मास्टरकार्ड अंतिम 4921",
-    "renewalDate": "नवीनीकरण तिथि",
-    "activeAllocations": "सक्रिय बिस्तर आवंटन",
-    "bedsUsed": "{used} / {total} बिस्तर प्रयुक्त",
-    "upgradeCapacity": "प्लान क्षमता अपग्रेड करें",
-    "invoicesTitle": "सदस्यता चालान",
-    "billingPeriod": "बिलिंग अवधि",
-    "invoiceNumber": "चालान संख्या",
-    "amount": "राशि",
-    "download": "डाउनलोड",
-    "availablePlans": "उपलब्ध योजनाएं",
-    "starterPlan": "स्टार्टर प्लान",
-    "starterSub": "100 बिस्तरों तक, बुनियादी किरायेदार पंजीकरण और मैनुअल बिलिंग।",
-    "proPlan": "प्रो प्लान",
-    "proSub": "500 बिस्तरों तक, ऑटो विलंब जुर्माना ट्रिगर और कस्टम अनुबंध।",
-    "enterprisePlan": "एंटरप्राइज प्लान",
-    "enterpriseSub": "असीमित बिस्तर, कस्टम भूमिकाएं और प्राथमिकता सहायता।",
-    "currentPlanBadge": "वर्तमान प्लान"
+    "comingSoonTitle": "प्लान और बिलिंग प्रबंधन जल्द ही आ रहा है",
+    "comingSoonBody": "आपके खाते के लिए सदस्यता प्रबंधन उपलब्ध होने के बाद आपका वर्तमान प्लान, उपयोग और बिलिंग इतिहास यहां दिखाई देगा।"
   },
   "propertySettings": {
     "title": "संपत्ति सेटिंग्स",
@@ -119,6 +108,7 @@
     "allPropertiesOwner": "सभी संपत्तियां (मालिक)",
     "emailOtpNotice": "ईमेल परिवर्तनों के लिए माध्यमिक सुरक्षा ओटीपी सत्यापन की आवश्यकता होती है।",
     "updatedToast": "प्रोफ़ाइल अद्यतन",
-    "updatedToastSub": "आपकी प्रोफ़ाइल सेटिंग्स सफलतापूर्वक सहेजी गई हैं।"
+    "updatedToastSub": "आपकी प्रोफ़ाइल सेटिंग्स सफलतापूर्वक सहेजी गई हैं।",
+    "errorToast": "अद्यतन विफल"
   }
 }

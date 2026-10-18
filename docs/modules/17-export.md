@@ -26,7 +26,18 @@ GET /api/v1/exports/residents/?filetype=csv|xlsx|pdf&property=<uuid>          vi
 GET /api/v1/exports/payments/?filetype=csv|xlsx|pdf&property=<uuid>            manage_payments
 GET /api/v1/exports/outstanding-dues/?filetype=csv|xlsx|pdf&property=<uuid>    manage_invoices
 GET /api/v1/exports/occupancy/?filetype=csv|xlsx|pdf&property=<uuid>           view_reports
+GET /api/v1/exports/expenses/?filetype=…&property=&month=YYYY-MM               view_expenses        (2026-10-16)
+GET /api/v1/exports/pnl/?filetype=…&property=&month=YYYY-MM                    view_finance AND view_expenses
 ```
+2026-10-16 additions: `exports/payments/` takes `?month=` (payment date) and
+gained a `Receipt No.` column; `exports/outstanding-dues/` takes `?period=`
+(billing month) and now uses the shared outstanding definition
+(`apps/billing/selectors.py`). `exports/pnl/` is a one-month **cash-flow
+statement** (gross receipts, refunds, cash collected, expenses by category,
+total expenses, net cash flow — cash basis per Module 21's glossary, not
+accrual profit); an unassigned `?property=` there is 404 like analytics.
+The format parameter stays `filetype` (not the roadmap's `format`, which DRF
+reserves — see Decisions).
 `filetype` defaults to `csv`; an unrecognised value is a 400
 (`invalid_filetype`). `property` is optional on all four — omit it to export
 everything the caller can see.
@@ -121,3 +132,7 @@ everything the caller can see.
 - 2026-10-06  Module 18 (PG Features) is deliberately not exported in this pass.
 - 2026-10-12  Payment-history and outstanding-dues exports require `view_finance` (were
   `manage_payments` / `manage_invoices`): exporting is a read. Role defaults unchanged.
+- 2026-10-16  UX roadmap D7: expenses export, cash-flow statement (`/exports/pnl/`),
+  `?month=` on payments, `?period=` on outstanding dues, receipt number column.
+  Tests: `reporting/tests/test_analytics.py::ExportAdditionsTests`,
+  `expenses/tests/test_expenses.py` (soft-deleted rows excluded).

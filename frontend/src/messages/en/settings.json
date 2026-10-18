@@ -15,6 +15,15 @@
     "successToast": "Tenant default language updated successfully.",
     "errorToast": "Could not update tenant default language."
   },
+  "fiscalYear": {
+    "title": "Fiscal Year",
+    "subtitle": "The month your financial year starts — drives the Year-to-Date figures on Reports.",
+    "label": "Fiscal Year Start Month",
+    "button": "Update Fiscal Year",
+    "saving": "Saving...",
+    "successToast": "Fiscal year start month updated successfully.",
+    "errorToast": "Could not update the fiscal year start month."
+  },
   "global": {
     "profilesTitle": "Property Configuration Profiles",
     "profilesSub": "Select settings dashboards to configure setup and billing policies.",

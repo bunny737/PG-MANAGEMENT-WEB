@@ -41,6 +41,11 @@
   },
   "activity": {
     "title": "आज की गतिविधि",
-    "noActivity": "आज कोई गतिविधि दर्ज नहीं की गई।"
+    "noActivity": "आज कोई गतिविधि दर्ज नहीं की गई।",
+    "residentFallback": "Resident",
+    "roomFallback": "Room",
+    "checkedIn": "New resident {name} checked into {room}.",
+    "paymentReceived": "Rent payment received for {room} ({amount}).",
+    "complaintLogged": "New complaint logged for {room} ({category})."
   }
 }

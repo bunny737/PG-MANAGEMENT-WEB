@@ -45,6 +45,14 @@ const eslintConfig = defineConfig([
               "dot",
               "permission",
               "fallback",
+              "statuses",
+              "anyOf",
+              "allOf",
+              // Recharts props: data keys / CSS values, not UI text.
+              "dataKey",
+              "stroke",
+              "fill",
+              "strokeDasharray",
             ],
           },
           "object-properties": {
@@ -66,6 +74,11 @@ const eslintConfig = defineConfig([
               "indexOf",
               "endsWith",
               "startsWith",
+              // react-hook-form field-name identifiers, not UI text.
+              "register",
+              "setValue",
+              "watch",
+              "getValues",
             ],
           },
         },
@@ -109,6 +122,14 @@ const eslintConfig = defineConfig([
               "dot",
               "permission",
               "fallback",
+              "statuses",
+              "anyOf",
+              "allOf",
+              // Recharts props: data keys / CSS values, not UI text.
+              "dataKey",
+              "stroke",
+              "fill",
+              "strokeDasharray",
             ],
           },
           "object-properties": {
@@ -130,6 +151,11 @@ const eslintConfig = defineConfig([
               "indexOf",
               "endsWith",
               "startsWith",
+              // react-hook-form field-name identifiers, not UI text.
+              "register",
+              "setValue",
+              "watch",
+              "getValues",
             ],
           },
         },

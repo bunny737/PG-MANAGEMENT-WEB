@@ -191,21 +191,23 @@ app/
 ├── (auth)/                     login, signup (tenant onboarding + 60-day trial),
 │                               verify-email, otp, forgot-password, reset-password
 ├── (owner)/                    Owner, Manager, and Receptionist portal (nav filtered by permission matrix)
-│   ├── dashboard/              occupancy + financial dashboards (Owner, Manager)
-│   ├── properties/[id]/        floors / rooms / beds setup, bed grid
+│   ├── dashboard/              occupancy + financials from analytics/summary/ (D1), per-section state rule
+│   ├── properties/[id]/        D2 bed-grid overview (stats, dues banner, month nav, building/floor tabs, filters, legend)
+│   │   ├── buildings/…/rooms/…/beds/[bedId]   the existing nested CRUD path (add/edit, D9 allowed_transitions)
 │   │   ├── settings/           Module 2B: transfer rent timing, penalty config
 │   │   └── features/           Module 18: what the PG offers (catalogue + own features)
-│   ├── residents/[id]/         profile, documents, timeline, discounts (financial fields omitted for Receptionist)
+│   ├── residents/[id]/         profile, documents, D6 finance card (replaces the old dead-field Financials tab), maintenance
 │   ├── admissions/             pipeline: Inquiry → Visit → Reserved → Admission → Check-in
 │   ├── allocations/            bed board, temporary-allocation list, transfers
-│   ├── billing/
-│   │   ├── invoices/[id]/      line-item detail, PDF download
-│   │   └── payments/           record payment, receipts, outstanding dues
+│   ├── billing/                tabs: Invoices, Payments, Cash movements, Discounts (replaces the mock /financials)
+│   │   ├── invoices/[id]/      line-item detail (F6), draft edit/issue/delete, record payment
+│   │   └── payments/[id]/      receipt (JSON view, PDF download, Web Share)
+│   ├── expenses/               D5: month nav, category chips from expenses/summary/, add/edit sheet, categories
 │   ├── deposits/               notice period, vacating wizard, absconded flow
 │   ├── complaints/             status board, comment threads
 │   ├── visitors/               log, check-in, check-out (Owner, Manager, Receptionist)
 │   ├── staff/                  Owner only: Manager/Receptionist accounts; `staff/[id]` = per-person module access + PG access
-│   ├── reports/                exports (CSV/Excel/PDF)
+│   ├── reports/                D1/D7: Overview/Collections/Occupancy/Exports tabs, 6-month trend chart
 │   └── subscription/           Owner only: plan usage, upgrade via Razorpay, billing history
 ├── (resident)/                 Resident portal (primary PWA install target)
 │   ├── home/  invoices/  receipts/  complaints/  visitors/  notices/  profile/
@@ -365,7 +367,9 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-14 Notifications | 14 | notification preferences (email MVP) |
 | FE-15 Audit logs | 15 | filterable viewer with before/after diff |
 | FE-16 Timeline | 16 | per-resident chronological timeline component |
-| FE-17 Export | 17 | CSV/Excel/PDF export buttons with async job status |
+| FE-17 Export | 17 | CSV/Excel/PDF export buttons (synchronous — exports have no async job status) |
+| FE-20 Expenses | 20 | month navigator, category chips, add/edit sheet (idempotent create + attachment), category manager |
+| FE-21 Reports / Analytics | 21 | Overview/Collections/Occupancy/Exports tabs, 6-month trend chart (D0/D1/D7) |
 | FE-P1 PWA hardening | — | offline fallback polish, install prompts, cache purge audit, Lighthouse pass |
 | FE-R1 Resident portal | 04, 08, 09, 11, 12 | resident-facing home, invoices, receipts, complaints, visitor requests, notices |
 
@@ -373,26 +377,28 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 
 | # | FE task | Status |
 |---|---------|--------|
-| FE-00 | Foundation | 🟨 |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; OTP/signup/reset/BFF proxy still future work) |
-| FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; floor/room/bed builder + bed grid still mock; Module 18 Features page + optional features section in Add Property wired to real API, gated by `usePermissions()` reading `/auth/me/` permissions) |
+| FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; OTP/signup/reset/BFF proxy still future work) |
+| FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ |
-| FE-04 | Residents | ⬜ |
+| FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
 | FE-05 | Admissions | ⬜ |
 | FE-06 | Allocations | ⬜ |
-| FE-D1 | Occupancy dashboard | ⬜ |
-| FE-07 | Discounts | ⬜ |
-| FE-08 | Billing | ⬜ |
-| FE-09 | Payments | ⬜ |
+| FE-D1 | Occupancy dashboard | ✅ (analytics/summary/, per-section state rule) |
+| FE-07 | Discounts | ✅ (report tab on /billing: property/resident/reason/type filters, create, end via valid_until) |
+| FE-08 | Billing | 🟨 (invoice list/detail/line-items/issue/draft-edit/delete, bulk/single generate; invoice PDF and waive-with-note have no backend endpoint yet) |
+| FE-09 | Payments | ✅ (idempotent record-payment dialog, delete-as-reversal, receipt JSON/PDF/share, cash movements; refunds/credits out of scope per owner decision 2026-10-16) |
 | FE-10 | Deposits & exit | ⬜ |
-| FE-D2 | Financial dashboard | ⬜ |
+| FE-D2 | Financial dashboard | ✅ (analytics/summary/, same per-section rule as FE-D1) |
 | FE-11 | Complaints | ⬜ |
 | FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |
 | FE-13 | Subscription + Super Admin | ⬜ |
 | FE-14 | Notifications | ⬜ |
 | FE-15 | Audit logs | ⬜ |
 | FE-16 | Activity timeline | ⬜ |
-| FE-17 | Export | ⬜ |
+| FE-17 | Export | 🟨 (residents/payments/outstanding-dues/occupancy/expenses/pnl, csv/xlsx/pdf, each gated on its own endpoint permission; the PRD's "async job status" is obsolete — exports are synchronous) |
+| FE-20 | Expenses (Module 20) | ✅ (month nav, category chips from expenses/summary/, add/edit sheet with idempotent create + attachment upload, category manager) |
+| FE-21 | Reports / Analytics (Module 21) | ✅ (/reports: Overview/Collections/Occupancy/Exports tabs, 6-month trend chart) |
 | FE-P1 | PWA hardening | ⬜ |
 | FE-R1 | Resident portal | ⬜ |
 
@@ -453,4 +459,12 @@ Small additions to note in the relevant module specs when built:
 | Per-staff module access (2026-10-12) | `(owner)/staff/[id]` Team Management screen: module toggles + level picker + PG access; nav, page guards and redirects are all driven by `/auth/me/` permissions (`view_dashboard`, `view_finance`, `view_resident_profile`, `view_property_features`…); `RequirePermission` falls back to the first allowed route (`firstAllowedRoute`), never a role landing page; permissions refresh on tab focus (throttled) and after any 403 | Owner request superseding the fixed per-role matrix (Module 01 `[DECISION 2026-10-12]`); access is per person, so no screen can be assumed reachable by role (F8). No frontend test runner exists yet — behavior is verified by the manual script in the change's plan |
 | Permission-driven nav & route guards (2026-10-11) | Client-side session check (`useSession()`, `useSyncExternalStore` cached + revalidated via `GET /auth/me/` once per load) with `<RequirePermission>` and `<PermissionGate>` | Replaces role-name-based navigation. Acts as a client-side UX guard to hide disallowed buttons and prevent 403 errors; explicitly **not** the §3.1 BFF/httpOnly-cookie design (which remains future work). True authorization boundary remains server-side `require_permission()` checks. |
 | Portal login boundaries (2026-10-11) | Upfront Owner / Staff choice; strict role validation; Super Admin and Resident logins explicitly rejected | Prevents redirection loops or dead-ends for roles with no portal UI in this web app. Owner login requires `owner` role; Staff login requires `manager` or `receptionist`. Stray `super_admin` or `resident` credentials show a clear localized error. |
+| UX roadmap web client (2026-10-17) | §2's named stack adopted in full: TanStack Query + Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, `openapi-typescript` | None of these were installed before this round (the app ran on plain `useEffect`+`useState`+`apiFetch` with no test runner). `/billing` (replacing the mock `/financials`), `/expenses`, `/reports`, and the `/properties/[id]` bed-grid overview are the first screens built against this stack. |
+| API types: generated schema checked in, hand-written types kept (2026-10-17) | `npm run gen:api` → `src/lib/api-schema.d.ts` (committed, regenerate on backend schema changes) exists and is wired up, but every feature built in this round (`lib/api.ts`) still hand-writes its interfaces, matching the rest of the file | §2 says "no hand-written response interfaces" — this is a **partial reversal**, not full compliance: hand-written types shipped faster for ~15 new endpoints and matched the file's existing 100%-hand-written convention, so mixing the two styles mid-file seemed worse than being consistent. The schema is real and available; migrating `lib/api.ts` to alias from it is left as follow-up work, not attempted here. |
+| Bed transitions read from the backend (2026-10-17) | `allowed_transitions` (added to `BedSerializer` and the D2 layout) is the only source the UI offers status-change actions from — no client-side copy of the D9 transition table | Invariant F8 ("the frontend never invents transitions") can't be satisfied by a client-side table that can silently drift from what `PATCH /beds/{id}/` actually accepts; this was a small, additive backend change (no migration) specifically to give the web client (and any future client) a servable source of truth. |
+| `/financials` replaced, not kept alongside `/billing` (2026-10-17) | The route now redirects to `/billing`; `features/financials/FinancialsDashboard.tsx` (a hardcoded 2024 mock, never wired to the API) was deleted | It was pure placeholder UI with no real data path — keeping it as a second, dead billing screen alongside the new real one would only confuse the route map. |
+| Session purge made async + awaited everywhere (2026-10-17) | `clearSession()` is now `async`, clearing tokens/permissions synchronously first, then awaiting the query cache clear, every Zustand store reset, and Cache Storage/IndexedDB sweeps through `Promise.allSettled`; `login()`/`loginPhone()` await any purge already in flight | Invariant F7 needs more than `localStorage.removeItem` once TanStack Query and Zustand hold cross-request state — a purge that isn't awaited (or that one failing step could abort) risks a new session briefly rendering with the old tenant's cached data. |
+| Discount report columns moved to the backend (2026-10-17) | `DiscountSerializer` gained `ResidentContextMixin` (resident_name/property/property_name/room_number/bed_number) and a `?property=` filter, matching invoices and payments, instead of the web client joining residents client-side | Keeps one definition of "who/where" for every finance list, and avoids an N+1 client-side join the web client would otherwise need for the Discounts tab on `/billing`. |
+| Reports access vs. export access are two different checks (2026-10-17) | The `/reports` nav item and route need `view_reports` (`view_dashboard`-only users get the same figures inline on `/dashboard` instead); each export button on the Exports tab, and the context-export buttons on `/billing`/`/residents`/`/expenses`, are gated only by that export's own endpoint permission — `view_reports` is never required to export | Matches the backend exactly: `ResidentExportView`/`PaymentExportView`/etc. check `view_resident_profile`/`view_finance`/etc., not `view_reports`. A Manager with Finance access but no Reports module access can still export payments from `/billing`. |
+| Dashboard revenue delta dropped for now (2026-10-17) | `FinancialsSummary.revenueDelta` is optional and the dashboard doesn't populate it | Computing "vs last month" needs a second `analytics/summary/` call (last month's `cash_collected`); the old client-side version summed raw payment lists instead (an invariant F1 violation this round removed). Left as follow-up rather than adding a second round-trip to this pass. |
 

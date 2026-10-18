@@ -7,8 +7,20 @@ exceptions already ship a `code` key; DRF ones carry it on the ErrorDetail.
 from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
+
+
+class Conflict(APIException):
+    """409 — the request is well-formed but conflicts with the resource's
+    current state (a forbidden bed transition, a reused idempotency key...).
+    Pass a string detail plus a specific `code`; the handler below upper-cases
+    it into the `code` field clients switch on."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = _('This request conflicts with the current state of the resource.')
+    default_code = 'conflict'
 
 
 def api_exception_handler(exc, context):

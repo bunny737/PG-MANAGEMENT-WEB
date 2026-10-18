@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { test } from "vitest";
 import { normaliseFeatureText } from "../featureText";
 
 // The same cases the backend asserts in test_pg_features (rule 34), so the
@@ -16,3 +17,5 @@ export function testFeatureTextMatchesBackend() {
     assert.strictEqual(normaliseFeatureText(input), expected, `normaliseFeatureText(${JSON.stringify(input)})`);
   }
 }
+
+test("normaliseFeatureText matches the backend's normalisation fixture", testFeatureTextMatchesBackend);

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BarChart3,
   LayoutDashboard,
   Menu,
   Receipt,
@@ -8,6 +9,7 @@ import {
   Building,
   UserCheck,
   ClipboardList,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,7 +28,9 @@ export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
   { href: "/visitors", labelKey: "nav.visitors", icon: ClipboardList, permission: "manage_visitors" },
   { href: "/staff", labelKey: "nav.staff", icon: UserCheck, permission: "manage_staff_accounts" },
   { href: "/complaints", labelKey: "nav.complaints", icon: AlertTriangle, permission: "manage_complaints" },
-  { href: "/financials", labelKey: "nav.financials", icon: Receipt, permission: "view_finance" },
+  { href: "/billing", labelKey: "nav.billing", icon: Receipt, permission: "view_finance" },
+  { href: "/expenses", labelKey: "nav.expenses", icon: Wallet, permission: "view_expenses" },
+  { href: "/reports", labelKey: "nav.reports", icon: BarChart3, permission: "view_reports" },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
 ];
 

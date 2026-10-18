@@ -427,3 +427,50 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   permission lets a Manager PATCH assigned properties (not `status`).
   `property.updated` audit entries now snapshot every editable field.
   13 new tests. Regenerated `docs/erd.png`.
+- 2026-10-16  UX roadmap D2/D3/D9 (see also Module 21):
+  - `GET /properties/{id}/layout/?period=` — whole bed grid in one call
+    (`apps/properties/layout.py`; entry: view_property_features OR
+    manage_rooms_beds OR manage_admissions OR manage_allocations; resident /
+    payment / finance groups redacted per permission).
+  - `beds.reserved_for` (FK residents, SET_NULL) + `beds.reserved_until`
+    (migration `0009`). Only meaningful while `status = reserved`
+    (`bed_not_reserved`); the resident must be Inquiry/Reserved in the same
+    property (`reserved_for_not_eligible`, `reserved_for_property_mismatch`);
+    leaving `reserved` clears both.
+  - **Bed transitions (D9).** `PATCH /beds/{id}/` allows only available ↔
+    maintenance, available ↔ reserved, reserved ↔ maintenance; anything into or
+    out of `occupied` is 409 `BED_TRANSITION_NOT_ALLOWED` (admission / transfer /
+    vacate / absconded set it). A new bed can't start `occupied`
+    (`bed_status_not_allowed`). A bed can't be moved to another room
+    (`bed_room_immutable`). Status changes are audit-logged
+    (`bed.status_changed`).
+  - Deleting a bed with resident history (admission/allocation/transfer rows,
+    all PROTECT) is now 409 `BED_HAS_HISTORY` instead of an unhandled
+    ProtectedError (500); a successful delete is audit-logged (`bed.deleted`).
+  - `PATCH /rooms/{id}/` can't lower `sharing_type` below the room's bed count
+    (`room_capacity_below_beds`) — which keeps it ≥ occupied + reserved — nor
+    move the room to another property (`room_property_immutable`).
+  - Filters: `/rooms/?property=&building=`, `/beds/?property=&availability=`
+    (`availability` = multi-value alias of `status`). Rooms carry read-only
+    `property` and `building` ids.
+  - Tests: `properties/tests/test_layout.py`, `test_bed_transitions.py`.
+  - [DECISION 2026-10-16] Bed delete is refused whenever any resident history
+    exists (the plan said "in the open period"): the PROTECT FKs make that the
+    only safe rule, and history is the billing record. Mark the bed
+    `maintenance` instead.
+  - [DECISION 2026-10-16] Room capacity is checked against the bed count, not
+    just occupied + reserved — a room never has more beds than its sharing
+    type (the existing `bed_capacity_exceeded` rule), so remove a vacant bed
+    first.
+- 2026-10-17  UX roadmap web-client follow-up (S0b): both `BedSerializer`
+  and the layout's bed objects now carry a read-only `allowed_transitions`
+  (`Bed.allowed_transitions()`) — the status values a plain `PATCH
+  /beds/{id}/` may move *this* bed to right now, derived from
+  `MANUAL_TRANSITIONS`; `[]` for an occupied bed. One client (frontend-plan.md
+  F8: "the frontend never invents transitions") needs this because nothing in
+  the response otherwise says which of the four statuses a PATCH would
+  accept — the client would have to hardcode a copy of `MANUAL_TRANSITIONS`
+  and the two would drift. `test_bed_transitions.py::
+  test_allowed_transitions_matches_what_patch_accepts` asserts every value in
+  it actually succeeds via PATCH and every other value is rejected, for every
+  starting status — so the two can't drift silently.

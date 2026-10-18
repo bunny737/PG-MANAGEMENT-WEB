@@ -14,10 +14,11 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
+from apps.core.idempotency import key_reused
 from apps.notifications.tasks import send_payment_receipt_email_task
 from apps.residents.models import Admission
 
-from .models import Invoice, InvoiceLineItem, Payment
+from .models import Invoice, InvoiceLineItem, Payment, ReceiptCounter
 
 
 # Marks the Payment created from the admission advance, so deleting it can
@@ -144,17 +145,76 @@ def resident_has_invoice_for_period(resident, period_start):
     return resident.invoices.filter(period_start=period_start).exists()
 
 
+def next_receipt_number(tenant_id):
+    """Allocate the tenant's next receipt number under the counter row lock.
+    Must run inside the caller's transaction so the number is released with
+    it on rollback (a gap is possible only if the payment insert itself fails
+    after this, which the caller's atomic block also rolls back)."""
+    counter = ReceiptCounter.objects.select_for_update().filter(tenant_id=tenant_id).first()
+    if counter is None:
+        try:
+            with transaction.atomic():
+                counter = ReceiptCounter.objects.create(tenant_id=tenant_id)
+        except IntegrityError:
+            pass  # a concurrent first payment created it — lock that row instead
+        counter = ReceiptCounter.objects.select_for_update().get(tenant_id=tenant_id)
+    counter.last_number += 1
+    counter.save(update_fields=['last_number', 'updated_at'])
+    return ReceiptCounter.format(counter.last_number)
+
+
+def payment_matches(existing, *, invoice_id, amount, payment_date, payment_mode, reference):
+    """True when a request carries exactly the inputs `existing` persisted."""
+    return (
+        str(existing.invoice_id) == str(invoice_id)
+        and existing.amount == amount
+        and existing.payment_date == payment_date
+        and existing.payment_mode == payment_mode
+        and existing.reference == reference
+    )
+
+
+def find_replayed_payment(*, tenant_id, idempotency_key, invoice_id, amount,
+                          payment_date, payment_mode, reference):
+    """The payment an earlier request with this key created, or None. A key
+    reused with any different persisted input is a client bug: 409."""
+    existing = Payment.objects.filter(tenant_id=tenant_id, idempotency_key=idempotency_key).first()
+    if existing is None:
+        return None
+    if not payment_matches(
+        existing, invoice_id=invoice_id, amount=amount, payment_date=payment_date,
+        payment_mode=payment_mode, reference=reference,
+    ):
+        raise key_reused()
+    return existing
+
+
 @transaction.atomic
 def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
-                   actor, request=None):
+                   actor, request=None, idempotency_key=None):
     """Record a manual payment (PRD Module 10) and recompute the invoice status
     (issued -> partially_paid -> paid).
 
     The serializer pre-checks draft/fully-paid/overpayment for a friendly error,
     but that check is not held under a lock — two concurrent payments each
     within the balance can together overpay. Lock the invoice row here and
-    re-check the balance authoritatively before inserting."""
+    re-check the balance authoritatively before inserting.
+
+    With an `idempotency_key`, a retry of a request that already succeeded
+    returns the original payment (with `replayed = True`) instead of failing
+    the balance check or recording it twice. The check runs after the
+    invoice lock, so two concurrent retries serialize on it."""
     invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
+    if idempotency_key:
+        existing = find_replayed_payment(
+            tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
+        )
+        if existing is not None:
+            existing.replayed = True
+            return existing
 
     if invoice.status == Invoice.Status.DRAFT:
         raise ValidationError(
@@ -173,16 +233,36 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
             code='overpayment',
         )
 
-    payment = Payment.objects.create(
-        tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
-        payment_date=payment_date, payment_mode=payment_mode,
-        reference=reference, recorded_by=actor,
-    )
+    try:
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
+                payment_date=payment_date, payment_mode=payment_mode,
+                reference=reference, recorded_by=actor,
+                receipt_number=next_receipt_number(invoice.tenant_id),
+                idempotency_key=idempotency_key,
+            )
+    except IntegrityError:
+        # unique_payment_idempotency_key: a concurrent request with the same
+        # key on a *different* invoice (so it held a different lock) won.
+        if not idempotency_key:
+            raise
+        existing = find_replayed_payment(
+            tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
+        )
+        if existing is None:
+            raise
+        existing.replayed = True
+        return existing
+    payment.replayed = False
     invoice.recompute_status()
     audit_log.record(
         action='payment.recorded', actor=actor, obj=payment,
         after={'invoice': str(invoice.id), 'amount': str(amount),
-               'mode': payment_mode, 'invoice_status': invoice.status},
+               'mode': payment_mode, 'invoice_status': invoice.status,
+               'receipt_number': payment.receipt_number},
         request=request,
     )
     # Module 14: "Payment receipt to resident" (PRD).

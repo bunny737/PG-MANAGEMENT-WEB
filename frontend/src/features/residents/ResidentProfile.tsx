@@ -21,17 +21,21 @@ import {
   X
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { ContactActions } from "@/components/shared/ContactActions";
+import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
-import { getResident, updateResident, type Resident, ApiError } from "@/lib/api";
+import { getResident, listComplaints, updateResident, type Complaint, type Resident, ApiError } from "@/lib/api";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { FinanceCard } from "./FinanceCard";
 
 export function ResidentProfile({ id }: { id: string }) {
   const t = useTranslations("residents.profile");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("status");
   const [resident, setResident] = useState<Resident | null>(null);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const { can } = useSession();
   // Billing figures belong to the Finance module: without view_finance the API omits
   // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
@@ -80,6 +84,11 @@ export function ResidentProfile({ id }: { id: string }) {
         setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });
+    listComplaints({ resident: id }).then((data) => {
+      if (!cancelled) setComplaints(data);
+    }).catch(() => {
+      // Non-fatal: the Maintenance tab just shows its empty state.
+    });
     return () => {
       cancelled = true;
     };
@@ -262,15 +271,16 @@ export function ResidentProfile({ id }: { id: string }) {
                 <Mail className="size-3.5 text-ink-faint" />
                 {resident.email}
               </span>
+              <ContactActions phone={resident.phone} />
             </p>
           </div>
         </div>
 
         <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto border-t md:border-t-0 border-border pt-4 md:pt-0 text-xs text-ink-muted space-y-1">
-          {canSeeFinance && (
+          {canSeeFinance && resident.contracted_rent != null && (
             <>
               <span className="font-semibold text-ink">{t("overview.contractedRent")}</span>
-              <span className="font-mono text-base font-extrabold text-accent">{t("financials.rentAmount")}: {tCommon("labels.rupeeSymbol")}{parseFloat(resident.rent ?? "0").toFixed(2)}</span>
+              <MoneyText value={resident.contracted_rent} className="text-base font-extrabold text-accent" />
             </>
           )}
           <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {resident.joining_date || resident.move_in_date || "--"}</span>
@@ -371,16 +381,20 @@ export function ResidentProfile({ id }: { id: string }) {
                   <span className="text-ink-muted">{t("overview.propertyBuilding")}</span>
                   <span className="font-semibold text-ink">{resident.block || t("overview.mainBuilding")}</span>
                 </div>
-                <div className="flex justify-between items-center pb-2 border-b border-border/40">
-                  <span className="text-ink-muted">{t("overview.securityDeposit")}</span>
-                  <span className="font-mono font-semibold text-ink">{tCommon("labels.rupeeSymbol")}{parseFloat(resident.deposit ?? "0").toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-ink-muted">{t("overview.rentType")}</span>
-                  <span className="font-semibold text-ink">
-                    {resident.rent_type === "with_food" ? t("overview.withFood") : t("overview.withoutFood")}
-                  </span>
-                </div>
+                {resident.security_deposit_amount != null && (
+                  <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                    <span className="text-ink-muted">{t("overview.securityDeposit")}</span>
+                    <MoneyText value={resident.security_deposit_amount} className="font-semibold text-ink" />
+                  </div>
+                )}
+                {resident.food_preference && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-ink-muted">{t("overview.rentType")}</span>
+                    <span className="font-semibold text-ink">
+                      {resident.food_preference === "with_food" ? t("overview.withFood") : t("overview.withoutFood")}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -416,51 +430,8 @@ export function ResidentProfile({ id }: { id: string }) {
         </div>
       )}
 
-      {/* Tab 2: Financials & Rent History */}
-      {activeTab === "financials" && canSeeFinance && (
-        <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-3">
-            {t("financials.heading")}
-          </h3>
-          <div className="overflow-x-auto text-xs">
-            {resident.invoices && resident.invoices.length > 0 ? (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                    <th className="px-4 py-2.5">{t("financials.tableInvoice")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tablePeriod")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tableAmount")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tableStatus")}</th>
-                    <th className="px-4 py-2.5 text-right">{t("financials.tablePaymentMode")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border text-ink">
-                  {resident.invoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3 font-mono font-semibold text-accent">{inv.invoice_number || inv.id}</td>
-                      <td className="px-4 py-3 text-ink-muted">{inv.billing_period_start} - {inv.billing_period_end}</td>
-                      <td className="px-4 py-3 font-mono font-semibold">{tCommon("labels.rupeeSymbol")}{parseFloat(inv.total_amount ?? "0").toFixed(2)}</td>
-                      <td className="px-4 py-3">
-                        <StatusPill
-                          label={tStatus(inv.status as "draft" | "issued" | "paid" | "partially_paid" | "void") ?? inv.status}
-                          tone={getStatusTone(inv.status)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right uppercase text-[10px] font-bold text-ink-muted">
-                        {inv.payment_mode || t("financials.onlineMode")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="p-8 text-center text-ink-muted">
-                {t("financials.noInvoices")}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Tab 2: Finance (D6) */}
+      {activeTab === "financials" && canSeeFinance && <FinanceCard resident={resident} />}
 
       {/* Tab 3: Documents & KYC */}
       {activeTab === "documents" && (
@@ -514,7 +485,7 @@ export function ResidentProfile({ id }: { id: string }) {
             {t("maintenance.heading")}
           </h3>
           <div className="overflow-x-auto text-xs">
-            {resident.complaints && resident.complaints.length > 0 ? (
+            {complaints.length > 0 ? (
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
@@ -526,7 +497,7 @@ export function ResidentProfile({ id }: { id: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border text-ink">
-                  {resident.complaints.map((c) => (
+                  {complaints.map((c) => (
                     <tr key={c.id} className="hover:bg-surface-page/35">
                       <td className="px-4 py-3 font-mono font-semibold text-accent">#{c.id.substring(0, 6)}</td>
                       <td className="px-4 py-3 font-semibold">{c.description}</td>

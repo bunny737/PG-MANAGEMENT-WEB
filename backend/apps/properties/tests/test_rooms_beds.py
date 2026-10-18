@@ -122,14 +122,23 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
 
         self.assertEqual(room_status(), 'available')
 
-        self.client.patch(reverse('bed-detail', args=[bed_a.id]), {'status': 'occupied'})
+        # Occupied is set only by the admission/transfer workflows (D9), which
+        # save the bed directly — do the same; Bed.save() runs the room sync.
+        self.set_bed_status(bed_a, Bed.Status.OCCUPIED)
         self.assertEqual(room_status(), 'available')  # bed_b still vacant
 
-        self.client.patch(reverse('bed-detail', args=[bed_b.id]), {'status': 'occupied'})
+        self.set_bed_status(bed_b, Bed.Status.OCCUPIED)
         self.assertEqual(room_status(), 'occupied')
 
-        self.client.patch(reverse('bed-detail', args=[bed_b.id]), {'status': 'reserved'})
+        self.set_bed_status(bed_b, Bed.Status.RESERVED)
         self.assertEqual(room_status(), 'reserved')
+
+    @staticmethod
+    def set_bed_status(bed, status):
+        with tenant_context(bed.tenant_id):
+            bed.refresh_from_db()
+            bed.status = status
+            bed.save()
 
     def test_manual_maintenance_status_is_not_overridden_by_bed_sync(self):
         floor = self.create_floor(self.property)
@@ -138,7 +147,7 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
         self.authenticate(self.owner)
 
         self.client.patch(reverse('room-detail', args=[room.id]), {'status': 'maintenance'})
-        self.client.patch(reverse('bed-detail', args=[bed.id]), {'status': 'occupied'})
+        self.set_bed_status(bed, Bed.Status.OCCUPIED)
 
         detail = self.client.get(reverse('room-detail', args=[room.id]))
         self.assertEqual(detail.data['status'], 'maintenance')
@@ -322,8 +331,11 @@ class RoomBedHierarchyTests(PropertyAPITestCase):
         self.assertEqual(bed_a.status_code, 201)
         self.assertEqual(bed_b.status_code, 201)
 
-        # Set bed_a to occupied
-        self.client.patch(reverse('bed-detail', args=[bed_a.data['id']]), {'status': 'occupied'})
+        # Occupy bed_a the way admission does (PATCH can't set occupied — D9).
+        with tenant_context(self.property.tenant_id):
+            occupied = Bed.objects.get(pk=bed_a.data['id'])
+            occupied.status = Bed.Status.OCCUPIED
+            occupied.save()
 
         # Now floor occupancy_percent should be 50%
         detail_resp = self.client.get(reverse('floor-detail', args=[resp2.data['id']]))

@@ -14,14 +14,19 @@ import {
   Lock,
   Globe
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
-import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
+import { getCurrentUser, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
 import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
+
+const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export function GlobalSettings() {
   const t = useTranslations("settings");
+  const locale = useLocale();
+  const monthLabel = (month: number) =>
+    new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
   // Portal setup states
@@ -35,10 +40,15 @@ export function GlobalSettings() {
   // accounts, not this browser's own UI locale, so it's seeded from the
   // tenant record, never from the locale cookie.
   const [language, setLanguage] = useState("en");
+  // Fiscal year start month (1-12, default April/4) drives analytics' YTD
+  // window (D0/D1) — a tenant setting, never hardcoded (invariant 10).
+  const [fiscalYearStartMonth, setFiscalYearStartMonth] = useState(4);
+  const [isSavingFiscalYear, setIsSavingFiscalYear] = useState(false);
   useEffect(() => {
     getCurrentUser()
       .then((user) => {
         if (user.tenant?.default_language) setLanguage(user.tenant.default_language);
+        if (user.tenant?.fiscal_year_start_month) setFiscalYearStartMonth(user.tenant.fiscal_year_start_month);
       })
       .catch(() => {});
   }, []);
@@ -99,6 +109,19 @@ export function GlobalSettings() {
       triggerSaveAlert("language", t("tenantLanguage.errorToast"));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleFiscalYearChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingFiscalYear(true);
+    try {
+      await updateTenantFiscalYearStart(fiscalYearStartMonth);
+      triggerSaveAlert("fiscalYear", t("fiscalYear.successToast"));
+    } catch {
+      triggerSaveAlert("fiscalYear", t("fiscalYear.errorToast"));
+    } finally {
+      setIsSavingFiscalYear(false);
     }
   };
 
@@ -333,6 +356,43 @@ export function GlobalSettings() {
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
                 {isLoading ? t("tenantLanguage.saving") : t("tenantLanguage.button")}
+              </button>
+            </form>
+
+            <form onSubmit={handleFiscalYearChange} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
+                <Layers className="size-4.5 text-ink-muted" />
+                {t("fiscalYear.title")}
+              </h2>
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                {t("fiscalYear.subtitle")}
+              </p>
+
+              <div className="space-y-1.5">
+                <label htmlFor="fiscalYearStartMonth" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("fiscalYear.label")}
+                </label>
+                <select
+                  id="fiscalYearStartMonth"
+                  value={fiscalYearStartMonth}
+                  onChange={(e) => setFiscalYearStartMonth(Number(e.target.value))}
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                  disabled={isSavingFiscalYear}
+                >
+                  {MONTH_NUMBERS.map((month) => (
+                    <option key={month} value={month}>
+                      {monthLabel(month)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSavingFiscalYear}
+                className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
+              >
+                {isSavingFiscalYear ? t("fiscalYear.saving") : t("fiscalYear.button")}
               </button>
             </form>
           </div>

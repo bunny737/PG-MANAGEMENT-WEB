@@ -90,6 +90,10 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+      # Read-only: src/lib/__tests__/featureText.test.ts asserts the frontend's
+      # feature-text normaliser against the backend's own fixture, so the two
+      # can never silently disagree (see that test's comment).
+      - ./backend/apps/properties/tests/fixtures:/backend/apps/properties/tests/fixtures:ro
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}

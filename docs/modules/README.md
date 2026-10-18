@@ -26,6 +26,8 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 17 | Data Export | 17-export.md | 3 | 04, 08, 09 | ✅ |
 | 18 | PG Features | 18-pg-features.md | 3 | 02 | ✅ |
 | 19 | App Client (version policy, devices, force-update) | 19-app-client.md | 3 | 01, 14, 15 | ✅ |
+| 20 | Expenses (owner request 2026-10-16, not in PRD v2) | 20-expenses.md | 3 | 01, 02, 15 | ✅ |
+| 21 | Analytics, property layout, resident finance (UX roadmap D0–D9) | 21-analytics.md | 3 | 02, 04, 08, 09, 10, 20 | ✅ |
 
 ## Cross-cutting (enforced in every module — not built once)
 - Tenant isolation + RLS

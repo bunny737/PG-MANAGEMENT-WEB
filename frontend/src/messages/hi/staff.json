@@ -123,6 +123,12 @@
         "full": "Full access",
         "hint": "View only shows invoices, payments and rent figures. Full access can also create and change them."
       },
+      "expenses": {
+        "name": "Expenses",
+        "view": "View only",
+        "full": "Full access",
+        "hint": "View only shows the PG's expenses and their totals. Full access can also record, edit and delete them."
+      },
       "reports": {
         "name": "Reports",
         "full": "Full view",

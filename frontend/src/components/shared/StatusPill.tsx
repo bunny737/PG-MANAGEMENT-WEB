@@ -52,6 +52,9 @@ const STATUS_TONE_MAP: Record<string, Tone> = {
   assigned: "warn",
   inquiry: "warn",
   high: "warn",
+  due: "warn",
+  unpaid: "warn",
+  outstanding: "warn",
   // Critical
   critical: "critical",
   failed: "critical",
@@ -73,6 +76,8 @@ const STATUS_TONE_MAP: Record<string, Tone> = {
   trial: "neutral",
   suspended: "neutral",
   low: "neutral",
+  upcoming: "neutral",
+  no_invoice: "neutral",
 };
 
 export function getStatusTone(status: string): Tone {

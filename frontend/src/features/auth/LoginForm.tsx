@@ -92,7 +92,7 @@ export function LoginForm() {
     try {
       const me = await login(email, password);
       if (me.role !== "owner") {
-        clearSession();
+        await clearSession();
         setIsLoading(false);
         setErrors({ password: t("login.errRoleMismatchOwner") });
         return;
@@ -138,7 +138,7 @@ export function LoginForm() {
     try {
       const me = await loginPhone(phone, phonePassword);
       if (me.role !== "manager" && me.role !== "receptionist") {
-        clearSession();
+        await clearSession();
         setIsLoading(false);
         setErrors({ phonePassword: t("login.errRoleMismatchStaff") });
         return;

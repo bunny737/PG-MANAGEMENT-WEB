@@ -64,7 +64,7 @@ def seed(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0004_alter_platformconfig_trial_days'),
+        ('core', '0005_alter_platformconfig_trial_days'),
         ('subscriptions', '0005_plan_max_beds_subscription_max_beds_override'),
     ]
 

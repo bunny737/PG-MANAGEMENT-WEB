@@ -81,8 +81,14 @@ class RegistryTests(SimpleTestCase):
     def test_single_level_modules(self):
         for module in ('dashboard', 'reports', 'complaints', 'visitors'):
             self.assertEqual(module_levels(module), [OFF, FULL])
-        for module in ('properties', 'tenants', 'finance'):
+        for module in ('properties', 'tenants', 'finance', 'expenses'):
             self.assertEqual(module_levels(module), [OFF, VIEW, FULL])
+
+    def test_expenses_view_and_manage_split(self):
+        self.assertEqual(codes_for_level('expenses', VIEW), {'view_expenses'})
+        self.assertEqual(codes_for_level('expenses', FULL), {'view_expenses', 'manage_expenses'})
+        self.assertEqual(ROLE_DEFAULT_LEVELS[Role.MANAGER]['expenses'], FULL)
+        self.assertEqual(ROLE_DEFAULT_LEVELS[Role.RECEPTIONIST]['expenses'], OFF)
 
 
 class ResolverTests(SimpleTestCase):

@@ -1,21 +1,28 @@
 from datetime import date
 
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.fields import SkipField, empty
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.audit import log as audit_log
-from apps.core.permissions import require_permission_by_method
+from apps.core.idempotency import idempotency_key, key_reused
+from apps.core.periods import local_today, month_end, month_start, parse_date, parse_month
+from apps.core.permissions import require_permission, require_permission_by_method
 from apps.notifications.tasks import send_invoice_issued_email_task
-from apps.properties.services import visible_property_ids
+from apps.properties.services import scoped_property_ids, visible_property_ids
 from apps.residents.models import Resident
 
-from . import services
+from . import receipts, selectors, services
+from .filters import DiscountFilter, InvoiceFilter, PaymentFilter
 from .models import Discount, Invoice, InvoiceLineItem, Payment
+from .schema import CashMovementsResponseSerializer, ReceiptResponseSerializer
 from .serializers import (
     DiscountSerializer,
     InvoiceBulkGenerateSerializer,
@@ -36,7 +43,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
     serializer_class = DiscountSerializer
     permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_discounts')]
     http_method_names = ['get', 'post', 'patch']
-    filterset_fields = ['resident', 'reason', 'discount_type']
+    filterset_class = DiscountFilter
 
     @staticmethod
     def _lock_resident(resident_id):
@@ -62,7 +69,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
         ids = visible_property_ids(self.request.user)
         return (
             Discount.objects.filter(resident__property_id__in=ids)
-            .select_related('resident', 'approved_by')
+            .select_related('resident__property', 'resident__allocation__allocated_bed__room', 'approved_by')
         )
 
     def perform_create(self, serializer):
@@ -102,7 +109,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_invoices')]
     http_method_names = ['get', 'post', 'patch', 'delete']
-    filterset_fields = ['resident', 'status', 'billing_mode']
+    filterset_class = InvoiceFilter
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -110,7 +117,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         ids = visible_property_ids(self.request.user)
         return (
             Invoice.objects.filter(resident__property_id__in=ids)
-            .select_related('resident').prefetch_related('line_items', 'payments')
+            .select_related('resident__property', 'resident__allocation__allocated_bed__room')
+            .prefetch_related('line_items', 'payments')
         )
 
     def get_serializer_class(self):
@@ -184,12 +192,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         """Invoices with money still owed (PRD Module 10 "Outstanding dues view
         across all residents"). Fully-paid invoices are `paid` and drop out;
         drafts are excluded (not yet owed)."""
-        invoices = self.get_queryset().filter(
-            status__in=(Invoice.Status.ISSUED, Invoice.Status.PARTIALLY_PAID)
-        )
-        # balance_due is computed, so filter in Python (prefetched line_items/payments).
-        owed = [inv for inv in invoices if inv.balance_due > 0]
-        return Response(InvoiceSerializer(owed, many=True).data)
+        # Same definition as ?status=outstanding and the analytics
+        # outstanding_total (apps/billing/selectors.py); also honours the
+        # list filters (?property=, ?resident=, ...).
+        invoices = selectors.outstanding(self.filter_queryset(self.get_queryset()))
+        return Response(InvoiceSerializer(invoices, many=True).data)
 
     @action(detail=False, methods=['post'], url_path='bulk-generate')
     def bulk_generate(self, request):
@@ -272,7 +279,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     permission_classes = [IsAuthenticated, require_permission_by_method('view_finance', 'manage_payments')]
     http_method_names = ['get', 'post', 'delete']
-    filterset_fields = ['invoice', 'invoice__resident', 'payment_mode']
+    filterset_class = PaymentFilter
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -280,7 +287,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         ids = visible_property_ids(self.request.user)
         return (
             Payment.objects.filter(invoice__resident__property_id__in=ids)
-            .select_related('invoice', 'invoice__resident', 'recorded_by')
+            .select_related(
+                'invoice__resident__property', 'invoice__resident__allocation__allocated_bed__room',
+                'recorded_by',
+            )
         )
 
     def get_serializer_class(self):
@@ -288,34 +298,133 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return PaymentWriteSerializer
         return PaymentSerializer
 
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'Idempotency-Key', str, OpenApiParameter.HEADER, required=False,
+            description='<= 100 chars; one per user intent. A retry with the same key and body '
+                        'returns 200 with `Idempotent-Replayed: true` and the original payment.',
+        )],
+    )
     def create(self, request, *args, **kwargs):
+        key = idempotency_key(request)
+        if key:
+            # A retry of a request that already succeeded: answer with the
+            # original payment *before* validation, which would otherwise
+            # reject it (the invoice may now be fully paid).
+            replay = self._replay(request, key)
+            if replay is not None:
+                return replay
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        payment = services.record_payment(actor=request.user, request=request, **serializer.validated_data)
-        return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+        payment = services.record_payment(
+            actor=request.user, request=request, idempotency_key=key, **serializer.validated_data
+        )
+        return self._payment_response(payment, replayed=payment.replayed)
+
+    def _replay(self, request, key):
+        existing = self.get_queryset().filter(idempotency_key=key).first()
+        if existing is None:
+            return None
+        # Parse with the serializer's own fields (so "5000" == "5000.00" and
+        # date formats match) but skip its business rules — a replay must
+        # not be re-judged against the invoice's current balance.
+        fields = PaymentWriteSerializer().fields
+        inputs = {}
+        try:
+            for name in ('amount', 'payment_date', 'payment_mode'):
+                inputs[name] = fields[name].run_validation(fields[name].get_value(request.data))
+            reference = fields['reference'].get_value(request.data)
+            inputs['reference'] = '' if reference is empty else fields['reference'].run_validation(reference)
+        except (ValidationError, SkipField):
+            raise key_reused()
+        if not services.payment_matches(existing, invoice_id=request.data.get('invoice'), **inputs):
+            raise key_reused()
+        return self._payment_response(existing, replayed=True)
+
+    def _payment_response(self, payment, *, replayed):
+        payment = self.get_queryset().get(pk=payment.pk)
+        response = Response(
+            PaymentSerializer(payment).data,
+            status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        )
+        if replayed:
+            response['Idempotent-Replayed'] = 'true'
+        return response
 
     def perform_destroy(self, instance):
         services.delete_payment(payment=instance, actor=self.request.user, request=self.request)
 
+    @extend_schema(
+        parameters=[OpenApiParameter('filetype', str, description='"pdf" for the printable receipt; default JSON.')],
+        responses=ReceiptResponseSerializer,
+    )
     @action(detail=True, methods=['get'])
     def receipt(self, request, pk=None):
-        """Auto-generated receipt after payment recording (PRD Module 10). JSON
-        for now; PDF rendering is Module 17 (export)'s concern."""
+        """Receipt for one payment (PRD Module 10, D4). JSON by default (the
+        original contract); `?filetype=pdf` renders the printable receipt
+        for the share sheet."""
         payment = self.get_object()
-        invoice = payment.invoice
-        resident = invoice.resident
+        data = receipts.receipt_data(payment)
+        if request.query_params.get('filetype', '').lower() == 'pdf':
+            return receipts.receipt_pdf_response(payment, data)
+        return Response(receipts.receipt_json(data))
+
+
+class CashMovementView(APIView):
+    """Cash movements for a date range (D3) — the drill-down behind the
+    analytics `cash_collected` figure, which this list always sums to.
+    Payments are (+). Rent refunds would be (−), but v1 has none (owner
+    decision 2026-10-16), so refunds_paid is always 0 here."""
+
+    permission_classes = [IsAuthenticated, require_permission('view_finance')]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('property', str, description='Property UUID; default is every assigned property.'),
+            OpenApiParameter('month', str, description='YYYY-MM; default is the current month.'),
+            OpenApiParameter('from', str, description='YYYY-MM-DD; overrides the month start.'),
+            OpenApiParameter('to', str, description='YYYY-MM-DD; overrides the month end.'),
+        ],
+        responses=CashMovementsResponseSerializer,
+    )
+    def get(self, request):
+        params = request.query_params
+        first = parse_month(params.get('month'), default=month_start(local_today()))
+        start = parse_date(params.get('from'), param='from') or first
+        end = parse_date(params.get('to'), param='to') or month_end(first)
+        if end < start:
+            raise ValidationError({'to': [_('"to" cannot be before "from".')]}, code='invalid_date_range')
+
+        property_ids = scoped_property_ids(request.user, params.get('property'))
+        payments = (
+            Payment.objects.filter(
+                invoice__resident__property_id__in=property_ids, payment_date__range=(start, end),
+            )
+            .select_related('invoice__resident__property')
+            .order_by('-payment_date', '-created_at')
+        )
+        results = [
+            {
+                'type': 'payment',
+                'id': str(p.id),
+                'date': p.payment_date,
+                'amount': str(p.amount),
+                'receipt_number': p.receipt_number,
+                'payment_mode': p.payment_mode,
+                'invoice': str(p.invoice_id),
+                'resident': str(p.invoice.resident_id),
+                'resident_name': str(p.invoice.resident),
+                'property': str(p.invoice.resident.property_id),
+                'property_name': p.invoice.resident.property.name,
+            }
+            for p in payments
+        ]
+        gross = sum((p.amount for p in payments), selectors.ZERO)
+        refunds = selectors.ZERO
         return Response({
-            'receipt_for': str(payment.id),
-            'resident': str(resident),
-            'invoice': str(invoice.id),
-            'period_start': invoice.period_start,
-            'period_end': invoice.period_end,
-            'amount': str(payment.amount),
-            'payment_date': payment.payment_date,
-            'payment_mode': payment.payment_mode,
-            'reference': payment.reference,
-            'recorded_by': str(payment.recorded_by) if payment.recorded_by else None,
-            'invoice_total': str(invoice.total),
-            'invoice_balance_due': str(invoice.balance_due),
-            'invoice_status': invoice.status,
+            'from': start, 'to': end,
+            'gross_receipts': str(gross), 'refunds_paid': str(refunds),
+            'total': str(gross - refunds),
+            'count': len(results),
+            'results': results,
         })

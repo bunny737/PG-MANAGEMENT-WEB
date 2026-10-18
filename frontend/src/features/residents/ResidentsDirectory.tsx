@@ -1,53 +1,44 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown, LoaderCircle, AlertTriangle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { getInitials } from "@/lib/utils";
-import { listResidents, type Resident, ApiError } from "@/lib/api";
+import { listResidents } from "@/lib/api";
 import { PermissionGate } from "@/components/shared/PermissionGate";
+import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
+import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { queryKeys } from "@/lib/queryKeys";
+
+const STATUS_TABS = ["all", "active", "notice_period", "vacated"] as const;
 
 export function ResidentsDirectory() {
   const t = useTranslations("residents.directory");
   const tStatus = useTranslations("status");
+  const { propertyId } = useActiveProperty();
 
-  const [residents, setResidents] = useState<Resident[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  // Filter States
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBlock, setSelectedBlock] = useState("");
   const [selectedFloor, setSelectedFloor] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("all");
-
-  // Sorting
+  const [selectedStatus, setSelectedStatus] = useState<(typeof STATUS_TABS)[number]>("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  useEffect(() => {
-    let cancelled = false;
+  const filters = {
+    property: propertyId ?? undefined,
+    status: selectedStatus === "all" ? undefined : selectedStatus,
+    search: searchTerm || undefined,
+  };
 
-    listResidents()
-      .then((data) => {
-        if (cancelled) return;
-        setResidents(data);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
-        setIsLoading(false);
-      });
+  const { data: residents = [], isLoading, isError, refetch } = useQuery({
+    queryKey: queryKeys.residents.list(filters),
+    queryFn: () => listResidents(filters.property, filters.status, filters.search),
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  // Dynamically collect unique blocks/buildings and floors from the loaded residents list
+  // Block/floor aren't server filters — narrowed client-side from whatever
+  // the server already scoped by property/status/search.
   const blocks = useMemo(() => {
     const unique = new Set<string>();
     residents.forEach((r) => {
@@ -60,7 +51,6 @@ export function ResidentsDirectory() {
     const unique = new Set<string>();
     residents.forEach((r) => {
       if (r.unit) {
-        // e.g. "Room 401" -> extract digits (e.g. 401) -> extract floor (e.g. 4)
         const digits = r.unit.replace(/\D/g, "");
         if (digits.length >= 3) {
           unique.add(digits.substring(0, digits.length - 2));
@@ -70,7 +60,6 @@ export function ResidentsDirectory() {
     return Array.from(unique).sort((a, b) => Number(a) - Number(b));
   }, [residents]);
 
-  // Avatar Background Color Helper
   const getAvatarBg = (name: string) => {
     const hash = name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const colors = [
@@ -84,75 +73,29 @@ export function ResidentsDirectory() {
     return colors[hash % colors.length];
   };
 
-  // Filtered and Sorted Residents
-  const filteredResidents = useMemo(() => {
+  const visibleResidents = useMemo(() => {
     return residents
       .filter((resident) => {
-        const fullName = `${resident.first_name} ${resident.last_name}`.trim();
         const unitStr = resident.unit || "";
         const blockStr = resident.block || "";
-
-        // Search filter (name, unit, phone, email)
-        const query = searchTerm.toLowerCase();
-        const matchesSearch =
-          fullName.toLowerCase().includes(query) ||
-          unitStr.toLowerCase().includes(query) ||
-          resident.phone.includes(query) ||
-          resident.email.toLowerCase().includes(query);
-
-        // Block filter
         const matchesBlock = selectedBlock ? blockStr === selectedBlock : true;
-
-        // Floor filter (extract room digits and check prefix matching floor)
         let matchesFloor = true;
         if (selectedFloor && unitStr) {
           const digits = unitStr.replace(/\D/g, "");
-          if (digits.length >= 3) {
-            const floorNumber = digits.substring(0, digits.length - 2);
-            matchesFloor = floorNumber === selectedFloor;
-          } else {
-            matchesFloor = false;
-          }
+          matchesFloor = digits.length >= 3 && digits.substring(0, digits.length - 2) === selectedFloor;
+        } else if (selectedFloor) {
+          matchesFloor = false;
         }
-
-        // Status filter
-        const matchesStatus = selectedStatus === "all" ? true : resident.status === selectedStatus;
-
-        return matchesSearch && matchesBlock && matchesFloor && matchesStatus;
+        return matchesBlock && matchesFloor;
       })
       .sort((a, b) => {
         const nameA = `${a.first_name} ${a.last_name}`.toLowerCase();
         const nameB = `${b.first_name} ${b.last_name}`.toLowerCase();
         return sortOrder === "asc" ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
       });
-  }, [residents, searchTerm, selectedBlock, selectedFloor, selectedStatus, sortOrder]);
+  }, [residents, selectedBlock, selectedFloor, sortOrder]);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
-        <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">{t("loading")}</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-4 max-w-md mx-auto py-16 text-center">
-        <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
-          <AlertTriangle className="size-6" />
-        </div>
-        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
-        <p className="text-xs text-ink-muted leading-relaxed">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
-        >
-          {t("retry")}
-        </button>
-      </div>
-    );
-  }
+  const hasClientFilters = selectedBlock || selectedFloor;
 
   return (
     <div className="space-y-6">
@@ -177,29 +120,27 @@ export function ResidentsDirectory() {
 
       {/* Filter and Search Panel */}
       <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-        {/* Status Tabs */}
-        <div className="flex flex-wrap gap-2 border-b border-border pb-4">
-          {[
-            { id: "all", label: t("statusAll") },
-            { id: "active", label: t("statusActive") },
-            { id: "notice", label: t("statusNotice") },
-            { id: "vacated", label: t("statusVacated") },
-          ].map((tab) => {
-            const isActive = selectedStatus === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setSelectedStatus(tab.id)}
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold tracking-wide transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-surface-inverse text-ink-inverse shadow-sm"
-                    : "bg-surface-page text-ink-muted border border-border hover:bg-surface-card hover:text-ink"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+          {/* Status Tabs */}
+          <div className="flex flex-wrap gap-2">
+            {STATUS_TABS.map((tab) => {
+              const isActive = selectedStatus === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setSelectedStatus(tab)}
+                  className={`rounded-full px-4 py-1.5 text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                    isActive
+                      ? "bg-surface-inverse text-ink-inverse shadow-sm"
+                      : "bg-surface-page text-ink-muted border border-border hover:bg-surface-card hover:text-ink"
+                  }`}
+                >
+                  {tab === "all" ? t("statusAll") : tStatus(tab)}
+                </button>
+              );
+            })}
+          </div>
+          <PropertyFilter />
         </div>
 
         {/* Filter Controls Row */}
@@ -265,13 +206,11 @@ export function ResidentsDirectory() {
               <span className="uppercase text-[10px] font-bold">{sortOrder}</span>
             </button>
 
-            {(searchTerm || selectedBlock || selectedFloor || selectedStatus !== "all") && (
+            {hasClientFilters && (
               <button
                 onClick={() => {
-                  setSearchTerm("");
                   setSelectedBlock("");
                   setSelectedFloor("");
-                  setSelectedStatus("all");
                 }}
                 className="p-2.5 rounded-xl border border-border bg-surface-page text-ink-muted hover:bg-surface-card hover:text-status-critical transition-colors cursor-pointer"
                 title={t("clearFilters")}
@@ -283,108 +222,113 @@ export function ResidentsDirectory() {
         </div>
       </div>
 
+      {isLoading && <SectionSkeleton className="h-64" />}
+      {isError && <SectionError onRetry={() => refetch()} message={t("errLoadFailed")} />}
+
       {/* Directory Data Grid List */}
-      <div className="bg-surface-card border border-border rounded-2xl shadow-sm overflow-hidden">
-        {/* Table Header (Desktop) */}
-        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3.5 bg-surface-page border-b border-border font-bold text-xs text-ink-muted uppercase tracking-wider items-center">
-          <div className="col-span-4">{t("tableResident")}</div>
-          <div className="col-span-2">{t("tableRoomBed")}</div>
-          <div className="col-span-3">{t("tableContact")}</div>
-          <div className="col-span-1 text-center">{t("tableStatus")}</div>
-          <div className="col-span-2 text-right">{t("tableActions")}</div>
-        </div>
+      {!isLoading && !isError && (
+        <div className="bg-surface-card border border-border rounded-2xl shadow-sm overflow-hidden">
+          {/* Table Header (Desktop) */}
+          <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3.5 bg-surface-page border-b border-border font-bold text-xs text-ink-muted uppercase tracking-wider items-center">
+            <div className="col-span-4">{t("tableResident")}</div>
+            <div className="col-span-2">{t("tableRoomBed")}</div>
+            <div className="col-span-3">{t("tableContact")}</div>
+            <div className="col-span-1 text-center">{t("tableStatus")}</div>
+            <div className="col-span-2 text-right">{t("tableActions")}</div>
+          </div>
 
-        {/* Rows */}
-        {filteredResidents.length > 0 ? (
-          <div className="divide-y divide-border">
-            {filteredResidents.map((resident) => {
-              const fullName = `${resident.first_name} ${resident.last_name}`.trim();
-              const initials = getInitials(fullName);
-              const avatarClass = getAvatarBg(fullName);
+          {/* Rows */}
+          {visibleResidents.length > 0 ? (
+            <div className="divide-y divide-border">
+              {visibleResidents.map((resident) => {
+                const fullName = `${resident.first_name} ${resident.last_name}`.trim();
+                const initials = getInitials(fullName);
+                const avatarClass = getAvatarBg(fullName);
 
-              return (
-                <div
-                  key={resident.id}
-                  className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-page/35 transition-colors"
-                >
-                  {/* Resident Info Column */}
-                  <div className="col-span-1 md:col-span-4 flex items-center gap-3.5">
-                    <div
-                      className={`size-10 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${avatarClass}`}
-                    >
-                      {initials}
-                    </div>
-                    <div>
-                      <Link
-                        href={`/residents/${resident.id}`}
-                        className="text-sm font-bold text-ink hover:text-accent transition-colors"
+                return (
+                  <div
+                    key={resident.id}
+                    className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-page/35 transition-colors"
+                  >
+                    {/* Resident Info Column */}
+                    <div className="col-span-1 md:col-span-4 flex items-center gap-3.5">
+                      <div
+                        className={`size-10 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${avatarClass}`}
                       >
-                        {fullName}
-                      </Link>
-                      <p className="text-xs text-ink-muted mt-0.5 md:hidden">
-                        {resident.unit ? `${resident.block ? `${resident.block} · ` : ""}${resident.unit}` : t("unassigned")}
+                        {initials}
+                      </div>
+                      <div>
+                        <Link
+                          href={`/residents/${resident.id}`}
+                          className="text-sm font-bold text-ink hover:text-accent transition-colors"
+                        >
+                          {fullName}
+                        </Link>
+                        <p className="text-xs text-ink-muted mt-0.5 md:hidden">
+                          {resident.unit ? `${resident.block ? `${resident.block} · ` : ""}${resident.unit}` : t("unassigned")}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Room / Bed Slot (Desktop) */}
+                    <div className="hidden md:block col-span-2 text-xs">
+                      <p className="font-semibold text-ink">
+                        {resident.unit || "--"}
+                      </p>
+                      <p className="text-[10px] text-ink-muted mt-0.5">
+                        {resident.block || t("mainBuilding")}
                       </p>
                     </div>
-                  </div>
 
-                  {/* Room / Bed Slot (Desktop) */}
-                  <div className="hidden md:block col-span-2 text-xs">
-                    <p className="font-semibold text-ink">
-                      {resident.unit || "--"}
-                    </p>
-                    <p className="text-[10px] text-ink-muted mt-0.5">
-                      {resident.block || t("mainBuilding")}
-                    </p>
-                  </div>
-
-                  {/* Contact Info (Desktop) */}
-                  <div className="hidden md:block col-span-3 text-xs space-y-1">
-                    <div className="flex items-center gap-1.5 text-ink">
-                      <Phone className="size-3 text-ink-faint shrink-0" />
-                      <span>{resident.phone}</span>
+                    {/* Contact Info (Desktop) */}
+                    <div className="hidden md:block col-span-3 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 text-ink">
+                        <Phone className="size-3 text-ink-faint shrink-0" />
+                        <span>{resident.phone}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-ink-muted truncate max-w-[200px]">
+                        <Mail className="size-3 text-ink-faint shrink-0" />
+                        <span className="truncate">{resident.email}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-ink-muted truncate max-w-[200px]">
-                      <Mail className="size-3 text-ink-faint shrink-0" />
-                      <span className="truncate">{resident.email}</span>
+
+                    {/* Status Badge */}
+                    <div className="col-span-1 md:col-span-1 flex md:justify-center">
+                      <StatusPill
+                        label={tStatus(resident.status)}
+                        tone={getStatusTone(resident.status)}
+                      />
+                    </div>
+
+                    {/* Action Link */}
+                    <div className="col-span-1 md:col-span-2 flex justify-end">
+                      <Link
+                        href={`/residents/${resident.id}`}
+                        className="text-xs font-bold text-accent hover:text-accent-hover transition-colors inline-flex items-center gap-1"
+                      >
+                        {t("viewProfile")} ›
+                      </Link>
                     </div>
                   </div>
-
-                  {/* Status Badge */}
-                  <div className="col-span-1 md:col-span-1 flex md:justify-center">
-                    <StatusPill
-                      label={tStatus(resident.status as "inquiry" | "reserved" | "active" | "notice_period" | "vacated" | "absconded" | "blacklisted" | "inactive") ?? resident.status}
-                      tone={getStatusTone(resident.status)}
-                    />
-                  </div>
-
-                  {/* Action Link */}
-                  <div className="col-span-1 md:col-span-2 flex justify-end">
-                    <Link
-                      href={`/residents/${resident.id}`}
-                      className="text-xs font-bold text-accent hover:text-accent-hover transition-colors inline-flex items-center gap-1"
-                    >
-                      {t("viewProfile")} ›
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* Empty State */
-          <div className="flex flex-col items-center justify-center p-12 text-center space-y-3">
-            <div className="flex size-12 items-center justify-center rounded-full bg-surface-page text-ink-muted border border-border">
-              <Users className="size-6 text-ink-faint" />
+                );
+              })}
             </div>
-            <div className="space-y-1 max-w-sm">
-              <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
-              <p className="text-xs text-ink-muted leading-relaxed">
-                {t("emptyDesc")}
-              </p>
+          ) : (
+            /* Empty State */
+            <div className="flex flex-col items-center justify-center p-12 text-center space-y-3">
+              <div className="flex size-12 items-center justify-center rounded-full bg-surface-page text-ink-muted border border-border">
+                <Users className="size-6 text-ink-faint" />
+              </div>
+              <div className="space-y-1 max-w-sm">
+                <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
+                <p className="text-xs text-ink-muted leading-relaxed">
+                  {t("emptyDesc")}
+                </p>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

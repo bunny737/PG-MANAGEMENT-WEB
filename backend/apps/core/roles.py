@@ -53,6 +53,10 @@ PERMISSION_MATRIX = {
     # payments and discounts and of the billing money fields on resident/bed views.
     'view_dashboard': _OPS,
     'view_finance': _OPS,
+    # Module 20 (Expenses, owner request 2026-10-16 — UX roadmap Phase 4).
+    # Same audience as Finance: a Receptionist doesn't see the PG's spending.
+    'view_expenses': _OPS,
+    'manage_expenses': _OPS,
     'manage_complaints': _OPS,
     'manage_visitors': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_resident_profile': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),

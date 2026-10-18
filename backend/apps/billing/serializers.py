@@ -1,13 +1,12 @@
-from datetime import date
-
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.core.periods import local_today
 from apps.properties.models import Property
 from apps.properties.services import can_view_property
 from apps.residents.models import Resident
 
-from . import services
+from . import selectors, services
 from .models import Discount, Invoice, InvoiceLineItem, Payment
 
 
@@ -20,16 +19,60 @@ def _windows_overlap(from1, until1, from2, until2):
     return end is None or start <= end
 
 
-class DiscountSerializer(serializers.ModelSerializer):
+def _location(resident):
+    """(room_number, bed_number) of the resident's current allocation."""
+    allocation = getattr(resident, 'allocation', None)
+    if allocation is None:
+        return None, None
+    bed = allocation.allocated_bed
+    return bed.room.room_number, bed.bed_number
+
+
+class ResidentContextMixin(serializers.Serializer):
+    """Who/where columns for finance lists, so a row renders without a
+    second lookup. `_resident(obj)` returns the row's resident."""
+
+    resident_name = serializers.SerializerMethodField()
+    property = serializers.SerializerMethodField()
+    property_name = serializers.SerializerMethodField()
+    room_number = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
+
+    def get_resident_name(self, obj) -> str:
+        return str(self._resident(obj))
+
+    def get_property(self, obj) -> str:
+        return str(self._resident(obj).property_id)
+
+    def get_property_name(self, obj) -> str:
+        return self._resident(obj).property.name
+
+    def get_room_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[0]
+
+    def get_bed_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[1]
+
+
+class DiscountSerializer(ResidentContextMixin, serializers.ModelSerializer):
+    """Per-resident discounts (PRD Module 8). `ResidentContextMixin` gives
+    the discount report the same who/where columns as invoices and payments
+    (UX roadmap FE-07), so a row renders without a second lookup."""
+
     class Meta:
         model = Discount
         fields = [
-            'id', 'resident', 'discount_type', 'discount_value', 'reason',
+            'id', 'resident', 'resident_name', 'property', 'property_name',
+            'room_number', 'bed_number', 'discount_type', 'discount_value', 'reason',
             'note', 'valid_from', 'valid_until', 'approved_by',
             'created_at', 'updated_at',
         ]
         # approved_by is stamped from the request user server-side.
         read_only_fields = ['id', 'approved_by', 'created_at', 'updated_at']
+
+    @staticmethod
+    def _resident(obj):
+        return obj.resident
 
     def validate_resident(self, value):
         request = self.context['request']
@@ -89,22 +132,66 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class InvoiceSerializer(serializers.ModelSerializer):
+def _location(resident):
+    """(room_number, bed_number) of the resident's current allocation."""
+    allocation = getattr(resident, 'allocation', None)
+    if allocation is None:
+        return None, None
+    bed = allocation.allocated_bed
+    return bed.room.room_number, bed.bed_number
+
+
+class ResidentContextMixin(serializers.Serializer):
+    """Who/where columns for finance lists, so a row renders without a
+    second lookup. `_resident(obj)` returns the row's resident."""
+
+    resident_name = serializers.SerializerMethodField()
+    property = serializers.SerializerMethodField()
+    property_name = serializers.SerializerMethodField()
+    room_number = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
+
+    def get_resident_name(self, obj) -> str:
+        return str(self._resident(obj))
+
+    def get_property(self, obj) -> str:
+        return str(self._resident(obj).property_id)
+
+    def get_property_name(self, obj) -> str:
+        return self._resident(obj).property.name
+
+    def get_room_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[0]
+
+    def get_bed_number(self, obj) -> str | None:
+        return _location(self._resident(obj))[1]
+
+
+class InvoiceSerializer(ResidentContextMixin, serializers.ModelSerializer):
     line_items = InvoiceLineItemSerializer(many=True, read_only=True)
     total = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance_due = serializers.SerializerMethodField()
+    # min(amount_paid, total): what this invoice contributes to the analytics
+    # `period_collected` figure, so a ?period= list sums to it exactly (D0).
+    capped_allocated = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = [
-            'id', 'resident', 'period_start', 'period_end', 'billing_mode',
+            'id', 'resident', 'resident_name', 'property', 'property_name',
+            'room_number', 'bed_number',
+            'period_start', 'period_end', 'billing_mode',
             'issue_date', 'due_date', 'status', 'notes', 'created_by',
-            'line_items', 'total', 'amount_paid', 'balance_due', 'is_overdue',
+            'line_items', 'total', 'amount_paid', 'balance_due', 'capped_allocated', 'is_overdue',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    @staticmethod
+    def _resident(obj):
+        return obj.resident
 
     def get_total(self, obj) -> str:
         return str(obj.total)
@@ -115,8 +202,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def get_balance_due(self, obj) -> str:
         return str(obj.balance_due)
 
+    def get_capped_allocated(self, obj) -> str:
+        return str(selectors.capped_paid(obj))
+
     def get_is_overdue(self, obj) -> bool:
-        return obj.is_overdue(date.today())
+        return obj.is_overdue(local_today())
 
 
 class InvoiceUpdateSerializer(serializers.ModelSerializer):
@@ -199,14 +289,34 @@ class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class PaymentSerializer(serializers.ModelSerializer):
+class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):
+    resident = serializers.SerializerMethodField()
+    recorded_by_name = serializers.SerializerMethodField()
+    invoice_period_start = serializers.DateField(source='invoice.period_start', read_only=True)
+    invoice_period_end = serializers.DateField(source='invoice.period_end', read_only=True)
+
     class Meta:
         model = Payment
         fields = [
-            'id', 'invoice', 'amount', 'payment_date', 'payment_mode',
-            'reference', 'recorded_by', 'created_at', 'updated_at',
+            'id', 'receipt_number', 'invoice', 'invoice_period_start', 'invoice_period_end',
+            'resident', 'resident_name', 'property', 'property_name', 'room_number', 'bed_number',
+            'amount', 'payment_date', 'payment_mode',
+            'reference', 'recorded_by', 'recorded_by_name', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    @staticmethod
+    def _resident(obj):
+        return obj.invoice.resident
+
+    def get_resident(self, obj) -> str:
+        return str(obj.invoice.resident_id)
+
+    def get_recorded_by_name(self, obj) -> str | None:
+        user = obj.recorded_by
+        if user is None:
+            return None
+        return f'{user.first_name} {user.last_name}'.strip() or str(user)
 
 
 class PaymentWriteSerializer(serializers.ModelSerializer):

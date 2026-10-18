@@ -48,6 +48,26 @@ def require_permission_by_method(read, write):
     return HasMethodPermission
 
 
+def require_any_permission(*permissions):
+    """Entry gate for read endpoints that several modules legitimately reach
+    (e.g. the property layout serves the Properties screen, the admission bed
+    picker and the transfer dialog). Nested fields are then redacted by their
+    own permission — see apps/core/redaction.py."""
+
+    class HasAnyPermission(BasePermission):
+        message = _('You do not have permission to perform this action.')
+        code = 'permission_denied'
+
+        def has_permission(self, request, view):
+            user = request.user
+            if not (user and user.is_authenticated):
+                return False
+            return bool(set(permissions) & set(permissions_for_user(user)))
+
+    HasAnyPermission.__name__ = 'Requires_any_of_' + '_'.join(permissions)
+    return HasAnyPermission
+
+
 class IsSuperAdmin(BasePermission):
     message = _('Only platform administrators can perform this action.')
 

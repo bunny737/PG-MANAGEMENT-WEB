@@ -1,0 +1,57 @@
+{
+  "title": "Reports",
+  "subtitle": "One number, one definition, one drill-down — every figure here matches its list.",
+  "tabs": {
+    "overview": "Overview",
+    "collections": "Collections",
+    "occupancy": "Occupancy",
+    "exports": "Exports"
+  },
+  "currentBalance": "Current balance",
+  "toDate": "to date",
+  "mixedTimezones": "Mixed timezones — each property uses its local month.",
+  "cards": {
+    "cashCollected": "Cash collected",
+    "outstandingTotal": "Outstanding",
+    "periodOutstanding": "Outstanding this period",
+    "overdueTotal": "Overdue",
+    "collectionRate": "Collection rate",
+    "expensesPaid": "Expenses paid",
+    "netCashFlow": "Net cash flow",
+    "depositsHeld": "Deposits held",
+    "grossReceipts": "Gross receipts",
+    "refundsPaid": "Refunds paid",
+    "periodInvoiced": "Invoiced this period",
+    "periodCollected": "Collected this period",
+    "ytd": "Year to date",
+    "occupancyRate": "Occupancy rate",
+    "totalBeds": "Total beds",
+    "occupied": "Occupied",
+    "available": "Available",
+    "reserved": "Reserved",
+    "maintenance": "Maintenance",
+    "noBedsYet": "No beds yet",
+    "allUnderMaintenance": "All beds under maintenance"
+  },
+  "trend": {
+    "title": "6-month trend",
+    "cashCollected": "Cash collected",
+    "expensesPaid": "Expenses paid",
+    "noData": "No data for this range.",
+    "tableView": "View as table"
+  },
+  "exports": {
+    "title": "Exports",
+    "format": "Format",
+    "month": "Month",
+    "period": "Period",
+    "residents": "Residents",
+    "payments": "Payments",
+    "outstandingDues": "Outstanding dues",
+    "occupancy": "Occupancy report",
+    "expenses": "Expenses",
+    "pnl": "Cash flow statement",
+    "download": "Download"
+  },
+  "errLoadFailed": "Couldn't load this report."
+}

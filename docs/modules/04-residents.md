@@ -198,3 +198,19 @@ lifecycle (`vacated`/`blacklisted`) instead.
   (`security_deposit_amount`, `advance_amount`, `advance_refundable`) without `view_finance` or
   `manage_deposits` (previously both groups keyed on `manage_residents`; role defaults unchanged).
   The `timeline` action now requires `view_resident_profile` **and** `view_activity_timeline`.
+- 2026-10-16  UX roadmap D6: `GET /residents/{id}/` (detail only) adds a
+  `finance` block — `apps/residents/finance.py:resident_finance()` — covering
+  the property-timezone current month's invoice(s), `outstanding_total`,
+  `overdue_total`, `prior_outstanding` and `last_payment_date`. Needs
+  `view_finance`; otherwise `finance` is `null` and `"finance"` is listed in
+  the response's top-level `redacted`. Full shape and the card-state mapping
+  are documented with Module 21 (the single home for the roadmap's
+  authorization model and response shapes). Test: `test_resident_finance.py`.
+- 2026-10-17  Web-client follow-up (S0b): the detail response's `finance` +
+  `redacted` fields build a plain dict by hand (as above), so `/api/schema/`
+  described them as untyped. `retrieve()` now carries
+  `@extend_schema(responses=ResidentDetailResponseSerializer)` — a
+  schema-only subclass of `ResidentSerializer` adding those two fields, in
+  the new `apps/residents/schema.py` (never instantiated for a real
+  response). See Module 21's 2026-10-17 decision for the full list and the
+  test that guards it.

@@ -341,3 +341,20 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   `PATCH /staff/{id}/`, billing viewsets split read (`view_finance`) from write (`manage_*`),
   finance exports on `view_finance`, resident/bed money-field visibility on Finance, and the Team
   Management screen (`(owner)/staff/[id]`) replacing the old Manage Property Access modal.
+- 2026-10-16  UX roadmap backend:
+  - `tenants.fiscal_year_start_month` (1–12, default 4 = Indian FY; migration
+    `accounts.0006`), readable/editable on `GET|PATCH /tenants/current/`
+    (`manage_tenant_settings`); any changed field of that endpoint is now
+    audit-logged with before/after, not only `default_language`.
+  - New permission codes `view_expenses` / `manage_expenses` (`_OPS`) and
+    module-access entry `expenses` (off / view / full; Manager full,
+    Receptionist off). Data migration `accounts.0007` sets `expenses: full`
+    on Managers whose module access was already customized (owner decision —
+    otherwise the fail-closed registry would resolve it to off).
+  - `PlatformConfig.payment_due_soon_days` (default 7, `core.0004`).
+  - Shared helpers: `core.permissions.require_any_permission`,
+    `core.redaction.Redactor` (null + `redacted[]` partial responses),
+    `core.exceptions.Conflict` (409 with a specific code),
+    `core.idempotency` (`Idempotency-Key` header), `core.periods` (months in
+    the product timezone; `local_today()` replaces the container-clock
+    `date.today()` in new code).

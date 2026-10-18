@@ -45,6 +45,10 @@ MODULES = {
         VIEW: ('view_finance', 'view_activity_timeline'),
         FULL: ('manage_invoices', 'manage_payments', 'manage_discounts'),
     },
+    'expenses': {
+        VIEW: ('view_expenses',),
+        FULL: ('manage_expenses',),
+    },
     'reports': {FULL: ('view_reports',)},
     'complaints': {FULL: ('manage_complaints',)},
     'visitors': {FULL: ('manage_visitors',)},
@@ -79,6 +83,7 @@ ROLE_DEFAULT_LEVELS = {
         'properties': VIEW,
         'tenants': VIEW,
         'finance': OFF,
+        'expenses': OFF,
         'reports': OFF,
         'complaints': OFF,
         'visitors': FULL,

@@ -340,11 +340,14 @@ def select_plan(*, subscription, plan, actor, request=None):
         # remote cancel can't be rolled back if a later local write then fails).
         _retire_current_subscription(subscription)
         _abandon_pending_subscriptions(subscription)
+        if not subscription.razorpay_customer_id:
+            subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(tenant)
+        # Leaving another per-bed plan: its arrears are invoiced on that plan
+        # before the plan and period below overwrite what prices them.
+        close_per_bed_period(subscription)
         subscription.plan = plan
         subscription.pending_plan = None
         subscription.pending_razorpay_subscription_id = ''
-        if not subscription.razorpay_customer_id:
-            subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(tenant)
         subscription.razorpay_subscription_id = ''
         today = timezone.now().date()
         subscription.current_period_start = today
@@ -420,6 +423,9 @@ def _promote_ledger_row(subscription, row):
     new_plan = row.plan
     previous_plan = subscription.plan
     _retire_current_subscription(subscription)
+    # A per-bed plan bills in arrears: invoice what it accrued before the flat
+    # plan replaces it, while the old plan and period can still price it.
+    close_per_bed_period(subscription)
     subscription.plan = new_plan
     subscription.razorpay_subscription_id = row.razorpay_subscription_id
     update_fields = ['plan', 'razorpay_subscription_id', 'updated_at']
@@ -760,47 +766,36 @@ def reactivate_tenant(*, tenant, actor, request=None):
     return tenant
 
 
-@transaction.atomic
-def generate_invoice_for_subscription(subscription, *, today=None):
-    """Closes out one PER_BED_MONTHLY billing cycle: prices the cycle from
-    the bed ledger (`pricing.bed_segments` + `pricing.prorated_charge`),
-    writes a `SubscriptionInvoice` + line items (invariant 6 — a list, never
-    fixed fields), and either issues it via Razorpay Invoices or — for a
-    cycle inside the free allowance — marks it paid immediately with no
-    Razorpay call at all (invariant 10: the floor is `PlatformConfig.
-    min_billable_amount`, not a literal here).
-
-    Idempotent via the model's `unique_invoice_per_cycle` constraint check
-    below: re-running for a cycle that already has an invoice is a no-op,
-    not a duplicate charge — see `generate_subscription_invoices`."""
-    plan = subscription.plan
-    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
-        return None
-    period_start = subscription.current_period_start
-    period_end = subscription.current_period_end
-    if period_start is None or period_end is None:
-        return None
-
-    today = today or timezone.now().date()
-    if today < period_end:
-        return None  # cycle hasn't closed yet
-
+def _ensure_razorpay_customer(subscription):
     if not subscription.razorpay_customer_id:
         subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(subscription.tenant)
         subscription.save(update_fields=['razorpay_customer_id', 'updated_at'])
 
+
+def _invoice_period(subscription, plan, *, period_start, billed_end, cycle_end):
+    """Prices the bed-day history in `[period_start, billed_end)` against `plan`,
+    writes the invoice + line items (invariant 6 — a list, never fixed fields)
+    and either issues it via Razorpay Invoices or — below
+    `PlatformConfig.min_billable_amount` (invariant 10) — marks it paid with no
+    Razorpay call. `cycle_end` is the nominal end of the cycle the period
+    belongs to: it sets the proration denominator, so a period closed early is
+    charged for the days it ran, not for a whole month.
+
+    Returns None, writing nothing, when the period already has an invoice
+    (the model's `unique_invoice_per_cycle`), so a re-run never double-bills.
+    Does not move the subscription's period; the caller decides what's next."""
     with tenant_context(subscription.tenant_id):
         if SubscriptionInvoice.objects.filter(subscription=subscription, period_start=period_start).exists():
-            return None  # already generated for this cycle — safe to re-run
+            return None
 
-        segments = pricing.bed_segments(subscription.tenant_id, period_start, period_end)
-        breakdown = pricing.prorated_charge(plan, segments, period_start, period_end)
+        segments = pricing.bed_segments(subscription.tenant_id, period_start, billed_end)
+        breakdown = pricing.prorated_charge(plan, segments, period_start, cycle_end)
         bed_count_start = segments[0][2] if segments else 0
         bed_count_end = segments[-1][2] if segments else 0
 
         invoice = SubscriptionInvoice.objects.create(
             tenant_id=subscription.tenant_id, subscription=subscription,
-            period_start=period_start, period_end=period_end,
+            period_start=period_start, period_end=billed_end,
             status=SubscriptionInvoice.Status.DRAFT, total_amount=breakdown.total,
             billed_bed_count_start=bed_count_start, billed_bed_count_end=bed_count_end,
         )
@@ -839,16 +834,86 @@ def generate_invoice_for_subscription(subscription, *, today=None):
             invoice.status = SubscriptionInvoice.Status.ISSUED
             invoice.issued_at = timezone.now()
             invoice.save(update_fields=['razorpay_invoice_id', 'status', 'issued_at'])
+    return invoice
 
-        # Advance to the next cycle regardless of payment outcome — a
-        # failed/expired invoice is reconciled by the webhook + the existing
-        # grace-period sweep (`process_payment_grace_periods`), not by
-        # holding this cycle open.
+
+@transaction.atomic
+def generate_invoice_for_subscription(subscription, *, today=None):
+    """Closes out one PER_BED_MONTHLY billing cycle: prices the cycle from
+    the bed ledger (`pricing.bed_segments` + `pricing.prorated_charge`) and
+    invoices it (`_invoice_period`).
+
+    Idempotent: re-running for a cycle that already has an invoice is a no-op,
+    not a duplicate charge — see `generate_subscription_invoices`."""
+    plan = subscription.plan
+    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
+        return None
+    period_start = subscription.current_period_start
+    period_end = subscription.current_period_end
+    if period_start is None or period_end is None:
+        return None
+
+    today = today or timezone.now().date()
+    if today < period_end:
+        return None  # cycle hasn't closed yet
+
+    _ensure_razorpay_customer(subscription)
+    invoice = _invoice_period(
+        subscription, plan, period_start=period_start, billed_end=period_end, cycle_end=period_end,
+    )
+    if invoice is None:
+        return None  # already generated for this cycle — safe to re-run
+
+    # Advance to the next cycle regardless of payment outcome — a
+    # failed/expired invoice is reconciled by the webhook + the existing
+    # grace-period sweep (`process_payment_grace_periods`), not by
+    # holding this cycle open.
+    with tenant_context(subscription.tenant_id):
         subscription.current_period_start = period_end
         subscription.current_period_end = pricing.next_cycle_end(period_end)
         subscription.save(update_fields=['current_period_start', 'current_period_end', 'updated_at'])
-
     return invoice
+
+
+@transaction.atomic
+def close_per_bed_period(subscription, *, today=None):
+    """The tenant is leaving its PER_BED_MONTHLY plan: invoice what has accrued
+    under it, because arrears can't be priced once the plan is gone. Call it
+    before `subscription.plan` or the period is overwritten, with the
+    subscription row locked; the caller then sets the new plan and period.
+
+    A cycle that already ended but wasn't invoiced yet is billed whole first
+    (the normal path, via `generate_invoice_for_subscription`). The current
+    cycle is then billed from its start up to `today`, on the old plan, against
+    that cycle's full length. Nothing is written when no day has accrued (the
+    plan was chosen today) or the period already has an invoice.
+
+    Returns the invoices created, oldest first."""
+    plan = subscription.plan
+    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
+        return []
+    if subscription.current_period_start is None or subscription.current_period_end is None:
+        return []
+    today = today or timezone.now().date()
+
+    invoices = []
+    while subscription.current_period_end <= today:
+        invoice = generate_invoice_for_subscription(subscription, today=today)
+        if invoice is None:
+            break
+        invoices.append(invoice)
+
+    period_start = subscription.current_period_start
+    cycle_end = subscription.current_period_end
+    billed_end = min(today, cycle_end)
+    if billed_end > period_start:
+        _ensure_razorpay_customer(subscription)
+        invoice = _invoice_period(
+            subscription, plan, period_start=period_start, billed_end=billed_end, cycle_end=cycle_end,
+        )
+        if invoice is not None:
+            invoices.append(invoice)
+    return invoices
 
 
 def process_payment_grace_periods():

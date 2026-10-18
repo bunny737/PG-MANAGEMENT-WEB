@@ -343,6 +343,22 @@ frontend always reaches a tenant's subscription via
     write fails — so switching to a per-bed plan writes locally first and cancels
     the old flat subscription afterwards; during an outage the tenant is on the
     new plan while the old one is still being cancelled.
+28. **Leaving a per-bed plan invoices its arrears first.** Per-bed billing is
+    in arrears, so overwriting `plan` / `current_period_*` would make the
+    accrued usage unpriceable. `services.close_per_bed_period` runs before the
+    overwrite in both exits: `select_plan` per-bed → per-bed, and
+    `_promote_ledger_row` per-bed → flat (when the flat plan's first charge is
+    confirmed — selecting a flat plan changes nothing until then). It bills any
+    already-ended, uninvoiced cycle whole (the normal
+    `generate_invoice_for_subscription` path), then the current cycle from its
+    start up to today on the **old** plan, prorated against that cycle's full
+    length (`_invoice_period`, shared with the daily sweep). The invoice's
+    `period_start` / `period_end` are the days actually billed. Nothing is
+    written when no day has accrued or the period already has an invoice
+    (`unique_invoice_per_cycle`), so repeating a switch the same day never
+    double-bills. The invoice and the plan change share one transaction: if
+    invoicing fails the switch rolls back (the webhook then errors and Razorpay
+    retries). Tests: `test_plan_exit_invoicing.py`.
 
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
@@ -652,6 +668,7 @@ frontend always reaches a tenant's subscription via
   row is still honoured — it is a new charge, not the one ops was told to refund.
 
 ## Changelog
+- 2026-10-18  Plan exits invoice per-bed arrears first (rule 28): `close_per_bed_period`, shared `_invoice_period`; 10 tests in `test_plan_exit_invoicing.py`.
 - 2026-10-18  Basic (₹149, 500 beds, trial) + Unlimited (₹249) launch plans,
   `max_beds` cap, 45-day trial, live-plan price lock, single trial plan; see
   rules 21-25 and the Decisions above. Backend tests added in

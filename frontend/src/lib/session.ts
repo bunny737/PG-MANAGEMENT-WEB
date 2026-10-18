@@ -26,6 +26,8 @@ let inMemoryUser: CurrentUser | null = null;
 let inFlightPromise: Promise<CurrentUser | null> | null = null;
 /** Role of the last user /auth/me/ confirmed; null until then and after logout. */
 let validatedRole: string | null = null;
+/** Bumped every time the session is cleared; a response from an older generation is stale. */
+let sessionGeneration = 0;
 
 function computeSnapshot(): SessionSnapshot {
   if (typeof window === "undefined") {
@@ -103,6 +105,9 @@ function updateSnapshot() {
   if (typeof window !== "undefined" && localStorage.getItem("isLoggedIn") !== "true") {
     validatedRole = null;
     inMemoryUser = null;
+    // Invalidate any /auth/me/ still in flight, and let the next login start its own.
+    sessionGeneration += 1;
+    inFlightPromise = null;
   }
   cachedSnapshot = computeSnapshot();
   listeners.forEach((listener) => listener());
@@ -156,8 +161,13 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
   if (typeof window === "undefined") return Promise.resolve(null);
   if (inFlightPromise) return inFlightPromise;
 
-  inFlightPromise = getCurrentUser()
+  // A logout (or another tab's) while this request is pending bumps the generation;
+  // the late answer must then be dropped, not written back over the cleared session.
+  const generation = sessionGeneration;
+
+  const promise: Promise<CurrentUser | null> = getCurrentUser()
     .then((me) => {
+      if (generation !== sessionGeneration || !isLoggedIn()) return null;
       lastRefreshedAt = Date.now();
       inMemoryUser = me;
       validatedRole = me.role;
@@ -173,10 +183,12 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
       return null;
     })
     .finally(() => {
-      inFlightPromise = null;
+      // Only clear our own entry: after a logout a newer request may have replaced it.
+      if (inFlightPromise === promise) inFlightPromise = null;
     });
 
-  return inFlightPromise;
+  inFlightPromise = promise;
+  return promise;
 }
 
 function isLoggedIn(): boolean {

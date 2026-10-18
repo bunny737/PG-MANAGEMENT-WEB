@@ -1,9 +1,10 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.properties.models import Property
 from apps.residents.models import Resident
 
-from . import services
+from . import razorpay_client, services
 from .models import Plan, PlanBedTier, Subscription, SubscriptionInvoice, SubscriptionInvoiceLine
 
 
@@ -36,6 +37,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     (PRD §4: 'checked per property, not across all properties combined')."""
 
     plan = PlanSerializer(read_only=True)
+    # A plan chosen but not yet paid for; `plan` and every limit stay as they were until then.
+    pending_plan = PlanSerializer(read_only=True)
     tenant_status = serializers.CharField(source='tenant.status', read_only=True)
     trial_ends_at = serializers.DateTimeField(source='tenant.trial_ends_at', read_only=True)
     properties_used = serializers.SerializerMethodField()
@@ -45,17 +48,23 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     property_usage = serializers.SerializerMethodField()
     bed_count = serializers.SerializerMethodField()
     current_cycle_estimate = serializers.SerializerMethodField()
+    razorpay_key_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
         fields = [
-            'id', 'tenant', 'plan', 'tenant_status', 'trial_ends_at',
-            'razorpay_subscription_id', 'current_period_start', 'current_period_end',
+            'id', 'tenant', 'plan', 'pending_plan', 'tenant_status', 'trial_ends_at',
+            'razorpay_subscription_id', 'pending_razorpay_subscription_id', 'razorpay_key_id', 'current_period_start', 'current_period_end',
             'payment_failed_at', 'max_properties_override', 'max_residents_override', 'max_beds_override',
             'properties_used', 'max_properties', 'max_residents_per_property', 'property_usage',
             'bed_count', 'max_beds', 'current_cycle_estimate', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_razorpay_key_id(self, obj) -> str:
+        # The public key id (never the secret) the browser needs to open Checkout;
+        # blank when Razorpay isn't configured, which the UI reads as "no payments here".
+        return settings.RAZORPAY_KEY_ID if razorpay_client.is_configured() else ''
 
     def get_properties_used(self, obj) -> int:
         if hasattr(obj, 'annotated_properties_used'):

@@ -6,10 +6,11 @@ import time
 from unittest import mock
 
 from django.db import connection
-from django.test import TransactionTestCase
+from django.test import Client, TransactionTestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+from apps.accounts.models import User
 from apps.accounts.serializers import LoginSerializer
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
@@ -108,27 +109,25 @@ class BedLimitConcurrencyTests(TransactionTestCase):
             self.assertEqual(sorted(results.values()), [201, 400], f'round {round_number}: {results}')
             self.assertEqual(self._bed_count(), 3, f'round {round_number}')
 
-    def test_downgrade_racing_a_bed_create_never_leaves_the_tenant_over_the_cap(self):
+    def test_selecting_a_smaller_plan_racing_a_bed_create_changes_no_limits(self):
+        # A flat plan is only pending until payment, so the bed create and the
+        # selection can't disagree about the cap: the tenant stays on `open`.
         select = lambda client: client.post(  # noqa: E731
             reverse('subscription-select-plan', args=[self.tenant.id]),
             {'plan': str(self.capped.id)}, format='json',
         )
         for round_number in range(ROUNDS):
-            self._reset_beds(3)
-            Subscription.objects.filter(pk=self.subscription.pk).update(plan=self.open)
+            self._reset_beds(2)
+            Subscription.objects.filter(pk=self.subscription.pk).update(
+                plan=self.open, pending_plan=None, pending_razorpay_subscription_id='',
+            )
 
             results = self._race([('select', select), ('bed', self._add_bed(f'D-{round_number}'))])
 
-            self.assertNotIn(500, results.values(), f'round {round_number}: {results}')
+            self.assertEqual(sorted(results.values()), [200, 201], f'round {round_number}: {results}')
             self.subscription.refresh_from_db()
-            if self.subscription.plan_id == self.capped.id:
-                self.assertLessEqual(
-                    self._bed_count(), 3, f'round {round_number}: over the cap on the smaller plan ({results})',
-                )
-            # Exactly one of the two requests loses: either the downgrade is
-            # refused (a 4th bed exists) or the bed is refused (cap now applies).
-            self.assertEqual(sorted(results.values()), [200, 400] if 201 not in results.values() else [201, 400],
-                             f'round {round_number}: {results}')
+            self.assertEqual(self.subscription.plan_id, self.open.id, f'round {round_number}')
+            self.assertEqual(self.subscription.pending_plan_id, self.capped.id, f'round {round_number}')
 
 
 class PlanRepriceRaceTests(TransactionTestCase):
@@ -192,3 +191,104 @@ class PlanRepriceRaceTests(TransactionTestCase):
                     f'round {round_number}: Razorpay plan priced at {priced_at[0]} but the database '
                     f'says {self.plan.price_per_month} ({results})',
                 )
+
+
+class AdminRepriceRaceTests(TransactionTestCase):
+    """The Django admin edits the same Plan row select_plan prices from. Its change
+    form loads, validates and saves in one request, so it must hold the Plan lock
+    for all three, and must not carry the system-managed razorpay_plan_id."""
+
+    def _fixture_teardown(self):
+        pass
+
+    def setUp(self):
+        self.tenant = SubscriptionAPITestCase.create_tenant('Admin Race Tenant')
+        self.owner = SubscriptionAPITestCase.create_owner(self.tenant, email='admin-race@concurrency.example.com')
+        self.staff = User.objects.create_superuser('admin-race-staff@concurrency.example.com', 'Sup3r-Secret-pw')
+        self.plan = SubscriptionAPITestCase.create_plan(
+            name='Admin Race', max_properties=None, max_residents_per_property=None,
+        )
+        self.subscription = SubscriptionAPITestCase.create_subscription(self.tenant)
+        self.owner_auth = f'Bearer {LoginSerializer.get_token(self.owner).access_token}'
+
+    def tearDown(self):
+        with tenant_context(is_super_admin=True):
+            AuditLog.objects.filter(tenant_id=self.tenant.id).delete()
+            Subscription.objects.filter(tenant=self.tenant).delete()
+        Plan.objects.filter(pk=self.plan.pk).delete()
+        self.owner.delete()
+        self.staff.delete()
+        self.tenant.delete()
+
+    def _admin_reprice(self, price):
+        def post(_client):
+            client = Client()
+            client.force_login(self.staff)
+            url = reverse('admin:subscriptions_plan_change', args=[self.plan.pk])
+            return client.post(url, {
+                'name': 'Admin Race', 'pricing_type': 'flat_monthly', 'price_per_month': price,
+                'is_active': 'on', 'max_properties': '', 'max_residents_per_property': '', 'max_beds': '',
+                'bed_tiers-TOTAL_FORMS': '0', 'bed_tiers-INITIAL_FORMS': '0',
+                'bed_tiers-MIN_NUM_FORMS': '0', 'bed_tiers-MAX_NUM_FORMS': '1000',
+            })
+        return post
+
+    def test_admin_repricing_racing_plan_selection_never_diverges_from_razorpay(self):
+        priced_at = []
+
+        def slow_create_plan(plan):
+            priced_at.append(plan.price_per_month)
+            time.sleep(0.3)
+            return 'plan_admin_race'
+
+        select = lambda client: client.post(  # noqa: E731
+            reverse('subscription-select-plan', args=[self.tenant.id]),
+            {'plan': str(self.plan.id)}, format='json',
+        )
+        with mock.patch('apps.subscriptions.razorpay_client.create_razorpay_plan', side_effect=slow_create_plan):
+            for round_number in range(ROUNDS):
+                priced_at.clear()
+                Plan.objects.filter(pk=self.plan.pk).update(price_per_month='199.00', razorpay_plan_id='')
+                Subscription.objects.filter(pk=self.subscription.pk).update(plan=None)
+
+                results = run_race(self, [
+                    ('select', self.owner_auth, select), ('admin', 'unused', self._admin_reprice('299.00')),
+                ])
+
+                self.assertNotIn(500, results.values(), f'round {round_number}: {results}')
+                self.plan.refresh_from_db()
+                self.assertEqual(len(priced_at), 1, f'round {round_number}: {results}')
+                self.assertEqual(
+                    priced_at[0], self.plan.price_per_month,
+                    f'round {round_number}: Razorpay plan priced at {priced_at[0]} but the database '
+                    f'says {self.plan.price_per_month} ({results})',
+                )
+                # Whoever lost must not have clobbered the link select_plan stored.
+                self.assertEqual(self.plan.razorpay_plan_id, 'plan_admin_race', f'round {round_number}')
+
+    def test_admin_cannot_reprice_a_plan_once_a_tenant_has_selected_it(self):
+        Plan.objects.filter(pk=self.plan.pk).update(razorpay_plan_id='plan_live')
+        response = self._admin_reprice('299.00')(None)
+
+        self.assertEqual(response.status_code, 200)  # form re-rendered with the error
+        self.plan.refresh_from_db()
+        self.assertEqual(str(self.plan.price_per_month), '199.00')
+        self.assertEqual(self.plan.razorpay_plan_id, 'plan_live')
+
+    def test_saving_an_unrelated_admin_edit_keeps_the_razorpay_link(self):
+        # A form opened before a tenant picked the plan posts no razorpay_plan_id;
+        # saving it (here just renaming) must not blank the link select_plan stored.
+        Plan.objects.filter(pk=self.plan.pk).update(razorpay_plan_id='plan_live')
+        client = Client()
+        client.force_login(self.staff)
+        response = client.post(reverse('admin:subscriptions_plan_change', args=[self.plan.pk]), {
+            'name': 'Admin Race Renamed', 'pricing_type': 'flat_monthly', 'price_per_month': '199.00',
+            'is_active': 'on', 'max_properties': '', 'max_residents_per_property': '', 'max_beds': '',
+            'bed_tiers-TOTAL_FORMS': '0', 'bed_tiers-INITIAL_FORMS': '0',
+            'bed_tiers-MIN_NUM_FORMS': '0', 'bed_tiers-MAX_NUM_FORMS': '1000',
+        })
+
+        self.assertEqual(response.status_code, 302, getattr(response, 'context_data', None))
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.name, 'Admin Race Renamed')
+        self.assertEqual(self.plan.razorpay_plan_id, 'plan_live')

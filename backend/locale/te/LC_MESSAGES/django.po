@@ -1379,6 +1379,10 @@ msgstr ""
 msgid "This plan is no longer available."
 msgstr "ఈ ప్లాన్ ఇకపై అందుబాటులో లేదు."
 
+#: apps/subscriptions/services.py
+msgid "You are already on this plan."
+msgstr "మీరు ఇప్పటికే ఈ ప్లాన్‌లో ఉన్నారు."
+
 #: apps/subscriptions/models.py
 msgid ""
 "Tenants are using this plan. Create a new plan and retire this one to change "

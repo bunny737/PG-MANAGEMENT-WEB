@@ -1300,3 +1300,65 @@ export function checkOutVisitor(id: string, exit_time?: string) {
   });
 }
 
+
+// ---- Plans & subscription (Module 13) --------------------------------------
+
+export interface PlanBedTier {
+  id: string;
+  /** Upper bound of this price step; null is the open-ended top step. */
+  up_to_beds: number | null;
+  rate_per_bed: string;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  pricing_type: "flat_monthly" | "per_bed_monthly";
+  /** null means unlimited. */
+  max_beds: number | null;
+  max_properties: number | null;
+  max_residents_per_property: number | null;
+  /** null for per-bed plans, which price through bed_tiers. */
+  price_per_month: string | null;
+  bed_tiers: PlanBedTier[];
+  is_trial_plan: boolean;
+  is_active: boolean;
+}
+
+export interface Subscription {
+  id: string;
+  tenant: string;
+  /** null while on trial with no plan chosen yet. */
+  plan: Plan | null;
+  /** A plan chosen but not yet paid for; `plan` and every limit stay as they were until it is. */
+  pending_plan: Plan | null;
+  pending_razorpay_subscription_id: string;
+  tenant_status: "trial" | "active" | "payment_failed" | "suspended" | "cancelled";
+  trial_ends_at: string | null;
+  razorpay_subscription_id: string;
+  /** Public Razorpay key id; blank when payments aren't configured. */
+  razorpay_key_id: string;
+  current_period_end: string | null;
+  bed_count: number;
+  /** Effective limits: plan, override or the trial plan's, null = unlimited. */
+  max_beds: number | null;
+  max_properties: number | null;
+  properties_used: number;
+}
+
+export function listPlans() {
+  return apiFetch<Plan[] | { results: Plan[] }>("/api/v1/plans/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getSubscription(tenantId: string) {
+  return apiFetch<Subscription>(`/api/v1/subscriptions/${tenantId}/`);
+}
+
+export function selectPlan(tenantId: string, planId: string) {
+  return apiFetch<Subscription>(`/api/v1/subscriptions/${tenantId}/select-plan/`, {
+    method: "POST",
+    body: JSON.stringify({ plan: planId }),
+  });
+}

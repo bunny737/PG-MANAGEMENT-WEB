@@ -214,6 +214,14 @@ class Subscription(models.Model):
         Plan, on_delete=models.PROTECT, null=True, blank=True, related_name='subscriptions'
     )
     razorpay_subscription_id = models.CharField(max_length=100, blank=True)
+    # A flat plan the tenant has chosen but not yet paid for. `plan`, its limits and
+    # `razorpay_subscription_id` stay as they were until Razorpay's webhook confirms
+    # the first charge on `pending_razorpay_subscription_id`, which promotes these
+    # (and cancels the old Razorpay subscription). Both are blank/null together.
+    pending_plan = models.ForeignKey(
+        Plan, on_delete=models.PROTECT, null=True, blank=True, related_name='pending_subscriptions'
+    )
+    pending_razorpay_subscription_id = models.CharField(max_length=100, blank=True)
     razorpay_customer_id = models.CharField(max_length=100, blank=True)
     current_period_start = models.DateField(null=True, blank=True)
     current_period_end = models.DateField(null=True, blank=True)
@@ -263,6 +271,60 @@ class Subscription(models.Model):
 
     def effective_max_beds(self):
         return self.max_beds_on(self.effective_plan())
+
+
+class RazorpaySubscription(models.Model):
+    """Every Razorpay subscription ever created for a tenant, kept until it reaches a
+    terminal state. `Subscription.razorpay_subscription_id` / `pending_*` only say
+    which one is current or newest; this table is what makes plan changes
+    reconcilable. Webhooks arrive late and out of order, and cancelling can fail, so
+    a subscription we have moved on from must still be recognised when a payment (or
+    a cancellation) for it turns up, and must keep being cancelled until Razorpay
+    confirms. Not under RLS, like Subscription: the webhook that reads it is
+    unauthenticated.
+
+    PENDING   chosen, awaiting its first payment (the newest one is shown to the tenant).
+    CURRENT   paid; the tenant's live subscription.
+    REPLACED  was CURRENT, superseded by a newly paid plan. Must be cancelled; a charge
+              on it (a renewal that raced the cancel) is recorded and flagged for refund.
+    ABANDONED was PENDING, superseded by a later choice. Must be cancelled, but a payment
+              that still lands on it is honoured: the tenant paid for that plan.
+    CANCELLING a worker has claimed it and may already have cancelled it at Razorpay (which
+              cannot be undone: a cancelled subscription never restarts). Webhooks therefore
+              must not promote it; a charge that lands now is recorded and flagged for refund.
+              `cancel_from` remembers REPLACED/ABANDONED so a failed attempt can revert.
+    CANCELLED terminal: Razorpay confirmed it is cancelled (or finished)."""
+
+    class State(models.TextChoices):
+        PENDING = 'pending', _('Pending')
+        CURRENT = 'current', _('Current')
+        REPLACED = 'replaced', _('Replaced')
+        ABANDONED = 'abandoned', _('Abandoned')
+        CANCELLING = 'cancelling', _('Cancelling')
+        CANCELLED = 'cancelled', _('Cancelled')
+
+    NEEDS_CANCEL = (State.REPLACED, State.ABANDONED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name='razorpay_subscriptions')
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name='razorpay_subscriptions')
+    razorpay_subscription_id = models.CharField(max_length=100, unique=True)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
+    # The state to return to if a cancellation attempt fails (REPLACED or ABANDONED).
+    cancel_from = models.CharField(max_length=10, blank=True)
+    cancel_attempts = models.PositiveIntegerField(default=0)
+    last_cancel_error = models.TextField(blank=True)
+    last_cancel_attempt_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'razorpay_subscriptions'
+        indexes = [models.Index(fields=['state'], name='razorpay_sub_state_idx')]
+
+    def __str__(self):
+        return f'{self.razorpay_subscription_id} ({self.state})'
 
 
 class SubscriptionPayment(TenantModelMixin):

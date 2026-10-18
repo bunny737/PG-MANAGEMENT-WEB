@@ -388,7 +388,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-D2 | Financial dashboard | ⬜ |
 | FE-11 | Complaints | ⬜ |
 | FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |
-| FE-13 | Subscription + Super Admin | ⬜ |
+| FE-13 | Subscription + Super Admin | 🟨 (Owner plan screen shipped in Settings → Plan & Billing, gated by manage_subscription: trial/status, bed usage, plan comparison, switch + Razorpay Checkout; billing history, suspension lock screen and the Super Admin portal not started) |
 | FE-14 | Notifications | ⬜ |
 | FE-15 | Audit logs | ⬜ |
 | FE-16 | Activity timeline | ⬜ |

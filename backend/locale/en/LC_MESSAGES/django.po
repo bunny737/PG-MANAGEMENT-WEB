@@ -1362,6 +1362,10 @@ msgstr ""
 msgid "This plan is no longer available."
 msgstr ""
 
+#: apps/subscriptions/services.py
+msgid "You are already on this plan."
+msgstr ""
+
 #: apps/subscriptions/models.py
 msgid ""
 "Tenants are using this plan. Create a new plan and retire this one to change "

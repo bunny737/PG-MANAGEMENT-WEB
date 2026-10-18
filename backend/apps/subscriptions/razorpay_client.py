@@ -56,6 +56,26 @@ def create_razorpay_subscription(plan, *, total_count=12):
     return response['id']
 
 
+def cancel_razorpay_subscription(subscription_id):
+    """Cancels a Razorpay subscription immediately, so it can't charge again.
+    Used when a tenant moves to another plan; stubbed locally when unconfigured.
+    Raises on failure: callers decide whether that blocks the plan change."""
+    client = get_client()
+    if client is None or not subscription_id:
+        return
+    client.subscription.cancel(subscription_id, {'cancel_at_cycle_end': 0})
+
+
+def fetch_razorpay_subscription_status(subscription_id):
+    """Razorpay's own status for a subscription ('active', 'cancelled', 'completed'...),
+    or None when Razorpay isn't configured. Used to tell "cancel failed because it is
+    already cancelled" apart from a genuine failure."""
+    client = get_client()
+    if client is None:
+        return None
+    return client.subscription.fetch(subscription_id).get('status')
+
+
 def create_razorpay_customer(tenant):
     """Returns a Razorpay customer id for `tenant`, used to issue arrears
     invoices for PER_BED_MONTHLY plans (see Phase 0 spike: Razorpay Add-ons

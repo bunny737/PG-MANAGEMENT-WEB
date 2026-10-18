@@ -1,6 +1,7 @@
 from unittest import mock
 
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.test import RequestFactory
@@ -93,6 +94,19 @@ class PriceLockTests(PlanProtectionTestCase):
         with self.assertRaises(DjangoValidationError):
             plan.full_clean()
 
+
+    def test_tier_admin_refuses_to_write_a_tier_onto_a_plan_that_went_live(self):
+        # The form validated while the plan was unused; by save time a tenant has
+        # selected it. save_model re-checks under the plan lock.
+        plan = self.create_bed_plan(name='Went Live', bed_tiers=[(None, '2.00')])
+        self.create_subscription(self.tenant, plan=plan)
+        request = self.admin_request()
+        tier_admin = PlanBedTierAdmin(PlanBedTier, admin.site)
+        tier = PlanBedTier(plan=plan, up_to_beds=10, rate_per_bed='1.00')
+
+        with self.assertRaises(PermissionDenied):
+            tier_admin.save_model(request, tier, form=None, change=False)
+        self.assertEqual(plan.bed_tiers.count(), 1)
 
     def test_standalone_tier_admin_cannot_change_or_delete_a_locked_plans_tiers(self):
         locked = self.create_bed_plan(name='Locked Per Bed', bed_tiers=[(None, '2.00')])

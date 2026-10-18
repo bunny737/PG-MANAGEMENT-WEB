@@ -245,7 +245,13 @@ frontend always reaches a tenant's subscription via
     keyed by `razorpay_subscription_id`, as in rule 6). Both branches are
     idempotent on `razorpay_payment_id` — a replayed webhook can no longer
     create a duplicate `SubscriptionPayment` (this was a pre-existing gap,
-    fixed in the same change that added the second event family).
+    fixed in the same change that added the second event family). The
+    `invoice.*` lookup runs as super admin (`_invoice_for_webhook`): a webhook
+    has no tenant, and under RLS the invoice rows were invisible, so before
+    2026-10-18 no `invoice.*` event ever matched an invoice and per-bed payments
+    were never recorded. It matches `razorpay_invoice_id` first and falls back
+    to the entity's `receipt` (our invoice id; see rule 29), refusing an invoice
+    already bound to a different Razorpay id.
 21. **Bed hard block** (`check_bed_limit`, hooked into
     `BedViewSet.perform_create` and `RoomViewSet.perform_create` when
     `auto_create_beds` is set, which checks `adding=sharing_type` so a room
@@ -381,7 +387,19 @@ frontend always reaches a tenant's subscription via
     `receipt`: before creating, `create_razorpay_invoice` looks the receipt up
     and reuses (issuing it if still a draft) any invoice already there, so a
     lost response or a failed local save can't produce a second invoice.
-    Tests: `test_invoice_issuing.py`.
+    **Lost-response recovery:** a draft whose create response was lost holds no
+    Razorpay id yet, yet Razorpay may already have it paid. Two paths settle it.
+    (1) A webhook arriving first is matched by receipt (rule 20): it binds the id
+    (a draft becomes `issued`, so the sweep skips it) and applies the payment.
+    (2) A retry that finds the invoice by receipt gets Razorpay's real `status`
+    and `payment_id` back (`RazorpayInvoice`) and applies `paid` / `expired` / `partially_paid` the
+    same way a webhook would, instead of assuming `issued`. Both re-check, after
+    taking the row lock, that the invoice is not bound to a different Razorpay id
+    (the match was made before the lock) and ignore the event if it is. Both run under the
+    invoice row lock through `_apply_invoice_event`, which is idempotent, so the
+    same payment arriving by webhook and by retry is recorded once, and an
+    `issued` result from a call that a webhook overtook never undoes `paid`.
+    Tests: `test_invoice_issuing.py`, `test_invoice_webhook.py`.
 
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
@@ -693,6 +711,7 @@ frontend always reaches a tenant's subscription via
 ## Changelog
 - 2026-10-18  Plan exits invoice per-bed arrears first (rule 28): `close_per_bed_period`, shared `_invoice_period`; 10 tests in `test_plan_exit_invoicing.py`.
 - 2026-10-18  Invoices are saved as drafts and issued to Razorpay after commit, with a claim lease, a 10-minute retry sweep (migrations 0012/0013) and the invoice id as the Razorpay receipt (rule 29); 16 tests in `test_invoice_issuing.py`, two older tests rewritten to the new contract.
+- 2026-10-18  Invoice webhooks now match: the lookup ran with no tenant context so RLS hid every invoice and no `invoice.*` event was ever applied. It now runs as super admin, falls back to the Razorpay `receipt`, and the issue retry applies a remote `paid` / `expired` status; `test_invoice_webhook.py` (14 tests).
 - 2026-10-18  Basic (₹149, 500 beds, trial) + Unlimited (₹249) launch plans,
   `max_beds` cap, 45-day trial, live-plan price lock, single trial plan; see
   rules 21-25 and the Decisions above. Backend tests added in

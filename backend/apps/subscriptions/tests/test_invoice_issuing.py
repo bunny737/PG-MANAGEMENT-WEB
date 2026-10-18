@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.subscriptions import razorpay_client
+from apps.subscriptions.razorpay_client import RazorpayInvoice
 from apps.subscriptions.models import Subscription, SubscriptionInvoice, SubscriptionInvoiceLine
 from apps.subscriptions.services import (
     INVOICE_ISSUE_CLAIM_TIMEOUT,
@@ -104,7 +105,7 @@ class IssueInvoiceTests(SubscriptionAPITestCase):
             self.assertTrue(AuditLog.objects.filter(action='subscription.invoice_issue_failed').exists())
 
     def test_the_invoice_id_is_what_makes_a_retry_safe(self):
-        with mock.patch(CREATE_INVOICE, return_value=('inv_1', '')) as create:
+        with mock.patch(CREATE_INVOICE, return_value=RazorpayInvoice('inv_1', '', 'issued')) as create:
             issue_invoice(self.invoice.pk, self.tenant.id)
         sent = create.call_args.args[1]
         self.assertEqual(sent.pk, self.invoice.pk)
@@ -127,7 +128,7 @@ class InvoiceIssuingSweepTests(SubscriptionAPITestCase):
     def test_each_invoice_is_issued_under_its_own_tenant_with_its_own_customer(self):
         make_draft(self, self.tenant_a)
         make_draft(self, self.tenant_b)
-        with mock.patch(CREATE_INVOICE, side_effect=lambda customer, inv: (f'inv_{inv.tenant_id.hex[:6]}', '')) as create:
+        with mock.patch(CREATE_INVOICE, side_effect=lambda customer, inv: RazorpayInvoice(f'inv_{inv.tenant_id.hex[:6]}', '', 'issued')) as create:
             process_invoice_issuing()
         customers = {call.args[0] for call in create.call_args_list}
         self.assertEqual(customers, {f'cust_{self.tenant_a.id.hex[:8]}', f'cust_{self.tenant_b.id.hex[:8]}'})
@@ -152,7 +153,7 @@ class InvoiceIssuingSweepTests(SubscriptionAPITestCase):
             calls.append(invoice.pk)
             if len(calls) == 1:
                 raise RuntimeError('boom')
-            return 'inv_ok', ''
+            return RazorpayInvoice('inv_ok', '', 'issued')
 
         with mock.patch(CREATE_INVOICE, side_effect=flaky):
             self.assertEqual(process_invoice_issuing(), {'issued': 1, 'failed': 1})
@@ -193,7 +194,7 @@ class RazorpayInvoiceReceiptTests(SubscriptionAPITestCase):
         self.client_mock.invoice.create.return_value = {'id': 'inv_new'}
         self.client_mock.invoice.issue.return_value = {'short_url': 'https://rzp.io/i/x'}
 
-        self.assertEqual(self.call(), ('inv_new', 'https://rzp.io/i/x'))
+        self.assertEqual(self.call(), RazorpayInvoice('inv_new', 'https://rzp.io/i/x', 'issued'))
         payload = self.client_mock.invoice.create.call_args.args[0]
         self.assertEqual(payload['receipt'], str(self.invoice.pk))
         self.client_mock.invoice.all.assert_called_once_with({'receipt': str(self.invoice.pk)})
@@ -202,16 +203,22 @@ class RazorpayInvoiceReceiptTests(SubscriptionAPITestCase):
         self.client_mock.invoice.all.return_value = {
             'items': [{'id': 'inv_prev', 'status': 'issued', 'short_url': 'https://rzp.io/i/prev'}],
         }
-        self.assertEqual(self.call(), ('inv_prev', 'https://rzp.io/i/prev'))
+        self.assertEqual(self.call(), RazorpayInvoice('inv_prev', 'https://rzp.io/i/prev', 'issued'))
         self.client_mock.invoice.create.assert_not_called()
         self.client_mock.invoice.issue.assert_not_called()
 
     def test_a_draft_left_by_a_crash_between_create_and_issue_is_issued(self):
         self.client_mock.invoice.all.return_value = {'items': [{'id': 'inv_half', 'status': 'draft'}]}
         self.client_mock.invoice.issue.return_value = {'id': 'inv_half', 'short_url': 'https://rzp.io/i/half'}
-        self.assertEqual(self.call(), ('inv_half', 'https://rzp.io/i/half'))
+        self.assertEqual(self.call(), RazorpayInvoice('inv_half', 'https://rzp.io/i/half', 'issued'))
         self.client_mock.invoice.create.assert_not_called()
         self.client_mock.invoice.issue.assert_called_once_with('inv_half')
+
+    def test_a_reused_invoice_reports_its_real_status_and_payment(self):
+        self.client_mock.invoice.all.return_value = {
+            'items': [{'id': 'inv_paid', 'status': 'paid', 'payment_id': 'pay_9', 'short_url': 'https://rzp.io/i/p'}],
+        }
+        self.assertEqual(self.call(), RazorpayInvoice('inv_paid', 'https://rzp.io/i/p', 'paid', 'pay_9'))
 
     def test_the_local_stub_is_stable_for_one_invoice(self):
         self.client_mock = None

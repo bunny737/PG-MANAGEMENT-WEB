@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import logging
+import uuid
 
 from django.db import connection, transaction
 from django.db.models import F, Q
@@ -634,80 +635,135 @@ def _handle_subscription_webhook(event, payload):
             )
 
 
-def _handle_invoice_webhook(event, payload):
-    """PER_BED_MONTHLY: looks the SubscriptionInvoice up by its stored
-    `razorpay_invoice_id` (set when `generate_invoice_for_subscription`
-    issues the cycle's invoice)."""
-    entity = payload.get('payload', {}).get('invoice', {}).get('entity', {})
-    razorpay_invoice_id = entity.get('id', '')
+def _invoice_for_webhook(entity):
+    """The SubscriptionInvoice a Razorpay invoice entity belongs to, or None.
 
-    invoice = (
-        SubscriptionInvoice.objects.filter(razorpay_invoice_id=razorpay_invoice_id)
-        .select_related('subscription__tenant').first()
-    )
-    if invoice is None:
+    Matched by the stored `razorpay_invoice_id`, falling back to the entity's
+    `receipt`, which is our invoice's id: if the response to our create call was
+    lost we hold no Razorpay id yet, but every event Razorpay sends carries the
+    receipt. A receipt match is refused when the invoice already holds a
+    different Razorpay id.
+
+    Runs as super admin: a webhook has no tenant, and under RLS every invoice is
+    invisible without one."""
+    razorpay_invoice_id = entity.get('id', '')
+    with tenant_context(is_super_admin=True):
+        invoice = None
+        if razorpay_invoice_id:
+            invoice = SubscriptionInvoice.objects.filter(razorpay_invoice_id=razorpay_invoice_id).first()
+        if invoice is None:
+            try:
+                receipt = uuid.UUID(str(entity.get('receipt') or ''))
+            except ValueError:
+                return None
+            invoice = SubscriptionInvoice.objects.filter(pk=receipt).first()
+            if invoice is not None and invoice.razorpay_invoice_id not in ('', razorpay_invoice_id):
+                return None
+        return invoice
+
+
+def _bind_razorpay_invoice(invoice, razorpay_invoice_id):
+    """Records the Razorpay id on an invoice whose create response we never saw (it
+    was lost, or a webhook beat our own save), and releases any issue claim. A DRAFT
+    is thereby ISSUED, so the retry sweep leaves it alone. Caller holds the invoice
+    row lock."""
+    invoice.issue_claimed_at = None
+    fields = ['issue_claimed_at']
+    if razorpay_invoice_id and not invoice.razorpay_invoice_id:
+        invoice.razorpay_invoice_id = razorpay_invoice_id
+        fields.append('razorpay_invoice_id')
+        if invoice.status == SubscriptionInvoice.Status.DRAFT:
+            invoice.status = SubscriptionInvoice.Status.ISSUED
+            invoice.issued_at = timezone.now()
+            fields += ['status', 'issued_at']
+    invoice.save(update_fields=fields)
+
+
+def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
+    """Settles `invoice` for an `invoice.*` event: paid, or expired / partially paid
+    (a failure). Idempotent — a replay, or the same fact arriving by both webhook and
+    issue-time reconciliation, changes nothing. Caller holds the invoice row lock and
+    a tenant context."""
+    subscription = invoice.subscription
+    tenant = subscription.tenant
+    before_status = tenant.status
+    if event == 'invoice.paid':
+        if invoice.status == SubscriptionInvoice.Status.PAID:
+            return  # already processed payment for this invoice
+        if razorpay_payment_id and SubscriptionPayment.objects.filter(
+            razorpay_payment_id=razorpay_payment_id
+        ).exists():
+            return
+        invoice.status = SubscriptionInvoice.Status.PAID
+        invoice.paid_at = timezone.now()
+        invoice.save(update_fields=['status', 'paid_at'])
+        subscription.payment_failed_at = None
+        subscription.save(update_fields=['payment_failed_at', 'updated_at'])
+        if tenant.status == Tenant.Status.PAYMENT_FAILED:
+            tenant.status = Tenant.Status.ACTIVE
+        SubscriptionPayment.objects.create(
+            tenant_id=tenant.id, subscription=subscription,
+            razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
+            status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+        )
+    elif event in ('invoice.expired', 'invoice.partially_paid'):
+        if invoice.status == SubscriptionInvoice.Status.FAILED:
+            return  # already processed this failure
+        if razorpay_payment_id and SubscriptionPayment.objects.filter(
+            razorpay_payment_id=razorpay_payment_id
+        ).exists():
+            return
+        invoice.status = SubscriptionInvoice.Status.FAILED
+        invoice.save(update_fields=['status'])
+        tenant.status = Tenant.Status.PAYMENT_FAILED
+        subscription.payment_failed_at = timezone.now()
+        subscription.save(update_fields=['payment_failed_at', 'updated_at'])
+        SubscriptionPayment.objects.create(
+            tenant_id=tenant.id, subscription=subscription,
+            razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
+            status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
+        )
+    else:
+        return  # unhandled event type — ignore
+
+    if tenant.status != before_status:
+        tenant.save(update_fields=['status', 'updated_at'])
+        audit_log.record(
+            action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
+            before={'status': before_status}, after={'status': tenant.status},
+        )
+
+
+def _handle_invoice_webhook(event, payload):
+    """PER_BED_MONTHLY: finds the SubscriptionInvoice for a Razorpay invoice event
+    (`_invoice_for_webhook`) and settles it (`_apply_invoice_event`)."""
+    entity = payload.get('payload', {}).get('invoice', {}).get('entity', {})
+    found = _invoice_for_webhook(entity)
+    if found is None:
         return  # unknown invoice — nothing to reconcile
 
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
 
-    with tenant_context(invoice.subscription.tenant_id), transaction.atomic():
+    with tenant_context(found.tenant_id), transaction.atomic():
         # Lock the invoice for the rest of the handler so a replayed or
         # concurrently-delivered webhook for the same invoice serializes behind
-        # this one — the status-based idempotency checks below can't race.
+        # this one — the status-based idempotency checks can't race.
         invoice = (
             SubscriptionInvoice.objects.select_for_update(of=('self',))
             .select_related('subscription__tenant')
-            .get(pk=invoice.pk)
+            .get(pk=found.pk)
         )
-        subscription = invoice.subscription
-        tenant = subscription.tenant
-        before_status = tenant.status
-        if event == 'invoice.paid':
-            if invoice.status == SubscriptionInvoice.Status.PAID:
-                return  # already processed payment for this invoice
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
-            invoice.status = SubscriptionInvoice.Status.PAID
-            invoice.paid_at = timezone.now()
-            invoice.save(update_fields=['status', 'paid_at'])
-            subscription.payment_failed_at = None
-            subscription.save(update_fields=['payment_failed_at', 'updated_at'])
-            if tenant.status == Tenant.Status.PAYMENT_FAILED:
-                tenant.status = Tenant.Status.ACTIVE
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-                status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+        # The match in `_invoice_for_webhook` was made before this lock; another
+        # process may have bound a different Razorpay id since. Check again.
+        if invoice.razorpay_invoice_id not in ('', entity.get('id', '')):
+            logger.warning(
+                'Ignoring %s for Razorpay invoice %s: invoice %s is bound to %s',
+                event, entity.get('id', ''), invoice.pk, invoice.razorpay_invoice_id,
             )
-        elif event in ('invoice.expired', 'invoice.partially_paid'):
-            if invoice.status == SubscriptionInvoice.Status.FAILED:
-                return  # already processed this failure
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
-            invoice.status = SubscriptionInvoice.Status.FAILED
-            invoice.save(update_fields=['status'])
-            tenant.status = Tenant.Status.PAYMENT_FAILED
-            subscription.payment_failed_at = timezone.now()
-            subscription.save(update_fields=['payment_failed_at', 'updated_at'])
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-                status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
-            )
-        else:
-            return  # unhandled event type — ignore
-
-        if tenant.status != before_status:
-            tenant.save(update_fields=['status', 'updated_at'])
-            audit_log.record(
-                action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
-                before={'status': before_status}, after={'status': tenant.status},
-            )
+            return
+        _bind_razorpay_invoice(invoice, entity.get('id', ''))
+        _apply_invoice_event(event, invoice, razorpay_payment_id, payload)
 
 
 def datetime_from_epoch(seconds):
@@ -848,6 +904,43 @@ def _unissued_invoices(now):
     )
 
 
+def _settle_issued_invoice(invoice_id, remote):
+    """Records what Razorpay says about an invoice we just sent (or found by receipt).
+
+    The invoice is re-read under its row lock because a webhook may have got there
+    first — it can bind the Razorpay id by receipt and even mark the invoice paid
+    while our create call was still in flight — and a later `issued` must never undo
+    that. When `remote` was found already paid or expired (the lost-response retry),
+    the payment is applied here, since its webhook may have been dropped before the
+    id was known; `_apply_invoice_event` ignores facts already recorded."""
+    with transaction.atomic():
+        invoice = (
+            SubscriptionInvoice.objects.select_for_update(of=('self',))
+            .select_related('subscription__tenant')
+            .get(pk=invoice_id)
+        )
+        if invoice.razorpay_invoice_id not in ('', remote.id):
+            # Already bound to a different Razorpay invoice (by a webhook, since we
+            # started): don't attach this one's status to it.
+            logger.error(
+                'Invoice %s is bound to %s but Razorpay returned %s for its receipt',
+                invoice.pk, invoice.razorpay_invoice_id, remote.id,
+            )
+            invoice.issue_claimed_at = None
+            invoice.save(update_fields=['issue_claimed_at'])
+            return
+        _bind_razorpay_invoice(invoice, remote.id)
+        # The same statuses, mapped to the same events, as the webhooks treat them.
+        event = {
+            'paid': 'invoice.paid', 'expired': 'invoice.expired', 'partially_paid': 'invoice.partially_paid',
+        }.get(remote.status)
+        if event:
+            _apply_invoice_event(event, invoice, remote.payment_id, {
+                'source': 'issue_reconciliation', 'razorpay_invoice_id': remote.id,
+                'razorpay_status': remote.status, 'razorpay_payment_id': remote.payment_id,
+            })
+
+
 def issue_invoice(invoice_id, tenant_id):
     """Sends one priced DRAFT invoice to Razorpay; returns True (issued), False
     (failed, the sweep retries) or None (not ours: already issued, or another worker
@@ -865,7 +958,7 @@ def issue_invoice(invoice_id, tenant_id):
             return None
         invoice = SubscriptionInvoice.objects.select_related('subscription').get(pk=invoice_id)
         try:
-            razorpay_invoice_id, _short_url = razorpay_client.create_razorpay_invoice(
+            remote = razorpay_client.create_razorpay_invoice(
                 invoice.subscription.razorpay_customer_id, invoice,
             )
         except Exception as exc:  # noqa: BLE001 - any SDK/network failure is a retry, not a crash
@@ -880,10 +973,7 @@ def issue_invoice(invoice_id, tenant_id):
                     after={'attempts': attempts, 'period_start': invoice.period_start.isoformat()},
                 )
             return False
-        SubscriptionInvoice.objects.filter(pk=invoice_id).update(
-            status=SubscriptionInvoice.Status.ISSUED, razorpay_invoice_id=razorpay_invoice_id,
-            issued_at=timezone.now(), issue_claimed_at=None,
-        )
+        _settle_issued_invoice(invoice_id, remote)
         return True
 
 

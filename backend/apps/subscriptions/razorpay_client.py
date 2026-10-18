@@ -8,6 +8,7 @@ flow without real credentials — same conditional-activation pattern as
 Module 04's S3/local document storage.
 """
 import uuid
+from typing import NamedTuple
 
 import razorpay
 from django.conf import settings
@@ -97,31 +98,49 @@ def create_razorpay_customer(tenant):
     return response['id']
 
 
+class RazorpayInvoice(NamedTuple):
+    """What Razorpay reports for one of our invoices. `status` is Razorpay's own
+    (`issued`, `paid`, `expired`, ...); `payment_id` is set once it is paid."""
+    id: str
+    short_url: str
+    status: str
+    payment_id: str = ''
+
+
+def _as_razorpay_invoice(entity):
+    return RazorpayInvoice(
+        id=entity['id'], short_url=entity.get('short_url', ''),
+        status=entity.get('status', 'issued'), payment_id=entity.get('payment_id') or '',
+    )
+
+
 def create_razorpay_invoice(customer_id, subscription_invoice):
     """Creates and issues a Razorpay Invoice for one PER_BED_MONTHLY billing
-    cycle. One Razorpay line item per `SubscriptionInvoiceLine`, using the
-    line's own already-rounded `amount` (not unit_rate × quantity) so the
-    line items always sum to exactly `total_amount` (invariant 5/6).
+    cycle, returning its `RazorpayInvoice`. One Razorpay line item per
+    `SubscriptionInvoiceLine`, using the line's own already-rounded `amount` (not
+    unit_rate × quantity) so the line items always sum to exactly `total_amount`
+    (invariant 5/6).
 
     Safe to call again for the same `SubscriptionInvoice`: its id is sent as the
     Razorpay `receipt`, and an invoice already carrying that receipt is reused
     (and issued, if a crash left it a draft) instead of creating a second one.
     That makes a retry after a lost response or a failed local save harmless.
+    The reused invoice's real status comes back, so the caller can see that it was
+    already paid or has expired rather than assume it is merely issued.
 
-    Stubbed locally when unconfigured — the stub still returns a
-    ``(id, short_url)`` pair so the caller's flow is unchanged."""
+    Stubbed locally when unconfigured, and then always `issued`."""
     receipt = str(subscription_invoice.id)
     client = get_client()
     if client is None:
         stub_id = f'test_inv_{subscription_invoice.id.hex[:14]}'
-        return stub_id, f'https://rzp.io/i/{stub_id}'
+        return RazorpayInvoice(stub_id, f'https://rzp.io/i/{stub_id}', 'issued')
 
     existing = client.invoice.all({'receipt': receipt}).get('items', [])
     if existing:
         found = existing[0]
         if found.get('status') == 'draft':
             found = client.invoice.issue(found['id'])
-        return found['id'], found.get('short_url', '')
+        return _as_razorpay_invoice(found)
 
     response = client.invoice.create({
         'type': 'invoice',
@@ -138,9 +157,8 @@ def create_razorpay_invoice(customer_id, subscription_invoice):
             for line in subscription_invoice.lines.all()
         ],
     })
-    invoice_id = response['id']
-    issued_response = client.invoice.issue(invoice_id)
-    return invoice_id, issued_response.get('short_url', '')
+    issued = client.invoice.issue(response['id'])
+    return _as_razorpay_invoice({'id': response['id'], 'status': 'issued', **issued})
 
 
 def verify_webhook_signature(payload_body, signature):

@@ -775,9 +775,9 @@ def _ensure_razorpay_customer(subscription):
 def _invoice_period(subscription, plan, *, period_start, billed_end, cycle_end):
     """Prices the bed-day history in `[period_start, billed_end)` against `plan`,
     writes the invoice + line items (invariant 6 — a list, never fixed fields)
-    and either issues it via Razorpay Invoices or — below
-    `PlatformConfig.min_billable_amount` (invariant 10) — marks it paid with no
-    Razorpay call. `cycle_end` is the nominal end of the cycle the period
+    and either leaves it DRAFT for `issue_invoice` to send through Razorpay
+    Invoices after commit or — below `PlatformConfig.min_billable_amount`
+    (invariant 10) — marks it paid with no Razorpay call. `cycle_end` is the nominal end of the cycle the period
     belongs to: it sets the proration denominator, so a period closed early is
     charged for the days it ran, not for a whole month.
 
@@ -827,14 +827,78 @@ def _invoice_period(subscription, plan, *, period_start, billed_end, cycle_end):
             invoice.paid_at = timezone.now()
             invoice.save(update_fields=['status', 'paid_at'])
         else:
-            razorpay_invoice_id, _short_url = razorpay_client.create_razorpay_invoice(
-                subscription.razorpay_customer_id, invoice
-            )
-            invoice.razorpay_invoice_id = razorpay_invoice_id
-            invoice.status = SubscriptionInvoice.Status.ISSUED
-            invoice.issued_at = timezone.now()
-            invoice.save(update_fields=['razorpay_invoice_id', 'status', 'issued_at'])
+            # Stays DRAFT: nothing remote happens inside this transaction, which may
+            # still roll back (a Razorpay invoice can't be). It is issued once the
+            # transaction commits, and by the periodic sweep if that attempt fails.
+            invoice_id, tenant_id = invoice.pk, invoice.tenant_id
+            transaction.on_commit(lambda: issue_invoice(invoice_id, tenant_id))
     return invoice
+
+
+# How long an issue claim is respected before the sweep assumes its worker died.
+INVOICE_ISSUE_CLAIM_TIMEOUT = timedelta(minutes=15)
+INVOICE_ISSUE_AUDIT_ATTEMPTS = (1, 10, 50)
+
+
+def _unissued_invoices(now):
+    """DRAFT invoices nobody is currently issuing (never claimed, or the claim went stale)."""
+    return SubscriptionInvoice.objects.filter(
+        Q(issue_claimed_at__isnull=True) | Q(issue_claimed_at__lt=now - INVOICE_ISSUE_CLAIM_TIMEOUT),
+        status=SubscriptionInvoice.Status.DRAFT, razorpay_invoice_id='',
+    )
+
+
+def issue_invoice(invoice_id, tenant_id):
+    """Sends one priced DRAFT invoice to Razorpay; returns True (issued), False
+    (failed, the sweep retries) or None (not ours: already issued, or another worker
+    holds it).
+
+    Runs after the transaction that priced the invoice has committed, so a rollback
+    can never leave a Razorpay invoice behind. The invoice is claimed first (a
+    conditional UPDATE, atomic across workers), and no database lock is held during
+    the network call. The invoice's own id is the Razorpay `receipt`, so if Razorpay
+    created it but we lost the response or failed to save, the retry finds and reuses
+    it rather than billing twice (`razorpay_client.create_razorpay_invoice`)."""
+    now = timezone.now()
+    with tenant_context(tenant_id):
+        if not _unissued_invoices(now).filter(pk=invoice_id).update(issue_claimed_at=now):
+            return None
+        invoice = SubscriptionInvoice.objects.select_related('subscription').get(pk=invoice_id)
+        try:
+            razorpay_invoice_id, _short_url = razorpay_client.create_razorpay_invoice(
+                invoice.subscription.razorpay_customer_id, invoice,
+            )
+        except Exception as exc:  # noqa: BLE001 - any SDK/network failure is a retry, not a crash
+            logger.warning('Could not issue subscription invoice %s; will retry', invoice_id, exc_info=True)
+            SubscriptionInvoice.objects.filter(pk=invoice_id).update(
+                issue_claimed_at=None, issue_attempts=F('issue_attempts') + 1, last_issue_error=str(exc)[:1000],
+            )
+            attempts = SubscriptionInvoice.objects.values_list('issue_attempts', flat=True).get(pk=invoice_id)
+            if attempts in INVOICE_ISSUE_AUDIT_ATTEMPTS:
+                audit_log.record(
+                    action='subscription.invoice_issue_failed', tenant_id=tenant_id, obj=invoice,
+                    after={'attempts': attempts, 'period_start': invoice.period_start.isoformat()},
+                )
+            return False
+        SubscriptionInvoice.objects.filter(pk=invoice_id).update(
+            status=SubscriptionInvoice.Status.ISSUED, razorpay_invoice_id=razorpay_invoice_id,
+            issued_at=timezone.now(), issue_claimed_at=None,
+        )
+        return True
+
+
+def process_invoice_issuing():
+    """Issues every DRAFT invoice that isn't claimed (including claims whose worker
+    died). Run by a periodic task, so a Razorpay outage delays an invoice but can't
+    lose it."""
+    with tenant_context(is_super_admin=True):
+        due = list(_unissued_invoices(timezone.now()).order_by('created_at').values_list('pk', 'tenant_id'))
+    outcome = {'issued': 0, 'failed': 0}
+    for invoice_id, tenant_id in due:
+        result = issue_invoice(invoice_id, tenant_id)
+        if result is not None:
+            outcome['issued' if result else 'failed'] += 1
+    return outcome
 
 
 @transaction.atomic

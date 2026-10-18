@@ -114,6 +114,9 @@ Table: subscription_invoices                    (RLS enforced, app: apps.subscri
   billed_bed_count_start / billed_bed_count_end   int
   razorpay_invoice_id   varchar(100), blank
   issued_at / paid_at   datetime, null
+  issue_claimed_at      datetime, null     (lease: one worker issues a draft at a time)
+  issue_attempts        int, default 0
+  last_issue_error      text, blank
   unique(subscription, period_start)              (idempotency — a re-run of the daily
                                                      command can't double-invoice a cycle)
 
@@ -356,9 +359,29 @@ frontend always reaches a tenant's subscription via
     `period_start` / `period_end` are the days actually billed. Nothing is
     written when no day has accrued or the period already has an invoice
     (`unique_invoice_per_cycle`), so repeating a switch the same day never
-    double-bills. The invoice and the plan change share one transaction: if
-    invoicing fails the switch rolls back (the webhook then errors and Razorpay
-    retries). Tests: `test_plan_exit_invoicing.py`.
+    double-bills. The invoice is priced and saved in the same transaction as the
+    plan change but sent to Razorpay after commit (rule 29), so a Razorpay
+    outage never blocks the switch or a paid promotion; only a failure of the
+    transaction itself rolls both back. Tests: `test_plan_exit_invoicing.py`.
+29. **Invoices reach Razorpay only after the transaction that priced them
+    commits.** `_invoice_period` saves the invoice and its lines as `draft`
+    (or `paid`, below `min_billable_amount`) and registers
+    `transaction.on_commit(issue_invoice)`; it never calls Razorpay itself, so a
+    rollback — the plan switch failing later, a webhook retried — can't leave a
+    live Razorpay invoice behind. `issue_invoice` claims the draft first (a
+    conditional UPDATE of `issue_claimed_at`, atomic across workers; a claim
+    older than 15 min is taken over), holds no database lock during the network
+    call, then records `issued` + `razorpay_invoice_id`. A failure keeps the
+    draft, records `issue_attempts` / `last_issue_error`, releases the claim and
+    is audited (`subscription.invoice_issue_failed`, 1st/10th/50th attempt). The
+    `subscriptions.retry_invoice_issuing` periodic task (every 10 min, seeded by
+    migration 0013, retimeable in admin) re-issues any unclaimed draft, so a
+    Razorpay outage delays an invoice but never loses it or the plan switch. The
+    durable idempotency key is the invoice's own id, sent as the Razorpay
+    `receipt`: before creating, `create_razorpay_invoice` looks the receipt up
+    and reuses (issuing it if still a draft) any invoice already there, so a
+    lost response or a failed local save can't produce a second invoice.
+    Tests: `test_invoice_issuing.py`.
 
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
@@ -669,6 +692,7 @@ frontend always reaches a tenant's subscription via
 
 ## Changelog
 - 2026-10-18  Plan exits invoice per-bed arrears first (rule 28): `close_per_bed_period`, shared `_invoice_period`; 10 tests in `test_plan_exit_invoicing.py`.
+- 2026-10-18  Invoices are saved as drafts and issued to Razorpay after commit, with a claim lease, a 10-minute retry sweep (migrations 0012/0013) and the invoice id as the Razorpay receipt (rule 29); 16 tests in `test_invoice_issuing.py`, two older tests rewritten to the new contract.
 - 2026-10-18  Basic (₹149, 500 beds, trial) + Unlimited (₹249) launch plans,
   `max_beds` cap, 45-day trial, live-plan price lock, single trial plan; see
   rules 21-25 and the Decisions above. Backend tests added in

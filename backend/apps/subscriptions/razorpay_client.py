@@ -102,16 +102,32 @@ def create_razorpay_invoice(customer_id, subscription_invoice):
     cycle. One Razorpay line item per `SubscriptionInvoiceLine`, using the
     line's own already-rounded `amount` (not unit_rate × quantity) so the
     line items always sum to exactly `total_amount` (invariant 5/6).
+
+    Safe to call again for the same `SubscriptionInvoice`: its id is sent as the
+    Razorpay `receipt`, and an invoice already carrying that receipt is reused
+    (and issued, if a crash left it a draft) instead of creating a second one.
+    That makes a retry after a lost response or a failed local save harmless.
+
     Stubbed locally when unconfigured — the stub still returns a
     ``(id, short_url)`` pair so the caller's flow is unchanged."""
+    receipt = str(subscription_invoice.id)
     client = get_client()
     if client is None:
-        stub_id = f'test_inv_{uuid.uuid4().hex[:14]}'
+        stub_id = f'test_inv_{subscription_invoice.id.hex[:14]}'
         return stub_id, f'https://rzp.io/i/{stub_id}'
+
+    existing = client.invoice.all({'receipt': receipt}).get('items', [])
+    if existing:
+        found = existing[0]
+        if found.get('status') == 'draft':
+            found = client.invoice.issue(found['id'])
+        return found['id'], found.get('short_url', '')
+
     response = client.invoice.create({
         'type': 'invoice',
         'customer_id': customer_id,
         'currency': 'INR',
+        'receipt': receipt,
         'line_items': [
             {
                 'name': line.description[:255],

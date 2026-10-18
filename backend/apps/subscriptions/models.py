@@ -424,6 +424,13 @@ class SubscriptionInvoice(TenantModelMixin):
     razorpay_invoice_id = models.CharField(max_length=100, blank=True)
     issued_at = models.DateTimeField(null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    # A priced invoice is saved as DRAFT and issued to Razorpay only after the
+    # transaction that created it commits (`services.issue_invoice`), retried by
+    # a periodic sweep. `issue_claimed_at` is the lease that stops two workers
+    # issuing it at once; the rest records failed attempts.
+    issue_claimed_at = models.DateTimeField(null=True, blank=True)
+    issue_attempts = models.PositiveIntegerField(default=0)
+    last_issue_error = models.TextField(blank=True, default='')
 
     class Meta:
         db_table = 'subscription_invoices'

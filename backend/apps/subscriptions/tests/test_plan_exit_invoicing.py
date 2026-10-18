@@ -10,13 +10,14 @@ from django.utils import timezone
 from apps.accounts.models import Tenant
 from apps.core.tenancy import tenant_context
 from apps.subscriptions.models import SubscriptionInvoice
-from apps.subscriptions.services import close_per_bed_period
+from apps.subscriptions.services import close_per_bed_period, process_invoice_issuing
 
 from .base import SubscriptionAPITestCase
 from .test_invoice_generation import _backdate_ledger_entries
 from .test_webhook import webhook_payload
 
 CANCEL = 'apps.subscriptions.razorpay_client.cancel_razorpay_subscription'
+CREATE_INVOICE = 'apps.subscriptions.razorpay_client.create_razorpay_invoice'
 
 
 class PlanExitInvoicingTestCase(SubscriptionAPITestCase):
@@ -44,9 +45,12 @@ class PlanExitInvoicingTestCase(SubscriptionAPITestCase):
         self.authenticate(self.owner)
 
     def select(self, plan):
-        return self.client.post(
-            reverse('subscription-select-plan', args=[self.tenant.id]), {'plan': str(plan.id)}, format='json',
-        )
+        # The invoice is sent to Razorpay in an on-commit callback, which a TestCase's
+        # wrapping transaction never fires on its own.
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(
+                reverse('subscription-select-plan', args=[self.tenant.id]), {'plan': str(plan.id)}, format='json',
+            )
 
     def invoices(self):
         with tenant_context(self.tenant.id):
@@ -105,12 +109,36 @@ class SwitchingBetweenPerBedPlansTests(PlanExitInvoicingTestCase):
         self.assertEqual(partial.period_end, self.today)
         self.assertGreater(partial.total_amount, Decimal('0'))
 
-    def test_a_failed_invoice_rolls_the_switch_back(self):
-        with mock.patch(
-            'apps.subscriptions.razorpay_client.create_razorpay_invoice', side_effect=RuntimeError('boom'),
-        ), mock.patch(CANCEL):
+    def test_a_razorpay_outage_does_not_block_the_switch_and_the_invoice_is_sent_later(self):
+        with mock.patch(CREATE_INVOICE, side_effect=RuntimeError('boom')), mock.patch(CANCEL):
+            response = self.select(self.new_per_bed)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.plan, self.new_per_bed)
+
+        (invoice,) = self.invoices()
+        self.assertEqual(invoice.status, SubscriptionInvoice.Status.DRAFT)
+        self.assertEqual(invoice.razorpay_invoice_id, '')
+        self.assertEqual(invoice.issue_attempts, 1)
+        self.assertIn('boom', invoice.last_issue_error)
+
+        self.assertEqual(process_invoice_issuing(), {'issued': 1, 'failed': 0})
+        (invoice,) = self.invoices()
+        self.assertEqual(invoice.status, SubscriptionInvoice.Status.ISSUED)
+        self.assertNotEqual(invoice.razorpay_invoice_id, '')
+
+    def test_a_later_failure_rolls_everything_back_and_nothing_reaches_razorpay(self):
+        # The transaction fails after the invoice was priced: the switch and the invoice
+        # both roll back, and no Razorpay invoice was ever created for the retry to duplicate.
+        with mock.patch(CREATE_INVOICE) as create, mock.patch(CANCEL), mock.patch(
+            'apps.subscriptions.services.audit_log.record', side_effect=RuntimeError('db down'),
+        ), self.captureOnCommitCallbacks(execute=True):
             with self.assertRaises(RuntimeError):
-                self.select(self.new_per_bed)
+                self.client.post(
+                    reverse('subscription-select-plan', args=[self.tenant.id]),
+                    {'plan': str(self.new_per_bed.id)}, format='json',
+                )
+        create.assert_not_called()
         self.subscription.refresh_from_db()
         self.assertEqual(self.subscription.plan, self.old_plan)
         self.assertEqual(self.subscription.current_period_start, self.period_start)

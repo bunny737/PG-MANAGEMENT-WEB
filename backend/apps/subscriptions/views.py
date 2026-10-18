@@ -1,3 +1,7 @@
+import copy
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
@@ -46,10 +50,40 @@ class PlanViewSet(viewsets.ModelViewSet):
             return Plan.objects.prefetch_related('bed_tiers').all()
         return Plan.objects.prefetch_related('bed_tiers').filter(is_active=True)
 
+    def _enforce_plan_rules(self, serializer):
+        # Plan.clean() never runs on DRF saves; raised here (not in the
+        # serializer) so the machine-readable code reaches the client.
+        candidate = copy.copy(serializer.instance) if serializer.instance is not None else Plan()
+        for field, value in serializer.validated_data.items():
+            setattr(candidate, field, value)
+        try:
+            candidate.validate_protected_changes()
+            candidate.validate_pricing_invariants()
+        except DjangoValidationError as exc:
+            errors = next(iter(exc.error_dict.values())) if hasattr(exc, 'error_dict') else exc.error_list
+            raise ValidationError({'detail': errors[0].messages[0]}, code=errors[0].code)
+
+    # The plan row is locked before the checks, so select_plan (which locks the
+    # same row) can't attach a subscriber or a Razorpay price between check and
+    # save. Lock order everywhere: Subscription -> Plan.
+    @transaction.atomic
+    def perform_create(self, serializer):
+        self._enforce_plan_rules(serializer)
+        serializer.save()
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        serializer.instance = Plan.objects.select_for_update().get(pk=serializer.instance.pk)
+        self._enforce_plan_rules(serializer)
+        serializer.save()
+
+    @transaction.atomic
     def perform_destroy(self, instance):
-        if instance.subscriptions.exists():
+        instance = Plan.objects.select_for_update().get(pk=instance.pk)
+        if not instance.is_deletable():
             raise ValidationError(
-                {'detail': _('Cannot delete a plan that tenants are subscribed to.')},
+                {'detail': _('This plan is live or is the trial plan, so it cannot be deleted. '
+                             'Retire it by marking it inactive instead.')},
                 code='plan_in_use',
             )
         instance.delete()
@@ -136,6 +170,7 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):
             subscription=subscription,
             max_properties_override=data.get('max_properties_override', subscription.max_properties_override),
             max_residents_override=data.get('max_residents_override', subscription.max_residents_override),
+            max_beds_override=data.get('max_beds_override', subscription.max_beds_override),
             actor=request.user, request=request,
         )
         return Response(SubscriptionSerializer(self.get_object()).data)

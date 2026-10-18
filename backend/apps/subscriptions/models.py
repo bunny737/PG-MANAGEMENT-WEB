@@ -1,13 +1,16 @@
 import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F
 from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import Tenant
 from apps.core.models import TenantModelMixin
 
+PRICING_LOCKED_MESSAGE = _(
+    'Tenants are using this plan. Create a new plan and retire this one to change its pricing.'
+)
 
 class Plan(models.Model):
     """A pricing tier (PRD §4 'Subscription & Pricing Model'). Platform-level
@@ -34,6 +37,8 @@ class Plan(models.Model):
     name = models.CharField(max_length=100, unique=True)
     max_properties = models.PositiveIntegerField(null=True, blank=True)
     max_residents_per_property = models.PositiveIntegerField(null=True, blank=True)
+    # Every Bed row under the tenant (provisioned capacity, like per-bed billing).
+    max_beds = models.PositiveIntegerField(null=True, blank=True)
     pricing_type = models.CharField(
         max_length=20, choices=PricingType.choices, default=PricingType.FLAT_MONTHLY
     )
@@ -52,40 +57,109 @@ class Plan(models.Model):
     class Meta:
         db_table = 'plans'
         ordering = [F('price_per_month').asc(nulls_last=True), 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_trial_plan'], condition=models.Q(is_trial_plan=True), name='single_trial_plan',
+            ),
+        ]
 
     def __str__(self):
         return self.name
 
-    def clean(self):
+    def save(self, *args, **kwargs):
+        # Flagging a plan as the trial default moves the flag here, so there is
+        # never more than one (the single_trial_plan constraint is the backstop).
+        with transaction.atomic():
+            if self.is_trial_plan:
+                Plan.objects.filter(is_trial_plan=True).exclude(pk=self.pk).update(is_trial_plan=False)
+            super().save(*args, **kwargs)
+
+    def validate_constraints(self, exclude=None):
+        # save() resolves trial-flag conflicts, so forms must not reject them first.
+        super().validate_constraints(exclude={*(exclude or ()), 'is_trial_plan'})
+
+    def is_locked(self):
+        """Live plans: Razorpay holds the price, or tenants are billed on it."""
+        if self._state.adding:
+            return False
+        return bool(self.razorpay_plan_id) or self.subscriptions.exists()
+
+    def is_deletable(self):
+        return not self.is_trial_plan and not self.is_locked()
+
+    def validate_protected_changes(self):
+        """Pricing of a live plan is frozen (Razorpay can't reprice a plan), and
+        the trial default can only be handed over, never cleared."""
+        def error(field, message, code):
+            return DjangoValidationError({field: DjangoValidationError(message, code=code)})
+
+        if self.is_trial_plan and not self.is_active:
+            raise error('is_active', _(
+                'The trial plan must stay active. Mark another plan as the trial plan first.'
+            ), 'trial_plan_required')
+        if self._state.adding:
+            return
+        stored = Plan.objects.filter(pk=self.pk).first()
+        if stored is None:
+            return
+        if stored.is_trial_plan and not self.is_trial_plan:
+            raise error('is_trial_plan', _(
+                'A trial plan is required. Mark another plan as the trial plan first.'
+            ), 'trial_plan_required')
+        pricing_changed = (
+            stored.price_per_month != self.price_per_month or stored.pricing_type != self.pricing_type
+        )
+        if pricing_changed and stored.is_locked():
+            raise error('price_per_month', PRICING_LOCKED_MESSAGE, 'plan_pricing_locked')
+
+    def validate_pricing_invariants(self):
+        """Cross-field rules between the pricing scheme and the caps. Shared by
+        `clean()` (admin) and the plan API, which never calls `clean()`."""
+        def error(field, message, code):
+            return DjangoValidationError({field: DjangoValidationError(message, code=code)})
+
         if self.pricing_type == self.PricingType.FLAT_MONTHLY:
             if self.price_per_month is None:
-                raise DjangoValidationError(
-                    {'price_per_month': _('Flat-monthly plans require a price_per_month.')}
+                raise error(
+                    'price_per_month', _('Flat-monthly plans require a price_per_month.'),
+                    'plan_price_required',
                 )
             # Bed tiers only make sense for PER_BED_MONTHLY; guarding here (not just
             # on PlanBedTier) means a plan can never carry the two pricing schemes
             # at once. Skipped when unsaved — bed_tiers needs a pk to query.
             if self.pk and self.bed_tiers.exists():
-                raise DjangoValidationError(
-                    {'pricing_type': _('Flat-monthly plans cannot have bed tiers.')}
+                raise error(
+                    'pricing_type', _('Flat-monthly plans cannot have bed tiers.'),
+                    'plan_flat_has_tiers',
                 )
         elif self.pricing_type == self.PricingType.PER_BED_MONTHLY:
             # Google-style seat billing has no cap — you pay for what you provision.
-            if self.max_properties is not None or self.max_residents_per_property is not None:
+            if (
+                self.max_properties is not None or self.max_residents_per_property is not None
+                or self.max_beds is not None
+            ):
                 raise DjangoValidationError(
-                    _('Per-bed plans cannot also cap properties or residents — '
-                      'billing is already usage-based.')
+                    _('Per-bed plans cannot also cap properties, residents or beds — '
+                      'billing is already usage-based.'),
+                    code='plan_per_bed_capped',
                 )
             if self.pk:
                 tiers = self.bed_tiers.all()
                 if not tiers.exists():
-                    raise DjangoValidationError(
-                        {'pricing_type': _('Per-bed plans require at least one bed tier.')}
+                    raise error(
+                        'pricing_type', _('Per-bed plans require at least one bed tier.'),
+                        'plan_bed_tiers_required',
                     )
                 if tiers.filter(up_to_beds__isnull=True).count() != 1:
-                    raise DjangoValidationError(
-                        {'pricing_type': _('Per-bed plans must have exactly one open-ended tier (up_to_beds=None).')}
+                    raise error(
+                        'pricing_type',
+                        _('Per-bed plans must have exactly one open-ended tier (up_to_beds=None).'),
+                        'plan_bed_tier_open_ended',
                     )
+
+    def clean(self):
+        self.validate_protected_changes()
+        self.validate_pricing_invariants()
 
 
 class PlanBedTier(models.Model):
@@ -122,6 +196,8 @@ class PlanBedTier(models.Model):
     def clean(self):
         if self.plan_id and self.plan.pricing_type == Plan.PricingType.FLAT_MONTHLY:
             raise DjangoValidationError(_('Flat-monthly plans cannot have bed tiers.'))
+        if self.plan_id and self.plan.is_locked():
+            raise DjangoValidationError(PRICING_LOCKED_MESSAGE, code='plan_pricing_locked')
 
 
 class Subscription(models.Model):
@@ -138,6 +214,14 @@ class Subscription(models.Model):
         Plan, on_delete=models.PROTECT, null=True, blank=True, related_name='subscriptions'
     )
     razorpay_subscription_id = models.CharField(max_length=100, blank=True)
+    # A flat plan the tenant has chosen but not yet paid for. `plan`, its limits and
+    # `razorpay_subscription_id` stay as they were until Razorpay's webhook confirms
+    # the first charge on `pending_razorpay_subscription_id`, which promotes these
+    # (and cancels the old Razorpay subscription). Both are blank/null together.
+    pending_plan = models.ForeignKey(
+        Plan, on_delete=models.PROTECT, null=True, blank=True, related_name='pending_subscriptions'
+    )
+    pending_razorpay_subscription_id = models.CharField(max_length=100, blank=True)
     razorpay_customer_id = models.CharField(max_length=100, blank=True)
     current_period_start = models.DateField(null=True, blank=True)
     current_period_end = models.DateField(null=True, blank=True)
@@ -148,6 +232,7 @@ class Subscription(models.Model):
     # grace period, enterprise negotiation)" — null defers to the plan.
     max_properties_override = models.PositiveIntegerField(null=True, blank=True)
     max_residents_override = models.PositiveIntegerField(null=True, blank=True)
+    max_beds_override = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -178,6 +263,68 @@ class Subscription(models.Model):
             return self.max_residents_override
         plan = self.effective_plan()
         return plan.max_residents_per_property if plan else None
+
+    def max_beds_on(self, plan):
+        if self.max_beds_override is not None:
+            return self.max_beds_override
+        return plan.max_beds if plan else None
+
+    def effective_max_beds(self):
+        return self.max_beds_on(self.effective_plan())
+
+
+class RazorpaySubscription(models.Model):
+    """Every Razorpay subscription ever created for a tenant, kept until it reaches a
+    terminal state. `Subscription.razorpay_subscription_id` / `pending_*` only say
+    which one is current or newest; this table is what makes plan changes
+    reconcilable. Webhooks arrive late and out of order, and cancelling can fail, so
+    a subscription we have moved on from must still be recognised when a payment (or
+    a cancellation) for it turns up, and must keep being cancelled until Razorpay
+    confirms. Not under RLS, like Subscription: the webhook that reads it is
+    unauthenticated.
+
+    PENDING   chosen, awaiting its first payment (the newest one is shown to the tenant).
+    CURRENT   paid; the tenant's live subscription.
+    REPLACED  was CURRENT, superseded by a newly paid plan. Must be cancelled; a charge
+              on it (a renewal that raced the cancel) is recorded and flagged for refund.
+    ABANDONED was PENDING, superseded by a later choice. Must be cancelled, but a payment
+              that still lands on it is honoured: the tenant paid for that plan.
+    CANCELLING a worker has claimed it and may already have cancelled it at Razorpay (which
+              cannot be undone: a cancelled subscription never restarts). Webhooks therefore
+              must not promote it; a charge that lands now is recorded and flagged for refund.
+              `cancel_from` remembers REPLACED/ABANDONED so a failed attempt can revert.
+    CANCELLED terminal: Razorpay confirmed it is cancelled (or finished)."""
+
+    class State(models.TextChoices):
+        PENDING = 'pending', _('Pending')
+        CURRENT = 'current', _('Current')
+        REPLACED = 'replaced', _('Replaced')
+        ABANDONED = 'abandoned', _('Abandoned')
+        CANCELLING = 'cancelling', _('Cancelling')
+        CANCELLED = 'cancelled', _('Cancelled')
+
+    NEEDS_CANCEL = (State.REPLACED, State.ABANDONED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name='razorpay_subscriptions')
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name='razorpay_subscriptions')
+    razorpay_subscription_id = models.CharField(max_length=100, unique=True)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
+    # The state to return to if a cancellation attempt fails (REPLACED or ABANDONED).
+    cancel_from = models.CharField(max_length=10, blank=True)
+    cancel_attempts = models.PositiveIntegerField(default=0)
+    last_cancel_error = models.TextField(blank=True)
+    last_cancel_attempt_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'razorpay_subscriptions'
+        indexes = [models.Index(fields=['state'], name='razorpay_sub_state_idx')]
+
+    def __str__(self):
+        return f'{self.razorpay_subscription_id} ({self.state})'
 
 
 class SubscriptionPayment(TenantModelMixin):

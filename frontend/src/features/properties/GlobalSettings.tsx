@@ -18,6 +18,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { getCurrentUser, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
+import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -474,22 +475,7 @@ export function GlobalSettings() {
       )}
 
       {/* 3. Plan & Subscription Tab */}
-      {/* Not yet wired to the Subscriptions API (FE-13, not started) — this
-          used to show fabricated plan/pricing/invoice data that didn't match
-          any real plan or backend record. Placeholder until that ships. */}
-      {activeTab === "subscription" && (
-        <div className="grid grid-cols-1 gap-6 animate-fade-in">
-          <div className="bg-surface-card border border-border rounded-2xl p-8 shadow-sm text-center space-y-3">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted">
-              <CreditCard className="size-6" />
-            </div>
-            <h3 className="text-sm font-bold text-ink">{t("subscription.comingSoonTitle")}</h3>
-            <p className="text-xs text-ink-muted max-w-md mx-auto leading-relaxed">
-              {t("subscription.comingSoonBody")}
-            </p>
-          </div>
-        </div>
-      )}
+      {activeTab === "subscription" && <SubscriptionPanel />}
     </div>
   );
 }

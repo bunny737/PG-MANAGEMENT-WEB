@@ -56,7 +56,7 @@ Table: audit_logs                   (RLS ENFORCED — first RLS table)
   before jsonb · after jsonb · ip_address · created_at
 
 Table: platform_config              (singleton, id=1)
-  trial_days (default 60) · payment_grace_days (default 5) · updated_at
+  trial_days (default 45; PRD says 60, owner changed it 2026-10-18) · payment_grace_days (default 5) · updated_at
   trial_reminder_first_days_before (default 15)   -- added by Module 14
   trial_reminder_second_days_before (default 5)   -- added by Module 14
 ```

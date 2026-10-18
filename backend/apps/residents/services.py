@@ -163,8 +163,8 @@ def lock_resident(resident):
 
     `of=('self',)`: lock only the residents row. The callers' querysets
     select_related nullable admission/allocation joins, and PostgreSQL refuses
-    FOR UPDATE on the nullable side of an outer join — same reason
-    subscriptions.services._subscription_for_limit_check narrows its lock.
+    FOR UPDATE on the nullable side of an outer join — the same reason
+    subscriptions.services._subscription_for_limit_check locks a join-free row.
 
     Used by the services in this module, ResidentViewSet.change_status and
     AdmissionViewSet.perform_create. Admission once locked Bed -> Subscription

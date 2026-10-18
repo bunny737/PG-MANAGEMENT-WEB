@@ -37,7 +37,7 @@ class PlatformConfig(models.Model):
     Per-plan caps (properties, residents) are added by Module 13 on the Plan model.
     """
 
-    trial_days = models.PositiveIntegerField(default=60)
+    trial_days = models.PositiveIntegerField(default=45)
     payment_grace_days = models.PositiveIntegerField(default=5)
     # Module 14: how many days before trial_ends_at to send each reminder
     # (PRD example: Day 45/55 of a 60-day trial == 15/5 days before expiry).

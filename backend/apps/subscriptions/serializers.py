@@ -1,9 +1,10 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.properties.models import Property
 from apps.residents.models import Resident
 
-from . import services
+from . import razorpay_client, services
 from .models import Plan, PlanBedTier, Subscription, SubscriptionInvoice, SubscriptionInvoiceLine
 
 
@@ -20,10 +21,13 @@ class PlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = Plan
         fields = [
-            'id', 'name', 'pricing_type', 'max_properties', 'max_residents_per_property',
+            'id', 'name', 'pricing_type', 'max_properties', 'max_residents_per_property', 'max_beds',
             'price_per_month', 'bed_tiers', 'is_trial_plan', 'is_active', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+        # Plan.save() moves the trial flag, so a second trial plan is a hand-over,
+        # not a uniqueness conflict (DRF would otherwise reject it).
+        extra_kwargs = {'is_trial_plan': {'validators': []}}
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -33,25 +37,34 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     (PRD §4: 'checked per property, not across all properties combined')."""
 
     plan = PlanSerializer(read_only=True)
+    # A plan chosen but not yet paid for; `plan` and every limit stay as they were until then.
+    pending_plan = PlanSerializer(read_only=True)
     tenant_status = serializers.CharField(source='tenant.status', read_only=True)
     trial_ends_at = serializers.DateTimeField(source='tenant.trial_ends_at', read_only=True)
     properties_used = serializers.SerializerMethodField()
     max_properties = serializers.SerializerMethodField()
     max_residents_per_property = serializers.SerializerMethodField()
+    max_beds = serializers.SerializerMethodField()
     property_usage = serializers.SerializerMethodField()
     bed_count = serializers.SerializerMethodField()
     current_cycle_estimate = serializers.SerializerMethodField()
+    razorpay_key_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
         fields = [
-            'id', 'tenant', 'plan', 'tenant_status', 'trial_ends_at',
-            'razorpay_subscription_id', 'current_period_start', 'current_period_end',
-            'payment_failed_at', 'max_properties_override', 'max_residents_override',
+            'id', 'tenant', 'plan', 'pending_plan', 'tenant_status', 'trial_ends_at',
+            'razorpay_subscription_id', 'pending_razorpay_subscription_id', 'razorpay_key_id', 'current_period_start', 'current_period_end',
+            'payment_failed_at', 'max_properties_override', 'max_residents_override', 'max_beds_override',
             'properties_used', 'max_properties', 'max_residents_per_property', 'property_usage',
-            'bed_count', 'current_cycle_estimate', 'created_at', 'updated_at',
+            'bed_count', 'max_beds', 'current_cycle_estimate', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_razorpay_key_id(self, obj) -> str:
+        # The public key id (never the secret) the browser needs to open Checkout;
+        # blank when Razorpay isn't configured, which the UI reads as "no payments here".
+        return settings.RAZORPAY_KEY_ID if razorpay_client.is_configured() else ''
 
     def get_properties_used(self, obj) -> int:
         if hasattr(obj, 'annotated_properties_used'):
@@ -71,6 +84,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     def get_max_residents_per_property(self, obj):
         return obj.effective_max_residents_per_property()
+
+    def get_max_beds(self, obj) -> int | None:
+        return obj.effective_max_beds()
 
     def get_property_usage(self, obj):
         max_residents = obj.effective_max_residents_per_property()
@@ -98,6 +114,7 @@ class OverrideLimitsSerializer(serializers.Serializer):
 
     max_properties_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     max_residents_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    max_beds_override = serializers.IntegerField(required=False, allow_null=True, min_value=0)
 
 
 class SubscriptionInvoiceLineSerializer(serializers.ModelSerializer):

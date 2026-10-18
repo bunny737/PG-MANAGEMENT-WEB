@@ -1920,8 +1920,49 @@ msgstr ""
 
 #: apps/subscriptions/models.py:76
 msgid ""
-"Per-bed plans cannot also cap properties or residents — billing is already "
-"usage-based."
+"Per-bed plans cannot also cap properties, residents or beds — billing is "
+"already usage-based."
+msgstr ""
+
+#: apps/subscriptions/services.py
+msgid "This plan is no longer available."
+msgstr ""
+
+#: apps/subscriptions/services.py
+msgid "You are already on this plan."
+msgstr ""
+
+#: apps/subscriptions/models.py
+msgid ""
+"Tenants are using this plan. Create a new plan and retire this one to change "
+"its pricing."
+msgstr ""
+
+#: apps/subscriptions/models.py
+msgid ""
+"The trial plan must stay active. Mark another plan as the trial plan first."
+msgstr ""
+
+#: apps/subscriptions/models.py
+msgid "A trial plan is required. Mark another plan as the trial plan first."
+msgstr ""
+
+#: apps/subscriptions/services.py
+#, python-format
+msgid "Your plan allows a maximum of %(max)s beds. Upgrade to add more."
+msgstr ""
+
+#: apps/subscriptions/services.py
+#, python-format
+msgid ""
+"You have %(count)s beds, but this plan allows %(max)s. Remove beds or choose "
+"a larger plan."
+msgstr ""
+
+#: apps/subscriptions/views.py
+msgid ""
+"This plan is live or is the trial plan, so it cannot be deleted. Retire it by "
+"marking it inactive instead."
 msgstr ""
 
 #: apps/subscriptions/models.py:83

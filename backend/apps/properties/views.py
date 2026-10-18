@@ -16,7 +16,7 @@ from apps.core.exceptions import Conflict
 from apps.core.periods import local_today, month_start, parse_month
 from apps.core.permissions import require_any_permission, require_permission
 from apps.core.roles import Role, permissions_for
-from apps.subscriptions.services import check_property_limit
+from apps.subscriptions.services import check_bed_limit, check_property_limit
 
 from . import feature_services, services
 from .layout import build_layout
@@ -424,7 +424,10 @@ class RoomViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Room.objects.filter(floor__building__property_id__in=ids).select_related('floor__building')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        if serializer.validated_data.get('auto_create_beds'):
+            check_bed_limit(self.request.user.tenant_id, adding=serializer.validated_data['sharing_type'])
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):
@@ -452,7 +455,9 @@ class BedViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Bed.objects.filter(room__floor__building__property_id__in=ids).select_related('room')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        check_bed_limit(self.request.user.tenant_id)
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):

@@ -38,8 +38,11 @@ Table: plans                                    (NOT under RLS — platform cata
   pricing_type          flat_monthly | per_bed_monthly, default flat_monthly
   max_properties        int, null                (null = Unlimited; PER_BED_MONTHLY plans must be null — no cap, usage-based)
   max_residents_per_property  int, null           (null = Unlimited; same PER_BED_MONTHLY constraint)
+  max_beds              int, null                (null = Unlimited; total provisioned beds across the tenant;
+                                                  PER_BED_MONTHLY plans must be null)
   price_per_month       decimal(10,2), null       (null for PER_BED_MONTHLY — see plan_bed_tiers)
-  is_trial_plan         bool, default False       (which plan's limits a trial tenant borrows)
+  is_trial_plan         bool, default False       (which plan's limits a trial tenant borrows;
+                                                  partial unique constraint single_trial_plan: at most one True)
   is_active             bool, default True        (retire without deleting)
   razorpay_plan_id       varchar(100), blank       (lazily created on first select_plan; FLAT_MONTHLY only)
   created_at / updated_at
@@ -55,13 +58,28 @@ Table: subscriptions                            (NOT under RLS — see Decisions
   id                    uuid PK
   tenant                OneToOne -> accounts.Tenant (CASCADE)
   plan                  FK -> plans (PROTECT), null   (null = trial, no plan chosen)
-  razorpay_subscription_id  varchar(100), blank
+  razorpay_subscription_id  varchar(100), blank   (the CURRENT paid subscription; webhooks look it up)
+  pending_plan          FK -> plans (PROTECT), null (a flat plan chosen but not yet paid; limits don't use it)
+  pending_razorpay_subscription_id  varchar(100), blank  (promoted into the two fields above on first charge — rule 26)
   razorpay_customer_id      varchar(100), blank
   current_period_start / current_period_end   date, null
   payment_failed_at     datetime, null          (start of the 5-day grace period)
   max_properties_override    int, null          (Super Admin manual override)
   max_residents_override     int, null
+  max_beds_override          int, null
   created_at / updated_at
+
+Table: razorpay_subscriptions                   (NOT under RLS, like subscriptions — the webhook reading it is unauthenticated)
+  id                    uuid PK
+  subscription          FK -> subscriptions (CASCADE)
+  plan                  FK -> plans (PROTECT)
+  razorpay_subscription_id  varchar(100), UNIQUE
+  state                 pending | current | replaced | abandoned | cancelling | cancelled   (see rule 27)
+  cancel_from           varchar(10), blank   (REPLACED/ABANDONED: where a failed cancel returns to)
+  cancel_attempts int · last_cancel_error text · last_cancel_attempt_at · cancelled_at
+  index(state)
+  -- Every Razorpay subscription we create. subscriptions.razorpay_subscription_id /
+  -- pending_* remain as "which is live / which is newest"; this is the reconciliation record.
 
 Table: subscription_payments                    (RLS enforced, app: apps.subscriptions)
   id                    uuid PK
@@ -114,7 +132,7 @@ Table: subscription_invoice_lines               (RLS enforced, app: apps.subscri
 ```
 GET|POST    /api/v1/plans/                              list (active-only for tenants) / create   manage_subscription (read) / Super Admin (write)
 GET|PATCH|DELETE /api/v1/plans/{id}/                     retrieve/edit/retire (blocked if in use)   Super Admin
-GET         /api/v1/subscriptions/{tenant_id}/           plan + usage summary                       manage_subscription
+GET         /api/v1/subscriptions/{tenant_id}/           plan + usage summary (+ razorpay_key_id, the public key Checkout needs; blank when Razorpay isn't configured)   manage_subscription
 POST        /api/v1/subscriptions/{tenant_id}/select-plan/   pick/change plan (Razorpay subscription created)  manage_subscription
 PATCH       /api/v1/subscriptions/{tenant_id}/override-limits/  manual per-tenant override           Super Admin
 POST        /api/v1/subscriptions/{tenant_id}/suspend/        manual suspend                          Super Admin
@@ -148,9 +166,12 @@ frontend always reaches a tenant's subscription via
    plan (only while `Tenant.status == TRIAL` and no plan is set) → `None`
    (unlimited).
 5. **Select plan** (`POST .../select-plan/`) lazily creates the Razorpay
-   plan (first tenant to pick it) and always creates a fresh Razorpay
-   subscription, storing both ids. It does **not** itself flip the tenant
-   to `active` — only a webhook-confirmed charge does (see Decisions).
+   plan (first tenant to pick it) and a fresh Razorpay subscription, and
+   records them as **`pending_plan` / `pending_razorpay_subscription_id`**.
+   The tenant's `plan`, its limits and `razorpay_subscription_id` do not move,
+   and the tenant is not flipped to `active` — only a webhook-confirmed charge
+   on the pending subscription does all of that (rule 26). Choosing the plan
+   an `active` tenant is already on is `plan_unchanged`.
 6. **Webhook** (`POST /subscriptions/webhook/`) maps Razorpay events to
    tenant status: `subscription.activated`/`subscription.charged` → `active`
    (+ `SubscriptionPayment` success, period dates set, `payment_failed_at`
@@ -170,8 +191,10 @@ frontend always reaches a tenant's subscription via
    already-suspended tenant (`already_suspended`); `reactivate` requires the
    tenant currently be `suspended` or `payment_failed`
    (`tenant_not_suspended`) and always lands on `active`.
-10. A Plan with any `Subscription` referencing it cannot be deleted
-    (`plan_in_use`) — retire it (`is_active=False`) instead.
+10. A **locked** plan (it has a `razorpay_plan_id` or any `Subscription`
+    referencing it) and the trial plan cannot be deleted (`plan_in_use`; the
+    admin hides delete and bulk delete for them) — retire it
+    (`is_active=False`) instead. See rule 23.
 11. Plan selection, override, suspend, reactivate, and every tenant status
     change (webhook- or command-driven) are audit logged.
 12. `manage_subscription` (Super Admin, Owner) gates the tenant-facing
@@ -220,6 +243,106 @@ frontend always reaches a tenant's subscription via
     idempotent on `razorpay_payment_id` — a replayed webhook can no longer
     create a duplicate `SubscriptionPayment` (this was a pre-existing gap,
     fixed in the same change that added the second event family).
+21. **Bed hard block** (`check_bed_limit`, hooked into
+    `BedViewSet.perform_create` and `RoomViewSet.perform_create` when
+    `auto_create_beds` is set, which checks `adding=sharing_type` so a room
+    is created with all its beds or not at all): rejected
+    (`bed_limit_reached`) once the tenant's total `Bed` count (provisioned,
+    not occupied — rule 14's basis) would exceed `effective_max_beds()`.
+    Resolves like rule 4 (override → plan → trial plan → unlimited).
+    `max_beds` applies to FLAT_MONTHLY plans only; a PER_BED_MONTHLY plan
+    must leave it null.
+22. **Plan selection checks beds first.** `select_plan` re-reads the
+    subscription under the same row lock the limit checks take, and rejects a
+    plan whose `max_beds` is below the tenant's current bed count
+    (`plan_bed_limit_exceeded`) **before any Razorpay call**. This is an
+    up-front refusal, not the enforcement point: a flat plan only takes effect
+    at payment (rule 26), by which time the tenant may have grown past the cap.
+    That is accepted (rule 26), and `check_bed_limit` then simply blocks
+    further beds.
+23. **A locked plan's pricing is frozen.** Once a plan has a
+    `razorpay_plan_id` or any subscriber, `price_per_month`, `pricing_type`
+    and (for per-bed plans) its `PlanBedTier` rows reject changes
+    (`plan_pricing_locked`; both the admin tier inline **and** the standalone
+    `PlanBedTierAdmin` turn read-only and lose bulk delete, since deletes skip
+    `clean()` and dropping the open-ended tier breaks pricing for every tenant
+    on the plan). To reprice, create a new plan and retire the old one.
+    `max_beds`, `name` and `is_active` stay editable.
+    The plan API also enforces the pricing invariants `Plan.clean()` holds for
+    the admin (`validate_pricing_invariants`: flat needs a price and no tiers;
+    per-bed can't cap properties/residents/beds), because DRF never calls
+    `clean()` — a capped per-bed plan is `plan_per_bed_capped`.
+    Plan create/update/delete run in a transaction that **locks the Plan row
+    first**, as does `select_plan` after locking the Subscription, so a
+    reprice can't land between "no subscribers" and a tenant picking the plan
+    (the Razorpay plan would keep the old price). Lock order is always
+    Subscription → Plan; `PlanRepriceRaceTests` fails without the plan lock.
+    The Django admin takes the same lock: `PlanAdmin.get_object` and
+    `PlanBedTierAdmin.get_object` lock the parent Plan and then re-read, so form
+    validation and save both run under it, and `PlanBedTierAdmin.save_model`
+    re-checks a tier's target plan before writing (adding a tier has no object to
+    lock earlier). `razorpay_plan_id` is read-only there: it is set by
+    `select_plan`, and an editable copy would let a form opened before a tenant
+    picked the plan blank the link on an unrelated save
+    (`AdminRepriceRaceTests`).
+24. **Exactly one trial plan.** Saving a plan with `is_trial_plan=True` moves
+    the flag off every other plan in the same transaction; the current trial
+    plan can't be un-flagged or retired (`trial_plan_required`) — hand the
+    flag to another plan first. `single_trial_plan` is the database backstop.
+25. **Launch lineup (data, seeded by migration 0006):** Basic — flat ₹149/month,
+    `max_beds=500`, the trial plan; Unlimited — flat ₹249/month,
+    `max_beds=null`. Properties and residents are uncapped on both. The trial
+    is 45 days (`PlatformConfig.trial_days`).
+26. **A flat plan change is pending until paid, then promoted.** The first
+    `subscription.activated`/`charged` webhook on a pending Razorpay
+    subscription (`_promote_ledger_row`, under the Subscription lock) makes its
+    plan the tenant's `plan`, moves its id to `razorpay_subscription_id`,
+    activates the tenant as in rule 6, audits `subscription.plan_changed`, and
+    queues the subscription it replaces for cancellation (rule 27). If the
+    tenant outgrew the new plan's bed cap in the meantime it is still applied
+    (they paid; beds are never removed) and audited as
+    `subscription.promoted_over_bed_limit`.
+27. **Every Razorpay subscription is tracked in `razorpay_subscriptions` until it
+    is terminal, so nothing is ever ignored as "unknown" and no cancellation is
+    ever forgotten.** Webhooks are asynchronous, so these orderings are expected:
+    - *A payment lands on a choice the tenant has since superseded* (ABANDONED):
+      it is **honoured** — they paid for that plan, so it is promoted exactly as
+      above. The newest choice stays pending and can still be paid; whichever is
+      paid last wins, each payment replacing the previous live subscription.
+    - *A charge lands on a subscription we already replaced* (REPLACED — a renewal
+      that raced the cancel): the plan does not change. The charge is recorded as a
+      `SubscriptionPayment` and audited `subscription.payment_needs_refund`
+      (once, replays included) for ops to refund; **refunds are not automated.**
+    - *`cancelled`/`halted` for a non-live subscription* confirms it finished
+      (row → CANCELLED) and never touches the tenant's status; `payment.failed`
+      on one is ignored. Only the live subscription drives status (rule 6).
+    **A subscription being cancelled can't be promoted.** A cancelled Razorpay
+    subscription never restarts, and the worker calls Razorpay with no database lock
+    held, so it first *claims* the row with one conditional UPDATE to CANCELLING
+    (`_claim_for_cancel`, `cancel_from` remembers where it came from). Webhooks only
+    promote PENDING/ABANDONED rows, so the claim decides the race: a payment that
+    arrives before the claim promotes the row and the worker stands down; one that
+    arrives after is recorded and flagged `subscription.payment_needs_refund`, never
+    promoted. The final update must find the row still CANCELLING; if the ledger has
+    changed otherwise it is a conflict (audited `subscription.cancel_conflict`,
+    reported as failed), not a success. A claim whose worker died is taken over after
+    15 minutes. **A payment id is decided once.** A charge whose `razorpay_payment_id`
+    is already recorded is a replay and changes nothing — checked before any promotion,
+    so a payment flagged for refund under a claim cannot promote the row when a failed
+    cancel later returns it to ABANDONED and Razorpay redelivers the webhook.
+    **Cancellation is a retried queue, not a one-shot.** Replacing or abandoning a
+    subscription marks its row REPLACED/ABANDONED in the same transaction as the
+    plan change; `process_razorpay_cancellations` then runs right after commit and
+    every 10 minutes (`retry_razorpay_cancellations`, a django-celery-beat task
+    seeded by migration 0010, retimeable in admin) until Razorpay confirms. A cancel
+    that errors is treated as done if Razorpay reports the subscription
+    cancelled/completed/expired; otherwise `cancel_attempts` / `last_cancel_error`
+    are updated and it stays queued (audited as `subscription.razorpay_cancel_failed`
+    on the 1st, 10th and 50th failed attempt only). Nothing remote is ever done
+    *before* the local writes — a cancel can't be rolled back if a later local
+    write fails — so switching to a per-bed plan writes locally first and cancels
+    the old flat subscription afterwards; during an outage the tenant is on the
+    new plan while the old one is still being cancelled.
 
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
@@ -423,8 +546,117 @@ frontend always reaches a tenant's subscription via
   `ResidentViewSet.change_status` were wrapped in `transaction.atomic` so the
   lock is held through the insert; `AdmissionViewSet.perform_create` already
   was.
+- [DECISION 2026-10-18] **Bed cap on flat plans.** Owner asked for a ₹149/month
+  Basic plan up to 500 beds and a ₹249/month Unlimited plan above that, with
+  beds as the only limit. New `Plan.max_beds` / `Subscription.max_beds_override`,
+  enforced by `check_bed_limit` at both bed-creation sites. It counts
+  provisioned beds (rule 14's basis), not occupied ones, so the cap and a
+  per-bed bill agree on what a "bed" is. A cap on PER_BED_MONTHLY plans is
+  rejected: usage-based billing stays uncapped.
+- [DECISION 2026-10-18] **The limit-check lock is now join-free.**
+  `_subscription_for_limit_check` used `select_for_update(of=('self',))` with
+  `select_related('plan', 'tenant')`. When the lock waits on a concurrent plan
+  change, PostgreSQL re-checks only the locked row, so the already-fetched plan
+  could be pre-commit and a limit check could pass against stale limits. It
+  now locks the bare subscription row and loads plan/tenant afterwards. Covers
+  the property/resident checks too. Verified by removing the lock and watching
+  `test_bed_limit_concurrency` fail.
+- [DECISION 2026-10-18] **Downgrades are checked against current beds, under
+  the lock.** Without that, "plan allows 500" could be defeated by selecting
+  Basic while a tenant holds 600 beds, or by racing a bed create against the
+  switch. The check runs before any Razorpay call so a refused switch has no
+  external side effects.
+- [DECISION 2026-10-18] **Live plans are immutable in price; they are retired,
+  not edited or deleted.** Razorpay can't reprice an existing plan, and
+  `select_plan` only creates the Razorpay plan when `razorpay_plan_id` is empty,
+  so editing `price_per_month` afterwards would make the database show one
+  price while customers pay another. "Locked" means a Razorpay ID **or** any
+  subscriber (per-bed plans never get a Razorpay ID). The admin and API both
+  enforce it; tier-inline deletes skip `clean()`, so admin *permissions* are what
+  block them, and bulk delete is removed. `max_beds`, `name` and `is_active`
+  stay editable: they're entitlements/labels, not what Razorpay charges.
+- [DECISION 2026-10-18] **One trial plan, always.** The flag moves on save, the
+  current trial plan can't be cleared or retired, and a partial unique
+  constraint backs it. Without that, an admin un-flagging Basic would silently
+  make every trial tenant unlimited (`effective_plan()` returns `None`). The
+  one remaining path to "none" is faking the seed migration. The DRF serializer
+  drops the auto-generated uniqueness validator for `is_trial_plan` because
+  hand-over, not rejection, is the intended behaviour; plan-protection errors
+  are raised from the viewset (a serializer `validate()` loses the error code).
+- [DECISION 2026-10-18] **Seed migration 0006 is strict and one-way.** Fixed UUIDs
+  for Basic/Unlimited; a re-run accepts rows that match exactly, and aborts
+  with a clear message on a UUID holding other data or a different plan using
+  the name — it never overwrites or merges. Reverse is a no-op: deleting plans
+  would fail once tenants subscribe (PROTECT), and restoring `trial_days`
+  would clobber later Super Admin edits. The trial changes 60 → 45 days (owner
+  decision; the PRD still says 60). Existing tenants keep their `trial_ends_at`.
+- [DECISION 2026-10-18] **Frontend room creation is atomic.** `AddRoomForm`
+  created the room, then one `POST /beds/` per bed in parallel; near the cap
+  that could leave a room with only some of its beds. It now sends
+  `auto_create_beds: true` and reads the beds from the response.
+
+- [DECISION 2026-10-18] **The owner plan screen (FE-13, partial) pays through
+  Razorpay Checkout using a key id served by the API.** `SubscriptionSerializer`
+  gained `razorpay_key_id` (the *public* key id, blank unless both Razorpay
+  credentials are configured) instead of a `NEXT_PUBLIC_*` env var, so the
+  browser can't be configured with a key from a different Razorpay account than
+  the one that created the subscription. After selecting a flat plan the UI
+  opens Checkout for `pending_razorpay_subscription_id`, then polls the
+  subscription (6 × 2 s) and reports success only once `plan` is the plan it
+  waited for and `pending_plan` is clear — "active" alone proves nothing for a
+  tenant already paying on another plan. A closed popup leaves a "Payment
+  pending" banner with a Pay now button (any tenant with a pending plan), and
+  the current plan keeps showing as current. Per-bed plans activate on
+  selection (rule 19) and never open Checkout. Not built: billing history, the
+  suspension lock screen, the Super Admin portal.
+- [DECISION 2026-10-18] **Flat plan changes are pending until paid (owner choice
+  after review).** Originally `select_plan` swapped `plan` and
+  `razorpay_subscription_id` immediately. That let a tenant keep an unpaid
+  upgrade by closing Checkout, left the old Razorpay subscription charging, and
+  (switching to per-bed) orphaned it so its webhooks matched nothing. The
+  alternative considered was rejecting changes for active subscribers; that was
+  declined because it would stop paying tenants upgrading in the app. Applies
+  to every flat selection, trial tenants included (they previously got the
+  chosen plan's limits before paying). Judgement calls, not specified by the
+  PRD: the old subscription is cancelled *immediately* when the new one is paid
+  (no proration or refund, no cancel-at-cycle-end overlap); a plan paid for after
+  the tenant outgrew its cap is applied anyway. Not exercised against real
+  Razorpay (stubbed locally): `subscription.cancel(id, {'cancel_at_cycle_end': 0})`
+  is called per Razorpay's documented API and mocked in tests. The earlier
+  downgrade-vs-bed-create race test no longer applies (the plan doesn't change
+  at selection) and was replaced by one asserting selection leaves limits alone.
+- [DECISION 2026-10-18] **A durable ledger (`razorpay_subscriptions`) replaces the
+  single pending id (owner-requested follow-up to a second review).** The first
+  pending-plan design forgot a superseded pending id the moment a newer plan was
+  chosen, so a payment for it landing late was dropped (money taken, no plan, no
+  record), and a failed cancel was logged once and never retried. It also
+  cancelled the old flat subscription *before* the per-bed local writes, which a
+  later failure cannot undo. Judgement calls the PRD doesn't cover: a late payment
+  on an abandoned choice is **honoured** rather than refunded (the tenant paid for
+  that plan; refunding would need a Razorpay refund call I can't verify here); a
+  renewal on an already-replaced subscription **is** flagged for manual refund
+  (`subscription.payment_needs_refund`), because honouring it would mean two
+  live plans. `fetch_razorpay_subscription_status` (Razorpay's subscription fetch,
+  `status` field) is used to treat "cancel failed because it is already finished"
+  as success; like `cancel`, it is mocked in tests and unverified against real
+  Razorpay. Existing live/pending subscriptions are backfilled by migration 0009.
+  A third review found the honour-a-late-payment rule raced the cancel worker (it
+  could promote a subscription the worker had just cancelled remotely); the CANCELLING
+  claim above closes it. Trade-off: a payment that genuinely succeeded before the
+  claim but whose webhook is delayed past it is flagged for refund rather than
+  honoured, so ops must refund it — chosen over provisioning the tenant on a
+  subscription that may already be cancelled. A fourth review found the flagged
+  payment could still promote the row on a webhook *replay* after a failed cancel
+  restored ABANDONED; payment-id idempotency is now checked before promotion
+  (`_reconcile_non_current_event`). A genuinely new payment id on a restored ABANDONED
+  row is still honoured — it is a new charge, not the one ops was told to refund.
 
 ## Changelog
+- 2026-10-18  Basic (₹149, 500 beds, trial) + Unlimited (₹249) launch plans,
+  `max_beds` cap, 45-day trial, live-plan price lock, single trial plan; see
+  rules 21-25 and the Decisions above. Backend tests added in
+  `test_bed_limits`, `test_plan_protection`, `test_bed_limit_concurrency`,
+  `test_seed_migration` (+ override and signup cases).
 - 2026-06-xx  Created stub.
 - 2026-07-04  Built: `Plan` (platform catalog) + `Subscription` (1:1 per
   tenant, deliberately outside RLS) + `SubscriptionPayment` (RLS) in

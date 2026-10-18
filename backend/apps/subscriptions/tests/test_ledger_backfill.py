@@ -23,8 +23,11 @@ class LedgerBackfillTests(TransactionTestCase):
         super().setUp()
         self.executor = MigrationExecutor(connection)
         self.executor.loader.build_graph()
-        self.executor.migrate(BEFORE)
-        self.old_apps = self.executor.loader.project_state(BEFORE).apps
+        # Only subscriptions is rolled back; accounts stays at its latest migration so the
+        # historical Tenant model matches the columns that really exist (e.g. NOT NULL ones).
+        self.before = BEFORE + self.executor.loader.graph.leaf_nodes('accounts')
+        self.executor.migrate(self.before)
+        self.old_apps = self.executor.loader.project_state(self.before).apps
         self.created = []
 
     def tearDown(self):

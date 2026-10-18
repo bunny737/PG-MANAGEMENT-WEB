@@ -1,2 +1,7 @@
 from django.urls import path
-urlpatterns = []   # populated module by module
+
+from .views import SupportContactView
+
+urlpatterns = [
+    path('support/', SupportContactView.as_view(), name='support-contact'),
+]

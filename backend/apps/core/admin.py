@@ -11,6 +11,8 @@ class PlatformConfigAdmin(admin.ModelAdmin):
         'trial_reminder_first_days_before',
         'trial_reminder_second_days_before',
         'min_billable_amount',
+        'support_email',
+        'support_phone',
         'updated_at',
     )
     readonly_fields = ('updated_at',)

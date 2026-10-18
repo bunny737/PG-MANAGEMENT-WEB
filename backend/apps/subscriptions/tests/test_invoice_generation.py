@@ -100,8 +100,19 @@ class GenerateInvoiceForSubscriptionTests(SubscriptionAPITestCase):
         self.assertEqual(invoice.total_amount, Decimal('0.00'))
         self.assertEqual(invoice.razorpay_invoice_id, '')
 
-    def test_billable_cycle_is_issued_with_a_razorpay_invoice_id(self):
-        invoice = generate_invoice_for_subscription(self.subscription, today=date(2026, 8, 1))
+    def test_billable_cycle_is_saved_as_a_draft_and_issued_once_it_commits(self):
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            invoice = generate_invoice_for_subscription(self.subscription, today=date(2026, 8, 1))
+        # Nothing has been sent to Razorpay yet: the invoice waits for the commit.
+        with tenant_context(self.tenant.id):
+            invoice.refresh_from_db()
+        self.assertEqual(invoice.status, SubscriptionInvoice.Status.DRAFT)
+        self.assertEqual(invoice.razorpay_invoice_id, '')
+
+        for callback in callbacks:
+            callback()
+        with tenant_context(self.tenant.id):
+            invoice.refresh_from_db()
         self.assertEqual(invoice.status, SubscriptionInvoice.Status.ISSUED)
         self.assertNotEqual(invoice.razorpay_invoice_id, '')
 

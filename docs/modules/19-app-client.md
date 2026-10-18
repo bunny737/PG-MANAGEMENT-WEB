@@ -173,7 +173,7 @@ device's syncs.
    - maintenance active → `503 {"detail","code":"MAINTENANCE","message","expires_at"}` (+ `Retry-After`)
    - `X-App-Build < min_build` → `426 {"detail","code":"APP_UPDATE_REQUIRED","min_supported_build","store_url"}`
    - `log` mode logs "would block" warnings only.
-4. Exempt: `/api/v1/app/version-policy/`, `/api/v1/devices/`, `/admin/`,
+4. Exempt: `/api/v1/app/version-policy/`, `/api/v1/devices/`, `/api/v1/support/` (Module 01), `/admin/`,
    `/static/`, `/media/`, `/health*`, plus `APP_VERSION_EXEMPT_PREFIXES`.
    Login/OTP/refresh are **not** exempt.
 5. Requests with no usable `X-App-Platform` are never blocked (web, Postman, admin).

@@ -29,6 +29,7 @@ BYPASS_HEADER = 'HTTP_X_MAINTENANCE_BYPASS'
 EXEMPT_PREFIXES = (
     '/api/v1/app/version-policy/',
     '/api/v1/devices/',
+    '/api/v1/support/',
     '/admin/',
     '/static/',
     '/media/',

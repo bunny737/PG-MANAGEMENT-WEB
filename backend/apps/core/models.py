@@ -1,4 +1,11 @@
+from django.core.validators import RegexValidator
 from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+SUPPORT_NUMBER_VALIDATOR = RegexValidator(
+    r'^[0-9]{8,15}$',
+    _('Enter digits only, including the country code (for example 919876543210).'),
+)
 
 
 class TenantQuerySet(models.QuerySet):
@@ -53,6 +60,14 @@ class PlatformConfig(models.Model):
     # many days away (or already passed but not yet overdue) shows as "due"
     # rather than "upcoming" on the bed grid.
     payment_due_soon_days = models.PositiveIntegerField(default=7)
+    # Platform support contacts shown to every client (GET /support/). Blank =
+    # channel not offered. Phone/WhatsApp are digits with country code, no '+'
+    # (wa.me form), so 1800 toll-free numbers are allowed too.
+    support_email = models.EmailField(blank=True, default='')
+    support_phone = models.CharField(max_length=15, blank=True, default='', validators=[SUPPORT_NUMBER_VALIDATOR])
+    support_whatsapp = models.CharField(max_length=15, blank=True, default='', validators=[SUPPORT_NUMBER_VALIDATOR])
+    support_website = models.URLField(blank=True, default='')
+    support_hours = models.CharField(max_length=120, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

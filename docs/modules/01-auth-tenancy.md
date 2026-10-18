@@ -59,6 +59,7 @@ Table: platform_config              (singleton, id=1)
   trial_days (default 45; PRD says 60, owner changed it 2026-10-18) · payment_grace_days (default 5) · updated_at
   trial_reminder_first_days_before (default 15)   -- added by Module 14
   trial_reminder_second_days_before (default 5)   -- added by Module 14
+  support_email · support_phone · support_whatsapp · support_website · support_hours  -- blank = channel not offered
 ```
 
 ### RLS infrastructure (apps/core/)
@@ -88,6 +89,7 @@ POST /api/v1/auth/otp/verify/              phone+code → JWT pair           All
 POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
 POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
+GET /api/v1/support/                       platform support contacts       AllowAny (public, cached 5 min)
 GET|PATCH /api/v1/tenants/current/           detail/update tenant default    manage_tenant_settings
 GET|POST /api/v1/staff/                    list/create Manager|Receptionist  manage_staff_accounts
 GET|PATCH /api/v1/staff/{id}/              detail/update/deactivate          manage_staff_accounts
@@ -358,3 +360,12 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
     `core.idempotency` (`Idempotency-Key` header), `core.periods` (months in
     the product timezone; `local_today()` replaces the container-clock
     `date.today()` in new code).
+- 2026-10-18  Platform support contacts: `PlatformConfig.support_email|support_phone|support_whatsapp|
+  support_website|support_hours` (all blank by default, `core.0006`), edited by a Super Admin in Django
+  admin. `GET /api/v1/support/` (public, no auth, `Cache-Control: public, max-age=300`) returns
+  `{email, phone, whatsapp, whatsapp_url, website, hours}`; unset channels are `null`; `whatsapp_url` is
+  `https://wa.me/<whatsapp>`. Phone/WhatsApp are digits with country code and no `+` (8–15 digits, admin
+  validated) so toll-free numbers work. The endpoint is exempt from the app-client 426/503 gate
+  (`devices.middleware.EXEMPT_PREFIXES`) so an outdated build or a maintenance window can still show it.
+  Read with `filter(pk=1).first()`, never `PlatformConfig.get()`, so a public GET never writes.
+  Tests: `apps/core/test_support.py`. These are platform-wide contacts, not per-property/PG contacts.

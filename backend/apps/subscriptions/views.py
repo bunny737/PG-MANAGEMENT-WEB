@@ -1,6 +1,7 @@
 import copy
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
@@ -49,7 +50,7 @@ class PlanViewSet(viewsets.ModelViewSet):
             return Plan.objects.prefetch_related('bed_tiers').all()
         return Plan.objects.prefetch_related('bed_tiers').filter(is_active=True)
 
-    def _enforce_plan_protection(self, serializer):
+    def _enforce_plan_rules(self, serializer):
         # Plan.clean() never runs on DRF saves; raised here (not in the
         # serializer) so the machine-readable code reaches the client.
         candidate = copy.copy(serializer.instance) if serializer.instance is not None else Plan()
@@ -57,19 +58,28 @@ class PlanViewSet(viewsets.ModelViewSet):
             setattr(candidate, field, value)
         try:
             candidate.validate_protected_changes()
+            candidate.validate_pricing_invariants()
         except DjangoValidationError as exc:
-            error = next(iter(exc.error_dict.values()))[0]
-            raise ValidationError({'detail': error.messages[0]}, code=error.code)
+            errors = next(iter(exc.error_dict.values())) if hasattr(exc, 'error_dict') else exc.error_list
+            raise ValidationError({'detail': errors[0].messages[0]}, code=errors[0].code)
 
+    # The plan row is locked before the checks, so select_plan (which locks the
+    # same row) can't attach a subscriber or a Razorpay price between check and
+    # save. Lock order everywhere: Subscription -> Plan.
+    @transaction.atomic
     def perform_create(self, serializer):
-        self._enforce_plan_protection(serializer)
+        self._enforce_plan_rules(serializer)
         serializer.save()
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        self._enforce_plan_protection(serializer)
+        serializer.instance = Plan.objects.select_for_update().get(pk=serializer.instance.pk)
+        self._enforce_plan_rules(serializer)
         serializer.save()
 
+    @transaction.atomic
     def perform_destroy(self, instance):
+        instance = Plan.objects.select_for_update().get(pk=instance.pk)
         if not instance.is_deletable():
             raise ValidationError(
                 {'detail': _('This plan is live or is the trial plan, so it cannot be deleted. '

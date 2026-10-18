@@ -6,7 +6,7 @@ from django.db import IntegrityError, transaction
 from django.test import RequestFactory
 from django.urls import reverse
 
-from apps.subscriptions.admin import PlanAdmin, PlanBedTierInline
+from apps.subscriptions.admin import PlanAdmin, PlanBedTierAdmin, PlanBedTierInline
 from apps.subscriptions.models import Plan, PlanBedTier
 
 from .base import SubscriptionAPITestCase
@@ -92,6 +92,55 @@ class PriceLockTests(PlanProtectionTestCase):
         plan = self.create_bed_plan(name='Per Bed', bed_tiers=[(None, '2.00')], max_beds=10)
         with self.assertRaises(DjangoValidationError):
             plan.full_clean()
+
+
+    def test_standalone_tier_admin_cannot_change_or_delete_a_locked_plans_tiers(self):
+        locked = self.create_bed_plan(name='Locked Per Bed', bed_tiers=[(None, '2.00')])
+        self.create_subscription(self.tenant, plan=locked)
+        unused = self.create_bed_plan(name='Unused Per Bed', bed_tiers=[(None, '2.00')])
+        request = self.admin_request()
+        tier_admin = PlanBedTierAdmin(PlanBedTier, admin.site)
+        locked_tier, unused_tier = locked.bed_tiers.get(), unused.bed_tiers.get()
+
+        self.assertFalse(tier_admin.has_change_permission(request, locked_tier))
+        self.assertFalse(tier_admin.has_delete_permission(request, locked_tier))
+        self.assertTrue(tier_admin.has_change_permission(request, unused_tier))
+        self.assertTrue(tier_admin.has_delete_permission(request, unused_tier))
+        self.assertNotIn('delete_selected', tier_admin.get_actions(request))
+
+
+class PlanApiInvariantTests(PlanProtectionTestCase):
+    def _create(self, **data):
+        return self.client.post(reverse('plan-list'), data, format='json')
+
+    def test_api_rejects_a_capped_per_bed_plan(self):
+        for cap in ({'max_beds': 10}, {'max_properties': 2}, {'max_residents_per_property': 5}):
+            response = self._create(name='Capped Per Bed', pricing_type='per_bed_monthly', **cap)
+            self.assertEqual(response.status_code, 400, cap)
+            self.assertEqual(response.data['code'], 'PLAN_PER_BED_CAPPED')
+        self.assertFalse(Plan.objects.filter(name='Capped Per Bed').exists())
+
+    def test_api_cannot_cap_an_existing_per_bed_plan(self):
+        plan = self.create_bed_plan(name='Per Bed', bed_tiers=[(None, '2.00')])
+        response = self._patch(plan, max_beds=10)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['code'], 'PLAN_PER_BED_CAPPED')
+
+    def test_api_cannot_switch_a_capped_flat_plan_to_per_bed(self):
+        plan = self.create_plan(name='Flat', max_beds=10)
+        response = self._patch(plan, pricing_type='per_bed_monthly')
+        self.assertEqual(response.status_code, 400)
+        plan.refresh_from_db()
+        self.assertEqual(plan.pricing_type, 'flat_monthly')
+
+    def test_api_requires_a_price_for_flat_plans(self):
+        response = self._create(name='No Price')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['code'], 'PLAN_PRICE_REQUIRED')
+
+    def test_api_accepts_a_valid_flat_plan_with_a_bed_cap(self):
+        response = self._create(name='Valid', price_per_month='99.00', max_beds=50)
+        self.assertEqual(response.status_code, 201, response.data)
 
 
 class PlanDeletionTests(PlanProtectionTestCase):

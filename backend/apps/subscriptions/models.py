@@ -112,19 +112,25 @@ class Plan(models.Model):
         if pricing_changed and stored.is_locked():
             raise error('price_per_month', PRICING_LOCKED_MESSAGE, 'plan_pricing_locked')
 
-    def clean(self):
-        self.validate_protected_changes()
+    def validate_pricing_invariants(self):
+        """Cross-field rules between the pricing scheme and the caps. Shared by
+        `clean()` (admin) and the plan API, which never calls `clean()`."""
+        def error(field, message, code):
+            return DjangoValidationError({field: DjangoValidationError(message, code=code)})
+
         if self.pricing_type == self.PricingType.FLAT_MONTHLY:
             if self.price_per_month is None:
-                raise DjangoValidationError(
-                    {'price_per_month': _('Flat-monthly plans require a price_per_month.')}
+                raise error(
+                    'price_per_month', _('Flat-monthly plans require a price_per_month.'),
+                    'plan_price_required',
                 )
             # Bed tiers only make sense for PER_BED_MONTHLY; guarding here (not just
             # on PlanBedTier) means a plan can never carry the two pricing schemes
             # at once. Skipped when unsaved — bed_tiers needs a pk to query.
             if self.pk and self.bed_tiers.exists():
-                raise DjangoValidationError(
-                    {'pricing_type': _('Flat-monthly plans cannot have bed tiers.')}
+                raise error(
+                    'pricing_type', _('Flat-monthly plans cannot have bed tiers.'),
+                    'plan_flat_has_tiers',
                 )
         elif self.pricing_type == self.PricingType.PER_BED_MONTHLY:
             # Google-style seat billing has no cap — you pay for what you provision.
@@ -134,18 +140,26 @@ class Plan(models.Model):
             ):
                 raise DjangoValidationError(
                     _('Per-bed plans cannot also cap properties, residents or beds — '
-                      'billing is already usage-based.')
+                      'billing is already usage-based.'),
+                    code='plan_per_bed_capped',
                 )
             if self.pk:
                 tiers = self.bed_tiers.all()
                 if not tiers.exists():
-                    raise DjangoValidationError(
-                        {'pricing_type': _('Per-bed plans require at least one bed tier.')}
+                    raise error(
+                        'pricing_type', _('Per-bed plans require at least one bed tier.'),
+                        'plan_bed_tiers_required',
                     )
                 if tiers.filter(up_to_beds__isnull=True).count() != 1:
-                    raise DjangoValidationError(
-                        {'pricing_type': _('Per-bed plans must have exactly one open-ended tier (up_to_beds=None).')}
+                    raise error(
+                        'pricing_type',
+                        _('Per-bed plans must have exactly one open-ended tier (up_to_beds=None).'),
+                        'plan_bed_tier_open_ended',
                     )
+
+    def clean(self):
+        self.validate_protected_changes()
+        self.validate_pricing_invariants()
 
 
 class PlanBedTier(models.Model):

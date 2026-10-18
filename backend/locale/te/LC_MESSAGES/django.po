@@ -1375,6 +1375,10 @@ msgstr ""
 "పర్-బెడ్ ప్లాన్‌లలో ప్రాపర్టీలు, నివాసులు లేదా బెడ్‌లపై పరిమితి విధించలేరు — "
 "బిల్లింగ్ ఇప్పటికే వినియోగ ఆధారితం."
 
+#: apps/subscriptions/services.py
+msgid "This plan is no longer available."
+msgstr "ఈ ప్లాన్ ఇకపై అందుబాటులో లేదు."
+
 #: apps/subscriptions/models.py
 msgid ""
 "Tenants are using this plan. Create a new plan and retire this one to change "

@@ -57,6 +57,21 @@ class PlanAdmin(admin.ModelAdmin):
 class PlanBedTierAdmin(admin.ModelAdmin):
     list_display = ['plan', 'up_to_beds', 'rate_per_bed']
 
+    # Deletes never call clean(), and removing a live plan's open-ended tier
+    # breaks pricing for every tenant on it, so permissions freeze the ladder
+    # here exactly as they do in the inline.
+    def has_change_permission(self, request, obj=None):
+        return super().has_change_permission(request, obj) and not (obj and obj.plan.is_locked())
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and not (obj and obj.plan.is_locked())
+
+    def get_actions(self, request):
+        # Bulk delete skips the per-object check above.
+        actions = super().get_actions(request)
+        actions.pop('delete_selected', None)
+        return actions
+
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):

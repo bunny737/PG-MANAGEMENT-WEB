@@ -244,9 +244,20 @@ frontend always reaches a tenant's subscription via
 23. **A locked plan's pricing is frozen.** Once a plan has a
     `razorpay_plan_id` or any subscriber, `price_per_month`, `pricing_type`
     and (for per-bed plans) its `PlanBedTier` rows reject changes
-    (`plan_pricing_locked`; the admin tier inline turns read-only). To
-    reprice, create a new plan and retire the old one. `max_beds`, `name` and
-    `is_active` stay editable.
+    (`plan_pricing_locked`; both the admin tier inline **and** the standalone
+    `PlanBedTierAdmin` turn read-only and lose bulk delete, since deletes skip
+    `clean()` and dropping the open-ended tier breaks pricing for every tenant
+    on the plan). To reprice, create a new plan and retire the old one.
+    `max_beds`, `name` and `is_active` stay editable.
+    The plan API also enforces the pricing invariants `Plan.clean()` holds for
+    the admin (`validate_pricing_invariants`: flat needs a price and no tiers;
+    per-bed can't cap properties/residents/beds), because DRF never calls
+    `clean()` — a capped per-bed plan is `plan_per_bed_capped`.
+    Plan create/update/delete run in a transaction that **locks the Plan row
+    first**, as does `select_plan` after locking the Subscription, so a
+    reprice can't land between "no subscribers" and a tenant picking the plan
+    (the Razorpay plan would keep the old price). Lock order is always
+    Subscription → Plan; `PlanRepriceRaceTests` fails without the plan lock.
 24. **Exactly one trial plan.** Saving a plan with `is_trial_plan=True` moves
     the flag off every other plan in the same transaction; the current trial
     plan can't be un-flagged or retired (`trial_plan_required`) — hand the

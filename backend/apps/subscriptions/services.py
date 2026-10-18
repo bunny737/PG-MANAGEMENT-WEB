@@ -158,6 +158,15 @@ def select_plan(*, subscription, plan, actor, request=None):
     # Same lock as the limit checks, so a downgrade can't interleave with a
     # bed create; the bed check runs before any Razorpay side effect.
     subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+    # Then the target plan, re-read under its own lock (order: Subscription ->
+    # Plan, as in PlanViewSet): the caller's instance is stale if an admin has
+    # since repriced, capped or retired it, and the lock stops them doing so
+    # between the Razorpay call below and our commit.
+    plan = Plan.objects.select_for_update().get(pk=plan.pk)
+    if not plan.is_active:
+        raise ValidationError(
+            {'plan': [_('This plan is no longer available.')]}, code='plan_inactive',
+        )
     max_beds = subscription.max_beds_on(plan)
     if max_beds is not None:
         bed_count = get_total_beds(subscription.tenant_id)

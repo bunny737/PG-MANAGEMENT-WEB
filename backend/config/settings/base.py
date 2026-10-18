@@ -137,6 +137,8 @@ REST_FRAMEWORK = {
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',
         'device_register_ip': '120/hour',
+        # Public marketing-site plan catalogue (GET /public/plans/).
+        'public_catalog': '120/min',
     },
 }
 

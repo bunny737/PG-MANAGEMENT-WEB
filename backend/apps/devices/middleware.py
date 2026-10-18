@@ -30,6 +30,7 @@ EXEMPT_PREFIXES = (
     '/api/v1/app/version-policy/',
     '/api/v1/devices/',
     '/api/v1/support/',
+    '/api/v1/public/',
     '/admin/',
     '/static/',
     '/media/',

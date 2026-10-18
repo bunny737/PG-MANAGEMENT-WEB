@@ -5,14 +5,17 @@ from django.db import transaction
 from django.db.models import Count, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import Tenant
+from apps.core.models import PlatformConfig
 from apps.core.permissions import IsSuperAdmin, require_permission
 from apps.core.roles import Role
 from apps.properties.models import Bed, Property
@@ -22,10 +25,44 @@ from .models import Plan, Subscription
 from .serializers import (
     OverrideLimitsSerializer,
     PlanSerializer,
+    PublicPlanCatalogSerializer,
+    PublicPlanSerializer,
     SelectPlanSerializer,
     SubscriptionInvoiceSerializer,
     SubscriptionSerializer,
 )
+
+
+PUBLIC_CATALOG_CACHE_MAX_AGE_SECONDS = 300
+
+
+class PublicPlanCatalogView(APIView):
+    """The plan lineup for the public marketing site (anonymous, GET-only).
+    Prices, caps and the trial length are read from the live catalogue and
+    `PlatformConfig` on every request, so a Super Admin edit shows up without a
+    deploy (invariant 10). Platform data only — never tenant data."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'public_catalog'
+
+    @extend_schema(responses=PublicPlanCatalogSerializer)
+    def get(self, request):
+        # filter().first(), not PlatformConfig.get(): a public GET must not write.
+        config = PlatformConfig.objects.filter(pk=1).first() or PlatformConfig()
+        plans = list(Plan.objects.prefetch_related('bed_tiers').filter(is_active=True))
+        stamps = [p.updated_at for p in plans]
+        if config.pk:
+            stamps.append(config.updated_at)
+        response = Response({
+            'currency': razorpay_client.PLATFORM_CURRENCY,
+            'trial_days': config.trial_days,
+            'updated_at': max(stamps) if stamps else None,
+            'plans': PublicPlanSerializer(plans, many=True).data,
+        })
+        response['Cache-Control'] = f'public, max-age={PUBLIC_CATALOG_CACHE_MAX_AGE_SECONDS}'
+        return response
 
 
 class PlanViewSet(viewsets.ModelViewSet):

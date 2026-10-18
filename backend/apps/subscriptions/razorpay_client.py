@@ -12,6 +12,9 @@ import uuid
 import razorpay
 from django.conf import settings
 
+# The only currency the platform bills in; also served by the public plan catalogue.
+PLATFORM_CURRENCY = 'INR'
+
 
 def is_configured():
     return bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET)
@@ -36,7 +39,7 @@ def create_razorpay_plan(plan):
         'item': {
             'name': plan.name,
             'amount': int(plan.price_per_month * 100),  # paise
-            'currency': 'INR',
+            'currency': PLATFORM_CURRENCY,
         },
     })
     return response['id']
@@ -111,12 +114,12 @@ def create_razorpay_invoice(customer_id, subscription_invoice):
     response = client.invoice.create({
         'type': 'invoice',
         'customer_id': customer_id,
-        'currency': 'INR',
+        'currency': PLATFORM_CURRENCY,
         'line_items': [
             {
                 'name': line.description[:255],
                 'amount': int(line.amount * 100),  # paise
-                'currency': 'INR',
+                'currency': PLATFORM_CURRENCY,
                 'quantity': 1,
             }
             for line in subscription_invoice.lines.all()

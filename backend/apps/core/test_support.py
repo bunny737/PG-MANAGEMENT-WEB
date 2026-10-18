@@ -87,3 +87,14 @@ class SupportContactGateTests(AuthAPITestCase):
         )
         response = self.client.get(reverse('support-contact'), **app_headers(build=1))
         self.assertEqual(response.status_code, 200)
+
+
+class SupportContactSchemaTests(APITestCase):
+    def test_openapi_documents_every_response_field(self):
+        from drf_spectacular.generators import SchemaGenerator
+
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        ok = schema['paths']['/api/v1/support/']['get']['responses']['200']
+        ref = ok['content']['application/json']['schema']['$ref'].rsplit('/', 1)[1]
+        properties = schema['components']['schemas'][ref]['properties']
+        self.assertEqual(set(properties), {'email', 'phone', 'whatsapp', 'whatsapp_url', 'website', 'hours'})

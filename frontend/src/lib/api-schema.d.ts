@@ -2335,6 +2335,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/support/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Platform support contacts (email, phone, WhatsApp, ...) set by a Super
+         *     Admin. Public: the app needs them on the login screen, before any session
+         *     exists. Channels that aren't configured come back as null.
+         */
+        get: operations["v1_support_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenant-features/": {
         parameters: {
             query?: never;
@@ -3821,6 +3842,7 @@ export interface components {
             pricing_type?: components["schemas"]["PricingTypeEnum"];
             max_properties?: number | null;
             max_residents_per_property?: number | null;
+            max_beds?: number | null;
             /** Format: decimal */
             price_per_month?: string | null;
             readonly bed_tiers?: components["schemas"]["PlanBedTier"][];
@@ -3952,10 +3974,13 @@ export interface components {
             /** Format: uuid */
             readonly tenant?: string;
             readonly plan?: components["schemas"]["Plan"];
+            readonly pending_plan?: components["schemas"]["Plan"];
             readonly tenant_status?: string;
             /** Format: date-time */
             readonly trial_ends_at?: string;
             readonly razorpay_subscription_id?: string;
+            readonly pending_razorpay_subscription_id?: string;
+            readonly razorpay_key_id?: string;
             /** Format: date */
             readonly current_period_start?: string | null;
             /** Format: date */
@@ -3964,11 +3989,13 @@ export interface components {
             readonly payment_failed_at?: string | null;
             readonly max_properties_override?: number | null;
             readonly max_residents_override?: number | null;
+            readonly max_beds_override?: number | null;
             readonly properties_used?: number;
             readonly max_properties?: string;
             readonly max_residents_per_property?: string;
             readonly property_usage?: string;
             readonly bed_count?: number;
+            readonly max_beds?: number | null;
             readonly current_cycle_estimate?: string;
             /** Format: date-time */
             readonly created_at?: string;
@@ -4059,6 +4086,7 @@ export interface components {
             pricing_type?: components["schemas"]["PricingTypeEnum"];
             max_properties?: number | null;
             max_residents_per_property?: number | null;
+            max_beds?: number | null;
             /** Format: decimal */
             price_per_month?: string | null;
             readonly bed_tiers: components["schemas"]["PlanBedTier"][];
@@ -4509,10 +4537,13 @@ export interface components {
             /** Format: uuid */
             readonly tenant: string;
             readonly plan: components["schemas"]["Plan"];
+            readonly pending_plan: components["schemas"]["Plan"];
             readonly tenant_status: string;
             /** Format: date-time */
             readonly trial_ends_at: string;
             readonly razorpay_subscription_id: string;
+            readonly pending_razorpay_subscription_id: string;
+            readonly razorpay_key_id: string;
             /** Format: date */
             readonly current_period_start: string | null;
             /** Format: date */
@@ -4521,16 +4552,33 @@ export interface components {
             readonly payment_failed_at: string | null;
             readonly max_properties_override: number | null;
             readonly max_residents_override: number | null;
+            readonly max_beds_override: number | null;
             readonly properties_used: number;
             readonly max_properties: string;
             readonly max_residents_per_property: string;
             readonly property_usage: string;
             readonly bed_count: number;
+            readonly max_beds: number | null;
             readonly current_cycle_estimate: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        /**
+         * @description Response shape of GET /support/ (schema only; the view builds the dict).
+         *     Every field is null when that channel isn't configured.
+         */
+        SupportContact: {
+            /** Format: email */
+            email: string | null;
+            phone: string | null;
+            whatsapp: string | null;
+            /** Format: uri */
+            whatsapp_url: string | null;
+            /** Format: uri */
+            website: string | null;
+            hours: string | null;
         };
         Tenant: {
             /** Format: uuid */
@@ -8554,6 +8602,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    v1_support_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportContact"];
+                };
             };
         };
     };

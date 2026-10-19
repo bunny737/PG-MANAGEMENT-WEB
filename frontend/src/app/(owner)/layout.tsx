@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
+import { PushRuntime } from "@/features/notifications/PushRuntime";
 import { InstallNudge } from "@/features/pwa/InstallNudge";
 import { SideNav } from "@/components/shared/SideNav";
 import { clearSession } from "@/lib/api";
@@ -76,6 +77,7 @@ export default function OwnerLayout({
           {children}
         </div>
         <BottomNav />
+        <PushRuntime />
       </div>
     </QueryClientProvider>
   );

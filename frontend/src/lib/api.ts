@@ -6,7 +6,7 @@
 
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
 import { CACHE_SCOPE_HEADER, getCacheScope } from "@/lib/cacheScope";
-import { awaitPendingPurge, registerSessionCleanup, runSessionCleanups } from "@/lib/sessionPurge";
+import { awaitPendingPurge, registerSessionCleanup, runPreLogoutSteps, runSessionCleanups } from "@/lib/sessionPurge";
 
 // Same-origin: the BFF proxy owns the Django origin (INTERNAL_API_URL, server-side only).
 const API_BASE_URL = "";
@@ -69,27 +69,30 @@ export function isUUID(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
-/**
- * Purges the session (invariant F7 — no tenant data survives logout or an
- * account switch). Permissions/session keys are removed and
- * `session-changed` is dispatched synchronously, before anything is
- * awaited, and the server-side cookie clear (registered below) starts in
- * the same tick. It then awaits every registered cleanup
- * step (query cache, Zustand stores, Cache Storage, IndexedDB — see
- * lib/sessionPurge.ts) through `Promise.allSettled`, so one failing step
- * never skips the rest. Callers should `await` this before navigating
- * away, so the next screen never renders with the old session's cache.
- */
 // Registered as a purge step (not called from clearSession directly) so it is part of the
 // pending purge that login() awaits — a slow logout can then never clear a fresh login's cookies.
+// Pre-logout steps (push unsubscribe, capped at a few seconds) run first because they still
+// need the session cookie; offline or failing, the logout request is still sent.
 registerSessionCleanup(async () => {
   try {
+    await runPreLogoutSteps();
     await fetch("/api/auth/logout", { method: "POST", keepalive: true });
   } catch {
     // Offline: local state is already gone; the cookies are replaced by the next login.
   }
 });
 
+/**
+ * Purges the session (invariant F7 — no tenant data survives logout or an
+ * account switch). Permissions/session keys are removed and
+ * `session-changed` is dispatched synchronously, before anything is
+ * awaited. It then runs the server-side cookie clear (registered above)
+ * and awaits every registered cleanup
+ * step (query cache, Zustand stores, Cache Storage, IndexedDB — see
+ * lib/sessionPurge.ts) through `Promise.allSettled`, so one failing step
+ * never skips the rest. Callers should `await` this before navigating
+ * away, so the next screen never renders with the old session's cache.
+ */
 export async function clearSession() {
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");

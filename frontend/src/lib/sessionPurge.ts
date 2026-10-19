@@ -24,6 +24,10 @@
 type CleanupFn = () => void | Promise<void>;
 
 const cleanups = new Set<CleanupFn>();
+const preLogoutSteps = new Set<CleanupFn>();
+
+/** Longest a logout waits for work that needs the still-valid session (push unsubscribe). */
+const PRE_LOGOUT_TIMEOUT_MS = 3_000;
 let pending: Promise<void> | null = null;
 
 /** Registers a cleanup step `clearSession()` runs on every purge. Returns
@@ -31,6 +35,21 @@ let pending: Promise<void> | null = null;
 export function registerSessionCleanup(fn: CleanupFn): () => void {
   cleanups.add(fn);
   return () => cleanups.delete(fn);
+}
+
+/** Registers work that must happen while the session cookies are still valid — e.g.
+ * unsubscribing this device from push — and so runs *before* the server-side logout request
+ * (lib/api.ts). Best-effort and time-boxed: offline or failing, logout still proceeds. */
+export function registerPreLogoutStep(fn: CleanupFn): () => void {
+  preLogoutSteps.add(fn);
+  return () => preLogoutSteps.delete(fn);
+}
+
+export async function runPreLogoutSteps(): Promise<void> {
+  if (preLogoutSteps.size === 0) return;
+  const work = Promise.allSettled([...preLogoutSteps].map((fn) => fn()));
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, PRE_LOGOUT_TIMEOUT_MS));
+  await Promise.race([work, timeout]);
 }
 
 /** Resolves once a purge already in flight finishes; resolves immediately

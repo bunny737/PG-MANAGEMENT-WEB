@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ChevronRight, LogOut, User } from "lucide-react";
 import { SIDEBAR_NAV_ITEMS } from "@/components/shared/NavItems";
+import { PushCard } from "@/features/notifications/PushCard";
 import { InstallCard } from "@/features/pwa/InstallCard";
 import { clearSession } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -95,6 +96,7 @@ export default function MorePage() {
         </div>
 
         <InstallCard />
+        <PushCard />
 
         {/* Sign Out Card / Action */}
         <div className="rounded-2xl border border-border bg-surface-card p-2 shadow-sm">

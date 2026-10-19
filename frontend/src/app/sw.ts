@@ -22,7 +22,10 @@ import {
   type SerwistGlobalConfig,
   type SerwistPlugin,
 } from "serwist";
+import { initializeApp } from "firebase/app";
+import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 import { CACHE_SCOPE_HEADER } from "../lib/cacheScope";
+import { pushTargetUrl } from "../lib/pushLinks";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -133,3 +136,43 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// --- Web Push (docs/push-notifications-integration.md §6.3) ---------------------------------
+// FCM "notification messages" are shown by the Firebase SDK itself when the app is in the
+// background; this worker only adds the tap behaviour. The listener is registered BEFORE the
+// SDK's own so it can stop the SDK's default handler from also opening a window.
+
+self.addEventListener("notificationclick", (event) => {
+  const fcm = (event.notification.data as { FCM_MSG?: { data?: { reference?: string } } } | null)?.FCM_MSG;
+  if (!fcm) return; // not one of ours
+  event.stopImmediatePropagation();
+  event.notification.close();
+
+  const target = new URL(pushTargetUrl(fcm.data?.reference), self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+      if (open) {
+        // focus() can be refused (e.g. no recent user activation); the navigation must still happen.
+        await open.focus().catch(() => {});
+        await open.navigate(target).catch(() => {});
+      } else {
+        await self.clients.openWindow(target);
+      }
+    })()
+  );
+});
+
+// The public identifiers only (they name the Firebase project; they authenticate nothing).
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+if (Object.values(firebaseConfig).every(Boolean)) {
+  // Registering a handler is what makes the SDK listen for pushes in this worker.
+  onBackgroundMessage(getMessaging(initializeApp(firebaseConfig as Record<keyof typeof firebaseConfig, string>)), () => {});
+}

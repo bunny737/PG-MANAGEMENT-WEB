@@ -17,10 +17,17 @@ export interface SessionSnapshot {
   role: string | null;
   permissions: string[];
   userName: string;
+  /** /auth/me/ has confirmed this session in the current page load (not just a cached
+   * localStorage flag). False until the first successful refresh, and again after logout. */
+  validated: boolean;
 }
 
 let inMemoryUser: CurrentUser | null = null;
 let inFlightPromise: Promise<CurrentUser | null> | null = null;
+/** Role of the last user /auth/me/ confirmed; null until then and after logout. */
+let validatedRole: string | null = null;
+/** Bumped every time the session is cleared; a response from an older generation is stale. */
+let sessionGeneration = 0;
 
 function computeSnapshot(): SessionSnapshot {
   if (typeof window === "undefined") {
@@ -31,6 +38,7 @@ function computeSnapshot(): SessionSnapshot {
       role: null,
       permissions: [],
       userName: "",
+      validated: false,
     };
   }
 
@@ -43,6 +51,7 @@ function computeSnapshot(): SessionSnapshot {
       role: null,
       permissions: [],
       userName: "",
+      validated: false,
     };
   }
 
@@ -84,6 +93,7 @@ function computeSnapshot(): SessionSnapshot {
     role,
     permissions,
     userName,
+    validated: validatedRole !== null && validatedRole === role,
   };
 }
 
@@ -91,6 +101,14 @@ let cachedSnapshot: SessionSnapshot = computeSnapshot();
 const listeners = new Set<() => void>();
 
 function updateSnapshot() {
+  // A cleared session must not leave a confirmation behind for whoever logs in next.
+  if (typeof window !== "undefined" && localStorage.getItem("isLoggedIn") !== "true") {
+    validatedRole = null;
+    inMemoryUser = null;
+    // Invalidate any /auth/me/ still in flight, and let the next login start its own.
+    sessionGeneration += 1;
+    inFlightPromise = null;
+  }
   cachedSnapshot = computeSnapshot();
   listeners.forEach((listener) => listener());
 }
@@ -118,6 +136,7 @@ const SERVER_SNAPSHOT: SessionSnapshot = {
   role: null,
   permissions: [],
   userName: "",
+  validated: false,
 };
 
 function getServerSnapshot(): SessionSnapshot {
@@ -142,10 +161,16 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
   if (typeof window === "undefined") return Promise.resolve(null);
   if (inFlightPromise) return inFlightPromise;
 
-  inFlightPromise = getCurrentUser()
+  // A logout (or another tab's) while this request is pending bumps the generation;
+  // the late answer must then be dropped, not written back over the cleared session.
+  const generation = sessionGeneration;
+
+  const promise: Promise<CurrentUser | null> = getCurrentUser()
     .then((me) => {
+      if (generation !== sessionGeneration || !isLoggedIn()) return null;
       lastRefreshedAt = Date.now();
       inMemoryUser = me;
+      validatedRole = me.role;
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userRole", me.role);
       localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
@@ -158,10 +183,12 @@ export function ensureFreshSession(): Promise<CurrentUser | null> {
       return null;
     })
     .finally(() => {
-      inFlightPromise = null;
+      // Only clear our own entry: after a logout a newer request may have replaced it.
+      if (inFlightPromise === promise) inFlightPromise = null;
     });
 
-  return inFlightPromise;
+  inFlightPromise = promise;
+  return promise;
 }
 
 function isLoggedIn(): boolean {
@@ -210,6 +237,7 @@ export function useSession() {
     role: snapshot.role,
     permissions: snapshot.permissions,
     userName: snapshot.userName,
+    validated: snapshot.validated,
     can,
   };
 }

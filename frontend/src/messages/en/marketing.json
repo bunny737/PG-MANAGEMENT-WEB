@@ -1,0 +1,536 @@
+{
+  "brand": {
+    "name": "PGLive",
+    "tagline": "Run your PG or hostel from one place"
+  },
+  "meta": {
+    "home": {
+      "title": "PGLive — PG & hostel management software for India",
+      "description": "Manage properties, residents, rent invoices, payments and complaints from one system built for PG and hostel owners in India."
+    },
+    "features": {
+      "title": "Features — PGLive",
+      "description": "Everything PGLive does for PG and hostel owners, and exactly where each feature is available today."
+    },
+    "pricing": {
+      "title": "Pricing — PGLive",
+      "description": "Simple monthly plans for PG and hostel owners, with a free trial and no card needed to start."
+    },
+    "app": {
+      "title": "Android app — PGLive",
+      "description": "The PGLive Android app is launching soon. Scan the QR code or check back here for the download link."
+    },
+    "contact": {
+      "title": "Contact — PGLive",
+      "description": "Talk to the PGLive team by phone, WhatsApp or email."
+    },
+    "privacy": {
+      "title": "Privacy Policy — PGLive",
+      "description": "How PGLive collects, uses and protects data."
+    },
+    "terms": {
+      "title": "Terms of Service — PGLive",
+      "description": "The terms that apply when you use PGLive."
+    },
+    "notFound": {
+      "title": "Page not found — PGLive"
+    }
+  },
+  "nav": {
+    "features": "Features",
+    "pricing": "Pricing",
+    "app": "Android app",
+    "contact": "Contact",
+    "login": "Log in",
+    "openDashboard": "Open dashboard",
+    "menu": "Open menu",
+    "closeMenu": "Close menu",
+    "language": "Language",
+    "skipToContent": "Skip to content",
+    "primary": "Main navigation",
+    "home": "PGLive home"
+  },
+  "cta": {
+    "requestAccess": "Request early access",
+    "startTrial": "Start free trial",
+    "seeFeatures": "See all features",
+    "seePricing": "See pricing",
+    "contactUs": "Contact us",
+    "whatsappMessage": "Hi PGLive, I run a PG/hostel and would like early access.",
+    "emailSubject": "PGLive early access request"
+  },
+  "hero": {
+    "eyebrow": "Built for PG & hostel owners in India",
+    "title": "Run every bed, bill and complaint from one place",
+    "subtitle": "PGLive replaces notebooks and spreadsheets with one system for properties, residents, rent invoices, payments and day-to-day operations.",
+    "noteEarlyAccess": "Early access is open. We will set up your account with you.",
+    "noteTrial": "Free trial. No card needed to start.",
+    "cardOccupancy": "Occupancy",
+    "cardCollected": "Collected this month",
+    "cardDue": "Dues pending",
+    "illustrative": "Illustration with sample figures"
+  },
+  "trust": {
+    "title": "Built on rules owners can rely on",
+    "items": {
+      "isolation": {
+        "title": "Your data stays yours",
+        "body": "Each business is isolated at the database level, so one owner can never see another owner's data."
+      },
+      "rent": {
+        "title": "Rent billed as agreed",
+        "body": "Each resident is billed at the rent agreed at admission, even after a room change, with discounts shown as their own line."
+      },
+      "audit": {
+        "title": "Every important change is recorded",
+        "body": "Critical actions are logged with the before and after values, who did it, when and from where."
+      },
+      "languages": {
+        "title": "English and Telugu",
+        "body": "Use the system in the language your team is comfortable with. More Indian languages are planned."
+      }
+    }
+  },
+  "roles": {
+    "title": "One system for the whole team",
+    "owner": {
+      "title": "Owners",
+      "body": "See occupancy, collections and dues across every property, manage staff and choose a plan."
+    },
+    "manager": {
+      "title": "Managers",
+      "body": "Admit residents, allocate beds, raise invoices and record payments for the properties assigned to them."
+    },
+    "receptionist": {
+      "title": "Front desk",
+      "body": "Log visitors in and out and look up residents, without access to billing."
+    },
+    "resident": {
+      "title": "Residents",
+      "body": "Invoices, receipts and complaints in their own login.",
+      "note": "Resident login is coming soon."
+    }
+  },
+  "features": {
+    "title": "Everything you need to run a PG",
+    "subtitle": "Each feature shows where you can use it today. We only mark something Available when you can open it now.",
+    "highlightsTitle": "What PGLive does",
+    "legendTitle": "How to read the badges",
+    "surfaces": {
+      "ownerWeb": "Owner web",
+      "residentWeb": "Resident web",
+      "mobileApp": "Android app"
+    },
+    "states": {
+      "available": "Available",
+      "preview": "In preview",
+      "comingSoon": "Coming soon",
+      "notPlanned": "Not applicable"
+    },
+    "legend": {
+      "available": "You can use it today.",
+      "preview": "Partly built, or a concept preview. Expect changes.",
+      "comingSoon": "Planned. Not usable yet.",
+      "notPlanned": "Does not apply to this part of the product."
+    },
+    "groups": {
+      "properties": "Properties & dashboards",
+      "residents": "Residents & admissions",
+      "money": "Billing & money",
+      "operations": "Day-to-day operations",
+      "platform": "Reports & platform"
+    },
+    "items": {
+      "propertySetup": {
+        "title": "Property setup",
+        "description": "Properties, buildings, floors, rooms and beds, with rates for AC, non-AC and with or without food."
+      },
+      "amenities": {
+        "title": "Facilities catalogue",
+        "description": "Pick from 72 common PG facilities such as Wi-Fi, power backup and CCTV, or add your own, per property or building."
+      },
+      "dashboard": {
+        "title": "Occupancy & finance dashboards",
+        "description": "Beds occupied and vacant, collections and dues at a glance, for one property or all."
+      },
+      "residents": {
+        "title": "Resident records",
+        "description": "Profiles, emergency contacts, ID documents and a clear status from inquiry to vacated."
+      },
+      "admissions": {
+        "title": "Admissions & check-in",
+        "description": "Record billing mode, food preference, advance and the agreed rent when a resident joins."
+      },
+      "allocations": {
+        "title": "Bed allocation & transfers",
+        "description": "Allocate beds, move residents between rooms and keep a full transfer history."
+      },
+      "depositsExit": {
+        "title": "Deposits & exit",
+        "description": "Notice period, deductions, refunds and a record for residents who leave without notice."
+      },
+      "billing": {
+        "title": "Rent invoices",
+        "description": "Generate invoices for a whole property at once. Rent, discounts, electricity, water and other charges appear as separate lines."
+      },
+      "payments": {
+        "title": "Payments & receipts",
+        "description": "Record UPI, cash, bank transfer, card or cheque payments, including part payments, and see who owes what."
+      },
+      "discounts": {
+        "title": "Discounts",
+        "description": "Give a resident a fixed or percentage discount with a reason and a validity window."
+      },
+      "expenses": {
+        "title": "Expenses",
+        "description": "Track what you spend each month by category, with receipts attached."
+      },
+      "complaints": {
+        "title": "Complaint tracking",
+        "description": "Log issues, assign them, follow progress and keep photos and comments in one thread."
+      },
+      "visitors": {
+        "title": "Visitor log",
+        "description": "Front-desk check-in and check-out with a clear record of who visited whom."
+      },
+      "staff": {
+        "title": "Staff access",
+        "description": "Add managers and receptionists, assign them to properties and control which modules each person can use."
+      },
+      "reports": {
+        "title": "Reports & exports",
+        "description": "Collections and occupancy trends, plus resident lists, payment history and dues as CSV, Excel or PDF."
+      },
+      "languages": {
+        "title": "English & Telugu",
+        "description": "The product speaks English and Telugu today, with more Indian languages planned."
+      },
+      "subscription": {
+        "title": "Plan & billing",
+        "description": "See bed usage against your plan, switch plans and pay securely online."
+      }
+    }
+  },
+  "how": {
+    "title": "Up and running in four steps",
+    "steps": [
+      {
+        "title": "Add your property",
+        "body": "Create your property and lay out buildings, floors, rooms and beds."
+      },
+      {
+        "title": "Admit residents",
+        "body": "Record each resident with their agreed rent, advance and ID documents."
+      },
+      {
+        "title": "Bill and collect",
+        "body": "Generate invoices in one go and record payments as they come in."
+      },
+      {
+        "title": "Keep things running",
+        "body": "Track complaints, visitors and expenses, and watch occupancy and dues."
+      }
+    ]
+  },
+  "app": {
+    "eyebrow": "Android app",
+    "title": "PGLive on your phone",
+    "subtitle": "Our Android app is in review and launching soon. These are concept previews of what we are building.",
+    "subtitleLive": "Download the PGLive Android app from Google Play.",
+    "badgeComingSoon": "Launching soon",
+    "badgeLive": "Available on Google Play",
+    "scanTitle": "Scan to open the download page",
+    "scanBody": "Point your phone camera at the code. It always opens pglive.in/app, so it keeps working after launch.",
+    "qrAlt": "QR code that opens the PGLive Android app page",
+    "openPage": "Open the app page",
+    "getOnPlay": "Get it on Google Play",
+    "previewLabel": "Concept preview",
+    "previewNote": "Illustrative screens, not current app screenshots. Final screens will differ.",
+    "notifyTitle": "Want to know when it launches?",
+    "notifyBody": "Message us and we will tell you the day it is live.",
+    "notifyCta": "Notify me",
+    "notifyMessage": "Hi PGLive, please let me know when the Android app is available.",
+    "notifySubject": "PGLive Android app launch",
+    "requirementsTitle": "Good to know",
+    "requirements": [
+      "Android only for now. An iPhone app is not available yet.",
+      "You sign in with the same account you use on the web.",
+      "Some screens shown here are planned for the app, not yet built. The owner dashboard already works on the web."
+    ],
+    "screens": {
+      "residentHome": {
+        "role": "Resident view",
+        "title": "Home",
+        "availability": "Resident mobile experience is planned."
+      },
+      "invoice": {
+        "role": "Resident view",
+        "title": "Invoice",
+        "availability": "Resident mobile experience is planned."
+      },
+      "complaint": {
+        "role": "Resident view",
+        "title": "Complaint",
+        "availability": "Resident mobile experience is planned."
+      },
+      "ownerDashboard": {
+        "role": "Owner view",
+        "title": "Dashboard",
+        "availability": "The owner dashboard is available on the web today."
+      }
+    },
+    "sample": {
+      "greeting": "Hello, Ravi",
+      "rentDue": "Rent due",
+      "dueOn": "Due 5 Nov",
+      "status": {
+        "due": "Due",
+        "paid": "Paid",
+        "assigned": "Assigned"
+      },
+      "recent": "Recent payments",
+      "october": "October rent",
+      "invoiceTitle": "Invoice, November",
+      "lineRent": "Rent",
+      "lineDiscount": "Discount",
+      "lineElectricity": "Electricity",
+      "lineTotal": "Total",
+      "complaintTitle": "Fan not working",
+      "complaintRoom": "Room 204",
+      "stepOpen": "Opened",
+      "stepAssigned": "Assigned to maintenance",
+      "stepProgress": "In progress",
+      "occupancy": "Occupancy",
+      "occupiedBeds": "82 of 100 beds occupied",
+      "collected": "Collected",
+      "pending": "Pending"
+    }
+  },
+  "pricing": {
+    "title": "Simple pricing, billed monthly",
+    "subtitle": "Pick the plan that fits the number of beds you manage. Every plan includes all current features.",
+    "perMonth": "per month",
+    "upToBeds": "Up to {beds} beds",
+    "unlimitedBeds": "Unlimited beds",
+    "trialBadge": "Your free trial starts on this plan",
+    "trialDays": "{days}-day free trial, no card needed",
+    "perBed": {
+      "title": "Pay per bed",
+      "firstBeds": "First {beds} beds",
+      "nextBeds": "Next beds up to {beds}",
+      "restBeds": "Beyond that",
+      "free": "Free",
+      "rate": "{rate} per bed per month"
+    },
+    "notesTitle": "How billing works",
+    "notes": {
+      "beds": "Beds are counted as set up in your account, not by whether they are occupied.",
+      "changePlan": "Switching to another fixed monthly plan takes effect once the new plan is paid. A per-bed plan starts as soon as you select it.",
+      "razorpay": "Subscriptions are billed in INR through Razorpay. Resident rent is never collected through PGLive.",
+      "suspended": "If a payment fails you get a short grace period before the account is paused. Your data is kept.",
+      "billingTiming": "Fixed monthly plans are billed monthly in advance. Per-bed plans are billed at the end of each month for the beds you had, prorated by day."
+    },
+    "unavailable": {
+      "title": "Pricing is temporarily unavailable",
+      "body": "We could not load our current plans. Please try again in a few minutes, or contact us and we will share pricing."
+    }
+  },
+  "faq": {
+    "title": "Questions owners ask",
+    "items": [
+      {
+        "q": "Who is PGLive for?",
+        "a": "Owners and managers of PGs, hostels and similar paying-guest properties in India, from a single building to many properties."
+      },
+      {
+        "q": "Is there a free trial?",
+        "a": "Yes. New accounts get a free trial with no card needed. The trial length is shown on the pricing page."
+      },
+      {
+        "q": "Do residents pay rent through PGLive?",
+        "a": "No. Residents pay you by UPI, cash or bank transfer and you record it in PGLive. Razorpay is used only for your PGLive subscription."
+      },
+      {
+        "q": "How are beds counted for my plan?",
+        "a": "Every bed you set up in your account counts, whether or not it is occupied."
+      },
+      {
+        "q": "Is there a mobile app?",
+        "a": "An Android app is in review and launching soon. The web app works on any phone browser today. An iPhone app is not available yet."
+      },
+      {
+        "q": "Which languages are supported?",
+        "a": "English and Telugu today. Hindi, Tamil and Malayalam are planned."
+      },
+      {
+        "q": "Is my data safe?",
+        "a": "Each business's data is isolated at the database level and critical changes are recorded in an audit trail."
+      }
+    ]
+  },
+  "finalCta": {
+    "title": "Ready to put your PG on one screen?",
+    "body": "Tell us about your property and we will help you get started."
+  },
+  "contact": {
+    "title": "Talk to us",
+    "subtitle": "Questions about features, pricing or getting started? We are happy to help.",
+    "email": "Email",
+    "phone": "Phone",
+    "whatsapp": "WhatsApp",
+    "website": "Help centre",
+    "hours": "Hours",
+    "address": "Address",
+    "chatOnWhatsapp": "Chat on WhatsApp",
+    "unavailable": {
+      "title": "Contact details are being set up",
+      "body": "Our contact channels will appear here shortly. Please check back soon."
+    },
+    "earlyAccess": {
+      "title": "Early access",
+      "body": "Send us a message with your property name and number of beds, and we will set up your account with you."
+    },
+    "form": {
+      "title": "Send us a message",
+      "subtitle": "Tell us about your property and what you need. We will reply by email or phone.",
+      "name": "Your name",
+      "email": "Email",
+      "phone": "Phone",
+      "phoneOptional": "optional",
+      "message": "Message",
+      "submit": "Send message",
+      "submitting": "Sending...",
+      "successTitle": "Message sent",
+      "successBody": "Thank you. We have received your message and will get back to you soon.",
+      "sendAnother": "Send another message",
+      "errorThrottled": "You have sent several messages in a short time. Please wait a while and try again, or reach us on WhatsApp or by phone.",
+      "errorNetwork": "We could not reach the server. Check your connection and try again.",
+      "errorGeneric": "Something went wrong and your message was not sent. Please try again.",
+      "honeypotLabel": "Leave this field empty",
+      "validation": {
+        "nameRequired": "Please enter your name.",
+        "emailInvalid": "Please enter a valid email address.",
+        "phoneInvalid": "Please enter a valid phone number, or leave it empty.",
+        "messageShort": "Please write a little more (at least 10 characters).",
+        "messageLong": "Please keep your message under 2000 characters."
+      }
+    }
+  },
+  "footer": {
+    "about": "PG and hostel management software for India.",
+    "product": "Product",
+    "company": "Contact",
+    "legal": "Legal",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "copyright": "© {year} {company}. All rights reserved."
+  },
+  "legal": {
+    "draftNotice": "Draft pending legal review. This text may change before launch.",
+    "privacy": {
+      "title": "Privacy Policy",
+      "intro": "This policy explains what information PGLive collects, why, and the choices you have. \"We\" means {company}.",
+      "sections": [
+        {
+          "heading": "Information we collect",
+          "body": "Account details (name, email, phone, password), details of your business and properties, and the records you enter about residents, such as contact details, emergency contacts and ID documents. We also collect basic technical data such as device and app version."
+        },
+        {
+          "heading": "Contact form",
+          "body": "If you write to us through the contact form we store your name, email address, phone number (if you give one), your message, the language you were using and your IP address, so that we can reply and keep spam out. We use it only to answer you and to keep a record of the conversation, and we delete it when you ask."
+        },
+        {
+          "heading": "How we use it",
+          "body": "To provide the service, send invoices and notifications, keep accounts secure, prevent misuse, provide support and improve the product."
+        },
+        {
+          "heading": "Your residents' information",
+          "body": "You decide what you record about your residents. You are responsible for having a lawful basis and any needed consent to collect it. We process it on your behalf and do not use it for our own marketing."
+        },
+        {
+          "heading": "Browser storage and cookies",
+          "body": "We store your sign-in session and preferences in your browser's local storage, and your language choice in a cookie named NEXT_LOCALE. These are needed for the service to work."
+        },
+        {
+          "heading": "Mobile app",
+          "body": "The Android app registers an installation identifier, your app version and, if you allow notifications, a push token, and links them to your account so we can deliver notifications and enforce updates."
+        },
+        {
+          "heading": "Payments",
+          "body": "Subscription payments are processed by Razorpay. We do not store your card or UPI details. Resident rent is not collected through PGLive."
+        },
+        {
+          "heading": "Notifications",
+          "body": "We send service emails and, where you allow it, push notifications about your account, invoices and receipts."
+        },
+        {
+          "heading": "Service providers",
+          "body": "We use providers for hosting and file storage, email delivery, push notifications and payments. They process data only to provide those services to us."
+        },
+        {
+          "heading": "Retention",
+          "body": "We keep your data while your account is active. After cancellation we keep it for a limited period (currently 30 days) so you can come back, and then it becomes eligible for deletion."
+        },
+        {
+          "heading": "Your rights and contact",
+          "body": "You can ask to access, correct or delete your data. Use the contact details on our Contact page."
+        },
+        {
+          "heading": "Changes",
+          "body": "We will post any changes to this policy on this page."
+        }
+      ]
+    },
+    "terms": {
+      "title": "Terms of Service",
+      "intro": "These terms apply when you use PGLive, provided by {company}. By creating an account or using the service you agree to them.",
+      "sections": [
+        {
+          "heading": "The service",
+          "body": "PGLive is software for managing PG and hostel properties, residents, billing and operations. Features are described on our website and may change over time."
+        },
+        {
+          "heading": "Accounts",
+          "body": "You are responsible for your account, for keeping your password secure and for the actions of the staff you add."
+        },
+        {
+          "heading": "Free trial and subscription",
+          "body": "New accounts start with a free trial. After that, a fixed monthly plan is billed monthly in advance through Razorpay and renews automatically until cancelled. A change to another fixed plan takes effect once the new plan is paid; there is no proration or refund of the previous period. A per-bed plan starts when you select it and is billed monthly in arrears for the beds you had, prorated by day."
+        },
+        {
+          "heading": "Non-payment",
+          "body": "If a payment fails we allow a short grace period. After that the account is paused and sign-in is blocked, while your data is kept."
+        },
+        {
+          "heading": "Your data",
+          "body": "You own the data you enter. You grant us permission to process it to provide the service. You are responsible for the lawfulness of the resident data you collect."
+        },
+        {
+          "heading": "Acceptable use",
+          "body": "Do not misuse the service, attempt to access other businesses' data, or use it for unlawful purposes."
+        },
+        {
+          "heading": "Availability",
+          "body": "We work to keep the service available but do not guarantee uninterrupted operation."
+        },
+        {
+          "heading": "Liability",
+          "body": "To the extent permitted by law, our liability is limited to the fees you paid in the three months before the claim."
+        },
+        {
+          "heading": "Governing law",
+          "body": "These terms are governed by the laws of India."
+        },
+        {
+          "heading": "Changes and contact",
+          "body": "We may update these terms and will post the new version here. Contact us using the details on our Contact page."
+        }
+      ]
+    }
+  },
+  "notFound": {
+    "title": "We could not find that page",
+    "body": "The link may be old or mistyped.",
+    "home": "Back to home"
+  }
+}

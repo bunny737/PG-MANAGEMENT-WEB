@@ -19,6 +19,8 @@ export const MODULES = [
   'reports',
   'status',
   'visitors',
+  // Public pglive.in site (server-rendered; see app/(marketing)).
+  'marketing',
 ];
 
 async function loadMessages(locale: string) {

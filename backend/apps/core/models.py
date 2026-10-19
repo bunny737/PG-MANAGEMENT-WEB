@@ -1,3 +1,5 @@
+import uuid
+
 from django.core.validators import RegexValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -81,3 +83,39 @@ class PlatformConfig(models.Model):
     def get(cls):
         config, _ = cls.objects.get_or_create(pk=1)
         return config
+
+
+class ContactMessage(models.Model):
+    """A message sent from the public website's contact form (POST /public/contact/).
+
+    Platform-level and deliberately NOT tenant-scoped (no `tenant_id`, no RLS):
+    the sender is an anonymous prospect, not a tenant user — same class as
+    `PlatformConfig` / `AppVersionPolicy`. Only a Super Admin reads it, in the
+    Django admin (read-only content; the status is the one thing they change).
+    Holds personal data (name, email, phone, free text, IP), so it is listed in
+    the privacy policy; there is no purge job yet (see module 01 spec, [OPEN]).
+    """
+
+    class Status(models.TextChoices):
+        NEW = 'new', _('New')
+        HANDLED = 'handled', _('Handled')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20, blank=True, default='')
+    message = models.TextField(max_length=2000)
+    # Active UI language at submission (Accept-Language), so replies can match it.
+    language = models.CharField(max_length=8, blank=True, default='')
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.NEW)
+    handled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'contact_messages'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', '-created_at'], name='contact_msg_status_idx')]
+
+    def __str__(self):
+        return f'{self.name} <{self.email}>'

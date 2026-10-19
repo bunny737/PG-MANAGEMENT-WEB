@@ -143,7 +143,16 @@ POST        /api/v1/subscriptions/{tenant_id}/reactivate/     manual reactivate 
 GET         /api/v1/subscriptions/{tenant_id}/price-preview/  live PER_BED_MONTHLY breakdown at today's bed count   manage_subscription
 GET         /api/v1/subscriptions/{tenant_id}/invoices/       PER_BED_MONTHLY billing history            manage_subscription
 POST        /api/v1/subscriptions/webhook/               Razorpay webhook receiver (subscription.* AND invoice.* events)   public (HMAC-verified)
+GET         /api/v1/public/plans/                        anonymous plan catalogue for the marketing site (see "Public plan catalogue")   public (AllowAny, GET-only, throttled `public_catalog` 120/min, `Cache-Control: public, max-age=300`)
 ```
+
+### Public plan catalogue
+`GET /public/plans/` → `{currency, trial_days, updated_at, plans: [...]}`.
+- `currency` is `razorpay_client.PLATFORM_CURRENCY` (the same constant Razorpay calls use); `trial_days` is read from `PlatformConfig` on every request (invariant 10); `updated_at` is the newest `updated_at` among the active plans and the config row (`null` when neither exists).
+- Each plan is an **allow-list** (`PublicPlanSerializer`, not a subclass of `PlanSerializer`): `id, name, pricing_type, price_per_month, max_beds, bed_tiers[{up_to_beds, rate_per_bed}], is_trial_plan`. Razorpay ids, subscriber counts, property/resident caps and admin flags are never exposed.
+- Active plans only; both pricing types are served (per-bed plans carry their tier ladder, `price_per_month` is `null`).
+- Platform data only — no tenant data (test: response is byte-identical with and without tenants/subscriptions). Read-only: a public GET never creates the `PlatformConfig` row. Exempt from the app-client update/maintenance gate like `/support/`.
+- Consumer: the marketing site's `/pricing` page, which has **no static fallback** — it serves the last good response, else "pricing temporarily unavailable".
 Looked up by **tenant id**, not the Subscription row's own id — the
 frontend always reaches a tenant's subscription via
 `/subscriptions/{tenant_id}/` with no separate "my subscription" step.
@@ -709,6 +718,11 @@ frontend always reaches a tenant's subscription via
   row is still honoured — it is a new charge, not the one ops was told to refund.
 
 ## Changelog
+- 2026-10-18  Public plan catalogue `GET /public/plans/` for the pglive.in marketing
+  site (allow-listed serializer, `currency` + `trial_days` envelope, throttled,
+  cached 5 min); `PLATFORM_CURRENCY` constant replaces the three `'INR'` literals in
+  `razorpay_client.py`. Tests: `test_public_plans` (allow-list, active-only,
+  per-bed tiers, config-driven trial days, read-only, no tenant data).
 - 2026-10-18  Plan exits invoice per-bed arrears first (rule 28): `close_per_bed_period`, shared `_invoice_period`; 10 tests in `test_plan_exit_invoicing.py`.
 - 2026-10-18  Invoices are saved as drafts and issued to Razorpay after commit, with a claim lease, a 10-minute retry sweep (migrations 0012/0013) and the invoice id as the Razorpay receipt (rule 29); 16 tests in `test_invoice_issuing.py`, two older tests rewritten to the new contract.
 - 2026-10-18  Invoice webhooks now match: the lookup ran with no tenant context so RLS hid every invoice and no `invoice.*` event was ever applied. It now runs as super admin, falls back to the Razorpay `receipt`, and the issue retry applies a remote `paid` / `expired` status; `test_invoice_webhook.py` (14 tests).

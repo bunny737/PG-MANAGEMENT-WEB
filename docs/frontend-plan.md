@@ -192,14 +192,19 @@ else under `/api/v1/`). Behaviours worth knowing:
     tenant+user, re-checks both after each await, and abandons itself with no POST and no storage
     write if the session ended or changed. `disablePush()` bumps the generation first, even with
     nothing stored yet.
+  - **Order rule:** revoking the browser token never waits on a call to our own backend. In both
+    `disablePush()` and the late-POST cleanup the token is revoked first, and the server-side row
+    DELETE comes last and is bounded to 5 s (`apiFetch` has no timeout of its own), so a stalled or
+    unreachable backend can neither keep a previous user's token alive nor leave the "turn off"
+    button busy forever.
   - A revocation abandoned by the cap that finishes late, after a newer registration began,
     re-registers to repair it.
   - A registration whose **POST was already in flight** when the session ended (logout finds nothing
     stored to remove, so it cannot clean up) cleans up after itself when the response arrives: if no
     newer registration exists it revokes the browser's FCM token — taking over by a later user is not
-    enough, since nobody may ever opt in on a shared browser — and tries to delete the row (which
-    only works while that user's cookies are still valid; otherwise the row dies with its token on
-    the backend's next send). If the next user did opt in, the token is theirs and is NOT revoked;
+    enough, since nobody may ever opt in on a shared browser — and only then tries to delete the row
+    (which only works while that user's cookies are still valid; otherwise the row dies with its
+    token on the backend's next send). If the next user did opt in, the token is theirs and is NOT revoked;
     instead their session registers again, because the late POST made the endpoint reassign the
     token back to the previous user. The cleanup is fenced by the registration epoch and queued behind
     the running operation (awaiting it inside would wait on itself).

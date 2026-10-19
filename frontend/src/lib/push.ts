@@ -140,6 +140,29 @@ function serialized<T>(operation: () => Promise<T>): Promise<T> {
   return capped;
 }
 
+const SERVER_DELETE_TIMEOUT_MS = 5_000;
+
+/** Best-effort removal of a subscription row on the server, bounded: apiFetch has no timeout of its
+ * own, and nothing that matters (revoking the browser token) may ever wait behind this. Never
+ * throws. `skipAuth`: a 401 here must not re-enter clearSession while a logout is waiting on us. */
+async function deleteServerRow(id: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, SERVER_DELETE_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([
+      apiFetch(`${SUBSCRIPTIONS_PATH}${id}/`, { method: "DELETE", skipAuth: true }).then(
+        () => {},
+        () => {} // offline, already gone, or another account's session cannot delete it: all fine
+      ),
+      bound,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Bumped each time this browser starts registering, so a late cleanup can tell a newer
  * registration exists. */
 let registrationEpoch = 0;
@@ -190,11 +213,8 @@ function registerToken(): Promise<void> {
  *    be revoked. But this late POST made the endpoint reassign the token back to the previous
  *    user, so register the current session again to take it back. */
 async function abandonLateRegistration(rowId: string, registration: number) {
-  try {
-    await apiFetch(`${SUBSCRIPTIONS_PATH}${rowId}/`, { method: "DELETE", skipAuth: true });
-  } catch {
-    // Signed out, or now another account's session: it cannot delete this row, which is fine.
-  }
+  // Revoke the token FIRST: it needs no round-trip to our backend, so an unreachable or stalled
+  // backend can never keep the previous user's token alive. The row deletion is last and bounded.
   let revoked = false;
   try {
     revoked = await serialized(async () => {
@@ -207,6 +227,7 @@ async function abandonLateRegistration(rowId: string, registration: number) {
     // Best-effort.
   }
   if (!revoked && registrationEpoch !== registration) void syncPush();
+  await deleteServerRow(rowId);
 }
 
 /** Turn notifications on. Must be called straight from a tap: iOS refuses the permission
@@ -244,13 +265,9 @@ export async function disablePush(): Promise<void> {
   } catch {
     // Best-effort.
   }
-  try {
-    // skipAuth: a 401 here must not re-enter clearSession while a logout is waiting on us. If this
-    // runs late it targets the old row by id, which another account's session cannot delete.
-    await apiFetch(`${SUBSCRIPTIONS_PATH}${stored.id}/`, { method: "DELETE", skipAuth: true });
-  } catch {
-    // Offline or already gone; the token is already revoked.
-  }
+  // Already revoked above, so this is best-effort and bounded. If it runs late it targets the old
+  // row by id, which another account's session cannot delete.
+  await deleteServerRow(stored.id);
 }
 
 /** Once per app start: refreshes the registration (rotated token, last-seen) for a device that

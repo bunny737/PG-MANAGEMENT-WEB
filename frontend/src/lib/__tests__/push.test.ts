@@ -298,6 +298,29 @@ describe("enablePush / disablePush", () => {
       }
     });
 
+    test("a hung backend DELETE only delays disablePush() by its own bound", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+        vi.stubGlobal("fetch", vi.fn(async () => new Promise<Response>(() => {})));
+
+        let settled = false;
+        const cleanup = disablePush().then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(deleteToken).toHaveBeenCalledTimes(1); // the token was revoked first, without waiting
+        expect(settled).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await cleanup;
+        expect(settled).toBe(true); // the "turn off" button / logout is not stuck forever
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     test("a registration that hangs rejects after the cap instead of leaving the UI waiting", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
@@ -431,6 +454,36 @@ describe("enablePush / disablePush", () => {
           expect(localStorage.getItem(STORAGE_KEY)).toBeNull(); // and nothing was recorded for B
           expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions"))).toHaveLength(1);
           expect(calls).toContain("DELETE /api/v1/notifications/push-subscriptions/row-a/"); // best-effort row removal
+        });
+
+        test("a hung backend DELETE cannot stop the token from being revoked", async () => {
+          stubBrowser({ permission: "granted" });
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+          let release: () => void = () => {};
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          let posted = false;
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              if (init?.method === "DELETE") return new Promise<Response>(() => {}); // backend never answers
+              if (init?.method === "POST" && String(input).includes("push-subscriptions")) {
+                posted = true;
+                await gate;
+              }
+              return new Response(JSON.stringify({ id: "row-a" }), { status: 201, headers: { "Content-Type": "application/json" } });
+            })
+          );
+
+          const registration = enablePush();
+          await vi.waitFor(() => expect(posted).toBe(true));
+          await disablePush();
+          release();
+          await registration;
+
+          // The DELETE hangs forever, yet the revocation was still attempted.
+          await vi.waitFor(() => expect(deleteToken).toHaveBeenCalledTimes(1));
         });
 
         test("if the next user opted in meanwhile their token is not revoked, and ownership is taken back", async () => {

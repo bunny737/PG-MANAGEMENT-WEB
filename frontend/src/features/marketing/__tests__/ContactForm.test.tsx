@@ -194,6 +194,76 @@ describe("ContactForm", () => {
   });
 });
 
+// A second language, as router.refresh() would supply it: same mounted component, new labels.
+const otherLabels: ContactFormLabels = {
+  ...labels,
+  submit: "Enviar",
+  submitting: "Enviando...",
+  errorThrottled: "Demasiados mensajes",
+  errorNetwork: "Problema de red",
+  errorGeneric: "Algo salio mal",
+  validation: {
+    nameRequired: "Escribe tu nombre",
+    emailInvalid: "Escribe un correo valido",
+    phoneInvalid: "Escribe un telefono valido",
+    messageShort: "Escribe un poco mas",
+    messageLong: "Mensaje demasiado largo",
+  },
+};
+
+describe("ContactForm when the language changes without a remount", () => {
+  beforeEach(() => {
+    mockApi.mockReset();
+  });
+
+  it("re-translates validation errors that are already showing", async () => {
+    const { rerender } = render(<ContactForm labels={labels} />);
+    fill({ name: "R", email: "nope", message: "short" });
+    submit();
+    expect(await screen.findByText(labels.validation.nameRequired)).toBeTruthy();
+
+    rerender(<ContactForm labels={otherLabels} />);
+
+    expect(await screen.findByText(otherLabels.validation.nameRequired)).toBeTruthy();
+    expect(screen.getByText(otherLabels.validation.emailInvalid)).toBeTruthy();
+    expect(screen.getByText(otherLabels.validation.messageShort)).toBeTruthy();
+    expect(screen.queryByText(labels.validation.nameRequired)).toBeNull();
+    expect(screen.queryByText(labels.validation.emailInvalid)).toBeNull();
+    // What the visitor typed is kept.
+    expect((screen.getByLabelText(labels.name) as HTMLInputElement).value).toBe("R");
+  });
+
+  it("validates later input in the new language", async () => {
+    const { rerender } = render(<ContactForm labels={labels} />);
+    rerender(<ContactForm labels={otherLabels} />);
+    fill({ name: "", email: "nope", message: "short" });
+    fireEvent.click(screen.getByRole("button", { name: otherLabels.submit }));
+
+    expect(await screen.findByText(otherLabels.validation.nameRequired)).toBeTruthy();
+    expect(screen.queryByText(labels.validation.nameRequired)).toBeNull();
+  });
+
+  it("switches an error banner that is already showing", async () => {
+    mockApi.mockRejectedValue(new ApiError(429, { detail: "Request was throttled." }));
+    const { rerender } = render(<ContactForm labels={labels} />);
+    fill();
+    submit();
+    expect((await screen.findByRole("alert")).textContent).toBe(labels.errorThrottled);
+
+    rerender(<ContactForm labels={otherLabels} />);
+    expect(screen.getByRole("alert").textContent).toBe(otherLabels.errorThrottled);
+  });
+
+  it("does not disturb a form with no errors", () => {
+    const { rerender } = render(<ContactForm labels={labels} />);
+    fill();
+    rerender(<ContactForm labels={otherLabels} />);
+    expect(screen.queryByText(otherLabels.validation.nameRequired)).toBeNull();
+    expect((screen.getByLabelText(labels.name) as HTMLInputElement).value).toBe("Ravi Kumar");
+    expect(screen.getByRole("button", { name: otherLabels.submit })).toBeTruthy();
+  });
+});
+
 describe("buildContactSchema", () => {
   const schema = buildContactSchema(labels.validation);
   const base = { name: "Ravi", email: "r@example.com", phone: "", message: MESSAGE };

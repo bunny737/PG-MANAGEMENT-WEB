@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -65,10 +65,20 @@ const inputClass =
   "w-full rounded-xl border border-border bg-surface-card px-3 py-2.5 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 aria-[invalid=true]:border-status-critical";
 const labelClass = "text-xs font-semibold uppercase tracking-wider text-ink-muted";
 
+type FormErrorKind = "errorNetwork" | "errorThrottled" | "errorGeneric";
+
 export function ContactForm({ labels }: { labels: ContactFormLabels }) {
-  const [schema] = useState(() => buildContactSchema(labels.validation));
+  // Rebuilt when the language changes: router.refresh() keeps this component's state
+  // but hands it new translated labels, so a schema frozen at mount would keep
+  // producing messages in the previous language.
+  const { nameRequired, emailInvalid, phoneInvalid, messageShort, messageLong } = labels.validation;
+  const schema = useMemo(
+    () => buildContactSchema({ nameRequired, emailInvalid, phoneInvalid, messageShort, messageLong }),
+    [nameRequired, emailInvalid, phoneInvalid, messageShort, messageLong]
+  );
   const [sent, setSent] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Kept as a key, not a string, so it follows the language too.
+  const [formError, setFormError] = useState<FormErrorKind | null>(null);
   // Honeypot, kept outside react-hook-form: a real visitor never sees or fills it.
   // The input name is deliberately not "website"/"url", which browsers autofill.
   const [trap, setTrap] = useState("");
@@ -78,11 +88,21 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
     handleSubmit,
     reset,
     setError,
+    trigger,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", email: "", phone: "", message: "" },
   });
+
+  // Errors already on screen were produced by the old schema; re-run the fields that
+  // show one so their text switches to the new language straight away.
+  const erroredFields = (Object.keys(errors) as FieldName[]).join(",");
+  useEffect(() => {
+    if (erroredFields) void trigger(erroredFields.split(",") as FieldName[]);
+    // Only when the schema (i.e. the language) changes, not on every error change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schema, trigger]);
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
@@ -97,9 +117,9 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
       setSent(true);
     } catch (error) {
       if (!(error instanceof ApiError) || error.status === 0) {
-        setFormError(labels.errorNetwork);
+        setFormError("errorNetwork");
       } else if (error.status === 429) {
-        setFormError(labels.errorThrottled);
+        setFormError("errorThrottled");
       } else {
         let mapped = false;
         for (const field of FIELDS) {
@@ -109,7 +129,7 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
             mapped = true;
           }
         }
-        if (!mapped) setFormError(labels.errorGeneric);
+        if (!mapped) setFormError("errorGeneric");
       }
     }
   });
@@ -228,7 +248,7 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
 
       {formError && (
         <p role="alert" className="rounded-xl bg-status-critical-soft px-4 py-3 text-sm font-medium text-status-critical">
-          {formError}
+          {labels[formError]}
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", async () => {
@@ -252,6 +252,34 @@ describe("ContactForm when the language changes without a remount", () => {
 
     rerender(<ContactForm labels={otherLabels} />);
     expect(screen.getByRole("alert").textContent).toBe(otherLabels.errorThrottled);
+  });
+
+  it("keeps an error the server returned (client re-validation must not clear it)", async () => {
+    mockApi.mockRejectedValue(new ApiError(400, { email: ["The server rejected this address."] }));
+    const { rerender } = render(<ContactForm labels={labels} />);
+    fill();
+    submit();
+    expect(await screen.findByText("The server rejected this address.")).toBeTruthy();
+
+    rerender(<ContactForm labels={otherLabels} />);
+    // Let any re-validation settle; the value passes the client schema, but the server said no.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(screen.getByText("The server rejected this address.")).toBeTruthy();
+    expect(screen.getByLabelText(labels.email).getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears a server error as soon as the visitor edits that field", async () => {
+    mockApi.mockRejectedValue(new ApiError(400, { email: ["The server rejected this address."] }));
+    render(<ContactForm labels={labels} />);
+    fill();
+    submit();
+    await screen.findByText("The server rejected this address.");
+
+    fireEvent.change(screen.getByLabelText(labels.email), { target: { value: "other@example.com" } });
+    await waitFor(() => expect(screen.queryByText("The server rejected this address.")).toBeNull());
   });
 
   it("does not disturb a form with no errors", () => {

@@ -58,6 +58,8 @@ export function buildContactSchema(v: ContactFormLabels["validation"]) {
 }
 
 type FieldName = "name" | "email" | "phone" | "message";
+/** `type` of an error that came from the API, as opposed to the client-side schema. */
+const SERVER_ERROR = "server";
 const FIELDS: FieldName[] = ["name", "email", "phone", "message"];
 type FormValues = z.infer<ReturnType<typeof buildContactSchema>>;
 
@@ -96,8 +98,10 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
   });
 
   // Errors already on screen were produced by the old schema; re-run the fields that
-  // show one so their text switches to the new language straight away.
-  const erroredFields = (Object.keys(errors) as FieldName[]).join(",");
+  // show one so their text switches to the new language straight away. Errors the
+  // server returned are left alone: re-running the client schema would find the value
+  // acceptable and silently clear a rejection the server still stands by.
+  const erroredFields = FIELDS.filter((field) => errors[field] && errors[field]?.type !== SERVER_ERROR).join(",");
   useEffect(() => {
     if (erroredFields) void trigger(erroredFields.split(",") as FieldName[]);
     // Only when the schema (i.e. the language) changes, not on every error change.
@@ -125,7 +129,7 @@ export function ContactForm({ labels }: { labels: ContactFormLabels }) {
         for (const field of FIELDS) {
           const message = error.fieldError(field);
           if (message) {
-            setError(field, { message });
+            setError(field, { type: SERVER_ERROR, message });
             mapped = true;
           }
         }

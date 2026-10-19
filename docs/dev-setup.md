@@ -71,6 +71,10 @@ Current diagram: [erd.png](erd.png).
 - **Push needs** the `NEXT_PUBLIC_FIREBASE_*` variables and VAPID key (`frontend/.env.local`), and a
   production build. Turn it on from **More -> Notifications**. Firebase setup:
   [push-notifications-integration.md](push-notifications-integration.md) §2.
+- **Opening the dev server from a phone or tunnel:** add the host to `ALLOWED_DEV_ORIGINS` in `.env` (see
+  `.env.example`), e.g. `ALLOWED_DEV_ORIGINS=my-tunnel.ngrok-free.dev,192.168.1.4`, then
+  `docker compose up -d frontend`. Without it Next 16 blocks the HMR socket from that host and the
+  page renders but never becomes interactive (the Owner/Staff login buttons do nothing).
 - **iPhone testing** needs HTTPS (an ngrok tunnel or staging) and iOS 16.4+. In Safari use Share ->
   Add to Home Screen, then open the installed app; push is only offered from the installed app.
 - **Icons** are generated: `node scripts/generate-pwa-icons.mjs` (in `frontend/`).

@@ -20,6 +20,14 @@ const withSerwist = withSerwistInit({
 });
 
 const nextConfig: NextConfig = {
+  // Next 16's dev server refuses dev resources (the HMR socket) from any host but localhost, and
+  // the page then renders but never hydrates: buttons do nothing. Anything else that opens the dev
+  // server — an ngrok tunnel, a phone on the LAN — must be listed, e.g.
+  // ALLOWED_DEV_ORIGINS=my-tunnel.ngrok-free.dev,192.168.1.4 (hosts only, no scheme or port).
+  allowedDevOrigins: (process.env.ALLOWED_DEV_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   // The BFF proxy forwards Django paths verbatim, and Django's routes end in a slash
   // (POST can't follow APPEND_SLASH). Next would otherwise 308 `/api/v1/x/` to `/api/v1/x`.
   skipTrailingSlashRedirect: true,

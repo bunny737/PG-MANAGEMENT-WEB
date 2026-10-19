@@ -114,20 +114,29 @@ async function currentToken(): Promise<string> {
 //
 //  1. Token operations are SERIALIZED: a registration waits for a revocation that has already
 //     started, so the revocation can never land on the token it is about to create.
-//  2. Each operation is capped at TOKEN_OP_TIMEOUT_MS so one hung SDK call cannot block pushes
-//     for the rest of the page's life. If a revocation is abandoned that way and later completes
-//     after a newer registration began (the epoch moved), it re-registers to repair the damage.
+//  2. Each operation is capped at TOKEN_OP_TIMEOUT_MS, counted from when it starts, so one hung SDK
+//     call cannot block pushes for the rest of the page's life. The cap applies to the promise the
+//     CALLER awaits as well as to the queue: a hung deleteToken() makes disablePush() move on to
+//     the server-side delete instead of waiting forever. The abandoned operation is still observed,
+//     and if it completes late after a newer registration began (the epoch moved) it re-registers
+//     to repair the damage.
 let tokenQueue: Promise<unknown> = Promise.resolve();
 const TOKEN_OP_TIMEOUT_MS = 10_000;
 
 function serialized<T>(operation: () => Promise<T>): Promise<T> {
-  const run = tokenQueue.then(operation, operation);
-  // The queue advances when the operation settles OR when it overstays, whichever is first.
-  tokenQueue = Promise.race([
-    run.catch(() => {}),
-    new Promise<void>((resolve) => setTimeout(resolve, TOKEN_OP_TIMEOUT_MS)),
-  ]);
-  return run;
+  const capped = tokenQueue.then(
+    () =>
+      new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Push token operation timed out")), TOKEN_OP_TIMEOUT_MS);
+        // A late result after the timeout is a no-op for the promise but is still observed here,
+        // so an abandoned operation can neither leak an unhandled rejection nor be lost.
+        operation()
+          .then(resolve, reject)
+          .finally(() => clearTimeout(timer));
+      })
+  );
+  tokenQueue = capped.catch(() => {});
+  return capped;
 }
 
 /** Bumped each time this browser starts registering, so a late cleanup can tell a newer

@@ -255,17 +255,61 @@ describe("enablePush / disablePush", () => {
         expect(deleteToken).toHaveBeenCalledTimes(1); // stalled
 
         const registration = enablePush();
-        await vi.advanceTimersByTimeAsync(10_000); // the queue gives up waiting on the stalled revocation
+        await vi.advanceTimersByTimeAsync(10_000); // the cap gives up on the stalled revocation
+        await cleanup; // disablePush itself is released too, WITHOUT the revocation having resolved
         await registration; // the new account registered while the revocation was still hanging
         expect(getToken).toHaveBeenCalledTimes(1);
 
-        release(); // ...and now the revocation finishes, possibly having hit that new token
-        await cleanup;
+        release(); // ...and now the abandoned revocation finishes, possibly having hit that new token
         await vi.advanceTimersByTimeAsync(0);
 
         expect(getToken).toHaveBeenCalledTimes(2); // repaired: registered again
         expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions"))).toHaveLength(2);
         expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a revocation that never resolves still lets disablePush reach the server-side delete", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+        deleteToken.mockImplementationOnce(() => new Promise<boolean>(() => {})); // hangs forever
+        const calls = stubApiCreates();
+
+        let settled = false;
+        const cleanup = disablePush().then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(9_999);
+        expect(settled).toBe(false); // still inside the cap
+        expect(calls.some((c) => c.startsWith("DELETE"))).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1); // the cap expires
+        await cleanup;
+
+        expect(settled).toBe(true);
+        expect(calls).toContain("DELETE /api/v1/notifications/push-subscriptions/sub-1/"); // the previous user's backend row is removed
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a registration that hangs rejects after the cap instead of leaving the UI waiting", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        stubBrowser({ permission: "granted" });
+        getToken.mockImplementationOnce(() => new Promise<string>(() => {}));
+        stubApiCreates();
+        const outcome = enablePush().then(
+          () => "resolved",
+          () => "rejected"
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+        await expect(outcome).resolves.toBe("rejected");
       } finally {
         vi.useRealTimers();
       }

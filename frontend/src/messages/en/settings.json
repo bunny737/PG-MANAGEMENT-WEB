@@ -158,6 +158,7 @@
     "emailOtpNotice": "Email changes require secondary security OTP validation.",
     "updatedToast": "Profile Updated",
     "updatedToastSub": "Your profile settings have been saved successfully.",
-    "errorToast": "Update Failed"
+    "errorToast": "Update Failed",
+    "saveFailed": "Could not save your profile. Please check the details and try again."
   }
 }

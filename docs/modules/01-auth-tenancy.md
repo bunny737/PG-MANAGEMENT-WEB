@@ -60,6 +60,11 @@ Table: platform_config              (singleton, id=1)
   trial_reminder_first_days_before (default 15)   -- added by Module 14
   trial_reminder_second_days_before (default 5)   -- added by Module 14
   support_email · support_phone · support_whatsapp · support_website · support_hours  -- blank = channel not offered
+
+Table: contact_messages             (platform-level, NOT tenant-scoped — no tenant_id, no RLS)
+  id uuid pk · name · email · phone (blank) · message (<=2000) · language (Accept-Language at submit)
+  ip_address (null) · status (new|handled) · handled_at (null) · created_at
+  index (status, -created_at)  -- website contact form inbox, read in Django admin
 ```
 
 ### RLS infrastructure (apps/core/)
@@ -90,6 +95,7 @@ POST /api/v1/auth/password-reset/          silent reset email              Allow
 POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
 GET /api/v1/support/                       platform support contacts       AllowAny (public, cached 5 min)
+POST /api/v1/public/contact/               website contact form -> ContactMessage   AllowAny (public, write-only, throttled 5/h per IP + 3/h per email, 16 KiB body cap)
 GET|PATCH /api/v1/tenants/current/           detail/update tenant default    manage_tenant_settings
 GET|POST /api/v1/staff/                    list/create Manager|Receptionist  manage_staff_accounts
 GET|PATCH /api/v1/staff/{id}/              detail/update/deactivate          manage_staff_accounts
@@ -180,6 +186,29 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
 - Requests that never touch the DB don't open a connection just to clear GUCs.
 
 ## Open questions / Decisions
+- [DECISION 2026-10-19] **Contact form inbox is platform-level, not tenant data.** `ContactMessage`
+  (`core.0007`) has no `tenant_id` and no RLS: the sender is an anonymous prospect, so invariant 1 has
+  nothing to scope to (same class as `PlatformConfig`, `AppVersionPolicy`). It is readable only through
+  Django admin by staff; the public API is write-only (no GET) and never echoes stored data.
+- [DECISION 2026-10-19] **Abuse controls for the public form:** body-size cap (413) before parsing, per-IP
+  throttle (`contact_message` 5/h) plus per-email throttle (`contact_message_email` 3/h, keyed on a hash of
+  the lower-cased email so rotating IPs does not lift it), field validation, and a honeypot field `website`
+  — a bot that fills it gets the same 201 but nothing is stored. The request serializer is an explicit
+  allow-list (name, email, phone, message, website), so nothing posted can set `status`/`ip_address`.
+- [DECISION 2026-10-19] **Admin is read-only with audited status changes.** Content fields are read-only and
+  rows cannot be added or edited; staff use the "Mark as handled / new" actions, and deletes (single or bulk)
+  are also recorded with `audit_log.record(tenant_id=None)` (invariant 9). Each action runs in one
+  `transaction.atomic()` together with its audit writes (a status batch or bulk delete is all-or-nothing, and a
+  failing audit write leaves the data unchanged; tests mock the audit call to fail). Audit payloads carry only the id
+  and status — never the sender's name, email or text. No email notification is sent (owner decision).
+- [OPEN 2026-10-19] **Retention:** `contact_messages` holds personal data (name, email, phone, free text, IP)
+  and has no purge job (the devices module has one for installs). Decide a retention period and add a seeded
+  periodic task; the privacy policy deliberately promises no number yet.
+- [OPEN 2026-10-19] **Trusted client IP:** `audit.log.client_ip` and DRF's throttle ident trust
+  `X-Forwarded-For`, which is client-controlled, and there is no `NUM_PROXIES`/trusted-proxy policy. The
+  stored IP and the per-IP throttle are best-effort until deployment fixes that; the per-email throttle is the
+  backstop. Also: `prod.py` has no CORS, so the browser form on `https://pglive.in` cannot post until the
+  deployment gate adds the origin.
 - [DECISION 2026-07-02] `users`, `tenants`, `otp_codes` are NOT under RLS:
   authentication must look up users before any tenant context exists. User
   queries are app-level scoped instead; every business table from Module 02 on
@@ -360,6 +389,11 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
     `core.idempotency` (`Idempotency-Key` header), `core.periods` (months in
     the product timezone; `local_today()` replaces the container-clock
     `date.today()` in new code).
+- 2026-10-19  Website contact form: `ContactMessage` model (`core.0007`, platform-level), public write-only
+  `POST /api/v1/public/contact/` (serializer allow-list, honeypot, per-IP + per-email throttles, 16 KiB
+  body cap, `CONTACT_MAX_BODY_BYTES`), `ContactMessageAdmin` (read-only inbox, audited mark-handled/new
+  and delete). `core.throttles`, `core.exceptions.PayloadTooLarge`. Exempt from the app-client gate via
+  the `/api/v1/public/` prefix. Tests: `apps/core/test_contact.py`. ERD regenerated.
 - 2026-10-18  Platform support contacts: `PlatformConfig.support_email|support_phone|support_whatsapp|
   support_website|support_hours` (all blank by default, `core.0006`), edited by a Super Admin in Django
   admin. `GET /api/v1/support/` (public, no auth, `Cache-Control: public, max-age=300`) returns

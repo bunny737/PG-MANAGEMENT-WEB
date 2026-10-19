@@ -95,8 +95,8 @@ services:
       # can never silently disagree (see that test's comment).
       - ./backend/apps/properties/tests/fixtures:/backend/apps/properties/tests/fixtures:ro
     environment:
-      # Server-side only: the BFF proxy (frontend/src/app/api) calls Django from inside this
-      # container, where localhost is not Django. The browser only ever talks to this app.
+      # Server-side only: the BFF proxy (frontend/src/app/api) and the marketing site's fetches call Django
+      # from inside this container, where localhost is not Django. The browser only ever talks to this app.
       - INTERNAL_API_URL=http://backend:8000
       # Dev only: hosts other than localhost that open the dev server (ngrok tunnel, phone on the LAN).
       - ALLOWED_DEV_ORIGINS=${ALLOWED_DEV_ORIGINS:-}

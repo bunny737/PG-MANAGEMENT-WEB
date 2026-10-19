@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getCacheScope } from "../cacheScope";
+import { isMarketingPath } from "../marketingPaths";
 import { queryClient } from "../queryClient";
 import { runSessionCleanups } from "../sessionPurge";
 
@@ -63,4 +64,16 @@ describe("session purge vs Cache Storage", () => {
       ["app-images", "next-static", "serwist-precache-v2-https://app.example/"].sort()
     );
   });
+});
+
+describe("marketing pages stay out of the worker's page cache", () => {
+  test.each(["/", "/features", "/pricing", "/app", "/contact", "/privacy", "/terms", "/pricing/", "/features/x"])(
+    "%s is a marketing path",
+    (path) => expect(isMarketingPath(path)).toBe(true)
+  );
+
+  test.each(["/login", "/dashboard", "/more", "/approval", "/applications", "/~offline", "/pricingx"])(
+    "%s is part of the installed app",
+    (path) => expect(isMarketingPath(path)).toBe(false)
+  );
 });

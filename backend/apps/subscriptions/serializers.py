@@ -30,6 +30,36 @@ class PlanSerializer(serializers.ModelSerializer):
         extra_kwargs = {'is_trial_plan': {'validators': []}}
 
 
+class PublicPlanBedTierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlanBedTier
+        fields = ['up_to_beds', 'rate_per_bed']
+        read_only_fields = fields
+
+
+class PublicPlanSerializer(serializers.ModelSerializer):
+    """Allow-list of plan fields safe to show anonymously (marketing site).
+    Deliberately NOT a subclass of `PlanSerializer`: a field added there must
+    not leak into a public response by inheritance. Razorpay ids, tenant
+    counts and admin flags stay out."""
+
+    bed_tiers = PublicPlanBedTierSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Plan
+        fields = ['id', 'name', 'pricing_type', 'price_per_month', 'max_beds', 'bed_tiers', 'is_trial_plan']
+        read_only_fields = fields
+
+
+class PublicPlanCatalogSerializer(serializers.Serializer):
+    """Response shape of GET /public/plans/ (documentation only)."""
+
+    currency = serializers.CharField()
+    trial_days = serializers.IntegerField()
+    updated_at = serializers.DateTimeField(allow_null=True)
+    plans = PublicPlanSerializer(many=True)
+
+
 class SubscriptionSerializer(serializers.ModelSerializer):
     """A tenant's plan + usage (PRD Module 20 'Current plan and usage
     (properties used vs. allowed)'). `property_usage` breaks usage down per

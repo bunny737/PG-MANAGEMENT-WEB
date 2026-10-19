@@ -30,10 +30,15 @@ export function proxy(request: NextRequest) {
   return response;
 }
 
+// The public marketing pages are skipped: they must not hand every anonymous
+// visitor a Set-Cookie. They render in the default language until the visitor
+// picks one with the language switcher (which writes the cookie itself).
+// NOTE: this keeps responses cookie-free but does not make them CDN-cacheable;
+// pages are still rendered per request because the locale comes from cookies().
 // `api/` is skipped so the BFF proxy's request bodies (uploads) never pass through here;
 // the service worker, manifest and icons are static and must load for signed-out users.
 export const config = {
   matcher: [
-    '/((?!api/|_next/static|_next/image|favicon.ico|sw.js|swe-worker|manifest.webmanifest|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!$|api/|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|opengraph-image|icon|apple-icon|sw.js|swe-worker|manifest.webmanifest|icons/|(?:features|pricing|app|contact|privacy|terms)(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

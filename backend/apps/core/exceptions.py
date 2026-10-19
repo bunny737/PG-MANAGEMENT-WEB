@@ -71,3 +71,9 @@ def api_exception_handler(exc, context):
             if code:
                 response.data['code'] = str(code).upper()
     return response
+
+
+class PayloadTooLarge(APIException):
+    status_code = 413
+    default_detail = _('Request body too large.')
+    default_code = 'payload_too_large'

@@ -25,6 +25,7 @@ import {
 import { initializeApp } from "firebase/app";
 import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 import { CACHE_SCOPE_HEADER } from "../lib/cacheScope";
+import { isMarketingPath } from "../lib/marketingPaths";
 import { pushTargetUrl } from "../lib/pushLinks";
 
 declare global {
@@ -111,9 +112,11 @@ const runtimeCaching: RuntimeCaching[] = [
     }),
   },
   // Page documents: a shell with no tenant data (the signed-in screens render client-side),
-  // cached so a visited screen can still open offline.
+  // cached so a visited screen can still open offline. The public marketing pages are not part
+  // of the installed app and are never cached.
   {
-    matcher: ({ request, sameOrigin }) => sameOrigin && request.mode === "navigate",
+    matcher: ({ request, sameOrigin, url }) =>
+      sameOrigin && request.mode === "navigate" && !isMarketingPath(url.pathname),
     handler: new NetworkFirst({
       cacheName: "pages",
       networkTimeoutSeconds: NETWORK_TIMEOUT_SECONDS,

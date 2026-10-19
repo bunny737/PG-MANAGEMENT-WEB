@@ -15,6 +15,11 @@ CORS_ALLOWED_ORIGINS = [
     'https://handrail-outwit-craftwork.ngrok-free.dev',
 ]
 
+# The Next.js container reaches Django as http://backend:8000 for server-side
+# fetches (marketing site: INTERNAL_API_URL).
+if 'backend' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('backend')
+
 if 'handrail-outwit-craftwork.ngrok-free.dev' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('handrail-outwit-craftwork.ngrok-free.dev')
 

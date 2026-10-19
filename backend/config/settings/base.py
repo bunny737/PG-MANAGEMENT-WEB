@@ -137,6 +137,11 @@ REST_FRAMEWORK = {
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',
         'device_register_ip': '120/hour',
+        # Public marketing-site plan catalogue (GET /public/plans/).
+        'public_catalog': '120/min',
+        # Website contact form (POST /public/contact/): per client IP and per sender email.
+        'contact_message': '5/hour',
+        'contact_message_email': '3/hour',
     },
 }
 
@@ -149,6 +154,8 @@ APP_MAINTENANCE_BYPASS_TOKEN = env('APP_MAINTENANCE_BYPASS_TOKEN', default='')
 # Extra path prefixes (e.g. a health check) exempt from enforcement.
 APP_VERSION_EXEMPT_PREFIXES = env.tuple('APP_VERSION_EXEMPT_PREFIXES', default=())
 DEVICE_REGISTER_MAX_BODY_BYTES = 8 * 1024
+# Public contact form: a 2000-char message is at most ~8 KiB of UTF-8; anything larger is abuse.
+CONTACT_MAX_BODY_BYTES = 16 * 1024
 # Retention (privacy): installs unseen this long, and history older than this.
 APP_INSTALLATION_RETENTION_DAYS = env.int('APP_INSTALLATION_RETENTION_DAYS', default=180)
 APP_INSTALLATION_HISTORY_RETENTION_DAYS = env.int('APP_INSTALLATION_HISTORY_RETENTION_DAYS', default=365)

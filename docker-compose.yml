@@ -95,7 +95,9 @@ services:
       # can never silently disagree (see that test's comment).
       - ./backend/apps/properties/tests/fixtures:/backend/apps/properties/tests/fixtures:ro
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Server-side only: the BFF proxy (frontend/src/app/api) calls Django from inside this
+      # container, where localhost is not Django. The browser only ever talks to this app.
+      - INTERNAL_API_URL=http://backend:8000
       - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
       - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY:-}
       - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}

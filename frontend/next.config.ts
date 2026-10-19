@@ -5,6 +5,9 @@ import path from "path";
 const withNextIntl = createNextIntlPlugin();
 
 const nextConfig: NextConfig = {
+  // The BFF proxy forwards Django paths verbatim, and Django's routes end in a slash
+  // (POST can't follow APPEND_SLASH). Next would otherwise 308 `/api/v1/x/` to `/api/v1/x`.
+  skipTrailingSlashRedirect: true,
   webpack: (config, { dev }) => {
     if (dev) {
       config.watchOptions = {

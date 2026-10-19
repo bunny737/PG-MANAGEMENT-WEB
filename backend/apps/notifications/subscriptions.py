@@ -68,5 +68,13 @@ def remove_all_for_installation(*, installation):
         return PushSubscription.objects.filter(installation=installation).delete()[0]
 
 
-def remove_subscription(*, user, subscription_id):
-    return PushSubscription.objects.filter(pk=subscription_id, user=user).delete()[0]
+def remove_subscription(*, user, subscription_id, if_last_seen_at=None):
+    """Deletes `user`'s own row. With `if_last_seen_at` the delete is conditional (one atomic
+    DELETE ... WHERE): it only removes the row if no registration has touched it since the caller
+    last saw it. A web client's cleanup can arrive late, after the same account turned push off and
+    on again — the upsert reuses the row id, so an unconditional DELETE would remove the
+    subscription that was just repaired. Returns the number of rows deleted."""
+    rows = PushSubscription.objects.filter(pk=subscription_id, user=user)
+    if if_last_seen_at is not None:
+        rows = rows.filter(last_seen_at=if_last_seen_at)
+    return rows.delete()[0]

@@ -19,6 +19,7 @@ export const MODULES = [
   'reports',
   'status',
   'visitors',
+  'pwa',
   // Public pglive.in site (server-rendered; see app/(marketing)).
   'marketing',
 ];

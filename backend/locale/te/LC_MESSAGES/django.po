@@ -2060,3 +2060,7 @@ msgstr "ఈ టెనెంట్ ఇప్పటికే సస్పెండ
 #: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr "ఈ టెనెంట్ సస్పెండ్ చేయబడలేదు."
+
+#: apps/notifications/views.py
+msgid "This subscription was registered again since you last saw it; not deleted."
+msgstr "ఈ సబ్‌స్క్రిప్షన్ మీరు చివరిసారి చూసిన తర్వాత మళ్లీ నమోదు చేయబడింది; తొలగించబడలేదు."

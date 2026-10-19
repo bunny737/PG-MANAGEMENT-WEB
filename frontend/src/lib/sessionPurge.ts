@@ -24,6 +24,10 @@
 type CleanupFn = () => void | Promise<void>;
 
 const cleanups = new Set<CleanupFn>();
+const preLogoutSteps = new Set<CleanupFn>();
+
+/** Longest a logout waits for work that needs the still-valid session (push unsubscribe). */
+const PRE_LOGOUT_TIMEOUT_MS = 3_000;
 let pending: Promise<void> | null = null;
 
 /** Registers a cleanup step `clearSession()` runs on every purge. Returns
@@ -33,16 +37,37 @@ export function registerSessionCleanup(fn: CleanupFn): () => void {
   return () => cleanups.delete(fn);
 }
 
+/** Registers work that must happen while the session cookies are still valid — e.g.
+ * unsubscribing this device from push — and so runs *before* the server-side logout request
+ * (lib/api.ts). Best-effort and time-boxed: offline or failing, logout still proceeds. */
+export function registerPreLogoutStep(fn: CleanupFn): () => void {
+  preLogoutSteps.add(fn);
+  return () => preLogoutSteps.delete(fn);
+}
+
+export async function runPreLogoutSteps(): Promise<void> {
+  if (preLogoutSteps.size === 0) return;
+  const work = Promise.allSettled([...preLogoutSteps].map((fn) => fn()));
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, PRE_LOGOUT_TIMEOUT_MS));
+  await Promise.race([work, timeout]);
+}
+
 /** Resolves once a purge already in flight finishes; resolves immediately
  * if none is running. */
 export function awaitPendingPurge(): Promise<void> {
   return pending ?? Promise.resolve();
 }
 
+// Caches the service worker (app/sw.ts) fills with build output only — no tenant data — so a
+// purge keeps them and the app shell still opens offline afterwards. Everything else (the
+// per-user api-* caches, page documents, anything unknown) is deleted.
+const TENANT_FREE_CACHE_PREFIXES = ["serwist-precache", "next-static", "app-images"];
+
 async function clearCacheStorage() {
   if (typeof caches === "undefined") return;
   const keys = await caches.keys();
-  await Promise.allSettled(keys.map((key) => caches.delete(key)));
+  const doomed = keys.filter((key) => !TENANT_FREE_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)));
+  await Promise.allSettled(doomed.map((key) => caches.delete(key)));
 }
 
 function deleteIndexedDb(name: string): Promise<void> {

@@ -8,7 +8,8 @@ export function getSiteConfig() {
 
 /** Base URL for SERVER-side calls to Django. Inside a container `localhost` is
  * the frontend itself, so production sets INTERNAL_API_URL (e.g. http://backend:8000);
- * the browser keeps using NEXT_PUBLIC_API_URL. */
+ * the browser never calls Django directly: it uses the same-origin BFF proxy (src/app/api), which
+ * reads the same INTERNAL_API_URL. */
 export function getServerApiBase(): string {
   return (
     process.env.INTERNAL_API_URL ??

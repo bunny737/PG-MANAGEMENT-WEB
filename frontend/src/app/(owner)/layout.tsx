@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BottomNav } from "@/components/shared/BottomNav";
+import { OfflineBanner } from "@/components/shared/OfflineBanner";
+import { PushRuntime } from "@/features/notifications/PushRuntime";
+import { InstallNudge } from "@/features/pwa/InstallNudge";
 import { SideNav } from "@/components/shared/SideNav";
 import { clearSession } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -55,7 +58,7 @@ export default function OwnerLayout({
 
   if (!isAuthorized) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-surface-page">
+      <div className="flex min-h-dvh w-full items-center justify-center bg-surface-page">
         <div className="flex flex-col items-center gap-2">
           <div className="size-8 animate-spin rounded-full border-4 border-accent border-t-transparent" />
           <p className="text-sm text-ink-muted">{t("authCheck")}</p>
@@ -66,10 +69,15 @@ export default function OwnerLayout({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen">
+      <div className="flex min-h-dvh">
         <SideNav />
-        <div className="flex-1 pb-20 md:pb-0">{children}</div>
+        <div className="flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
+          <OfflineBanner />
+          <InstallNudge />
+          {children}
+        </div>
         <BottomNav />
+        <PushRuntime />
       </div>
     </QueryClientProvider>
   );

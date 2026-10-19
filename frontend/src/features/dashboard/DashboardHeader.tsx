@@ -2,6 +2,7 @@
 
 import { Bell, Building2, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { clearSession } from "@/lib/api";
 
 export function DashboardHeader() {
   const t = useTranslations("dashboard.header");
@@ -29,8 +30,8 @@ export function DashboardHeader() {
         <button
           type="button"
           aria-label={t("signOut")}
-          onClick={() => {
-            localStorage.removeItem("isLoggedIn");
+          onClick={async () => {
+            await clearSession();
             window.location.href = "/login";
           }}
           title={t("signOut")}

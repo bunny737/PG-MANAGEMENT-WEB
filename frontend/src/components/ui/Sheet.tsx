@@ -41,7 +41,7 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
         aria-labelledby="sheet-title"
         onClick={(event) => event.stopPropagation()}
         className={cn(
-          "flex h-full w-full max-w-xl flex-col justify-between space-y-6 overflow-y-auto border-l border-border bg-surface-card p-6 shadow-2xl",
+          "flex h-full w-full max-w-xl flex-col justify-between space-y-6 overflow-y-auto border-l border-border bg-surface-card px-6 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl",
           className
         )}
       >

@@ -153,3 +153,14 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* iOS Safari zooms the whole page when a focused form control has a font size under 16px,
+   and the installed app never zooms back out. Unlayered on purpose so it beats Tailwind's
+   text-sm / text-xs utilities, which live in a cascade layer. Touch devices only. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

@@ -23,7 +23,7 @@ export function BottomNav() {
   const bottomBarItems = [...primaryItems, MORE_NAV_ITEM];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card/95 shadow-[0_-4px_16px_-4px_rgb(11_18_32/0.08)] backdrop-blur-sm md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card/95 shadow-[0_-4px_16px_-4px_rgb(11_18_32/0.08)] backdrop-blur-sm pb-[env(safe-area-inset-bottom)] ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)] md:hidden">
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
         {bottomBarItems.map((item) => {
           const isActive = pathname.startsWith(item.href);

@@ -1,20 +1,16 @@
-// Minimal direct-to-Django API client for local development.
-//
-// This is a deliberate shortcut, not the target architecture: docs/frontend-plan.md
-// §3.1 specifies a Next.js BFF proxy (route handlers under app/api/[...path]) that
-// keeps JWTs in httpOnly cookies so the browser never sees them. That hasn't been
-// built yet. Until it is, this client calls Django directly from the browser and
-// keeps the JWT pair in localStorage — fine for local dev (CORS is dev-only, see
-// backend/config/settings/dev.py), but it must be replaced by the BFF proxy before
-// this app is exposed beyond a developer's machine.
+// API client. Every call goes to this app's own origin (`/api/v1/...`), where the BFF
+// proxy (app/api/[...path]/route.ts, docs/frontend-plan.md §3.1) attaches the JWT from an
+// httpOnly cookie and forwards to Django. The browser never sees or stores a token; the
+// only auth state kept client-side is the non-secret UX hints in localStorage (login flag,
+// role, permissions) that lib/session.ts revalidates from /auth/me/.
 
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
-import { awaitPendingPurge, runSessionCleanups } from "@/lib/sessionPurge";
+import { CACHE_SCOPE_HEADER, getCacheScope } from "@/lib/cacheScope";
+import { awaitPendingPurge, registerSessionCleanup, runPreLogoutSteps, runSessionCleanups } from "@/lib/sessionPurge";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Same-origin: the BFF proxy owns the Django origin (INTERNAL_API_URL, server-side only).
+const API_BASE_URL = "";
 
-const ACCESS_TOKEN_KEY = "accessToken";
-const REFRESH_TOKEN_KEY = "refreshToken";
 /** Permission codes from /auth/me/ — read through `usePermissions()`. */
 export const PERMISSIONS_KEY = "userPermissions";
 /** Fired on any 403 so the session layer can refresh permissions right away. */
@@ -73,35 +69,31 @@ export function isUUID(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
-export function setTokens(access: string, refresh: string) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
-}
+// Registered as a purge step (not called from clearSession directly) so it is part of the
+// pending purge that login() awaits — a slow logout can then never clear a fresh login's cookies.
+// Pre-logout steps (push unsubscribe, capped at a few seconds) run first because they still
+// need the session cookie; offline or failing, the logout request is still sent.
+registerSessionCleanup(async () => {
+  try {
+    await runPreLogoutSteps();
+    await fetch("/api/auth/logout", { method: "POST", keepalive: true });
+  } catch {
+    // Offline: local state is already gone; the cookies are replaced by the next login.
+  }
+});
 
 /**
  * Purges the session (invariant F7 — no tenant data survives logout or an
- * account switch). Tokens/permissions/session keys are removed and
+ * account switch). Permissions/session keys are removed and
  * `session-changed` is dispatched synchronously, before anything is
- * awaited, so no request already in flight can authenticate as the old
- * user once this starts. It then awaits every other registered cleanup
+ * awaited. It then runs the server-side cookie clear (registered above)
+ * and awaits every registered cleanup
  * step (query cache, Zustand stores, Cache Storage, IndexedDB — see
  * lib/sessionPurge.ts) through `Promise.allSettled`, so one failing step
  * never skips the rest. Callers should `await` this before navigating
  * away, so the next screen never renders with the old session's cache.
  */
 export async function clearSession() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");
   localStorage.removeItem("userName");
@@ -124,30 +116,18 @@ async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
   }
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refresh = getRefreshToken();
-  if (!refresh) return null;
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/auth/token/refresh/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    localStorage.setItem(ACCESS_TOKEN_KEY, data.access);
-    return data.access as string;
-  } catch {
-    return null;
-  }
+/** Lets the service worker file this response under the signed-in user's own cache (see lib/cacheScope.ts). */
+function tagCacheScope(headers: Headers) {
+  const scope = getCacheScope();
+  if (scope) headers.set(CACHE_SCOPE_HEADER, scope);
 }
 
 interface ApiFetchOptions extends RequestInit {
-  /** Skip attaching the Authorization header and the 401-refresh dance (login itself). */
+  /** Skip the "401 means the session is dead" handling (login itself, where 401 is bad credentials). */
   skipAuth?: boolean;
 }
 
-export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _isRetry = false): Promise<T> {
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const isFormData = options.body instanceof FormData;
   const headers = new Headers(options.headers);
   if (!isFormData && options.body && !headers.has("Content-Type")) {
@@ -157,11 +137,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
   if (!headers.has("Accept-Language")) {
     headers.set("Accept-Language", currentLocale);
   }
-  if (!options.skipAuth) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
-
+  tagCacheScope(headers);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
@@ -170,9 +146,8 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
     throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
   }
 
-  if (res.status === 401 && !options.skipAuth && !_isRetry) {
-    const newToken = await refreshAccessToken();
-    if (newToken) return apiFetch<T>(path, options, true);
+  // The proxy already refreshed the token if it could; a 401 here means the session is over.
+  if (res.status === 401 && !options.skipAuth) {
     await clearSession();
     if (typeof window !== "undefined") window.location.href = "/login";
     throw new ApiError(401, { detail: "Session expired" });
@@ -202,8 +177,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}, _
  */
 export async function apiFetchWithMeta<T>(
   path: string,
-  options: ApiFetchOptions = {},
-  _isRetry = false
+  options: ApiFetchOptions = {}
 ): Promise<{ data: T; headers: Headers; status: number }> {
   const isFormData = options.body instanceof FormData;
   const headers = new Headers(options.headers);
@@ -214,11 +188,7 @@ export async function apiFetchWithMeta<T>(
   if (!headers.has("Accept-Language")) {
     headers.set("Accept-Language", currentLocale);
   }
-  if (!options.skipAuth) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
-
+  tagCacheScope(headers);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
@@ -226,9 +196,8 @@ export async function apiFetchWithMeta<T>(
     throw new ApiError(0, { detail: "Could not reach the server. Please check your network connection." });
   }
 
-  if (res.status === 401 && !options.skipAuth && !_isRetry) {
-    const newToken = await refreshAccessToken();
-    if (newToken) return apiFetchWithMeta<T>(path, options, true);
+  // The proxy already refreshed the token if it could; a 401 here means the session is over.
+  if (res.status === 401 && !options.skipAuth) {
     await clearSession();
     if (typeof window !== "undefined") window.location.href = "/login";
     throw new ApiError(401, { detail: "Session expired" });
@@ -255,10 +224,9 @@ export async function apiDownload(
   path: string
 ): Promise<{ blob: Blob; filename: string }> {
   const headers = new Headers();
-  const token = getAccessToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
   const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
   headers.set("Accept-Language", currentLocale);
+  tagCacheScope(headers);
 
   let res: Response;
   try {
@@ -268,15 +236,9 @@ export async function apiDownload(
   }
 
   if (res.status === 401) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers.set("Authorization", `Bearer ${newToken}`);
-      res = await fetch(`${API_BASE_URL}${path}`, { headers });
-    } else {
-      await clearSession();
-      if (typeof window !== "undefined") window.location.href = "/login";
-      throw new ApiError(401, { detail: "Session expired" });
-    }
+    await clearSession();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new ApiError(401, { detail: "Session expired" });
   }
 
   if (!res.ok) {
@@ -291,14 +253,12 @@ export async function apiDownload(
 
 export async function login(email: string, password: string) {
   await awaitPendingPurge();
-  const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login/", {
+  // The route handler stores the token pair in httpOnly cookies and returns only the /auth/me/ payload.
+  const me = await apiFetch<CurrentUser>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
     skipAuth: true,
   });
-  setTokens(tokens.access, tokens.refresh);
-
-  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
   localStorage.setItem("isLoggedIn", "true");
   localStorage.setItem("userRole", me.role);
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
@@ -314,14 +274,12 @@ export async function login(email: string, password: string) {
 
 export async function loginPhone(phone: string, password: string) {
   await awaitPendingPurge();
-  const tokens = await apiFetch<{ access: string; refresh: string }>("/api/v1/auth/login-phone/", {
+  // The route handler stores the token pair in httpOnly cookies and returns only the /auth/me/ payload.
+  const me = await apiFetch<CurrentUser>("/api/auth/login-phone", {
     method: "POST",
     body: JSON.stringify({ phone, password }),
     skipAuth: true,
   });
-  setTokens(tokens.access, tokens.refresh);
-
-  const me = await apiFetch<CurrentUser>("/api/v1/auth/me/");
   localStorage.setItem("isLoggedIn", "true");
   localStorage.setItem("userRole", me.role);
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));

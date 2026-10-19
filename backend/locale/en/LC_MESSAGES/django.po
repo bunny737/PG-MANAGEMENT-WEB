@@ -2013,3 +2013,7 @@ msgstr ""
 #: apps/subscriptions/views.py:160
 msgid "This tenant is not suspended."
 msgstr ""
+
+#: apps/notifications/views.py
+msgid "This subscription was registered again since you last saw it; not deleted."
+msgstr ""

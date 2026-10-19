@@ -5,14 +5,14 @@ import { User, Mail, Phone, Building, Camera, CheckCircle2, Shield, Globe } from
 import { useTranslations } from "next-intl";
 import { LOCALES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
-import { getCurrentUser, updateMe } from "@/lib/api";
+import { ApiError, getCurrentUser, updateMe } from "@/lib/api";
 
 export function UserProfile() {
   const t = useTranslations("settings.profile");
-  const [name, setName] = useState("Owner Portal Administrator");
-  const [email, setEmail] = useState("admin@propmanager.com");
-  const [phone, setPhone] = useState("+1 (555) 019-2834");
-  const [company, setCompany] = useState("Proton Management");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
   const [languageCode, setLanguageCode] = useState(() => readLocaleCookie());
   const [isLoading, setIsLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -52,8 +52,11 @@ export function UserProfile() {
       setTimeout(() => {
         window.location.reload();
       }, 500);
-    } catch {
-      setErrorToast("Failed to update profile settings. Please try again.");
+    } catch (err) {
+      // Field messages come from the backend already translated (Accept-Language).
+      const fieldMessage =
+        err instanceof ApiError ? err.fieldError("phone") ?? err.fieldError("first_name") ?? err.fieldError("last_name") : undefined;
+      setErrorToast(fieldMessage ?? t("saveFailed"));
     } finally {
       setIsLoading(false);
     }

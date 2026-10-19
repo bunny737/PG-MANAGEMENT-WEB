@@ -165,6 +165,15 @@ Returns **204**. Always call this on logout — an unregistered device
 whose token is later reused by a different account would otherwise keep
 receiving the previous user's pushes until FCM invalidates the stale token.
 
+**Optional conditional delete** — `DELETE .../{id}/?if_last_seen_at=<last_seen_at>`
+(URL-encoded, the value from the POST/GET response). The row is deleted only if
+it has not been registered again since; otherwise **412** and nothing is
+deleted. Use it when the DELETE may arrive late (the web client sends it after
+a timeout): re-registering the same token under the same account returns the
+same row id, so an unconditional late DELETE would remove the fresh
+subscription. A malformed value is **400**. Clients that omit it (the mobile
+app) get the plain delete above.
+
 ### Notification payload shape (what you'll receive)
 Every push is an FCM **notification message** with a **data** payload:
 ```json

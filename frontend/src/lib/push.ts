@@ -1,0 +1,362 @@
+// Web Push via Firebase Cloud Messaging (docs/push-notifications-integration.md §6).
+//
+// Browser-only. The Firebase SDK is imported lazily so it stays out of every page's bundle,
+// and it reuses the Serwist service worker (app/sw.ts) instead of registering a second one.
+// iOS (16.4+) only allows web push for an app added to the Home Screen, and only from a
+// user tap — see getPushStatus() and enablePush().
+
+import { apiFetch } from "@/lib/api";
+import { getCacheScope } from "@/lib/cacheScope";
+import { isIos, isStandalone } from "@/lib/pwa";
+import { registerPreLogoutStep } from "@/lib/sessionPurge";
+
+const STORAGE_KEY = "pushSubscription"; // JSON { id, token }: the row this device registered
+const SUBSCRIPTIONS_PATH = "/api/v1/notifications/push-subscriptions/";
+
+export type PushStatus =
+  | "unsupported"
+  /** iOS, not installed: the push APIs don't exist until the app is on the Home Screen. */
+  | "needs-install"
+  | "blocked"
+  | "off"
+  | "on";
+
+interface StoredSubscription {
+  id: string;
+  token: string;
+  /** The server row's `last_seen_at` from the registration that stored this. Sent back on DELETE so a
+   * late delete cannot remove a row that has been registered again since. Absent in older storage. */
+  lastSeenAt?: string;
+}
+
+function firebaseConfig() {
+  const config = {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  };
+  const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+  return Object.values(config).every(Boolean) && vapidKey
+    ? { app: config as Record<keyof typeof config, string>, vapidKey }
+    : null;
+}
+
+function readStored(): StoredSubscription | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+    return parsed && typeof parsed.id === "string" && typeof parsed.token === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(value: StoredSubscription | null) {
+  try {
+    if (value) localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Private mode: status just reads "off" next load.
+  }
+}
+
+// --- reactive status (same pattern as lib/pwa.ts) -------------------------------------------
+
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((listener) => listener());
+
+export function subscribePushStatus(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getPushStatus(): PushStatus {
+  if (typeof window === "undefined") return "unsupported";
+  // The service worker (and so push) only exists in a production build.
+  if (process.env.NODE_ENV !== "production" || !firebaseConfig()) return "unsupported";
+  if (isIos() && !isStandalone()) return "needs-install";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    return "unsupported";
+  }
+  if (Notification.permission === "denied") return "blocked";
+  return Notification.permission === "granted" && readStored() ? "on" : "off";
+}
+
+// --- Firebase ---------------------------------------------------------------------------
+
+type FirebaseModules = readonly [typeof import("firebase/app"), typeof import("firebase/messaging")];
+
+// Loaded lazily so the SDK stays out of every page's bundle.
+let loadFirebase = (): Promise<FirebaseModules> => Promise.all([import("firebase/app"), import("firebase/messaging")]);
+
+/** Test seam: the real SDK needs a service worker and FCM, neither of which exists in jsdom. */
+export function setFirebaseLoader(loader: () => Promise<FirebaseModules>) {
+  loadFirebase = loader;
+}
+
+async function firebase() {
+  const config = firebaseConfig();
+  if (!config) throw new Error("Firebase is not configured");
+  const [app, messagingModule] = await loadFirebase();
+  const instance = messagingModule.getMessaging(app.getApps()[0] ?? app.initializeApp(config.app));
+  return { messaging: instance, vapidKey: config.vapidKey, sdk: messagingModule };
+}
+
+async function currentToken(): Promise<string> {
+  const { messaging: instance, vapidKey, sdk } = await firebase();
+  const registration = await navigator.serviceWorker.ready;
+  const token = await sdk.getToken(instance, { vapidKey, serviceWorkerRegistration: registration });
+  if (!token) throw new Error("No push token");
+  return token;
+}
+
+// The push token belongs to the browser, not to an account, and logout only waits a few seconds
+// for its cleanup — so the next account can start registering while the previous account's
+// token revocation is still in flight. Two defences, because a stalled call cannot be cancelled:
+//
+//  1. Token operations are SERIALIZED: a registration waits for a revocation that has already
+//     started, so the revocation can never land on the token it is about to create.
+//  2. Each operation is capped at TOKEN_OP_TIMEOUT_MS, counted from when it starts, so one hung SDK
+//     call cannot block pushes for the rest of the page's life. The cap applies to the promise the
+//     CALLER awaits as well as to the queue: a hung deleteToken() makes disablePush() move on to
+//     the server-side delete instead of waiting forever. The abandoned operation is still observed,
+//     and if it completes late after a newer registration began (the epoch moved) it re-registers
+//     to repair the damage.
+let tokenQueue: Promise<unknown> = Promise.resolve();
+const TOKEN_OP_TIMEOUT_MS = 10_000;
+
+function serialized<T>(operation: () => Promise<T>): Promise<T> {
+  const capped = tokenQueue.then(
+    () =>
+      new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Push token operation timed out")), TOKEN_OP_TIMEOUT_MS);
+        // A late result after the timeout is a no-op for the promise but is still observed here,
+        // so an abandoned operation can neither leak an unhandled rejection nor be lost.
+        operation()
+          .then(resolve, reject)
+          .finally(() => clearTimeout(timer));
+      })
+  );
+  tokenQueue = capped.catch(() => {});
+  return capped;
+}
+
+const SERVER_DELETE_TIMEOUT_MS = 5_000;
+
+/** Best-effort removal of a subscription row on the server, bounded: apiFetch has no timeout of its
+ * own, and nothing that matters (revoking the browser token) may ever wait behind this. Never
+ * throws. `skipAuth`: a 401 here must not re-enter clearSession while a logout is waiting on us.
+ *
+ * Aborting after the bound does not recall a request the server already received, and the same
+ * account can turn push back on and get this very row id back from the token upsert. So the DELETE
+ * is conditional on `lastSeenAt`: the server refuses (412) when the row was registered again since. */
+async function deleteServerRow(id: string, lastSeenAt?: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
+  const bound = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve();
+    }, SERVER_DELETE_TIMEOUT_MS);
+  });
+  const condition = lastSeenAt ? `?if_last_seen_at=${encodeURIComponent(lastSeenAt)}` : "";
+  try {
+    await Promise.race([
+      apiFetch(`${SUBSCRIPTIONS_PATH}${id}/${condition}`, {
+        method: "DELETE",
+        skipAuth: true,
+        signal: controller.signal,
+      }).then(
+        () => {},
+        () => {} // offline, already gone, or another account's session cannot delete it: all fine
+      ),
+      bound,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Bumped each time this browser starts registering, so a late cleanup can tell a newer
+ * registration exists. */
+let registrationEpoch = 0;
+
+/** Bumped whenever the session this browser's push belongs to ends (disablePush, i.e. logout or
+ * "turn off"). A timeout cannot cancel an operation, so a registration that outlives its caller
+ * would otherwise finish under the NEXT user's cookies and storage. Registration therefore checks
+ * this, and the signed-in tenant+user, after every await and abandons itself, without side
+ * effects, once either has changed. */
+let sessionGeneration = 0;
+
+/** Registers (or re-registers) this device's token. The endpoint upserts, so calling it on
+ * every start is safe; `replaces` drops the previous row if the browser rotated the token. */
+function registerToken(): Promise<void> {
+  return serialized(registerTokenNow);
+}
+
+/** The registration itself, for callers that are already inside the queue. */
+async function registerTokenNow(): Promise<void> {
+  const generation = sessionGeneration;
+  const scope = getCacheScope();
+  const stillSameSession = () => generation === sessionGeneration && getCacheScope() === scope;
+
+  registrationEpoch += 1;
+  const thisRegistration = registrationEpoch;
+  const token = await currentToken();
+  if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
+  const previous = readStored();
+  const subscription = await apiFetch<{ id: string; last_seen_at?: string }>(SUBSCRIPTIONS_PATH, {
+    method: "POST",
+    body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
+  });
+  if (!stillSameSession()) {
+    // The POST was already in flight when the session ended, so logout found nothing stored to
+    // remove and the server now holds a row for the previous user. Never record it in the next
+    // session's storage, and clean it up. Not awaited: it queues behind this operation, so
+    // awaiting it here would wait on itself.
+    void abandonLateRegistration(subscription.id, subscription.last_seen_at, thisRegistration);
+    return;
+  }
+  writeStored({ id: subscription.id, token, lastSeenAt: subscription.last_seen_at });
+}
+
+/** Registers the current session again once everything already queued has finished.
+ *
+ * Used to repair a registration whose token an abandoned revocation may have destroyed. The
+ * "is push on?" decision is taken INSIDE the queue, after any registration still in flight has
+ * written its storage: deciding earlier would see an empty store for a registration whose POST is
+ * pending, do nothing, and leave it holding a dead token. Not an epoch check on purpose: a later
+ * registration may have started before the stalled revocation finished, so it cannot be assumed
+ * to have escaped it, and an extra upsert is harmless. Logout or "turn off" in the meantime
+ * leaves the store empty, so nothing is enabled again. */
+function queueRegistrationRepair() {
+  void serialized(async () => {
+    if (getPushStatus() !== "on") return;
+    await registerTokenNow();
+  }).catch(() => {
+    // Best-effort; syncPush retries on the next app start.
+  });
+}
+
+/** Cleans up after a registration whose POST completed once its session was over.
+ *
+ *  - No newer registration: revoke the browser's FCM token, so the previous user's notifications
+ *    can no longer be delivered to this (possibly shared) browser. Token takeover by a later
+ *    user is not a substitute: nobody may ever opt in. The row is also deleted when that user's
+ *    cookies still allow it; otherwise it dies with its token the next time the backend sends.
+ *  - A newer registration exists (the next user opted in): the token is theirs now, so it must NOT
+ *    be revoked. But this late POST made the endpoint reassign the token back to the previous
+ *    user, so register the current session again to take it back. The row is NOT deleted: the
+ *    upsert keys on the token, so a same-account re-enable shares this row id. */
+async function abandonLateRegistration(rowId: string, lastSeenAt: string | undefined, registration: number) {
+  // Revoke the token FIRST: it needs no round-trip to our backend, so an unreachable or stalled
+  // backend can never keep the previous user's token alive. The row deletion is last and bounded.
+  let superseded = false;
+  let revoked = false;
+  try {
+    revoked = await serialized(async () => {
+      if (registrationEpoch !== registration) {
+        superseded = true; // fenced: a newer registration exists
+        queueRegistrationRepair();
+        return false;
+      }
+      const { messaging: instance, sdk } = await firebase();
+      await sdk.deleteToken(instance);
+      // Abandoned after the timeout and finishing late: a replacement registration began while this
+      // was stalled, and the deletion may have revoked its token, so make that registration again.
+      if (registrationEpoch !== registration) {
+        superseded = true;
+        queueRegistrationRepair();
+        return false;
+      }
+      return true;
+    });
+  } catch {
+    // Best-effort.
+  }
+  if (superseded) return; // the newer registration owns the token and has been repaired above
+  if (!revoked && registrationEpoch !== registration) {
+    // Timed out, and a replacement started since: it owns the token (the backend's upsert already
+    // resolved ownership). The same account turning push off and on reuses this very row id, so
+    // deleting the row could remove the current subscription. If the stalled deletion finishes
+    // later, the check above repairs the replacement.
+    queueRegistrationRepair();
+    return;
+  }
+  await deleteServerRow(rowId, lastSeenAt);
+}
+
+/** Turn notifications on. Must be called straight from a tap: iOS refuses the permission
+ * prompt otherwise, so `requestPermission` is the first thing awaited. */
+export async function enablePush(): Promise<PushStatus> {
+  const permission = await Notification.requestPermission();
+  if (permission === "granted") await registerToken();
+  emit();
+  return getPushStatus();
+}
+
+/** Unregister this device: server row first (needs the session), then the token itself at FCM
+ * so a later user of this browser can't receive this user's pushes. Never throws. */
+export async function disablePush(): Promise<void> {
+  // First, and even when nothing is stored yet: a registration still waiting on Firebase has
+  // written nothing, but must not complete once this session is over.
+  sessionGeneration += 1;
+  const startedAt = registrationEpoch;
+  const stored = readStored();
+  writeStored(null);
+  emit();
+  if (!stored) return;
+
+  // Revoke the token FIRST. It is shared browser state and revoking it needs no session, so it
+  // goes ahead of the server call, which can be slow. Serialized with registration (see above).
+  try {
+    await serialized(async () => {
+      if (registrationEpoch !== startedAt) return; // a newer registration is already in place
+      const { messaging: instance, sdk } = await firebase();
+      await sdk.deleteToken(instance);
+      // Abandoned after the timeout and finishing late: a registration began meanwhile and this
+      // may have revoked its token, so make that registration again.
+      if (registrationEpoch !== startedAt) queueRegistrationRepair();
+    });
+  } catch {
+    // Best-effort.
+  }
+  // Already revoked above, so this is best-effort and bounded. If it runs late it targets the old
+  // row by id, which another account's session cannot delete.
+  await deleteServerRow(stored.id, stored.lastSeenAt);
+}
+
+/** Once per app start: refreshes the registration (rotated token, last-seen) for a device that
+ * already opted in. Silent — never prompts. */
+export async function syncPush(): Promise<void> {
+  if (getPushStatus() !== "on") return;
+  try {
+    await registerToken();
+  } catch {
+    // Offline or transient; tried again next start.
+  }
+}
+
+export interface ForegroundPush {
+  title: string;
+  body: string;
+  /** Screen to open, from the payload's `reference`. */
+  reference: string;
+}
+
+/** Foreground messages are not shown by the browser, so the page shows its own toast. */
+export async function onForegroundPush(listener: (push: ForegroundPush) => void): Promise<() => void> {
+  const { messaging: instance, sdk } = await firebase();
+  return sdk.onMessage(instance, (payload) =>
+    listener({
+      title: payload.notification?.title ?? "",
+      body: payload.notification?.body ?? "",
+      reference: payload.data?.reference ?? "",
+    })
+  );
+}
+
+// Unsubscribe on logout, before the cookies are cleared (lib/api.ts runs pre-logout steps first).
+registerPreLogoutStep(disablePush);

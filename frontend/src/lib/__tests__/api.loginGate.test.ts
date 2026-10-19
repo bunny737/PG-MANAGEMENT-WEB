@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registerSessionCleanup, runSessionCleanups } from "../sessionPurge";
 
 // Covers the plan's "a second login started during a slow purge does not
-// store tokens until the purge finishes" case: login()/loginPhone() await
+// sign in until the purge finishes" case: login()/loginPhone() await
 // awaitPendingPurge() before ever calling fetch, so a purge started by a
-// race (e.g. a 401 on an in-flight request) can't be undone by the tokens
-// a fresh login is about to store.
+// race (e.g. a 401 on an in-flight request, whose step also clears the auth
+// cookies) can't be undone by the cookies a fresh login is about to set.
 describe("login gate (awaitPendingPurge)", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -29,13 +29,7 @@ describe("login gate (awaitPendingPurge)", () => {
 
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/auth/login/")) {
-        return new Response(JSON.stringify({ access: "new-access", refresh: "new-refresh" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.includes("/auth/me/")) {
+      if (url.includes("/api/auth/login")) {
         return new Response(
           JSON.stringify({
             id: "user-1",
@@ -59,14 +53,18 @@ describe("login gate (awaitPendingPurge)", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(localStorage.getItem("isLoggedIn")).toBeNull();
 
     resolvePurgeStep();
     await purge;
     await loginPromise;
 
-    expect(fetchMock).toHaveBeenCalled();
-    expect(localStorage.getItem("accessToken")).toBe("new-access");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/auth/login");
+    expect(localStorage.getItem("isLoggedIn")).toBe("true");
+    // No JWT ever lands in page-accessible storage.
+    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(localStorage.getItem("refreshToken")).toBeNull();
     unregister();
   });
 });

@@ -3,6 +3,7 @@ import { Inter, Noto_Sans, Noto_Sans_Telugu, Plus_Jakarta_Sans } from "next/font
 import { getLocale, getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocaleDirection } from "@/i18n/config";
+import { PwaRegister } from "@/features/pwa/PwaRegister";
 import "./globals.css";
 
 // Inter carries UI text — it holds up at the 12–14px sizes most of this app
@@ -42,12 +43,23 @@ export const metadata: Metadata = {
   // The signed-in app must never be indexed. The public marketing pages opt back
   // in from their own layout (app/(marketing)/layout.tsx).
   robots: { index: false, follow: false },
+  // iOS ignores most of the manifest: these make "Add to Home Screen" open standalone
+  // (no Safari chrome) with the right title and icon. The manifest link itself is generated
+  // from app/manifest.ts. statusBarStyle "default" keeps the page below the status bar with
+  // dark text; "black-translucent" would draw white clock/battery over our light background.
+  applicationName: "PropManager",
+  appleWebApp: { capable: true, title: "PropManager", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
   themeColor: "#101828",
   width: "device-width",
   initialScale: 1,
+  // Extend to the screen edges so the bottom nav can fill behind the home indicator and pad
+  // itself with env(safe-area-inset-bottom).
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -71,6 +83,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider messages={messages} locale={locale}>
           {children}
+          <PwaRegister />
         </NextIntlClientProvider>
       </body>
     </html>

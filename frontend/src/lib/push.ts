@@ -211,7 +211,8 @@ function registerToken(): Promise<void> {
  *    cookies still allow it; otherwise it dies with its token the next time the backend sends.
  *  - A newer registration exists (the next user opted in): the token is theirs now, so it must NOT
  *    be revoked. But this late POST made the endpoint reassign the token back to the previous
- *    user, so register the current session again to take it back. */
+ *    user, so register the current session again to take it back. The row is NOT deleted: the
+ *    upsert keys on the token, so a same-account re-enable shares this row id. */
 async function abandonLateRegistration(rowId: string, registration: number) {
   // Revoke the token FIRST: it needs no round-trip to our backend, so an unreachable or stalled
   // backend can never keep the previous user's token alive. The row deletion is last and bounded.
@@ -226,7 +227,13 @@ async function abandonLateRegistration(rowId: string, registration: number) {
   } catch {
     // Best-effort.
   }
-  if (!revoked && registrationEpoch !== registration) void syncPush();
+  if (!revoked && registrationEpoch !== registration) {
+    // The newer registration owns the token and the backend's upsert already resolved ownership. For
+    // the same account turning push off and on again it also reuses this very row id, so deleting
+    // the row here could remove the current subscription.
+    void syncPush();
+    return;
+  }
   await deleteServerRow(rowId);
 }
 

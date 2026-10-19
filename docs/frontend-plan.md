@@ -206,8 +206,10 @@ else under `/api/v1/`). Behaviours worth knowing:
     (which only works while that user's cookies are still valid; otherwise the row dies with its
     token on the backend's next send). If the next user did opt in, the token is theirs and is NOT revoked;
     instead their session registers again, because the late POST made the endpoint reassign the
-    token back to the previous user. The cleanup is fenced by the registration epoch and queued behind
-    the running operation (awaiting it inside would wait on itself).
+    token back to the previous user. In that case the stale row is also NOT deleted: the backend
+    upserts on the token, so the same account turning push off and on again gets the same row id back,
+    and a late DELETE would remove its current subscription. The cleanup is fenced by the registration
+    epoch and queued behind the running operation (awaiting it inside would wait on itself).
 - Known limitation: an *offline* logout clears local state but the cookies stay until the next
   login (the logout request cannot be sent).
 

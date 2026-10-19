@@ -506,6 +506,40 @@ describe("enablePush / disablePush", () => {
           expect(deleteToken).not.toHaveBeenCalled(); // B's token survives
           expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("row-b");
         });
+
+        test("the same account turning push off and on keeps its row: the late cleanup does not delete it", async () => {
+          stubBrowser({ permission: "granted" });
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+          let release: () => void = () => {};
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const calls: string[] = [];
+          let posts = 0;
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const method = init?.method ?? "GET";
+              calls.push(`${method} ${String(input)}`);
+              if (method === "POST" && String(input).includes("push-subscriptions") && ++posts === 1) await gate;
+              // The backend upserts on the token, so every POST for this browser and account returns the same row.
+              return new Response(JSON.stringify({ id: "row-a" }), { status: 201, headers: { "Content-Type": "application/json" } });
+            })
+          );
+
+          const first = enablePush();
+          await vi.waitFor(() => expect(calls.some((c) => c.startsWith("POST"))).toBe(true));
+          await disablePush(); // turned off while the first POST is still in flight
+          const second = enablePush(); // and straight back on, same account
+
+          release();
+          await Promise.all([first, second]);
+          await vi.waitFor(() => expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("row-a"));
+          await new Promise((resolve) => setTimeout(resolve, 0)); // let any trailing cleanup run
+
+          expect(calls.filter((c) => c.startsWith("DELETE"))).toEqual([]); // the current subscription survives
+          expect(deleteToken).not.toHaveBeenCalled();
+        });
       });
 
       test("the same session still completes normally", async () => {

@@ -18,8 +18,10 @@ residents, billing, and operations through a single system.
 - Mobile: build order is Web/PWA -> Flutter (Android + iOS together).
   Flutter (Dart) with a single codebase targeting both platforms — owner
   decision 2026-09-17, superseding the earlier native-Android-then-native-iOS
-  plan (Kotlin/Compose, Swift/SwiftUI). The PWA covers the mobile resident
-  experience until the Flutter app exists. All clients (web, Flutter)
+  plan (Kotlin/Compose, Swift/SwiftUI). The PWA covers the mobile experience
+  until the Flutter app exists — the resident experience, and since 2026-10-19 the
+  installable staff app (Owner/Manager/Receptionist) for iPhone users until the
+  Flutter iOS build ships. All clients (web, Flutter)
   consume the same Django REST API — no per-client API — see
   docs/frontend-plan.md §3.1a and docs/push-notifications-integration.md
   for how non-browser clients authenticate and integrate push.

@@ -279,6 +279,9 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   still needs to be built (FE-01) and this client swapped out before the
   app is exposed beyond a developer's machine. Tracked in
   `docs/frontend-plan.md` Decisions as well.
+  **Resolved 2026-10-19:** the BFF proxy now exists (`frontend/src/app/api`),
+  `lib/api.ts` is same-origin with JWTs only in httpOnly cookies, and the
+  dev-only CORS allowance is no longer used by the web app.
 - [DECISION 2026-07-05] Inserted a `Building` model between Property and
   Floor (`Property → Building → Floor → Room → Bed`) to support PGs that
   span multiple physical buildings/blocks (e.g. "Block A", "Block B") —

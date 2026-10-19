@@ -151,6 +151,30 @@ not a chart requiring palette validation.
 - Same-origin API calls mean no CORS config and the service worker can apply cache
   strategies uniformly.
 
+**Built 2026-10-19** (`feature/pwa-ios`). Route handlers: `app/api/auth/{login,login-phone,logout}`
+(set/clear `pg_access` + `pg_refresh`, both `HttpOnly`, path `/api`, lifetimes read from each
+token's `exp`; and a secret-free `pg_session` marker on path `/` so `proxy.ts` can bounce signed-out
+page navigations, which never carry the `/api`-scoped cookies) and `app/api/[...path]` (everything
+else under `/api/v1/`). Behaviours worth knowing:
+
+- Login handlers return only the `/auth/me/` payload. The four token-issuing endpoints
+  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`) are **404 through the generic proxy**, so
+  a proxied call can never hand a token to page JS. OTP login needs its own handler when it is built.
+- Refresh is server-side with the request body buffered once and replayed (uploads included).
+  Only a definitive rejection (401/403 from the refresh endpoint) clears cookies; an unreachable
+  backend is a 502 and does **not** log the user out. The client treats any 401 from the proxy as
+  "session over" (`clearSession()` + redirect). The translated suspension reason banner is not
+  built yet.
+- Writes whose `Origin` is not this app's are rejected (defence in depth on top of `SameSite=Lax`).
+- `next.config.ts` sets `skipTrailingSlashRedirect` — Django's routes end in `/` and a POST cannot
+  follow `APPEND_SLASH`.
+- **Deployment requirements:** the edge (nginx) must *overwrite* `X-Forwarded-For` rather than append to
+  a client-supplied one — the proxy forwards it and `apps/audit/log.py:client_ip` (invariant 9) and
+  login throttling both trust the first entry. `INTERNAL_API_URL` must point at Django, and
+  `ALLOWED_HOSTS` must include the host name the proxy uses (`backend` in compose).
+- Known limitation: an *offline* logout clears local state but the cookies stay until the next
+  login (the logout request cannot be sent).
+
 ### 3.1a Mobile client (Flutter, Android + iOS)
 
 The BFF proxy above is a **browser-only** mitigation (keeps JWTs out of reach of
@@ -277,7 +301,9 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
 ### 5.1 Baseline (MVP)
 
 - **Manifest** (`app/manifest.ts`): standalone display, portrait, theme/background colors,
-  192/512 icons + maskable variants, `start_url: /` (server redirects to role home).
+  192/512 icons + maskable variants, `start_url: /login?source=pwa` (not `/`, which is the public
+  marketing page once that site ships); `/login` forwards an already-signed-in user to their first
+  allowed screen after verifying the session with the API.
 - **Service worker** via Serwist:
   - Precache: app shell, fonts, offline fallback page.
   - `CacheFirst` — hashed Next.js static chunks, fonts.
@@ -287,23 +313,31 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
   - **Mutations are never cached or queued in MVP.** Money-touching writes (payments,
     invoices, deductions) must not risk replay/conflict. Offline = read-only, with a
     persistent `OfflineBanner`. Background Sync queue is a V2 item, non-money modules first.
-- **Install UX**: capture `beforeinstallprompt` for a custom "Install app" button
-  (shown prominently in the resident portal); iOS gets an instructions sheet
-  (`apple-touch-icon` + splash configured).
-- **Cache hygiene** (invariant F7): runtime cache names include the session's tenant+user
-  hash; all caches purged on logout. Auth/proxy responses are `Cache-Control: no-store`.
+- **Install UX**: capture `beforeinstallprompt` for a custom "Install app" button; iOS gets an
+  instructions sheet (Share -> Add to Home Screen; in-app browsers such as WhatsApp are told to open
+  Safari). Built for the staff app: an `InstallCard` on the More screen plus a dismissible one-time
+  nudge on the dashboard. The resident portal does not exist yet. iOS splash images are not generated yet (see the FE-P1 status row).
+- **Cache hygiene** (invariant F7): the worker cannot read httpOnly cookies, so the page tags each
+  API request with `X-Cache-Scope: <tenant>_<user>` (`lib/cacheScope.ts`) and the worker keeps one
+  `api-<scope>` cache per user, caching nothing for untagged requests. Logout deletes every cache
+  except the tenant-free ones (precache, `next-static`, `app-images`) so the shell still opens offline.
+  Proxy responses are `Cache-Control: no-store`; redirects and file downloads are never cached.
 - **CI gate**: Lighthouse PWA installability + performance budget on the resident portal
-  and owner dashboard.
+  and owner dashboard. **Not built yet.**
+- **Built 2026-10-19:** manifest + generated icons (`scripts/generate-pwa-icons.mjs`), Serwist worker
+  (`app/sw.ts`), manual registration with an "update available" toast, `OfflineBanner`, translated
+  `/~offline` fallback, iOS safe-area/`dvh`/16px-input fixes, share-sheet downloads in an installed
+  iOS app. Offline reads are served by `NetworkFirst` (3 s timeout) for `/api/v1/*` GETs (5-minute max
+  age, a named constant in `sw.ts`) and for page documents (shell only, no tenant data).
 
 ### 5.2 V2
 
-- Web Push notifications (invoice issued, payment receipt, complaint updates) — aligns
-  with PRD Module 18 V2. Backend is ready: `POST/GET /api/v1/notifications/push-subscriptions/`
-  and `DELETE .../push-subscriptions/{id}/` register/unregister an FCM device token
-  (see `docs/modules/14-notifications.md`); the channel itself sends via Firebase
-  Cloud Messaging. Still needed on the frontend: the Firebase JS SDK + VAPID key
-  wired into `sw.ts`, the permission-prompt UX, and calling this endpoint on
-  subscribe/logout.
+- ~~Web Push notifications~~ — **pulled into MVP 2026-10-19 and built** (iOS PWA stopgap). Backend:
+  `POST/GET /api/v1/notifications/push-subscriptions/`, `DELETE .../{id}/`
+  (`docs/modules/14-notifications.md`, `docs/push-notifications-integration.md` §6). Frontend:
+  `lib/push.ts`, `features/notifications/` (opt-in card on More, foreground toast), worker tap
+  handler in `sw.ts`. Today only Owner/Manager/Receptionist can receive pushes (residents have no
+  login yet), and on iPhone only from the installed app on iOS 16.4+.
 - Background Sync for non-money mutations (complaints, visitor requests).
 - Periodic background refresh of the resident's own invoice list.
 
@@ -378,7 +412,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; OTP/signup/reset/BFF proxy still future work) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); OTP/signup/reset still future work) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
@@ -393,13 +427,13 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-11 | Complaints | ⬜ |
 | FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |
 | FE-13 | Subscription + Super Admin | 🟨 (Owner plan screen shipped in Settings → Plan & Billing, gated by manage_subscription: trial/status, bed usage, plan comparison, switch + Razorpay Checkout; billing history, suspension lock screen and the Super Admin portal not started) |
-| FE-14 | Notifications | ⬜ |
+| FE-14 | Notifications | 🟨 (Web Push built 2026-10-19: opt-in on More, foreground toast, tap deep links, unsubscribe on logout; notification preferences UI not started) |
 | FE-15 | Audit logs | ⬜ |
 | FE-16 | Activity timeline | ⬜ |
 | FE-17 | Export | 🟨 (residents/payments/outstanding-dues/occupancy/expenses/pnl, csv/xlsx/pdf, each gated on its own endpoint permission; the PRD's "async job status" is obsolete — exports are synchronous) |
 | FE-20 | Expenses (Module 20) | ✅ (month nav, category chips from expenses/summary/, add/edit sheet with idempotent create + attachment upload, category manager) |
 | FE-21 | Reports / Analytics (Module 21) | ✅ (/reports: Overview/Collections/Occupancy/Exports tabs, 6-month trend chart) |
-| FE-P1 | PWA hardening | ⬜ |
+| FE-P1 | PWA hardening | 🟨 (manifest, Serwist worker, read-only offline, update toast, install UX, iOS polish built 2026-10-19; **still open:** Lighthouse CI gate, verification on a real iPhone, Razorpay Checkout return-to-app check in standalone, iOS splash images) |
 | FE-R1 | Resident portal | ⬜ |
 
 ---
@@ -454,7 +488,7 @@ Small additions to note in the relevant module specs when built:
 | Mobile app | PWA covers residents for MVP; Flutter next (Android + iOS together) | PRD lists mobile apps as V2; PWA delivers "mobile-first resident experience" (PRD §2) now |
 | Mobile client build order (2026-07-05) | Web/PWA -> Android -> iOS, all as clients of one Django API | Owner confirmed sequencing; avoids building two native apps in parallel and confirms the API needs no per-client redesign (§3.1a) |
 | Mobile client tech (2026-09-17) | Flutter (Dart), one codebase for Android + iOS — supersedes the 2026-07-05 native-Android-then-native-iOS plan (Kotlin/Compose, Swift/SwiftUI) | Owner decision; keeps the "one Django API, no per-client redesign" principle from the row above (§3.1a) — only the client implementation technology changes, not the sequencing or API contract |
-| Auth for Add Property (2026-07-05) | Temporary direct-to-Django client (`lib/api.ts`): real login, JWT in `localStorage`, dev-only CORS — not the §3.1 BFF proxy | The BFF proxy (FE-01) didn't exist yet and nothing in the app called the real backend; owner approved a minimal unblock to get the Add Property form (module 02) working now rather than building the full proxy first. **Still needs replacing** with the httpOnly-cookie proxy before this app leaves a developer's machine — see `docs/modules/02-property-hierarchy.md` Decisions. |
+| Auth for Add Property (2026-07-05) | Temporary direct-to-Django client (`lib/api.ts`): real login, JWT in `localStorage`, dev-only CORS — not the §3.1 BFF proxy | The BFF proxy (FE-01) didn't exist yet and nothing in the app called the real backend; owner approved a minimal unblock to get the Add Property form (module 02) working now rather than building the full proxy first. **Resolved 2026-10-19:** replaced by the §3.1 BFF proxy (see the "BFF proxy built" row below); see `docs/modules/02-property-hierarchy.md` Decisions. |
 | Receptionist portal consolidation (2026-10-11) | Single `(owner)` shell for Owner, Manager, and Receptionist — no separate `(reception)` portal group | Keeps the layout, navigation, and mobile UX unified across all staff roles. What each role can view and mutate is governed purely by `PERMISSION_MATRIX` codes from `/auth/me/`, rather than maintaining multiple shell layouts. |
 | Per-staff module access (2026-10-12) | `(owner)/staff/[id]` Team Management screen: module toggles + level picker + PG access; nav, page guards and redirects are all driven by `/auth/me/` permissions (`view_dashboard`, `view_finance`, `view_resident_profile`, `view_property_features`…); `RequirePermission` falls back to the first allowed route (`firstAllowedRoute`), never a role landing page; permissions refresh on tab focus (throttled) and after any 403 | Owner request superseding the fixed per-role matrix (Module 01 `[DECISION 2026-10-12]`); access is per person, so no screen can be assumed reachable by role (F8). No frontend test runner exists yet — behavior is verified by the manual script in the change's plan |
 | Permission-driven nav & route guards (2026-10-11) | Client-side session check (`useSession()`, `useSyncExternalStore` cached + revalidated via `GET /auth/me/` once per load) with `<RequirePermission>` and `<PermissionGate>` | Replaces role-name-based navigation. Acts as a client-side UX guard to hide disallowed buttons and prevent 403 errors; explicitly **not** the §3.1 BFF/httpOnly-cookie design (which remains future work). True authorization boundary remains server-side `require_permission()` checks. |
@@ -467,4 +501,11 @@ Small additions to note in the relevant module specs when built:
 | Discount report columns moved to the backend (2026-10-17) | `DiscountSerializer` gained `ResidentContextMixin` (resident_name/property/property_name/room_number/bed_number) and a `?property=` filter, matching invoices and payments, instead of the web client joining residents client-side | Keeps one definition of "who/where" for every finance list, and avoids an N+1 client-side join the web client would otherwise need for the Discounts tab on `/billing`. |
 | Reports access vs. export access are two different checks (2026-10-17) | The `/reports` nav item and route need `view_reports` (`view_dashboard`-only users get the same figures inline on `/dashboard` instead); each export button on the Exports tab, and the context-export buttons on `/billing`/`/residents`/`/expenses`, are gated only by that export's own endpoint permission — `view_reports` is never required to export | Matches the backend exactly: `ResidentExportView`/`PaymentExportView`/etc. check `view_resident_profile`/`view_finance`/etc., not `view_reports`. A Manager with Finance access but no Reports module access can still export payments from `/billing`. |
 | Dashboard revenue delta dropped for now (2026-10-17) | `FinancialsSummary.revenueDelta` is optional and the dashboard doesn't populate it | Computing "vs last month" needs a second `analytics/summary/` call (last month's `cash_collected`); the old client-side version summed raw payment lists instead (an invariant F1 violation this round removed). Left as follow-up rather than adding a second round-trip to this pass. |
-
+| iOS PWA as the staff app on iPhone (2026-10-19) | The installable PWA serves Owner/Manager/Receptionist on iPhone until the Flutter iOS build ships; Android uses the Flutter app. Residents have no login, so no resident portal is involved | Owner request: Android is in progress, there is no iOS build, and iPhone owners need the signed-in app now (not the public marketing site). Supersedes "PWA covers the resident experience" for the interim. |
+| BFF proxy built, token storage moved out of JS (2026-10-19) | JWTs live only in httpOnly cookies (`pg_access`/`pg_refresh`, path `/api`); `lib/api.ts` is same-origin with no token code; `NEXT_PUBLIC_API_URL` is replaced by server-only `INTERNAL_API_URL` | Owner decision: build the BFF before real iPhone users. Details and deployment requirements in §3.1. |
+| Web Push pulled forward from V2 (2026-10-19) | Built now, following `docs/push-notifications-integration.md` §6 and reusing the Serwist worker | Owner decision, alongside the iOS PWA. Push is unavailable in dev (the worker is production-only). |
+| Offline is read-only; query and mutation network modes (2026-10-19) | Queries use `networkMode: "offlineFirst"` (so the worker's cached GETs are reachable); mutations use `"always"` | TanStack's default `"online"` *pauses* a mutation made offline and *replays* it on reconnect — an implicit offline queue for payments, contradicting "Offline writes: none in MVP". With `"always"` it fails fast instead. |
+| Per-user API cache, precache kept across logout (2026-10-19) | Worker caches per `X-Cache-Scope`; logout deletes every cache except precache/`next-static`/`app-images` | The worker can't read httpOnly cookies, so the page supplies the scope. A missed purge (offline logout, crashed tab) then still cannot show user A's data to user B, and the app shell survives logout. Supersedes "all caches purged on logout" in §5.1's earlier wording. |
+| `next build --webpack` (2026-10-19) | The production build uses webpack (dev already did) | `@serwist/next` is a webpack plugin and Next 16 builds with Turbopack by default. |
+| iOS status bar style `default`, not `black-translucent` (2026-10-19) | `appleWebApp.statusBarStyle: "default"` | `black-translucent` draws white clock/battery over our light page background, which is unreadable; `default` also keeps content below the status bar so only the bottom safe area needs handling. |
+| `/~offline` language and API cache age (2026-10-19) | The fallback page is cached in the language active when the worker installed; API reads stay usable offline for 5 minutes (`API_CACHE_MAX_AGE_SECONDS` in `sw.ts`) | The page is server-rendered from the locale cookie, so it cannot switch language offline. Five minutes is the §5.1 figure and errs toward not showing stale money screens; raising it is a one-line change if owners want longer offline reads. |

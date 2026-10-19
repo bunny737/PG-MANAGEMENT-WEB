@@ -53,3 +53,20 @@ Commit the updated `docs/erd.png` in the same commit as the model change —
 see the CLAUDE.md checklist.
 
 Current diagram: [erd.png](erd.png).
+
+## 3. Frontend PWA, BFF and push — local testing
+
+- **API calls.** The browser only talks to the Next.js app (`/api/v1/...`); its route handlers call
+  Django server-side at `INTERNAL_API_URL` (`http://backend:8000` in compose). `ALLOWED_HOSTS` in `.env`
+  must include `backend` (see `.env.example`). After pulling this change, recreate the frontend
+  container so it picks up the new env: `docker compose up -d frontend`.
+- **Service worker is production-only.** `npm run dev` neither builds nor registers it (and unregisters
+  one left by an earlier production run on the same origin). To test offline, install and push:
+  `npm run build && npm start` in `frontend/`, then open it in a browser. The build uses
+  `next build --webpack`.
+- **Push needs** the `NEXT_PUBLIC_FIREBASE_*` variables and VAPID key (`frontend/.env.local`), and a
+  production build. Turn it on from **More -> Notifications**. Firebase setup:
+  [push-notifications-integration.md](push-notifications-integration.md) §2.
+- **iPhone testing** needs HTTPS (an ngrok tunnel or staging) and iOS 16.4+. In Safari use Share ->
+  Add to Home Screen, then open the installed app; push is only offered from the installed app.
+- **Icons** are generated: `node scripts/generate-pwa-icons.mjs` (in `frontend/`).

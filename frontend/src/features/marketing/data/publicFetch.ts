@@ -26,10 +26,20 @@ export async function fetchPublic<T>(path: string, schema: ZodType<T>): Promise<
     const parsed = schema.parse(await response.json());
     lastGood.set(path, parsed);
     return { status: "ok", data: parsed };
-  } catch {
+  } catch (error) {
+    // Never fail silently: a wrong INTERNAL_API_URL looks exactly like "no data yet".
+    console.warn(`[marketing] GET ${path} failed (${describe(error)}); API base ${getServerApiBase()}`);
     if (lastGood.has(path)) return { status: "stale", data: lastGood.get(path) as T };
     return { status: "unavailable" };
   }
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = error.cause instanceof Error ? ` / ${error.cause.message}` : "";
+    return `${error.name}: ${error.message}${cause}`;
+  }
+  return String(error);
 }
 
 /** Test hook. */

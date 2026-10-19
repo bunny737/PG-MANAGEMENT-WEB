@@ -502,11 +502,23 @@ Super-Admin-managed contacts. `SIGNUP_ENABLED=true`: **"Start free trial"** → 
 Logic: `features/marketing/cta.ts`. The header shows **"Open dashboard"** instead of "Log in" only for a session
 re-validated by `ensureFreshSession()` and only for roles that have a portal (owner/manager/receptionist).
 
+### 12.3a Contact form (`/contact`)
+A client form (`features/marketing/ContactForm.tsx`, react-hook-form + zod mirroring the backend serializer) posts to
+`POST /api/v1/public/contact/` with `apiFetch(..., { skipAuth: true })`; the row is stored as a `ContactMessage` and read
+in **Django admin → Core → Contact messages** (read-only content, audited "mark handled/new"; Module 01). No email is
+sent. Marketing messages are not in the client provider, so the server component passes every string as a `labels`
+prop. Spam controls: hidden honeypot (its input is not named `website`/`url`, which browsers autofill), server throttles
+(5/h per IP, 3/h per email) with a translated 429 message, and a body-size cap.
+**The browser posts straight to the API** so the real client IP is seen — in production this needs the CORS origin for
+`https://pglive.in` (see §12.8 item 5); without it the form shows the translated "could not reach the server" message.
+
 ### 12.4 Public data (no baked-in values — invariant 10 / F4)
 - Plans: `GET /api/v1/public/plans/` → `{currency, trial_days, updated_at, plans[]}` (Module 13).
 - Contacts: `GET /api/v1/support/` (Module 01) — edited in Super Admin, no deploy.
 - Fetched server-side from `INTERNAL_API_URL` (e.g. `http://backend:8000`; `localhost` inside the container is
-  the frontend). 3 s timeout, Zod-validated, 5-min revalidate. On failure: last validated response, else
+  the frontend). 3 s timeout, Zod-validated, 5-min revalidate; failures are logged (`[marketing] GET … failed`) so a wrong
+  `INTERNAL_API_URL` is visible. After changing compose env, **recreate** the container (`docker compose up -d --force-recreate frontend`);
+  `restart` keeps the old environment. On failure: last validated response, else
   **"Pricing temporarily unavailable"** / "contact details are being set up". There is no static price fallback.
 
 ### 12.5 Truthful claims
@@ -543,8 +555,8 @@ Regenerate the QR with the `qrcode` npm package (v1.5.4, `QRCode.toString(url, {
    Razorpay, Google Maps, Firebase, API/image/font origins, run `Content-Security-Policy-Report-Only`, then enforce
    only after the owner app is verified under it.
 5. **Deployability (nothing exists yet):** production Dockerfile (`output: "standalone"`, not `npm run dev`),
-   TLS + apex↔`www` redirect, Django `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / CORS for the new origin and a
-   separate API host, health checks, rollback, cache headers for static assets.
+   TLS + apex↔`www` redirect, Django `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / **CORS for the new origin (the contact form
+   cannot post without it)** and a separate API host, a trusted-proxy policy so client IPs (throttling, stored IP) are real, health checks, rollback, cache headers for static assets.
 6. **Translations:** Telugu copy needs native-speaker review; legal text needs a Telugu translation or an explicit
    "English governs" statement.
 7. **Brand:** the app still says "PropManager" (`messages/*/common.json`); align once the name is confirmed.

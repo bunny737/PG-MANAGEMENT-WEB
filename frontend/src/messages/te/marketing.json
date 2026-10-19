@@ -389,6 +389,31 @@
     "earlyAccess": {
       "title": "ముందస్తు యాక్సెస్",
       "body": "మీ ప్రాపర్టీ పేరు మరియు బెడ్‌ల సంఖ్యతో మాకు సందేశం పంపండి, మీ ఖాతాను మేము మీతో కలిసి సెటప్ చేస్తాము."
+    },
+    "form": {
+      "title": "మాకు సందేశం పంపండి",
+      "subtitle": "మీ ప్రాపర్టీ గురించి మరియు మీకు ఏం కావాలో చెప్పండి. మేము ఇమెయిల్ లేదా ఫోన్ ద్వారా జవాబిస్తాము.",
+      "name": "మీ పేరు",
+      "email": "ఇమెయిల్",
+      "phone": "ఫోన్",
+      "phoneOptional": "ఐచ్ఛికం",
+      "message": "సందేశం",
+      "submit": "సందేశం పంపండి",
+      "submitting": "పంపుతోంది...",
+      "successTitle": "సందేశం పంపబడింది",
+      "successBody": "ధన్యవాదాలు. మీ సందేశం మాకు అందింది, త్వరలో మిమ్మల్ని సంప్రదిస్తాము.",
+      "sendAnother": "మరో సందేశం పంపండి",
+      "errorThrottled": "మీరు తక్కువ సమయంలో చాలా సందేశాలు పంపారు. దయచేసి కొంతసేపు ఆగి మళ్లీ ప్రయత్నించండి, లేదా వాట్సాప్ లేదా ఫోన్‌లో మమ్మల్ని సంప్రదించండి.",
+      "errorNetwork": "సర్వర్‌ను చేరుకోలేకపోయాము. మీ కనెక్షన్‌ను తనిఖీ చేసి మళ్లీ ప్రయత్నించండి.",
+      "errorGeneric": "ఏదో తప్పు జరిగింది, మీ సందేశం పంపబడలేదు. దయచేసి మళ్లీ ప్రయత్నించండి.",
+      "honeypotLabel": "ఈ ఫీల్డ్‌ను ఖాళీగా ఉంచండి",
+      "validation": {
+        "nameRequired": "దయచేసి మీ పేరు నమోదు చేయండి.",
+        "emailInvalid": "దయచేసి చెల్లుబాటు అయ్యే ఇమెయిల్ చిరునామా నమోదు చేయండి.",
+        "phoneInvalid": "దయచేసి చెల్లుబాటు అయ్యే ఫోన్ నంబర్ నమోదు చేయండి, లేదా ఖాళీగా ఉంచండి.",
+        "messageShort": "దయచేసి కొంచెం ఎక్కువ రాయండి (కనీసం 10 అక్షరాలు).",
+        "messageLong": "దయచేసి మీ సందేశాన్ని 2000 అక్షరాల లోపు ఉంచండి."
+      }
     }
   },
   "footer": {
@@ -414,6 +439,10 @@
         {
           "heading": "Information we collect",
           "body": "Account details (name, email, phone, password), details of your business and properties, and the records you enter about residents, such as contact details, emergency contacts and ID documents. We also collect basic technical data such as device and app version."
+        },
+        {
+          "heading": "Contact form",
+          "body": "If you write to us through the contact form we store your name, email address, phone number (if you give one), your message, the language you were using and your IP address, so that we can reply and keep spam out. We use it only to answer you and to keep a record of the conversation, and we delete it when you ask."
         },
         {
           "heading": "How we use it",

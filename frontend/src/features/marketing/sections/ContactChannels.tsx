@@ -4,6 +4,7 @@ import { ButtonLink } from "@/components/marketing/ButtonLink";
 import { Section, SectionHeading } from "@/components/marketing/Section";
 import { getSiteConfig } from "@/lib/site-config";
 import { formatPhone, getSupportContacts, hasContactInfo, telHref } from "../data/support";
+import { ContactForm, type ContactFormLabels } from "../ContactForm";
 import { PrimaryCtaButton } from "../PrimaryCtaButton";
 
 function Row({
@@ -33,6 +34,32 @@ function Row({
 export async function ContactChannels() {
   const [t, support] = await Promise.all([getTranslations("marketing.contact"), getSupportContacts()]);
   const { company } = getSiteConfig();
+
+  // The form is a client component and marketing messages are not in the client
+  // provider, so it receives every string as a prop.
+  const formLabels: ContactFormLabels = {
+    name: t("form.name"),
+    email: t("form.email"),
+    phone: t("form.phone"),
+    phoneOptional: t("form.phoneOptional"),
+    message: t("form.message"),
+    submit: t("form.submit"),
+    submitting: t("form.submitting"),
+    successTitle: t("form.successTitle"),
+    successBody: t("form.successBody"),
+    sendAnother: t("form.sendAnother"),
+    errorThrottled: t("form.errorThrottled"),
+    errorNetwork: t("form.errorNetwork"),
+    errorGeneric: t("form.errorGeneric"),
+    honeypotLabel: t("form.honeypotLabel"),
+    validation: {
+      nameRequired: t("form.validation.nameRequired"),
+      emailInvalid: t("form.validation.emailInvalid"),
+      phoneInvalid: t("form.validation.phoneInvalid"),
+      messageShort: t("form.validation.messageShort"),
+      messageLong: t("form.validation.messageLong"),
+    },
+  };
 
   return (
     <Section>
@@ -100,6 +127,14 @@ export async function ContactChannels() {
           <p className="mt-2 text-sm text-ink-muted">{t("unavailable.body")}</p>
         </div>
       )}
+
+      <div className="mx-auto mt-10 max-w-3xl rounded-3xl border border-border bg-surface-card p-6 shadow-xs sm:p-8">
+        <h2 className="text-xl font-bold">{t("form.title")}</h2>
+        <p className="mt-2 text-sm text-ink-muted">{t("form.subtitle")}</p>
+        <div className="mt-6">
+          <ContactForm labels={formLabels} />
+        </div>
+      </div>
 
       <div className="mx-auto mt-10 max-w-3xl rounded-3xl bg-surface-inverse p-7 text-ink-inverse">
         <h2 className="text-xl font-bold">{t("earlyAccess.title")}</h2>

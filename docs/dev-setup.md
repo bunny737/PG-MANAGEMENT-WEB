@@ -75,6 +75,9 @@ Current diagram: [erd.png](erd.png).
   `.env.example`), e.g. `ALLOWED_DEV_ORIGINS=my-tunnel.ngrok-free.dev,192.168.1.4`, then
   `docker compose up -d frontend`. Without it Next 16 blocks the HMR socket from that host and the
   page renders but never becomes interactive (the Owner/Staff login buttons do nothing).
+- **Upload size limit.** The BFF proxy rejects request bodies over `BFF_MAX_BODY_BYTES` (default
+  10485760 = 10 MB) with a 413. Set it in `.env` (declared in `.env.example`; Compose passes it
+  to the frontend container), then `docker compose up -d frontend`.
 - **iPhone testing** needs HTTPS (an ngrok tunnel or staging) and iOS 16.4+. In Safari use Share ->
   Add to Home Screen, then open the installed app; push is only offered from the installed app.
 - **Icons** are generated: `node scripts/generate-pwa-icons.mjs` (in `frontend/`).

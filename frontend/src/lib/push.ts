@@ -108,22 +108,45 @@ async function currentToken(): Promise<string> {
   return token;
 }
 
-// The push token belongs to the browser, not to an account. Bumped whenever this browser registers,
-// so a cleanup from an earlier session that is still running (logout only waits a few seconds
-// for it) can tell that a newer registration exists and must not revoke it.
+// The push token belongs to the browser, not to an account, and logout only waits a few seconds
+// for its cleanup — so the next account can start registering while the previous account's
+// token revocation is still in flight. Two defences, because a stalled call cannot be cancelled:
+//
+//  1. Token operations are SERIALIZED: a registration waits for a revocation that has already
+//     started, so the revocation can never land on the token it is about to create.
+//  2. Each operation is capped at TOKEN_OP_TIMEOUT_MS so one hung SDK call cannot block pushes
+//     for the rest of the page's life. If a revocation is abandoned that way and later completes
+//     after a newer registration began (the epoch moved), it re-registers to repair the damage.
+let tokenQueue: Promise<unknown> = Promise.resolve();
+const TOKEN_OP_TIMEOUT_MS = 10_000;
+
+function serialized<T>(operation: () => Promise<T>): Promise<T> {
+  const run = tokenQueue.then(operation, operation);
+  // The queue advances when the operation settles OR when it overstays, whichever is first.
+  tokenQueue = Promise.race([
+    run.catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, TOKEN_OP_TIMEOUT_MS)),
+  ]);
+  return run;
+}
+
+/** Bumped each time this browser starts registering, so a late cleanup can tell a newer
+ * registration exists. */
 let registrationEpoch = 0;
 
 /** Registers (or re-registers) this device's token. The endpoint upserts, so calling it on
  * every start is safe; `replaces` drops the previous row if the browser rotated the token. */
-async function registerToken() {
-  registrationEpoch += 1;
-  const token = await currentToken();
-  const previous = readStored();
-  const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
-    method: "POST",
-    body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
+function registerToken(): Promise<void> {
+  return serialized(async () => {
+    registrationEpoch += 1;
+    const token = await currentToken();
+    const previous = readStored();
+    const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
+      method: "POST",
+      body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
+    });
+    writeStored({ id: subscription.id, token });
   });
-  writeStored({ id: subscription.id, token });
 }
 
 /** Turn notifications on. Must be called straight from a tap: iOS refuses the permission
@@ -144,12 +167,17 @@ export async function disablePush(): Promise<void> {
   emit();
   if (!stored) return;
 
-  // Revoke the token FIRST. It is shared browser state, revoking it needs no session, and unlike
-  // the server call below it must never run after the next account has registered: logout stops
-  // waiting after a few seconds, so a slow server call would otherwise still be pending then.
+  // Revoke the token FIRST. It is shared browser state and revoking it needs no session, so it
+  // goes ahead of the server call, which can be slow. Serialized with registration (see above).
   try {
-    const { messaging: instance, sdk } = await firebase();
-    if (registrationEpoch === startedAt) await sdk.deleteToken(instance);
+    await serialized(async () => {
+      if (registrationEpoch !== startedAt) return; // a newer registration is already in place
+      const { messaging: instance, sdk } = await firebase();
+      await sdk.deleteToken(instance);
+      // Abandoned after the timeout and finishing late: a registration began meanwhile and this
+      // may have revoked its token, so make that registration again.
+      if (registrationEpoch !== startedAt) void syncPush();
+    });
   } catch {
     // Best-effort.
   }

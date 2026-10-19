@@ -194,32 +194,90 @@ describe("enablePush / disablePush", () => {
     expect(order).toEqual(["revoke-token", "server-delete"]);
   });
 
-  test("a cleanup still loading Firebase cannot revoke the token the next login registered", async () => {
-    stubBrowser({ permission: "granted" });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: "sub-1", token: "token-1" }));
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
+  describe("revocation racing the next account's registration", () => {
+    const OLD_ROW = { id: "sub-1", token: "token-1" };
+
+    function stallRevocation() {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      deleteToken.mockImplementationOnce(async () => {
+        await gate;
+        return true;
+      });
+      return release;
+    }
+
+    function stubApiCreates() {
+      const calls: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          calls.push(`${init?.method ?? "GET"} ${String(input)}`);
+          return new Response(JSON.stringify({ id: "new-sub" }), { status: 201, headers: { "Content-Type": "application/json" } });
+        })
+      );
+      return calls;
+    }
+
+    test("a registration waits for a revocation that has already started, and never lands before it finishes", async () => {
+      stubBrowser({ permission: "granted" });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+      const release = stallRevocation();
+      stubApiCreates();
+
+      const cleanup = disablePush();
+      await vi.waitFor(() => expect(deleteToken).toHaveBeenCalledTimes(1)); // revocation is now stalled mid-flight
+
+      const registration = enablePush(); // the next account registers while it is still running
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(getToken).not.toHaveBeenCalled(); // serialized behind the revocation, so it cannot be hit by it
+
+      release();
+      await Promise.all([cleanup, registration]);
+
+      expect(getToken).toHaveBeenCalledTimes(1);
+      expect(deleteToken).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
     });
-    const modules = [
-      { initializeApp: () => ({}), getApps: () => [] },
-      { getMessaging: () => ({}), getToken, deleteToken, onMessage: vi.fn() },
-    ];
-    let loads = 0;
-    // The old session's cleanup gets the slow load; the new session's registration is immediate.
-    setFirebaseLoader((async () => (++loads === 1 ? gate.then(() => modules) : modules)) as unknown as Parameters<typeof setFirebaseLoader>[0]);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id: "new-sub" }), { status: 201, headers: { "Content-Type": "application/json" } }))
-    );
 
-    const cleanup = disablePush(); // the logout's pre-step, stuck on the slow load
-    await enablePush(); // the next account registers this browser meanwhile
-    release();
-    await cleanup;
+    test("a revocation abandoned by the timeout that then finishes late re-registers the newer token", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+        const release = stallRevocation();
+        const calls = stubApiCreates();
 
-    expect(deleteToken).not.toHaveBeenCalled();
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
+        const cleanup = disablePush();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(deleteToken).toHaveBeenCalledTimes(1); // stalled
+
+        const registration = enablePush();
+        await vi.advanceTimersByTimeAsync(10_000); // the queue gives up waiting on the stalled revocation
+        await registration; // the new account registered while the revocation was still hanging
+        expect(getToken).toHaveBeenCalledTimes(1);
+
+        release(); // ...and now the revocation finishes, possibly having hit that new token
+        await cleanup;
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(getToken).toHaveBeenCalledTimes(2); // repaired: registered again
+        expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions"))).toHaveLength(2);
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a revocation that finishes in time does not trigger a pointless re-registration", async () => {
+      stubBrowser({ permission: "granted" });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+      stubApiCreates();
+      await disablePush();
+      expect(getToken).not.toHaveBeenCalled();
+    });
   });
 
   test("a device that never subscribed does nothing on disable", async () => {

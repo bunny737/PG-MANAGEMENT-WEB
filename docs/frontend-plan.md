@@ -182,9 +182,20 @@ else under `/api/v1/`). Behaviours worth knowing:
   a client-supplied one — the proxy forwards it and `apps/audit/log.py:client_ip` (invariant 9) and
   login throttling both trust the first entry. `INTERNAL_API_URL` must point at Django, and
   `ALLOWED_HOSTS` must include the host name the proxy uses (`backend` in compose).
-- Push cleanup order on logout: the FCM token is revoked first (no session needed, and it must never
-  run after the next account registers — logout stops waiting after 3 s), then the server row is
-  deleted; a registration epoch stops a late-finishing cleanup from revoking a newer token.
+- Push token handling around logout (`lib/push.ts`). The push token belongs to the browser, not the
+  account, and logout only waits 3 s for cleanup, so the next account can start while the previous
+  account's calls are still running. A timeout cannot cancel an in-flight SDK call, so:
+  - Registration and revocation run through one **serialized queue**, and each operation is capped at
+    10 s (from when it starts) for both the queue and the promise the caller awaits — a hung
+    `deleteToken()` makes `disablePush()` move on to the server-side DELETE.
+  - Registration is **cooperatively cancelled**: it records a session generation and the signed-in
+    tenant+user, re-checks both after each await, and abandons itself with no POST and no storage
+    write if the session ended or changed. `disablePush()` bumps the generation first, even with
+    nothing stored yet.
+  - A revocation abandoned by the cap that finishes late, after a newer registration began,
+    re-registers to repair it. Residual: a POST already in flight when the session ends can still
+    create a server row; the next registration from this browser takes the token over (the endpoint
+    reassigns a token it already holds), so it does not persist.
 - Known limitation: an *offline* logout clears local state but the cookies stay until the next
   login (the logout request cannot be sent).
 

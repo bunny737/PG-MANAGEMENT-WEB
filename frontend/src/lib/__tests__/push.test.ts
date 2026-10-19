@@ -315,6 +315,89 @@ describe("enablePush / disablePush", () => {
       }
     });
 
+    describe("a timed-out registration that completes after the session changed", () => {
+      const ACCOUNT_A = { id: "user-a", tenant_id: "tenant-1" };
+      const ACCOUNT_B = { id: "user-b", tenant_id: "tenant-1" };
+
+      async function timeOutRegistrationOfA() {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+        let release: () => void = () => {};
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        getToken.mockImplementationOnce(async () => {
+          await gate;
+          return "token-a";
+        });
+        const calls = stubApiCreates();
+
+        const outcome = enablePush().then(
+          () => "resolved",
+          () => "rejected"
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+        await expect(outcome).resolves.toBe("rejected"); // the caller has been released...
+        return { release, calls }; // ...but Firebase is still working on A's token
+      }
+
+      test("after logout: no POST and no storage write once Firebase finally answers", async () => {
+        try {
+          const { release, calls } = await timeOutRegistrationOfA();
+
+          await disablePush(); // A logs out (the pre-logout step)
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_B)); // B logs in
+
+          release(); // Firebase resolves under B's session
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(calls.filter((c) => c.includes("push-subscriptions"))).toEqual([]);
+          expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test("account replaced without a cleanup running: the identity check still stops it", async () => {
+        try {
+          const { release, calls } = await timeOutRegistrationOfA();
+
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_B)); // no disablePush at all
+
+          release();
+          await vi.advanceTimersByTimeAsync(0);
+
+          expect(calls.filter((c) => c.includes("push-subscriptions"))).toEqual([]);
+          expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test("turning notifications off while a registration is pending cancels it", async () => {
+        try {
+          const { release, calls } = await timeOutRegistrationOfA();
+          await disablePush();
+          release();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(calls.filter((c) => c.includes("push-subscriptions"))).toEqual([]);
+          expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test("the same session still completes normally", async () => {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+        const calls = stubApiCreates();
+        await enablePush();
+        expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions"))).toHaveLength(1);
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
+      });
+    });
+
     test("a revocation that finishes in time does not trigger a pointless re-registration", async () => {
       stubBrowser({ permission: "granted" });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));

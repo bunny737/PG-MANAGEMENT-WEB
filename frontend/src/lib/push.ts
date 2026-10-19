@@ -6,6 +6,7 @@
 // user tap — see getPushStatus() and enablePush().
 
 import { apiFetch } from "@/lib/api";
+import { getCacheScope } from "@/lib/cacheScope";
 import { isIos, isStandalone } from "@/lib/pwa";
 import { registerPreLogoutStep } from "@/lib/sessionPurge";
 
@@ -143,17 +144,34 @@ function serialized<T>(operation: () => Promise<T>): Promise<T> {
  * registration exists. */
 let registrationEpoch = 0;
 
+/** Bumped whenever the session this browser's push belongs to ends (disablePush, i.e. logout or
+ * "turn off"). A timeout cannot cancel an operation, so a registration that outlives its caller
+ * would otherwise finish under the NEXT user's cookies and storage. Registration therefore checks
+ * this, and the signed-in tenant+user, after every await and abandons itself, without side
+ * effects, once either has changed. */
+let sessionGeneration = 0;
+
 /** Registers (or re-registers) this device's token. The endpoint upserts, so calling it on
  * every start is safe; `replaces` drops the previous row if the browser rotated the token. */
 function registerToken(): Promise<void> {
   return serialized(async () => {
+    const generation = sessionGeneration;
+    const scope = getCacheScope();
+    const stillSameSession = () => generation === sessionGeneration && getCacheScope() === scope;
+
     registrationEpoch += 1;
     const token = await currentToken();
+    if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
     const previous = readStored();
     const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
       method: "POST",
       body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
     });
+    // Never record this session's registration in the next session's storage. (A request that was
+    // already in flight when the session ended can still have created a server row; the next
+    // registration from this browser replaces it, because the endpoint reassigns a token it
+    // already holds to its new owner.)
+    if (!stillSameSession()) return;
     writeStored({ id: subscription.id, token });
   });
 }
@@ -170,6 +188,9 @@ export async function enablePush(): Promise<PushStatus> {
 /** Unregister this device: server row first (needs the session), then the token itself at FCM
  * so a later user of this browser can't receive this user's pushes. Never throws. */
 export async function disablePush(): Promise<void> {
+  // First, and even when nothing is stored yet: a registration still waiting on Firebase has
+  // written nothing, but must not complete once this session is over.
+  sessionGeneration += 1;
   const startedAt = registrationEpoch;
   const stored = readStored();
   writeStored(null);

@@ -24,6 +24,9 @@ export type PushStatus =
 interface StoredSubscription {
   id: string;
   token: string;
+  /** The server row's `last_seen_at` from the registration that stored this. Sent back on DELETE so a
+   * late delete cannot remove a row that has been registered again since. Absent in older storage. */
+  lastSeenAt?: string;
 }
 
 function firebaseConfig() {
@@ -144,15 +147,28 @@ const SERVER_DELETE_TIMEOUT_MS = 5_000;
 
 /** Best-effort removal of a subscription row on the server, bounded: apiFetch has no timeout of its
  * own, and nothing that matters (revoking the browser token) may ever wait behind this. Never
- * throws. `skipAuth`: a 401 here must not re-enter clearSession while a logout is waiting on us. */
-async function deleteServerRow(id: string): Promise<void> {
+ * throws. `skipAuth`: a 401 here must not re-enter clearSession while a logout is waiting on us.
+ *
+ * Aborting after the bound does not recall a request the server already received, and the same
+ * account can turn push back on and get this very row id back from the token upsert. So the DELETE
+ * is conditional on `lastSeenAt`: the server refuses (412) when the row was registered again since. */
+async function deleteServerRow(id: string, lastSeenAt?: string): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   const bound = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, SERVER_DELETE_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve();
+    }, SERVER_DELETE_TIMEOUT_MS);
   });
+  const condition = lastSeenAt ? `?if_last_seen_at=${encodeURIComponent(lastSeenAt)}` : "";
   try {
     await Promise.race([
-      apiFetch(`${SUBSCRIPTIONS_PATH}${id}/`, { method: "DELETE", skipAuth: true }).then(
+      apiFetch(`${SUBSCRIPTIONS_PATH}${id}/${condition}`, {
+        method: "DELETE",
+        skipAuth: true,
+        signal: controller.signal,
+      }).then(
         () => {},
         () => {} // offline, already gone, or another account's session cannot delete it: all fine
       ),
@@ -191,7 +207,7 @@ async function registerTokenNow(): Promise<void> {
   const token = await currentToken();
   if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
   const previous = readStored();
-  const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
+  const subscription = await apiFetch<{ id: string; last_seen_at?: string }>(SUBSCRIPTIONS_PATH, {
     method: "POST",
     body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
   });
@@ -200,10 +216,10 @@ async function registerTokenNow(): Promise<void> {
     // remove and the server now holds a row for the previous user. Never record it in the next
     // session's storage, and clean it up. Not awaited: it queues behind this operation, so
     // awaiting it here would wait on itself.
-    void abandonLateRegistration(subscription.id, thisRegistration);
+    void abandonLateRegistration(subscription.id, subscription.last_seen_at, thisRegistration);
     return;
   }
-  writeStored({ id: subscription.id, token });
+  writeStored({ id: subscription.id, token, lastSeenAt: subscription.last_seen_at });
 }
 
 /** Registers the current session again once everything already queued has finished.
@@ -234,7 +250,7 @@ function queueRegistrationRepair() {
  *    be revoked. But this late POST made the endpoint reassign the token back to the previous
  *    user, so register the current session again to take it back. The row is NOT deleted: the
  *    upsert keys on the token, so a same-account re-enable shares this row id. */
-async function abandonLateRegistration(rowId: string, registration: number) {
+async function abandonLateRegistration(rowId: string, lastSeenAt: string | undefined, registration: number) {
   // Revoke the token FIRST: it needs no round-trip to our backend, so an unreachable or stalled
   // backend can never keep the previous user's token alive. The row deletion is last and bounded.
   let superseded = false;
@@ -269,7 +285,7 @@ async function abandonLateRegistration(rowId: string, registration: number) {
     queueRegistrationRepair();
     return;
   }
-  await deleteServerRow(rowId);
+  await deleteServerRow(rowId, lastSeenAt);
 }
 
 /** Turn notifications on. Must be called straight from a tap: iOS refuses the permission
@@ -309,7 +325,7 @@ export async function disablePush(): Promise<void> {
   }
   // Already revoked above, so this is best-effort and bounded. If it runs late it targets the old
   // row by id, which another account's session cannot delete.
-  await deleteServerRow(stored.id);
+  await deleteServerRow(stored.id, stored.lastSeenAt);
 }
 
 /** Once per app start: refreshes the registration (rotated token, last-seen) for a device that

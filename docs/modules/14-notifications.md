@@ -236,6 +236,15 @@ Django-admin-only — superuser login, matching the MVP's original decision for
 
 ## Open questions / Decisions
 
+### Conditional push-subscription delete (2026-10-19)
+- [DECISION 2026-10-19] **`DELETE /push-subscriptions/{id}/?if_last_seen_at=`** is an
+  optional, backward-compatible precondition (412 when the row was registered again, 400 when
+  malformed; absent = unchanged behaviour). The token upsert reuses the row id for the same
+  token and account, so a web client's *late* cleanup DELETE (it abandons a slow request after
+  5 s but cannot recall it) could otherwise remove a subscription the same account had just
+  re-enabled. The check is one atomic `DELETE ... WHERE last_seen_at = ...`
+  (`subscriptions.remove_subscription`). No schema change.
+
 ### From the MVP (unchanged)
 - [DECISION 2026-07-04] **Welcome email == verification email** — see prior
   changelog entry; still true in V2 (`welcome` does not route through

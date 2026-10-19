@@ -192,6 +192,11 @@ else under `/api/v1/`). Behaviours worth knowing:
     tenant+user, re-checks both after each await, and abandons itself with no POST and no storage
     write if the session ended or changed. `disablePush()` bumps the generation first, even with
     nothing stored yet.
+  - **Conditional row delete:** aborting the 5 s DELETE does not recall a request the server already
+    has, and the same account re-enabling push gets the same row id back from the upsert, so the
+    client stores the row's `last_seen_at` and sends it as `?if_last_seen_at=` (server: 412 and no
+    delete if the row was registered again since; see module 14 Decisions). The request is also
+    aborted with an `AbortController` at the bound.
   - **Order rule:** revoking the browser token never waits on a call to our own backend. In both
     `disablePush()` and the late-POST cleanup the token is revoked first, and the server-side row
     DELETE comes last and is bounded to 5 s (`apiFetch` has no timeout of its own), so a stalled or

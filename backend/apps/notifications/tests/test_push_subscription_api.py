@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.urls import reverse
 
 from apps.accounts.tests.base import AuthAPITestCase
@@ -118,3 +120,75 @@ class PushSubscriptionAPITests(AuthAPITestCase):
             sub = PushSubscription.objects.get(fcm_token='shared-device')
         self.assertEqual(sub.user_id, self.owner.id)
         self.assertEqual(sub.tenant_id, self.tenant.id)
+
+
+class ConditionalPushSubscriptionDeleteTests(AuthAPITestCase):
+    """A web client's cleanup DELETE can arrive late. The same account turning push off and on
+    again gets the same row id back from the token upsert, so the late DELETE must be able to say
+    "only if nobody re-registered since"."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.authenticate(self.owner)
+
+    def _register(self):
+        return self.client.post(reverse('push-subscription-list'), {'fcm_token': 'abc123', 'device_type': 'web'})
+
+    def _delete(self, sub_id, last_seen_at=None):
+        url = reverse('push-subscription-detail', args=[sub_id])
+        if last_seen_at:
+            url += '?' + urlencode({'if_last_seen_at': last_seen_at})
+        return self.client.delete(url)
+
+    def test_conditional_delete_removes_the_row_when_nothing_changed(self):
+        created = self._register().data
+
+        response = self._delete(created['id'], created['last_seen_at'])
+
+        self.assertEqual(response.status_code, 204)
+        with tenant_context(self.tenant.id):
+            self.assertFalse(PushSubscription.objects.filter(pk=created['id']).exists())
+
+    def test_late_delete_does_not_remove_a_row_that_was_registered_again(self):
+        first = self._register().data
+        again = self._register().data  # same token, same account: same row id, newer last_seen_at
+        self.assertEqual(again['id'], first['id'])
+        self.assertNotEqual(again['last_seen_at'], first['last_seen_at'])
+
+        response = self._delete(first['id'], first['last_seen_at'])  # the stale cleanup arrives
+
+        self.assertEqual(response.status_code, 412)
+        with tenant_context(self.tenant.id):
+            self.assertTrue(PushSubscription.objects.filter(pk=first['id']).exists())
+
+    def test_delete_without_the_condition_is_unchanged(self):
+        created = self._register().data
+        self._register()
+
+        response = self._delete(created['id'])
+
+        self.assertEqual(response.status_code, 204)
+
+    def test_a_malformed_condition_is_a_400_and_deletes_nothing(self):
+        created = self._register().data
+
+        response = self._delete(created['id'], 'not-a-date')
+
+        self.assertEqual(response.status_code, 400)
+        with tenant_context(self.tenant.id):
+            self.assertTrue(PushSubscription.objects.filter(pk=created['id']).exists())
+
+    def test_conditional_delete_still_cannot_touch_another_users_row(self):
+        other_owner = self.create_owner(self.create_tenant('Other PG'), email='other@example.com')
+        with tenant_context(other_owner.tenant_id):
+            theirs = PushSubscription.objects.create(
+                tenant_id=other_owner.tenant_id, user=other_owner, fcm_token='theirs', device_type='web',
+            )
+
+        response = self._delete(theirs.id, theirs.last_seen_at.isoformat())
+
+        self.assertEqual(response.status_code, 404)
+        with tenant_context(is_super_admin=True):
+            self.assertTrue(PushSubscription.objects.filter(pk=theirs.pk).exists())

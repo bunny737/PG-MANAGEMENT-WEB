@@ -298,6 +298,97 @@ describe("enablePush / disablePush", () => {
       }
     });
 
+    describe("conditional server DELETE (a late delete must not remove a row registered again since)", () => {
+      const SEEN = "2026-10-19T10:00:00.123456Z";
+
+      test("registering stores the row's last_seen_at, and turning push off sends it back as the condition", async () => {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem("currentUser", JSON.stringify({ id: "user-a", tenant_id: "tenant-1" }));
+        const calls: string[] = [];
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            calls.push(`${init?.method ?? "GET"} ${String(input)}`);
+            return new Response(JSON.stringify({ id: "row-a", last_seen_at: SEEN }), {
+              status: 201,
+              headers: { "Content-Type": "application/json" },
+            });
+          })
+        );
+
+        await enablePush();
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toMatchObject({ id: "row-a", lastSeenAt: SEEN });
+
+        await disablePush();
+        expect(calls).toContain(
+          `DELETE /api/v1/notifications/push-subscriptions/row-a/?if_last_seen_at=${encodeURIComponent(SEEN)}`
+        );
+      });
+
+      test("storage written before this field existed still deletes, unconditionally", async () => {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+        const calls = stubApiCreates();
+        await disablePush();
+        expect(calls).toContain("DELETE /api/v1/notifications/push-subscriptions/sub-1/");
+      });
+
+      test("the late-POST cleanup deletes conditionally on the version its own POST returned", async () => {
+        stubBrowser({ permission: "granted" });
+        localStorage.setItem("currentUser", JSON.stringify({ id: "user-a", tenant_id: "tenant-1" }));
+        let release: () => void = () => {};
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const calls: string[] = [];
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            const method = init?.method ?? "GET";
+            calls.push(`${method} ${String(input)}`);
+            if (method === "POST") await gate;
+            return new Response(JSON.stringify({ id: "row-a", last_seen_at: SEEN }), {
+              status: 201,
+              headers: { "Content-Type": "application/json" },
+            });
+          })
+        );
+
+        const registration = enablePush();
+        await vi.waitFor(() => expect(calls.some((c) => c.startsWith("POST"))).toBe(true));
+        await disablePush();
+        release();
+        await registration;
+        await vi.waitFor(() =>
+          expect(calls).toContain(
+            `DELETE /api/v1/notifications/push-subscriptions/row-a/?if_last_seen_at=${encodeURIComponent(SEEN)}`
+          )
+        );
+      });
+
+      test("a DELETE that outlives its bound is aborted, not left running", async () => {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        try {
+          stubBrowser({ permission: "granted" });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(OLD_ROW));
+          let signal: AbortSignal | undefined;
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+              signal = init?.signal ?? undefined;
+              return new Promise<Response>(() => {});
+            })
+          );
+          const cleanup = disablePush();
+          await vi.advanceTimersByTimeAsync(5_000);
+          await cleanup;
+          expect(signal?.aborted).toBe(true);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+
     test("a hung backend DELETE only delays disablePush() by its own bound", async () => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {

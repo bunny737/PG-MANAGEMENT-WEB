@@ -1,4 +1,5 @@
-from rest_framework import status, viewsets
+from django.utils.translation import gettext_lazy as _
+from rest_framework import serializers, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -111,5 +112,24 @@ class PushSubscriptionViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-    def perform_destroy(self, instance):
-        subscriptions.remove_subscription(user=self.request.user, subscription_id=instance.pk)
+    def destroy(self, request, *args, **kwargs):
+        """Optional `?if_last_seen_at=<value from the POST/GET response>` makes the delete
+        conditional: 412 (and nothing deleted) if the row has been re-registered since. Clients that
+        don't send it (the mobile app) get the plain delete."""
+        instance = self.get_object()
+        expected = None
+        raw = request.query_params.get('if_last_seen_at')
+        if raw is not None:
+            try:
+                expected = serializers.DateTimeField().to_internal_value(raw)
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({'if_last_seen_at': exc.detail})
+        deleted = subscriptions.remove_subscription(
+            user=request.user, subscription_id=instance.pk, if_last_seen_at=expected,
+        )
+        if expected is not None and not deleted:
+            return Response(
+                {'detail': _('This subscription was registered again since you last saw it; not deleted.')},
+                status=status.HTTP_412_PRECONDITION_FAILED,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -59,7 +59,11 @@ Current diagram: [erd.png](erd.png).
 - **API calls.** The browser only talks to the Next.js app (`/api/v1/...`); its route handlers call
   Django server-side at `INTERNAL_API_URL` (`http://backend:8000` in compose). `ALLOWED_HOSTS` in `.env`
   must include `backend` (see `.env.example`). After pulling this change, recreate the frontend
-  container so it picks up the new env: `docker compose up -d frontend`.
+  container so it picks up the new env **and the new dependencies** (Serwist, Firebase):
+  `docker compose up -d --build -V frontend`. The `-V` matters — `node_modules` lives in an anonymous
+  volume, so without it the container keeps the old packages and crash-loops with
+  `Cannot find module '@serwist/next'`. The image now runs Node 24 (Firebase 13 requires
+  Node >= 24.12; the previous Node 20 image printed EBADENGINE warnings).
 - **Service worker is production-only.** `npm run dev` neither builds nor registers it (and unregisters
   one left by an earlier production run on the same origin). To test offline, install and push:
   `npm run build && npm start` in `frontend/`, then open it in a browser. The build uses

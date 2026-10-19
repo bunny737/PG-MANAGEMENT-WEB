@@ -93,15 +93,113 @@ describe("BFF proxy", () => {
     expect(set).toMatch(/HttpOnly/i);
   });
 
-  test("uses the refresh cookie when the access cookie has expired and is no longer sent", async () => {
+  test("an expired access cookie is refreshed BEFORE the request, which then runs exactly once", async () => {
     const renewed = jwt(900);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(401, {})) // anonymous attempt
-      .mockResolvedValueOnce(jsonResponse(200, { access: renewed }))
-      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
-    const res = await GET(request("/api/v1/auth/me/", { headers: { cookie: "pg_refresh=ref-1" } }), params("v1/auth/me/"));
-    expect(res.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+      .mockResolvedValueOnce(jsonResponse(200, { access: renewed })) // refresh
+      .mockResolvedValueOnce(jsonResponse(201, { id: "x" })); // the request itself
+    const res = await POST(
+      request("/api/v1/residents/", {
+        method: "POST",
+        headers: { cookie: "pg_refresh=ref-1", "content-type": "application/json" },
+        body: "{}",
+      }),
+      params("v1/residents/")
+    );
+    expect(res.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://django.test/api/v1/auth/token/refresh/");
+    expect((fetchMock.mock.calls[1][1].headers as Headers).get("authorization")).toBe(`Bearer ${renewed}`);
+    expect(res.headers.get("set-cookie") ?? "").toContain(`pg_access=${renewed}`);
+  });
+
+  test("a successful public write is never replayed when only a stale refresh cookie is present", async () => {
+    // Signup / OTP request / password reset are anonymous: running one twice sends two emails.
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { code: "token_not_valid" })) // refresh rejected
+      .mockResolvedValueOnce(jsonResponse(201, { detail: "sent" })); // the public endpoint
+    const res = await POST(
+      request("/api/v1/auth/password-reset/", {
+        method: "POST",
+        headers: { cookie: "pg_refresh=dead", "content-type": "application/json" },
+        body: '{"email":"a@b.co"}',
+      }),
+      params("v1/auth/password-reset/")
+    );
+    expect(res.status).toBe(201);
+    const upstreamCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("password-reset"));
+    expect(upstreamCalls).toHaveLength(1);
+    expect((upstreamCalls[0][1].headers as Headers).get("authorization")).toBeNull();
+    const set = res.headers.get("set-cookie") ?? "";
+    for (const name of ["pg_access", "pg_refresh", "pg_session"]) expect(set).toContain(`${name}=;`);
+  });
+
+  test("a non-401 answer is never followed by a refresh or a replay", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { detail: "validation" }));
+    const res = await POST(
+      request("/api/v1/residents/", {
+        method: "POST",
+        headers: { cookie: "pg_access=tok; pg_refresh=ref-1", "content-type": "application/json" },
+        body: "{}",
+      }),
+      params("v1/residents/")
+    );
+    expect(res.status).toBe(400);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe("request body limit", () => {
+    beforeEach(() => {
+      process.env.BFF_MAX_BODY_BYTES = "10";
+    });
+    afterEach(() => {
+      delete process.env.BFF_MAX_BODY_BYTES;
+    });
+
+    test("a declared Content-Length over the limit is rejected before anything is forwarded", async () => {
+      const res = await POST(
+        request("/api/v1/properties/", { method: "POST", headers: { "content-length": "11" }, body: "x".repeat(11) }),
+        params("v1/properties/")
+      );
+      expect(res.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    test("a chunked body with no Content-Length is cut off once it passes the limit", async () => {
+      let pulled = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(4)); // endless 4-byte chunks
+        },
+      });
+      const req = new NextRequest(`${ORIGIN}/api/v1/properties/`, {
+        method: "POST",
+        body: stream,
+        duplex: "half", // required by Node for a streamed request body
+      } as ConstructorParameters<typeof NextRequest>[1]);
+      const res = await POST(req, params("v1/properties/"));
+      expect(res.status).toBe(413);
+      expect(pulled).toBeLessThan(10); // stopped reading rather than draining the stream
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    test("a body at the limit still goes through", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(201, { id: "p" }));
+      const res = await POST(
+        request("/api/v1/properties/", { method: "POST", body: "x".repeat(10) }),
+        params("v1/properties/")
+      );
+      expect(res.status).toBe(201);
+    });
+
+    test("login bodies are capped too", async () => {
+      const res = await loginPost(
+        request("/api/auth/login", { method: "POST", headers: { "content-length": String(1024 * 1024) }, body: "{}" })
+      );
+      expect(res.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   test("a rejected refresh ends the session: 401 and every session cookie cleared", async () => {

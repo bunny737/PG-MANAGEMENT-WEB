@@ -33,6 +33,46 @@ export function isTokenIssuingPath(apiPath: string): boolean {
   return TOKEN_ISSUING_PATHS.has(apiPath.replace(/^v1\//, "").replace(/\/+$/, ""));
 }
 
+const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+/** Largest request body the proxy will buffer. The backend has no upload limit of its own beyond
+ * Django's defaults, so this is the real ceiling: sized for a phone photo, overridable per
+ * deployment. Keep the edge's `client_max_body_size` at or above it. */
+export function maxBodyBytes(): number {
+  const configured = Number(process.env.BFF_MAX_BODY_BYTES);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_BODY_BYTES;
+}
+
+/** Reads the request body, giving up (null) the moment it exceeds `maxBytes`. Checks the declared
+ * Content-Length first, then counts bytes as they stream, so a chunked body with no length header
+ * cannot grow the Next.js process's memory without bound. */
+export async function readBodyLimited(request: NextRequest, maxBytes: number): Promise<ArrayBuffer | null> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return new ArrayBuffer(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer as ArrayBuffer;
+}
+
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** CSRF defence in depth on top of SameSite=Lax: a state-changing request must come from this app's own origin. */

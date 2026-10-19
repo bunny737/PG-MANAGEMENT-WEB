@@ -7,15 +7,24 @@ import {
   apiOrigin,
   clearSessionCookies,
   hasForeignOrigin,
+  readBodyLimited,
   setSessionCookies,
   upstreamHeaders,
 } from "@/lib/server/bff";
 
 const NO_STORE = { "cache-control": "no-store" };
 
+/** A login body is a couple of short fields. */
+const LOGIN_MAX_BODY_BYTES = 16 * 1024;
+
 export async function handleLogin(request: NextRequest, upstreamPath: string) {
   if (hasForeignOrigin(request)) {
     return NextResponse.json({ detail: "Cross-origin request blocked." }, { status: 403, headers: NO_STORE });
+  }
+
+  const body = await readBodyLimited(request, LOGIN_MAX_BODY_BYTES);
+  if (body === null) {
+    return NextResponse.json({ detail: "Request body too large." }, { status: 413, headers: NO_STORE });
   }
 
   try {
@@ -24,7 +33,7 @@ export async function handleLogin(request: NextRequest, upstreamPath: string) {
     const login = await fetch(`${apiOrigin()}${upstreamPath}`, {
       method: "POST",
       headers,
-      body: await request.arrayBuffer(),
+      body,
       cache: "no-store",
     });
     const tokens = await login.json().catch(() => ({}));

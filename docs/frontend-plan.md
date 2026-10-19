@@ -160,9 +160,19 @@ else under `/api/v1/`). Behaviours worth knowing:
 - Login handlers return only the `/auth/me/` payload. The four token-issuing endpoints
   (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`) are **404 through the generic proxy**, so
   a proxied call can never hand a token to page JS. OTP login needs its own handler when it is built.
-- Refresh is server-side with the request body buffered once and replayed (uploads included).
-  Only a definitive rejection (401/403 from the refresh endpoint) clears cookies; an unreachable
-  backend is a 502 and does **not** log the user out. The client treats any 401 from the proxy as
+- Refresh is server-side. With no access cookie (it expired) the proxy refreshes **before** sending,
+  so the request runs once; with an access cookie it is replayed only after the backend answered
+  401 (which means it did not run). A request is therefore never executed twice — this matters for
+  anonymous writes (signup, OTP request, password reset), which carry a stale refresh cookie for
+  some users. Only a definitive rejection (401/403 from the refresh endpoint) clears cookies; an
+  unreachable backend is a 502 and does **not** log the user out. If the refresh was rejected, a
+  public endpoint still runs (anonymously, once) and an authenticated one returns 401 with the
+  reason (e.g. suspended).
+- The body is buffered once (so a refresh-replay can resend uploads) but **bounded**:
+  `BFF_MAX_BODY_BYTES` (default 10 MB) is enforced from the declared `Content-Length` and again
+  while streaming, so a chunked body with no length cannot grow the Node process's memory; login
+  bodies are capped at 16 KB. The backend has no upload limit of its own beyond Django's defaults,
+  so this is the effective ceiling — keep nginx's `client_max_body_size` at or above it. The client treats any 401 from the proxy as
   "session over" (`clearSession()` + redirect). The translated suspension reason banner is not
   built yet.
 - Writes whose `Origin` is not this app's are rejected (defence in depth on top of `SameSite=Lax`).
@@ -172,6 +182,9 @@ else under `/api/v1/`). Behaviours worth knowing:
   a client-supplied one — the proxy forwards it and `apps/audit/log.py:client_ip` (invariant 9) and
   login throttling both trust the first entry. `INTERNAL_API_URL` must point at Django, and
   `ALLOWED_HOSTS` must include the host name the proxy uses (`backend` in compose).
+- Push cleanup order on logout: the FCM token is revoked first (no session needed, and it must never
+  run after the next account registers — logout stops waiting after 3 s), then the server row is
+  deleted; a registration epoch stops a late-finishing cleanup from revoking a newer token.
 - Known limitation: an *offline* logout clears local state but the cookies stay until the next
   login (the logout request cannot be sent).
 

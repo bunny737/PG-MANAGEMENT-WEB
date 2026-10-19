@@ -108,9 +108,15 @@ async function currentToken(): Promise<string> {
   return token;
 }
 
+// The push token belongs to the browser, not to an account. Bumped whenever this browser registers,
+// so a cleanup from an earlier session that is still running (logout only waits a few seconds
+// for it) can tell that a newer registration exists and must not revoke it.
+let registrationEpoch = 0;
+
 /** Registers (or re-registers) this device's token. The endpoint upserts, so calling it on
  * every start is safe; `replaces` drops the previous row if the browser rotated the token. */
 async function registerToken() {
+  registrationEpoch += 1;
   const token = await currentToken();
   const previous = readStored();
   const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
@@ -132,21 +138,27 @@ export async function enablePush(): Promise<PushStatus> {
 /** Unregister this device: server row first (needs the session), then the token itself at FCM
  * so a later user of this browser can't receive this user's pushes. Never throws. */
 export async function disablePush(): Promise<void> {
+  const startedAt = registrationEpoch;
   const stored = readStored();
   writeStored(null);
   emit();
   if (!stored) return;
-  try {
-    // skipAuth: a 401 here must not re-enter clearSession while a logout is waiting on us.
-    await apiFetch(`${SUBSCRIPTIONS_PATH}${stored.id}/`, { method: "DELETE", skipAuth: true });
-  } catch {
-    // Offline or already gone; deleting the token below still cuts the delivery path.
-  }
+
+  // Revoke the token FIRST. It is shared browser state, revoking it needs no session, and unlike
+  // the server call below it must never run after the next account has registered: logout stops
+  // waiting after a few seconds, so a slow server call would otherwise still be pending then.
   try {
     const { messaging: instance, sdk } = await firebase();
-    await sdk.deleteToken(instance);
+    if (registrationEpoch === startedAt) await sdk.deleteToken(instance);
   } catch {
     // Best-effort.
+  }
+  try {
+    // skipAuth: a 401 here must not re-enter clearSession while a logout is waiting on us. If this
+    // runs late it targets the old row by id, which another account's session cannot delete.
+    await apiFetch(`${SUBSCRIPTIONS_PATH}${stored.id}/`, { method: "DELETE", skipAuth: true });
+  } catch {
+    // Offline or already gone; the token is already revoked.
   }
 }
 

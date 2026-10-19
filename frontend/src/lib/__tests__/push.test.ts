@@ -175,6 +175,53 @@ describe("enablePush / disablePush", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  test("the FCM token is revoked BEFORE the server call, so a slow request can't outlive the session", async () => {
+    stubBrowser({ permission: "granted" });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: "sub-1", token: "token-1" }));
+    const order: string[] = [];
+    deleteToken.mockImplementationOnce(async () => {
+      order.push("revoke-token");
+      return true;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        order.push("server-delete");
+        return new Response(null, { status: 204 });
+      })
+    );
+    await disablePush();
+    expect(order).toEqual(["revoke-token", "server-delete"]);
+  });
+
+  test("a cleanup still loading Firebase cannot revoke the token the next login registered", async () => {
+    stubBrowser({ permission: "granted" });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: "sub-1", token: "token-1" }));
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const modules = [
+      { initializeApp: () => ({}), getApps: () => [] },
+      { getMessaging: () => ({}), getToken, deleteToken, onMessage: vi.fn() },
+    ];
+    let loads = 0;
+    // The old session's cleanup gets the slow load; the new session's registration is immediate.
+    setFirebaseLoader((async () => (++loads === 1 ? gate.then(() => modules) : modules)) as unknown as Parameters<typeof setFirebaseLoader>[0]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ id: "new-sub" }), { status: 201, headers: { "Content-Type": "application/json" } }))
+    );
+
+    const cleanup = disablePush(); // the logout's pre-step, stuck on the slow load
+    await enablePush(); // the next account registers this browser meanwhile
+    release();
+    await cleanup;
+
+    expect(deleteToken).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("new-sub");
+  });
+
   test("a device that never subscribed does nothing on disable", async () => {
     stubBrowser({ permission: "granted" });
     const calls = stubApi();

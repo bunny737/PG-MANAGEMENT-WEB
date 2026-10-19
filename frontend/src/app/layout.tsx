@@ -42,9 +42,10 @@ export const metadata: Metadata = {
   description: "PG/hostel property management",
   // iOS ignores most of the manifest: these make "Add to Home Screen" open standalone
   // (no Safari chrome) with the right title and icon. The manifest link itself is generated
-  // from app/manifest.ts.
+  // from app/manifest.ts. statusBarStyle "default" keeps the page below the status bar with
+  // dark text; "black-translucent" would draw white clock/battery over our light background.
   applicationName: "PropManager",
-  appleWebApp: { capable: true, title: "PropManager", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "PropManager", statusBarStyle: "default" },
   icons: { apple: "/icons/apple-touch-icon.png" },
   formatDetection: { telephone: false },
 };
@@ -53,7 +54,8 @@ export const viewport: Viewport = {
   themeColor: "#101828",
   width: "device-width",
   initialScale: 1,
-  // Draw under the notch / home indicator; screens pad themselves with env(safe-area-inset-*).
+  // Extend to the screen edges so the bottom nav can fill behind the home indicator and pad
+  // itself with env(safe-area-inset-bottom).
   viewportFit: "cover",
 };
 

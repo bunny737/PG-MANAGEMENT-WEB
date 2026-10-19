@@ -8,5 +8,19 @@
   "update": {
     "available": "नया वर्शन उपलब्ध है।",
     "reload": "रीलोड करें"
+  },
+  "install": {
+    "title": "ऐप इंस्टॉल करें",
+    "description": "PropManager को होम स्क्रीन पर जोड़ें और इसे ऐप की तरह खोलें।",
+    "action": "इंस्टॉल करें",
+    "dismiss": "अभी नहीं",
+    "ios": {
+      "title": "iPhone पर इंस्टॉल करें",
+      "step1": "Safari के टूलबार में Share बटन दबाएँ।",
+      "step2": "“Add to Home Screen” चुनें।",
+      "step3": "Add दबाएँ। अब PropManager आपकी होम स्क्रीन से खुलेगा।",
+      "openInSafari": "ऐप इंस्टॉल करने के लिए इस पेज को Safari में खोलें। WhatsApp या Instagram जैसे दूसरे ऐप के अंदर वाले ब्राउज़र इसे होम स्क्रीन पर नहीं जोड़ सकते।",
+      "done": "ठीक है"
+    }
   }
 }

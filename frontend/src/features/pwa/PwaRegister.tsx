@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import "@/lib/pwa"; // starts listening for beforeinstallprompt as early as possible
 
 /** Registers the service worker (public/sw.js, built from app/sw.ts) and offers a Reload
  * when a new version is waiting. Installed PWAs stay alive for days (iOS especially), so the
@@ -59,7 +60,7 @@ export function PwaRegister() {
   return (
     <div
       role="status"
-      className="fixed inset-x-4 bottom-20 z-50 flex items-center justify-between gap-3 rounded-xl bg-surface-inverse px-4 py-3 text-sm text-ink-inverse shadow-lg md:inset-x-auto md:right-4 md:bottom-4 md:w-96"
+      className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 flex items-center justify-between gap-3 rounded-xl bg-surface-inverse px-4 py-3 text-sm text-ink-inverse shadow-lg md:inset-x-auto md:right-4 md:bottom-4 md:w-96"
     >
       <span>{t("available")}</span>
       <button

@@ -177,29 +177,50 @@ let sessionGeneration = 0;
 /** Registers (or re-registers) this device's token. The endpoint upserts, so calling it on
  * every start is safe; `replaces` drops the previous row if the browser rotated the token. */
 function registerToken(): Promise<void> {
-  return serialized(async () => {
-    const generation = sessionGeneration;
-    const scope = getCacheScope();
-    const stillSameSession = () => generation === sessionGeneration && getCacheScope() === scope;
+  return serialized(registerTokenNow);
+}
 
-    registrationEpoch += 1;
-    const thisRegistration = registrationEpoch;
-    const token = await currentToken();
-    if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
-    const previous = readStored();
-    const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
-      method: "POST",
-      body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
-    });
-    if (!stillSameSession()) {
-      // The POST was already in flight when the session ended, so logout found nothing stored to
-      // remove and the server now holds a row for the previous user. Never record it in the next
-      // session's storage, and clean it up. Not awaited: it queues behind this operation, so
-      // awaiting it here would wait on itself.
-      void abandonLateRegistration(subscription.id, thisRegistration);
-      return;
-    }
-    writeStored({ id: subscription.id, token });
+/** The registration itself, for callers that are already inside the queue. */
+async function registerTokenNow(): Promise<void> {
+  const generation = sessionGeneration;
+  const scope = getCacheScope();
+  const stillSameSession = () => generation === sessionGeneration && getCacheScope() === scope;
+
+  registrationEpoch += 1;
+  const thisRegistration = registrationEpoch;
+  const token = await currentToken();
+  if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
+  const previous = readStored();
+  const subscription = await apiFetch<{ id: string }>(SUBSCRIPTIONS_PATH, {
+    method: "POST",
+    body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
+  });
+  if (!stillSameSession()) {
+    // The POST was already in flight when the session ended, so logout found nothing stored to
+    // remove and the server now holds a row for the previous user. Never record it in the next
+    // session's storage, and clean it up. Not awaited: it queues behind this operation, so
+    // awaiting it here would wait on itself.
+    void abandonLateRegistration(subscription.id, thisRegistration);
+    return;
+  }
+  writeStored({ id: subscription.id, token });
+}
+
+/** Registers the current session again once everything already queued has finished.
+ *
+ * Used to repair a registration whose token an abandoned revocation may have destroyed. The
+ * "is push on?" decision is taken INSIDE the queue, after any registration still in flight has
+ * written its storage: deciding earlier would see an empty store for a registration whose POST is
+ * pending, do nothing, and leave it holding a dead token. Not an epoch check on purpose: a later
+ * registration may have started before the stalled revocation finished, so it cannot be assumed
+ * to have escaped it, and an extra upsert is harmless. Logout or "turn off" in the meantime
+ * leaves the store empty, so nothing is enabled again. */
+function queueRegistrationRepair() {
+  void serialized(async () => {
+    if (getPushStatus() !== "on") return;
+    await registerTokenNow();
+  }).catch(() => {
+    // Best-effort; syncPush retries on the next app start.
   });
 }
 
@@ -222,7 +243,7 @@ async function abandonLateRegistration(rowId: string, registration: number) {
     revoked = await serialized(async () => {
       if (registrationEpoch !== registration) {
         superseded = true; // fenced: a newer registration exists
-        void syncPush();
+        queueRegistrationRepair();
         return false;
       }
       const { messaging: instance, sdk } = await firebase();
@@ -231,7 +252,7 @@ async function abandonLateRegistration(rowId: string, registration: number) {
       // was stalled, and the deletion may have revoked its token, so make that registration again.
       if (registrationEpoch !== registration) {
         superseded = true;
-        void syncPush();
+        queueRegistrationRepair();
         return false;
       }
       return true;
@@ -245,7 +266,7 @@ async function abandonLateRegistration(rowId: string, registration: number) {
     // resolved ownership). The same account turning push off and on reuses this very row id, so
     // deleting the row could remove the current subscription. If the stalled deletion finishes
     // later, the check above repairs the replacement.
-    void syncPush();
+    queueRegistrationRepair();
     return;
   }
   await deleteServerRow(rowId);
@@ -281,7 +302,7 @@ export async function disablePush(): Promise<void> {
       await sdk.deleteToken(instance);
       // Abandoned after the timeout and finishing late: a registration began meanwhile and this
       // may have revoked its token, so make that registration again.
-      if (registrationEpoch !== startedAt) void syncPush();
+      if (registrationEpoch !== startedAt) queueRegistrationRepair();
     });
   } catch {
     // Best-effort.

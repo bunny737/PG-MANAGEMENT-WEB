@@ -198,7 +198,10 @@ else under `/api/v1/`). Behaviours worth knowing:
     unreachable backend can neither keep a previous user's token alive nor leave the "turn off"
     button busy forever.
   - A revocation abandoned by the cap that finishes late, after a newer registration began,
-    re-registers to repair it.
+    re-registers to repair it. The repair is **queued** (`queueRegistrationRepair`) and decides
+    whether push is "on" only once it reaches the head of the queue, i.e. after any registration still
+    in flight has stored its row; deciding at once would see an empty store, do nothing, and leave
+    that registration holding a revoked token.
   - A registration whose **POST was already in flight** when the session ended (logout finds nothing
     stored to remove, so it cannot clean up) cleans up after itself when the response arrives: if no
     newer registration exists it revokes the browser's FCM token — taking over by a later user is not

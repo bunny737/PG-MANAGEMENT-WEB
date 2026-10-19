@@ -507,6 +507,65 @@ describe("enablePush / disablePush", () => {
           expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("row-b");
         });
 
+        test("a late-POST cleanup whose revocation stalls past the cap, then finishes after a replacement registered, re-registers it", async () => {
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+          try {
+            stubBrowser({ permission: "granted" });
+            localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+            let releasePost: () => void = () => {};
+            const postGate = new Promise<void>((resolve) => {
+              releasePost = resolve;
+            });
+            let releaseDelete: () => void = () => {};
+            const deleteGate = new Promise<void>((resolve) => {
+              releaseDelete = resolve;
+            });
+            deleteToken.mockImplementationOnce(async () => {
+              await deleteGate; // the cleanup's own revocation stalls
+              return true;
+            });
+            const calls: string[] = [];
+            let posts = 0;
+            vi.stubGlobal(
+              "fetch",
+              vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+                const method = init?.method ?? "GET";
+                calls.push(`${method} ${String(input)}`);
+                if (method === "POST" && String(input).includes("push-subscriptions") && ++posts === 1) await postGate;
+                return new Response(JSON.stringify({ id: "row-b" }), { status: 201, headers: { "Content-Type": "application/json" } });
+              })
+            );
+            const postCount = () => calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions")).length;
+
+            const registrationA = enablePush();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(postCount()).toBe(1); // A's POST on the wire
+            await disablePush(); // A logs out: nothing stored yet
+            localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_B));
+
+            releasePost(); // late POST completes -> cleanup starts revoking, and stalls
+            await vi.advanceTimersByTimeAsync(0);
+            expect(deleteToken).toHaveBeenCalledTimes(1);
+
+            await vi.advanceTimersByTimeAsync(10_000); // the cap gives up on the stalled cleanup
+            await registrationA;
+            const registrationB = enablePush(); // B opts in; the queue is free again
+            await vi.advanceTimersByTimeAsync(0);
+            await registrationB;
+            expect(postCount()).toBe(2);
+            const postsBeforeRelease = postCount();
+
+            releaseDelete(); // the abandoned revocation finally completes, possibly hitting B's token
+            await vi.advanceTimersByTimeAsync(0);
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(postCount()).toBe(postsBeforeRelease + 1); // B registered again
+            expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("row-b");
+          } finally {
+            vi.useRealTimers();
+          }
+        });
+
         test("the same account turning push off and on keeps its row: the late cleanup does not delete it", async () => {
           stubBrowser({ permission: "granted" });
           localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));

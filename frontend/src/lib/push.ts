@@ -216,21 +216,35 @@ function registerToken(): Promise<void> {
 async function abandonLateRegistration(rowId: string, registration: number) {
   // Revoke the token FIRST: it needs no round-trip to our backend, so an unreachable or stalled
   // backend can never keep the previous user's token alive. The row deletion is last and bounded.
+  let superseded = false;
   let revoked = false;
   try {
     revoked = await serialized(async () => {
-      if (registrationEpoch !== registration) return false; // fenced: a newer registration exists
+      if (registrationEpoch !== registration) {
+        superseded = true; // fenced: a newer registration exists
+        void syncPush();
+        return false;
+      }
       const { messaging: instance, sdk } = await firebase();
       await sdk.deleteToken(instance);
+      // Abandoned after the timeout and finishing late: a replacement registration began while this
+      // was stalled, and the deletion may have revoked its token, so make that registration again.
+      if (registrationEpoch !== registration) {
+        superseded = true;
+        void syncPush();
+        return false;
+      }
       return true;
     });
   } catch {
     // Best-effort.
   }
+  if (superseded) return; // the newer registration owns the token and has been repaired above
   if (!revoked && registrationEpoch !== registration) {
-    // The newer registration owns the token and the backend's upsert already resolved ownership. For
-    // the same account turning push off and on again it also reuses this very row id, so deleting
-    // the row here could remove the current subscription.
+    // Timed out, and a replacement started since: it owns the token (the backend's upsert already
+    // resolved ownership). The same account turning push off and on reuses this very row id, so
+    // deleting the row could remove the current subscription. If the stalled deletion finishes
+    // later, the check above repairs the replacement.
     void syncPush();
     return;
   }

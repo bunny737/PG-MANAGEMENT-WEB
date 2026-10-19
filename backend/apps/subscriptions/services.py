@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import logging
+import uuid
 
 from django.db import connection, transaction
 from django.db.models import F, Q
@@ -340,11 +341,14 @@ def select_plan(*, subscription, plan, actor, request=None):
         # remote cancel can't be rolled back if a later local write then fails).
         _retire_current_subscription(subscription)
         _abandon_pending_subscriptions(subscription)
+        if not subscription.razorpay_customer_id:
+            subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(tenant)
+        # Leaving another per-bed plan: its arrears are invoiced on that plan
+        # before the plan and period below overwrite what prices them.
+        close_per_bed_period(subscription)
         subscription.plan = plan
         subscription.pending_plan = None
         subscription.pending_razorpay_subscription_id = ''
-        if not subscription.razorpay_customer_id:
-            subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(tenant)
         subscription.razorpay_subscription_id = ''
         today = timezone.now().date()
         subscription.current_period_start = today
@@ -420,6 +424,9 @@ def _promote_ledger_row(subscription, row):
     new_plan = row.plan
     previous_plan = subscription.plan
     _retire_current_subscription(subscription)
+    # A per-bed plan bills in arrears: invoice what it accrued before the flat
+    # plan replaces it, while the old plan and period can still price it.
+    close_per_bed_period(subscription)
     subscription.plan = new_plan
     subscription.razorpay_subscription_id = row.razorpay_subscription_id
     update_fields = ['plan', 'razorpay_subscription_id', 'updated_at']
@@ -628,80 +635,135 @@ def _handle_subscription_webhook(event, payload):
             )
 
 
-def _handle_invoice_webhook(event, payload):
-    """PER_BED_MONTHLY: looks the SubscriptionInvoice up by its stored
-    `razorpay_invoice_id` (set when `generate_invoice_for_subscription`
-    issues the cycle's invoice)."""
-    entity = payload.get('payload', {}).get('invoice', {}).get('entity', {})
-    razorpay_invoice_id = entity.get('id', '')
+def _invoice_for_webhook(entity):
+    """The SubscriptionInvoice a Razorpay invoice entity belongs to, or None.
 
-    invoice = (
-        SubscriptionInvoice.objects.filter(razorpay_invoice_id=razorpay_invoice_id)
-        .select_related('subscription__tenant').first()
-    )
-    if invoice is None:
+    Matched by the stored `razorpay_invoice_id`, falling back to the entity's
+    `receipt`, which is our invoice's id: if the response to our create call was
+    lost we hold no Razorpay id yet, but every event Razorpay sends carries the
+    receipt. A receipt match is refused when the invoice already holds a
+    different Razorpay id.
+
+    Runs as super admin: a webhook has no tenant, and under RLS every invoice is
+    invisible without one."""
+    razorpay_invoice_id = entity.get('id', '')
+    with tenant_context(is_super_admin=True):
+        invoice = None
+        if razorpay_invoice_id:
+            invoice = SubscriptionInvoice.objects.filter(razorpay_invoice_id=razorpay_invoice_id).first()
+        if invoice is None:
+            try:
+                receipt = uuid.UUID(str(entity.get('receipt') or ''))
+            except ValueError:
+                return None
+            invoice = SubscriptionInvoice.objects.filter(pk=receipt).first()
+            if invoice is not None and invoice.razorpay_invoice_id not in ('', razorpay_invoice_id):
+                return None
+        return invoice
+
+
+def _bind_razorpay_invoice(invoice, razorpay_invoice_id):
+    """Records the Razorpay id on an invoice whose create response we never saw (it
+    was lost, or a webhook beat our own save), and releases any issue claim. A DRAFT
+    is thereby ISSUED, so the retry sweep leaves it alone. Caller holds the invoice
+    row lock."""
+    invoice.issue_claimed_at = None
+    fields = ['issue_claimed_at']
+    if razorpay_invoice_id and not invoice.razorpay_invoice_id:
+        invoice.razorpay_invoice_id = razorpay_invoice_id
+        fields.append('razorpay_invoice_id')
+        if invoice.status == SubscriptionInvoice.Status.DRAFT:
+            invoice.status = SubscriptionInvoice.Status.ISSUED
+            invoice.issued_at = timezone.now()
+            fields += ['status', 'issued_at']
+    invoice.save(update_fields=fields)
+
+
+def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
+    """Settles `invoice` for an `invoice.*` event: paid, or expired / partially paid
+    (a failure). Idempotent — a replay, or the same fact arriving by both webhook and
+    issue-time reconciliation, changes nothing. Caller holds the invoice row lock and
+    a tenant context."""
+    subscription = invoice.subscription
+    tenant = subscription.tenant
+    before_status = tenant.status
+    if event == 'invoice.paid':
+        if invoice.status == SubscriptionInvoice.Status.PAID:
+            return  # already processed payment for this invoice
+        if razorpay_payment_id and SubscriptionPayment.objects.filter(
+            razorpay_payment_id=razorpay_payment_id
+        ).exists():
+            return
+        invoice.status = SubscriptionInvoice.Status.PAID
+        invoice.paid_at = timezone.now()
+        invoice.save(update_fields=['status', 'paid_at'])
+        subscription.payment_failed_at = None
+        subscription.save(update_fields=['payment_failed_at', 'updated_at'])
+        if tenant.status == Tenant.Status.PAYMENT_FAILED:
+            tenant.status = Tenant.Status.ACTIVE
+        SubscriptionPayment.objects.create(
+            tenant_id=tenant.id, subscription=subscription,
+            razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
+            status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+        )
+    elif event in ('invoice.expired', 'invoice.partially_paid'):
+        if invoice.status == SubscriptionInvoice.Status.FAILED:
+            return  # already processed this failure
+        if razorpay_payment_id and SubscriptionPayment.objects.filter(
+            razorpay_payment_id=razorpay_payment_id
+        ).exists():
+            return
+        invoice.status = SubscriptionInvoice.Status.FAILED
+        invoice.save(update_fields=['status'])
+        tenant.status = Tenant.Status.PAYMENT_FAILED
+        subscription.payment_failed_at = timezone.now()
+        subscription.save(update_fields=['payment_failed_at', 'updated_at'])
+        SubscriptionPayment.objects.create(
+            tenant_id=tenant.id, subscription=subscription,
+            razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
+            status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
+        )
+    else:
+        return  # unhandled event type — ignore
+
+    if tenant.status != before_status:
+        tenant.save(update_fields=['status', 'updated_at'])
+        audit_log.record(
+            action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
+            before={'status': before_status}, after={'status': tenant.status},
+        )
+
+
+def _handle_invoice_webhook(event, payload):
+    """PER_BED_MONTHLY: finds the SubscriptionInvoice for a Razorpay invoice event
+    (`_invoice_for_webhook`) and settles it (`_apply_invoice_event`)."""
+    entity = payload.get('payload', {}).get('invoice', {}).get('entity', {})
+    found = _invoice_for_webhook(entity)
+    if found is None:
         return  # unknown invoice — nothing to reconcile
 
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
 
-    with tenant_context(invoice.subscription.tenant_id), transaction.atomic():
+    with tenant_context(found.tenant_id), transaction.atomic():
         # Lock the invoice for the rest of the handler so a replayed or
         # concurrently-delivered webhook for the same invoice serializes behind
-        # this one — the status-based idempotency checks below can't race.
+        # this one — the status-based idempotency checks can't race.
         invoice = (
             SubscriptionInvoice.objects.select_for_update(of=('self',))
             .select_related('subscription__tenant')
-            .get(pk=invoice.pk)
+            .get(pk=found.pk)
         )
-        subscription = invoice.subscription
-        tenant = subscription.tenant
-        before_status = tenant.status
-        if event == 'invoice.paid':
-            if invoice.status == SubscriptionInvoice.Status.PAID:
-                return  # already processed payment for this invoice
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
-            invoice.status = SubscriptionInvoice.Status.PAID
-            invoice.paid_at = timezone.now()
-            invoice.save(update_fields=['status', 'paid_at'])
-            subscription.payment_failed_at = None
-            subscription.save(update_fields=['payment_failed_at', 'updated_at'])
-            if tenant.status == Tenant.Status.PAYMENT_FAILED:
-                tenant.status = Tenant.Status.ACTIVE
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-                status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+        # The match in `_invoice_for_webhook` was made before this lock; another
+        # process may have bound a different Razorpay id since. Check again.
+        if invoice.razorpay_invoice_id not in ('', entity.get('id', '')):
+            logger.warning(
+                'Ignoring %s for Razorpay invoice %s: invoice %s is bound to %s',
+                event, entity.get('id', ''), invoice.pk, invoice.razorpay_invoice_id,
             )
-        elif event in ('invoice.expired', 'invoice.partially_paid'):
-            if invoice.status == SubscriptionInvoice.Status.FAILED:
-                return  # already processed this failure
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
-            invoice.status = SubscriptionInvoice.Status.FAILED
-            invoice.save(update_fields=['status'])
-            tenant.status = Tenant.Status.PAYMENT_FAILED
-            subscription.payment_failed_at = timezone.now()
-            subscription.save(update_fields=['payment_failed_at', 'updated_at'])
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-                status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
-            )
-        else:
-            return  # unhandled event type — ignore
-
-        if tenant.status != before_status:
-            tenant.save(update_fields=['status', 'updated_at'])
-            audit_log.record(
-                action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
-                before={'status': before_status}, after={'status': tenant.status},
-            )
+            return
+        _bind_razorpay_invoice(invoice, entity.get('id', ''))
+        _apply_invoice_event(event, invoice, razorpay_payment_id, payload)
 
 
 def datetime_from_epoch(seconds):
@@ -760,47 +822,36 @@ def reactivate_tenant(*, tenant, actor, request=None):
     return tenant
 
 
-@transaction.atomic
-def generate_invoice_for_subscription(subscription, *, today=None):
-    """Closes out one PER_BED_MONTHLY billing cycle: prices the cycle from
-    the bed ledger (`pricing.bed_segments` + `pricing.prorated_charge`),
-    writes a `SubscriptionInvoice` + line items (invariant 6 — a list, never
-    fixed fields), and either issues it via Razorpay Invoices or — for a
-    cycle inside the free allowance — marks it paid immediately with no
-    Razorpay call at all (invariant 10: the floor is `PlatformConfig.
-    min_billable_amount`, not a literal here).
-
-    Idempotent via the model's `unique_invoice_per_cycle` constraint check
-    below: re-running for a cycle that already has an invoice is a no-op,
-    not a duplicate charge — see `generate_subscription_invoices`."""
-    plan = subscription.plan
-    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
-        return None
-    period_start = subscription.current_period_start
-    period_end = subscription.current_period_end
-    if period_start is None or period_end is None:
-        return None
-
-    today = today or timezone.now().date()
-    if today < period_end:
-        return None  # cycle hasn't closed yet
-
+def _ensure_razorpay_customer(subscription):
     if not subscription.razorpay_customer_id:
         subscription.razorpay_customer_id = razorpay_client.create_razorpay_customer(subscription.tenant)
         subscription.save(update_fields=['razorpay_customer_id', 'updated_at'])
 
+
+def _invoice_period(subscription, plan, *, period_start, billed_end, cycle_end):
+    """Prices the bed-day history in `[period_start, billed_end)` against `plan`,
+    writes the invoice + line items (invariant 6 — a list, never fixed fields)
+    and either leaves it DRAFT for `issue_invoice` to send through Razorpay
+    Invoices after commit or — below `PlatformConfig.min_billable_amount`
+    (invariant 10) — marks it paid with no Razorpay call. `cycle_end` is the nominal end of the cycle the period
+    belongs to: it sets the proration denominator, so a period closed early is
+    charged for the days it ran, not for a whole month.
+
+    Returns None, writing nothing, when the period already has an invoice
+    (the model's `unique_invoice_per_cycle`), so a re-run never double-bills.
+    Does not move the subscription's period; the caller decides what's next."""
     with tenant_context(subscription.tenant_id):
         if SubscriptionInvoice.objects.filter(subscription=subscription, period_start=period_start).exists():
-            return None  # already generated for this cycle — safe to re-run
+            return None
 
-        segments = pricing.bed_segments(subscription.tenant_id, period_start, period_end)
-        breakdown = pricing.prorated_charge(plan, segments, period_start, period_end)
+        segments = pricing.bed_segments(subscription.tenant_id, period_start, billed_end)
+        breakdown = pricing.prorated_charge(plan, segments, period_start, cycle_end)
         bed_count_start = segments[0][2] if segments else 0
         bed_count_end = segments[-1][2] if segments else 0
 
         invoice = SubscriptionInvoice.objects.create(
             tenant_id=subscription.tenant_id, subscription=subscription,
-            period_start=period_start, period_end=period_end,
+            period_start=period_start, period_end=billed_end,
             status=SubscriptionInvoice.Status.DRAFT, total_amount=breakdown.total,
             billed_bed_count_start=bed_count_start, billed_bed_count_end=bed_count_end,
         )
@@ -832,23 +883,191 @@ def generate_invoice_for_subscription(subscription, *, today=None):
             invoice.paid_at = timezone.now()
             invoice.save(update_fields=['status', 'paid_at'])
         else:
-            razorpay_invoice_id, _short_url = razorpay_client.create_razorpay_invoice(
-                subscription.razorpay_customer_id, invoice
-            )
-            invoice.razorpay_invoice_id = razorpay_invoice_id
-            invoice.status = SubscriptionInvoice.Status.ISSUED
-            invoice.issued_at = timezone.now()
-            invoice.save(update_fields=['razorpay_invoice_id', 'status', 'issued_at'])
+            # Stays DRAFT: nothing remote happens inside this transaction, which may
+            # still roll back (a Razorpay invoice can't be). It is issued once the
+            # transaction commits, and by the periodic sweep if that attempt fails.
+            invoice_id, tenant_id = invoice.pk, invoice.tenant_id
+            transaction.on_commit(lambda: issue_invoice(invoice_id, tenant_id))
+    return invoice
 
-        # Advance to the next cycle regardless of payment outcome — a
-        # failed/expired invoice is reconciled by the webhook + the existing
-        # grace-period sweep (`process_payment_grace_periods`), not by
-        # holding this cycle open.
+
+# How long an issue claim is respected before the sweep assumes its worker died.
+INVOICE_ISSUE_CLAIM_TIMEOUT = timedelta(minutes=15)
+INVOICE_ISSUE_AUDIT_ATTEMPTS = (1, 10, 50)
+
+
+def _unissued_invoices(now):
+    """DRAFT invoices nobody is currently issuing (never claimed, or the claim went stale)."""
+    return SubscriptionInvoice.objects.filter(
+        Q(issue_claimed_at__isnull=True) | Q(issue_claimed_at__lt=now - INVOICE_ISSUE_CLAIM_TIMEOUT),
+        status=SubscriptionInvoice.Status.DRAFT, razorpay_invoice_id='',
+    )
+
+
+def _settle_issued_invoice(invoice_id, remote):
+    """Records what Razorpay says about an invoice we just sent (or found by receipt).
+
+    The invoice is re-read under its row lock because a webhook may have got there
+    first — it can bind the Razorpay id by receipt and even mark the invoice paid
+    while our create call was still in flight — and a later `issued` must never undo
+    that. When `remote` was found already paid or expired (the lost-response retry),
+    the payment is applied here, since its webhook may have been dropped before the
+    id was known; `_apply_invoice_event` ignores facts already recorded."""
+    with transaction.atomic():
+        invoice = (
+            SubscriptionInvoice.objects.select_for_update(of=('self',))
+            .select_related('subscription__tenant')
+            .get(pk=invoice_id)
+        )
+        if invoice.razorpay_invoice_id not in ('', remote.id):
+            # Already bound to a different Razorpay invoice (by a webhook, since we
+            # started): don't attach this one's status to it.
+            logger.error(
+                'Invoice %s is bound to %s but Razorpay returned %s for its receipt',
+                invoice.pk, invoice.razorpay_invoice_id, remote.id,
+            )
+            invoice.issue_claimed_at = None
+            invoice.save(update_fields=['issue_claimed_at'])
+            return
+        _bind_razorpay_invoice(invoice, remote.id)
+        # The same statuses, mapped to the same events, as the webhooks treat them.
+        event = {
+            'paid': 'invoice.paid', 'expired': 'invoice.expired', 'partially_paid': 'invoice.partially_paid',
+        }.get(remote.status)
+        if event:
+            _apply_invoice_event(event, invoice, remote.payment_id, {
+                'source': 'issue_reconciliation', 'razorpay_invoice_id': remote.id,
+                'razorpay_status': remote.status, 'razorpay_payment_id': remote.payment_id,
+            })
+
+
+def issue_invoice(invoice_id, tenant_id):
+    """Sends one priced DRAFT invoice to Razorpay; returns True (issued), False
+    (failed, the sweep retries) or None (not ours: already issued, or another worker
+    holds it).
+
+    Runs after the transaction that priced the invoice has committed, so a rollback
+    can never leave a Razorpay invoice behind. The invoice is claimed first (a
+    conditional UPDATE, atomic across workers), and no database lock is held during
+    the network call. The invoice's own id is the Razorpay `receipt`, so if Razorpay
+    created it but we lost the response or failed to save, the retry finds and reuses
+    it rather than billing twice (`razorpay_client.create_razorpay_invoice`)."""
+    now = timezone.now()
+    with tenant_context(tenant_id):
+        if not _unissued_invoices(now).filter(pk=invoice_id).update(issue_claimed_at=now):
+            return None
+        invoice = SubscriptionInvoice.objects.select_related('subscription').get(pk=invoice_id)
+        try:
+            remote = razorpay_client.create_razorpay_invoice(
+                invoice.subscription.razorpay_customer_id, invoice,
+            )
+        except Exception as exc:  # noqa: BLE001 - any SDK/network failure is a retry, not a crash
+            logger.warning('Could not issue subscription invoice %s; will retry', invoice_id, exc_info=True)
+            SubscriptionInvoice.objects.filter(pk=invoice_id).update(
+                issue_claimed_at=None, issue_attempts=F('issue_attempts') + 1, last_issue_error=str(exc)[:1000],
+            )
+            attempts = SubscriptionInvoice.objects.values_list('issue_attempts', flat=True).get(pk=invoice_id)
+            if attempts in INVOICE_ISSUE_AUDIT_ATTEMPTS:
+                audit_log.record(
+                    action='subscription.invoice_issue_failed', tenant_id=tenant_id, obj=invoice,
+                    after={'attempts': attempts, 'period_start': invoice.period_start.isoformat()},
+                )
+            return False
+        _settle_issued_invoice(invoice_id, remote)
+        return True
+
+
+def process_invoice_issuing():
+    """Issues every DRAFT invoice that isn't claimed (including claims whose worker
+    died). Run by a periodic task, so a Razorpay outage delays an invoice but can't
+    lose it."""
+    with tenant_context(is_super_admin=True):
+        due = list(_unissued_invoices(timezone.now()).order_by('created_at').values_list('pk', 'tenant_id'))
+    outcome = {'issued': 0, 'failed': 0}
+    for invoice_id, tenant_id in due:
+        result = issue_invoice(invoice_id, tenant_id)
+        if result is not None:
+            outcome['issued' if result else 'failed'] += 1
+    return outcome
+
+
+@transaction.atomic
+def generate_invoice_for_subscription(subscription, *, today=None):
+    """Closes out one PER_BED_MONTHLY billing cycle: prices the cycle from
+    the bed ledger (`pricing.bed_segments` + `pricing.prorated_charge`) and
+    invoices it (`_invoice_period`).
+
+    Idempotent: re-running for a cycle that already has an invoice is a no-op,
+    not a duplicate charge — see `generate_subscription_invoices`."""
+    plan = subscription.plan
+    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
+        return None
+    period_start = subscription.current_period_start
+    period_end = subscription.current_period_end
+    if period_start is None or period_end is None:
+        return None
+
+    today = today or timezone.now().date()
+    if today < period_end:
+        return None  # cycle hasn't closed yet
+
+    _ensure_razorpay_customer(subscription)
+    invoice = _invoice_period(
+        subscription, plan, period_start=period_start, billed_end=period_end, cycle_end=period_end,
+    )
+    if invoice is None:
+        return None  # already generated for this cycle — safe to re-run
+
+    # Advance to the next cycle regardless of payment outcome — a
+    # failed/expired invoice is reconciled by the webhook + the existing
+    # grace-period sweep (`process_payment_grace_periods`), not by
+    # holding this cycle open.
+    with tenant_context(subscription.tenant_id):
         subscription.current_period_start = period_end
         subscription.current_period_end = pricing.next_cycle_end(period_end)
         subscription.save(update_fields=['current_period_start', 'current_period_end', 'updated_at'])
-
     return invoice
+
+
+@transaction.atomic
+def close_per_bed_period(subscription, *, today=None):
+    """The tenant is leaving its PER_BED_MONTHLY plan: invoice what has accrued
+    under it, because arrears can't be priced once the plan is gone. Call it
+    before `subscription.plan` or the period is overwritten, with the
+    subscription row locked; the caller then sets the new plan and period.
+
+    A cycle that already ended but wasn't invoiced yet is billed whole first
+    (the normal path, via `generate_invoice_for_subscription`). The current
+    cycle is then billed from its start up to `today`, on the old plan, against
+    that cycle's full length. Nothing is written when no day has accrued (the
+    plan was chosen today) or the period already has an invoice.
+
+    Returns the invoices created, oldest first."""
+    plan = subscription.plan
+    if plan is None or plan.pricing_type != Plan.PricingType.PER_BED_MONTHLY:
+        return []
+    if subscription.current_period_start is None or subscription.current_period_end is None:
+        return []
+    today = today or timezone.now().date()
+
+    invoices = []
+    while subscription.current_period_end <= today:
+        invoice = generate_invoice_for_subscription(subscription, today=today)
+        if invoice is None:
+            break
+        invoices.append(invoice)
+
+    period_start = subscription.current_period_start
+    cycle_end = subscription.current_period_end
+    billed_end = min(today, cycle_end)
+    if billed_end > period_start:
+        _ensure_razorpay_customer(subscription)
+        invoice = _invoice_period(
+            subscription, plan, period_start=period_start, billed_end=billed_end, cycle_end=cycle_end,
+        )
+        if invoice is not None:
+            invoices.append(invoice)
+    return invoices
 
 
 def process_payment_grace_periods():

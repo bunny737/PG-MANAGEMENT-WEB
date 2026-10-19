@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, CreditCard, Info, LoaderCircle } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   ApiError,
   getSubscription,
@@ -29,14 +29,15 @@ const NOTICE_STYLES: Record<Notice["tone"], string> = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const formatDate = (iso: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 
 const daysBetween = (nowMs: number, iso: string) => Math.max(0, Math.ceil((new Date(iso).getTime() - nowMs) / 86_400_000));
 
 const overCap = (plan: Plan, bedCount: number) => plan.max_beds !== null && bedCount > plan.max_beds;
 
 export function SubscriptionPanel() {
+  const locale = useLocale();
   const t = useTranslations("settings.subscription");
   const tCommon = useTranslations("common");
   const { ready, can, user } = useSession();
@@ -218,16 +219,16 @@ export function SubscriptionPanel() {
 
         {sub.tenant_status === "trial" && sub.trial_ends_at && (
           trialExpired ? (
-            <p className="text-xs font-medium text-status-critical">{t("trialEnded", { date: formatDate(sub.trial_ends_at) })}</p>
+            <p className="text-xs font-medium text-status-critical">{t("trialEnded", { date: formatDate(sub.trial_ends_at, locale) })}</p>
           ) : (
             <p className="text-xs text-ink-muted">
-              {t("trialDaysLeft", { count: daysBetween(now, sub.trial_ends_at), date: formatDate(sub.trial_ends_at) })}
+              {t("trialDaysLeft", { count: daysBetween(now, sub.trial_ends_at), date: formatDate(sub.trial_ends_at, locale) })}
               {!sub.plan && trialPlan ? ` ${t("trialLimitsOf", { plan: trialPlan.name })}` : ""}
             </p>
           )
         )}
         {sub.tenant_status === "active" && sub.current_period_end && (
-          <p className="text-xs text-ink-muted">{t("nextBilling", { date: formatDate(sub.current_period_end) })}</p>
+          <p className="text-xs text-ink-muted">{t("nextBilling", { date: formatDate(sub.current_period_end, locale) })}</p>
         )}
         {sub.tenant_status === "payment_failed" && <p className="text-xs text-status-critical">{t("paymentFailedBody")}</p>}
         {sub.tenant_status === "suspended" && <p className="text-xs text-status-critical">{t("suspendedBody")}</p>}

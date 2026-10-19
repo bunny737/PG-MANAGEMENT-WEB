@@ -1,4 +1,5 @@
 from django.contrib import admin, messages
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _, ngettext
 
@@ -60,16 +61,19 @@ class ContactMessageAdmin(admin.ModelAdmin):
 
     def _set_status(self, request, queryset, status, action):
         changed = 0
-        for message in queryset.exclude(status=status):
-            before = _snapshot(message)
-            message.status = status
-            message.handled_at = timezone.now() if status == ContactMessage.Status.HANDLED else None
-            message.save(update_fields=['status', 'handled_at'])
-            audit_log.record(
-                action=action, actor=request.user, tenant_id=None, obj=message,
-                before=before, after=_snapshot(message), request=request,
-            )
-            changed += 1
+        # One transaction for the whole batch: a status change and its audit row commit
+        # together, and a failing audit write leaves no message changed.
+        with transaction.atomic():
+            for message in queryset.exclude(status=status):
+                before = _snapshot(message)
+                message.status = status
+                message.handled_at = timezone.now() if status == ContactMessage.Status.HANDLED else None
+                message.save(update_fields=['status', 'handled_at'])
+                audit_log.record(
+                    action=action, actor=request.user, tenant_id=None, obj=message,
+                    before=before, after=_snapshot(message), request=request,
+                )
+                changed += 1
         self.message_user(
             request,
             ngettext('%(count)d message updated.', '%(count)d messages updated.', changed) % {'count': changed},
@@ -86,19 +90,22 @@ class ContactMessageAdmin(admin.ModelAdmin):
 
     def delete_model(self, request, obj):
         before, pk = _snapshot(obj), obj.pk
-        super().delete_model(request, obj)
-        obj.pk = pk  # delete() clears it; the audit row still needs the id
-        audit_log.record(
-            action='contact_message.deleted', actor=request.user, tenant_id=None,
-            obj=obj, before=before, request=request,
-        )
-
-    def delete_queryset(self, request, queryset):
-        # The bulk "delete selected" action calls this, not delete_model.
-        snapshots = [(message, _snapshot(message)) for message in queryset]
-        super().delete_queryset(request, queryset)
-        for message, before in snapshots:
+        with transaction.atomic():  # the delete and its audit row commit together
+            super().delete_model(request, obj)
+            obj.pk = pk  # delete() clears it; the audit row still needs the id
             audit_log.record(
                 action='contact_message.deleted', actor=request.user, tenant_id=None,
-                obj=message, before=before, request=request,
+                obj=obj, before=before, request=request,
             )
+
+    def delete_queryset(self, request, queryset):
+        # The bulk "delete selected" action calls this, not delete_model. It is not
+        # wrapped in a transaction by Django, so the whole batch is made atomic here.
+        snapshots = [(message, _snapshot(message)) for message in queryset]
+        with transaction.atomic():
+            super().delete_queryset(request, queryset)
+            for message, before in snapshots:
+                audit_log.record(
+                    action='contact_message.deleted', actor=request.user, tenant_id=None,
+                    obj=message, before=before, request=request,
+                )

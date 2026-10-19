@@ -197,7 +197,9 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   allow-list (name, email, phone, message, website), so nothing posted can set `status`/`ip_address`.
 - [DECISION 2026-10-19] **Admin is read-only with audited status changes.** Content fields are read-only and
   rows cannot be added or edited; staff use the "Mark as handled / new" actions, and deletes (single or bulk)
-  are also recorded with `audit_log.record(tenant_id=None)` (invariant 9). Audit payloads carry only the id
+  are also recorded with `audit_log.record(tenant_id=None)` (invariant 9). Each action runs in one
+  `transaction.atomic()` together with its audit writes (a status batch or bulk delete is all-or-nothing, and a
+  failing audit write leaves the data unchanged; tests mock the audit call to fail). Audit payloads carry only the id
   and status — never the sender's name, email or text. No email notification is sent (owner decision).
 - [OPEN 2026-10-19] **Retention:** `contact_messages` holds personal data (name, email, phone, free text, IP)
   and has no purge job (the devices module has one for installs). Decide a retention period and add a seeded

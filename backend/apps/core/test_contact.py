@@ -304,3 +304,49 @@ class ContactMessageAdminTests(AuthAPITestCase):
         )
         self.assertFalse(ContactMessage.objects.exists())
         self.assertEqual(self.audit_actions(), ['contact_message.deleted', 'contact_message.deleted'])
+
+
+class ContactMessageAdminAtomicityTests(ContactMessageAdminTests):
+    """Invariant 9: a mutation and its audit record succeed or fail together."""
+
+    def setUp(self):
+        super().setUp()
+        # A real server turns the failure into a 500; the default client would re-raise it.
+        self.admin_client = Client(raise_request_exception=False)
+        self.admin_client.force_login(self.staff)
+
+    def failing_audit(self, **kwargs):
+        return mock.patch('apps.core.admin.audit_log.record', side_effect=RuntimeError('audit down'), **kwargs)
+
+    def test_status_change_is_rolled_back_when_the_audit_write_fails(self):
+        with self.failing_audit():
+            response = self.run_action('mark_handled', self.first)
+        self.assertEqual(response.status_code, 500)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.status, ContactMessage.Status.NEW)
+        self.assertIsNone(self.first.handled_at)
+
+    def test_a_status_batch_is_all_or_nothing(self):
+        # The first audit write succeeds, the second fails: neither message may change.
+        with mock.patch('apps.core.admin.audit_log.record', side_effect=[None, RuntimeError('audit down')]):
+            response = self.run_action('mark_handled', self.first, self.second)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            set(ContactMessage.objects.values_list('status', flat=True)), {ContactMessage.Status.NEW},
+        )
+
+    def test_single_delete_is_rolled_back_when_the_audit_write_fails(self):
+        url = reverse('admin:core_contactmessage_delete', args=[self.first.pk])
+        with self.failing_audit():
+            response = self.admin_client.post(url, {'post': 'yes'})
+        self.assertEqual(response.status_code, 500)
+        self.assertTrue(ContactMessage.objects.filter(pk=self.first.pk).exists())
+
+    def test_bulk_delete_is_rolled_back_when_an_audit_write_fails(self):
+        with mock.patch('apps.core.admin.audit_log.record', side_effect=[None, RuntimeError('audit down')]):
+            response = self.admin_client.post(
+                reverse('admin:core_contactmessage_changelist'),
+                {'action': 'delete_selected', '_selected_action': [str(self.first.pk), str(self.second.pk)], 'post': 'yes'},
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(ContactMessage.objects.count(), 2)

@@ -160,6 +160,7 @@ function registerToken(): Promise<void> {
     const stillSameSession = () => generation === sessionGeneration && getCacheScope() === scope;
 
     registrationEpoch += 1;
+    const thisRegistration = registrationEpoch;
     const token = await currentToken();
     if (!stillSameSession()) return; // the session ended while Firebase was working: do nothing
     const previous = readStored();
@@ -167,13 +168,45 @@ function registerToken(): Promise<void> {
       method: "POST",
       body: JSON.stringify({ fcm_token: token, device_type: "web", ...(previous ? { replaces: previous.id } : {}) }),
     });
-    // Never record this session's registration in the next session's storage. (A request that was
-    // already in flight when the session ended can still have created a server row; the next
-    // registration from this browser replaces it, because the endpoint reassigns a token it
-    // already holds to its new owner.)
-    if (!stillSameSession()) return;
+    if (!stillSameSession()) {
+      // The POST was already in flight when the session ended, so logout found nothing stored to
+      // remove and the server now holds a row for the previous user. Never record it in the next
+      // session's storage, and clean it up. Not awaited: it queues behind this operation, so
+      // awaiting it here would wait on itself.
+      void abandonLateRegistration(subscription.id, thisRegistration);
+      return;
+    }
     writeStored({ id: subscription.id, token });
   });
+}
+
+/** Cleans up after a registration whose POST completed once its session was over.
+ *
+ *  - No newer registration: revoke the browser's FCM token, so the previous user's notifications
+ *    can no longer be delivered to this (possibly shared) browser. Token takeover by a later
+ *    user is not a substitute: nobody may ever opt in. The row is also deleted when that user's
+ *    cookies still allow it; otherwise it dies with its token the next time the backend sends.
+ *  - A newer registration exists (the next user opted in): the token is theirs now, so it must NOT
+ *    be revoked. But this late POST made the endpoint reassign the token back to the previous
+ *    user, so register the current session again to take it back. */
+async function abandonLateRegistration(rowId: string, registration: number) {
+  try {
+    await apiFetch(`${SUBSCRIPTIONS_PATH}${rowId}/`, { method: "DELETE", skipAuth: true });
+  } catch {
+    // Signed out, or now another account's session: it cannot delete this row, which is fine.
+  }
+  let revoked = false;
+  try {
+    revoked = await serialized(async () => {
+      if (registrationEpoch !== registration) return false; // fenced: a newer registration exists
+      const { messaging: instance, sdk } = await firebase();
+      await sdk.deleteToken(instance);
+      return true;
+    });
+  } catch {
+    // Best-effort.
+  }
+  if (!revoked && registrationEpoch !== registration) void syncPush();
 }
 
 /** Turn notifications on. Must be called straight from a tap: iOS refuses the permission

@@ -193,9 +193,16 @@ else under `/api/v1/`). Behaviours worth knowing:
     write if the session ended or changed. `disablePush()` bumps the generation first, even with
     nothing stored yet.
   - A revocation abandoned by the cap that finishes late, after a newer registration began,
-    re-registers to repair it. Residual: a POST already in flight when the session ends can still
-    create a server row; the next registration from this browser takes the token over (the endpoint
-    reassigns a token it already holds), so it does not persist.
+    re-registers to repair it.
+  - A registration whose **POST was already in flight** when the session ended (logout finds nothing
+    stored to remove, so it cannot clean up) cleans up after itself when the response arrives: if no
+    newer registration exists it revokes the browser's FCM token — taking over by a later user is not
+    enough, since nobody may ever opt in on a shared browser — and tries to delete the row (which
+    only works while that user's cookies are still valid; otherwise the row dies with its token on
+    the backend's next send). If the next user did opt in, the token is theirs and is NOT revoked;
+    instead their session registers again, because the late POST made the endpoint reassign the
+    token back to the previous user. The cleanup is fenced by the registration epoch and queued behind
+    the running operation (awaiting it inside would wait on itself).
 - Known limitation: an *offline* logout clears local state but the cookies stay until the next
   login (the logout request cannot be sent).
 

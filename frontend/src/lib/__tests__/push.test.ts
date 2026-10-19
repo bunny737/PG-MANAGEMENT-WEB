@@ -388,6 +388,73 @@ describe("enablePush / disablePush", () => {
         }
       });
 
+      describe("when the POST itself is still in flight at logout", () => {
+        /** The first registration POST waits on `release`; every other request answers at once. */
+        function stubSlowFirstPost() {
+          let release: () => void = () => {};
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          const calls: string[] = [];
+          let posts = 0;
+          vi.stubGlobal(
+            "fetch",
+            vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const method = init?.method ?? "GET";
+              calls.push(`${method} ${String(input)}`);
+              if (method === "POST" && String(input).includes("push-subscriptions") && ++posts === 1) await gate;
+              return new Response(JSON.stringify({ id: posts === 1 ? "row-a" : "row-b" }), {
+                status: 201,
+                headers: { "Content-Type": "application/json" },
+              });
+            })
+          );
+          return { release, calls };
+        }
+
+        test("the previous user's token is revoked, so their notifications become undeliverable", async () => {
+          stubBrowser({ permission: "granted" });
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+          const { release, calls } = stubSlowFirstPost();
+
+          const registration = enablePush();
+          await vi.waitFor(() => expect(calls.some((c) => c.startsWith("POST"))).toBe(true)); // POST on the wire
+
+          await disablePush(); // A logs out now: nothing is stored yet, so this has nothing to revoke
+          expect(deleteToken).not.toHaveBeenCalled();
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_B)); // B signs in and does not opt in
+
+          release(); // the response finally arrives
+          await registration;
+          await vi.waitFor(() => expect(deleteToken).toHaveBeenCalledTimes(1)); // A's token is now dead
+
+          expect(localStorage.getItem(STORAGE_KEY)).toBeNull(); // and nothing was recorded for B
+          expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions"))).toHaveLength(1);
+          expect(calls).toContain("DELETE /api/v1/notifications/push-subscriptions/row-a/"); // best-effort row removal
+        });
+
+        test("if the next user opted in meanwhile their token is not revoked, and ownership is taken back", async () => {
+          stubBrowser({ permission: "granted" });
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));
+          const { release, calls } = stubSlowFirstPost();
+
+          const registrationA = enablePush();
+          await vi.waitFor(() => expect(calls.some((c) => c.startsWith("POST"))).toBe(true));
+          await disablePush(); // A logs out
+          localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_B));
+          const registrationB = enablePush(); // B opts in; queued behind A's in-flight operation
+
+          release();
+          await Promise.all([registrationA, registrationB]);
+          await vi.waitFor(() =>
+            expect(calls.filter((c) => c.startsWith("POST") && c.includes("push-subscriptions")).length).toBeGreaterThanOrEqual(3)
+          ); // A's late POST, B's, and B registering again to take the token back
+
+          expect(deleteToken).not.toHaveBeenCalled(); // B's token survives
+          expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")?.id).toBe("row-b");
+        });
+      });
+
       test("the same session still completes normally", async () => {
         stubBrowser({ permission: "granted" });
         localStorage.setItem("currentUser", JSON.stringify(ACCOUNT_A));

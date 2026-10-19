@@ -5,6 +5,7 @@
 // role, permissions) that lib/session.ts revalidates from /auth/me/.
 
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
+import { CACHE_SCOPE_HEADER, getCacheScope } from "@/lib/cacheScope";
 import { awaitPendingPurge, registerSessionCleanup, runSessionCleanups } from "@/lib/sessionPurge";
 
 // Same-origin: the BFF proxy owns the Django origin (INTERNAL_API_URL, server-side only).
@@ -112,6 +113,12 @@ async function parseErrorBody(res: Response): Promise<ApiErrorBody> {
   }
 }
 
+/** Lets the service worker file this response under the signed-in user's own cache (see lib/cacheScope.ts). */
+function tagCacheScope(headers: Headers) {
+  const scope = getCacheScope();
+  if (scope) headers.set(CACHE_SCOPE_HEADER, scope);
+}
+
 interface ApiFetchOptions extends RequestInit {
   /** Skip the "401 means the session is dead" handling (login itself, where 401 is bad credentials). */
   skipAuth?: boolean;
@@ -127,6 +134,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   if (!headers.has("Accept-Language")) {
     headers.set("Accept-Language", currentLocale);
   }
+  tagCacheScope(headers);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
@@ -177,6 +185,7 @@ export async function apiFetchWithMeta<T>(
   if (!headers.has("Accept-Language")) {
     headers.set("Accept-Language", currentLocale);
   }
+  tagCacheScope(headers);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
@@ -214,6 +223,7 @@ export async function apiDownload(
   const headers = new Headers();
   const currentLocale = typeof window !== "undefined" ? readLocaleCookie() : "en";
   headers.set("Accept-Language", currentLocale);
+  tagCacheScope(headers);
 
   let res: Response;
   try {

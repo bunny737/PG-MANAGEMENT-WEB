@@ -1,0 +1,12 @@
+{
+  "offline": {
+    "banner": "You're offline. Showing saved data — changes can't be made until you reconnect.",
+    "title": "You're offline",
+    "body": "This page isn't saved on your device yet. Reconnect to the internet and try again.",
+    "retry": "Try again"
+  },
+  "update": {
+    "available": "A new version is available.",
+    "reload": "Reload"
+  }
+}

@@ -19,6 +19,7 @@ export const MODULES = [
   'reports',
   'status',
   'visitors',
+  'pwa',
 ];
 
 async function loadMessages(locale: string) {

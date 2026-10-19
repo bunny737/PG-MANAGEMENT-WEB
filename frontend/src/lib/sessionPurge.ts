@@ -39,10 +39,16 @@ export function awaitPendingPurge(): Promise<void> {
   return pending ?? Promise.resolve();
 }
 
+// Caches the service worker (app/sw.ts) fills with build output only — no tenant data — so a
+// purge keeps them and the app shell still opens offline afterwards. Everything else (the
+// per-user api-* caches, page documents, anything unknown) is deleted.
+const TENANT_FREE_CACHE_PREFIXES = ["serwist-precache", "next-static", "app-images"];
+
 async function clearCacheStorage() {
   if (typeof caches === "undefined") return;
   const keys = await caches.keys();
-  await Promise.allSettled(keys.map((key) => caches.delete(key)));
+  const doomed = keys.filter((key) => !TENANT_FREE_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)));
+  await Promise.allSettled(doomed.map((key) => caches.delete(key)));
 }
 
 function deleteIndexedDb(name: string): Promise<void> {

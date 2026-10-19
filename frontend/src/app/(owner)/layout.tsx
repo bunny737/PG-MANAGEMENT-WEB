@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BottomNav } from "@/components/shared/BottomNav";
+import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { SideNav } from "@/components/shared/SideNav";
 import { clearSession } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -68,7 +69,10 @@ export default function OwnerLayout({
     <QueryClientProvider client={queryClient}>
       <div className="flex min-h-screen">
         <SideNav />
-        <div className="flex-1 pb-20 md:pb-0">{children}</div>
+        <div className="flex-1 pb-20 md:pb-0">
+          <OfflineBanner />
+          {children}
+        </div>
         <BottomNav />
       </div>
     </QueryClientProvider>

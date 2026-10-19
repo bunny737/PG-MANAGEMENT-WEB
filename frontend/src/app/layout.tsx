@@ -3,6 +3,7 @@ import { Inter, Noto_Sans, Noto_Sans_Telugu, Plus_Jakarta_Sans } from "next/font
 import { getLocale, getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocaleDirection } from "@/i18n/config";
+import { PwaRegister } from "@/features/pwa/PwaRegister";
 import "./globals.css";
 
 // Inter carries UI text — it holds up at the 12–14px sizes most of this app
@@ -39,12 +40,21 @@ const notoSansTelugu = Noto_Sans_Telugu({
 export const metadata: Metadata = {
   title: "PropManager",
   description: "PG/hostel property management",
+  // iOS ignores most of the manifest: these make "Add to Home Screen" open standalone
+  // (no Safari chrome) with the right title and icon. The manifest link itself is generated
+  // from app/manifest.ts.
+  applicationName: "PropManager",
+  appleWebApp: { capable: true, title: "PropManager", statusBarStyle: "black-translucent" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
   themeColor: "#101828",
   width: "device-width",
   initialScale: 1,
+  // Draw under the notch / home indicator; screens pad themselves with env(safe-area-inset-*).
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -65,6 +75,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider messages={messages} locale={locale}>
           {children}
+          <PwaRegister />
         </NextIntlClientProvider>
       </body>
     </html>

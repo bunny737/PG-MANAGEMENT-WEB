@@ -33,7 +33,17 @@
     "rentAmount": "₹{amount}/माह",
     "unassigned": "अनावंटित",
     "mainBuilding": "मुख्य इमारत",
-    "sortTitle": "वर्णानुक्रम में छांटें"
+    "sortTitle": "वर्णानुक्रम में छांटें",
+    "phoneSearchLabel": "निवासियों को खोजें",
+    "phoneSearchPlaceholder": "नाम या फ़ोन से खोजें…",
+    "chipsLabel": "स्थिति के अनुसार फ़िल्टर करें",
+    "chipAll": "सभी",
+    "chipActive": "सक्रिय",
+    "chipNotice": "नोटिस",
+    "chipVacated": "खाली किया",
+    "rentNotSet": "किराया तय नहीं",
+    "phoneTitle": "निवासी",
+    "rentMonthly": "{amount}/माह"
   },
   "transfer": {
     "title": "कमरा / बिस्तर स्थानांतरण",

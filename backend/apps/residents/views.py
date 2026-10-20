@@ -176,6 +176,15 @@ class ResidentViewSet(viewsets.ModelViewSet):
         return Response(services.build_activity_timeline(resident))
 
 
+class AdmissionFilter(django_filters.FilterSet):
+    # An admission belongs to a property through its bed (dashboard property scoping).
+    property = django_filters.UUIDFilter(field_name='bed__room__floor__building__property_id')
+
+    class Meta:
+        model = Admission
+        fields = ['resident', 'bed', 'property']
+
+
 class AdmissionViewSet(viewsets.ModelViewSet):
     """Admission = Check-In (PRD Module 6): create-and-read only, no update/
     delete — contracted terms are snapshotted once and never change.
@@ -185,7 +194,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     serializer_class = AdmissionSerializer
     permission_classes = [IsAuthenticated, require_permission('manage_admissions')]
     http_method_names = ['get', 'post']
-    filterset_fields = ['resident', 'bed']
+    filterset_class = AdmissionFilter
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

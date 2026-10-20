@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Noto_Sans, Noto_Sans_Telugu, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter, Noto_Sans, Noto_Sans_Telugu, Plus_Jakarta_Sans, Roboto } from "next/font/google";
 import { getLocale, getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocaleDirection } from "@/i18n/config";
@@ -11,6 +11,15 @@ import "./globals.css";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Roboto is the phone UI's face, so the installed app reads like the Android (Material) app.
+// Applied only below the md breakpoint, via .phone-ui in globals.css.
+const roboto = Roboto({
+  variable: "--font-roboto",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
   display: "swap",
 });
 
@@ -38,7 +47,7 @@ const notoSansTelugu = Noto_Sans_Telugu({
 });
 
 export const metadata: Metadata = {
-  title: "PropManager",
+  title: "PGLive",
   description: "PG/hostel property management",
   // The signed-in app must never be indexed. The public marketing pages opt back
   // in from their own layout (app/(marketing)/layout.tsx).
@@ -47,14 +56,14 @@ export const metadata: Metadata = {
   // (no Safari chrome) with the right title and icon. The manifest link itself is generated
   // from app/manifest.ts. statusBarStyle "default" keeps the page below the status bar with
   // dark text; "black-translucent" would draw white clock/battery over our light background.
-  applicationName: "PropManager",
-  appleWebApp: { capable: true, title: "PropManager", statusBarStyle: "default" },
+  applicationName: "PGLive",
+  appleWebApp: { capable: true, title: "PGLive", statusBarStyle: "default" },
   icons: { apple: "/icons/apple-touch-icon.png" },
   formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#101828",
+  themeColor: "#fbf8ff", // --color-m3-surface: the phone top bar, so the status bar blends into it
   width: "device-width",
   initialScale: 1,
   // Extend to the screen edges so the bottom nav can fill behind the home indicator and pad
@@ -78,7 +87,7 @@ export default async function RootLayout({
     <html
       lang={locale}
       dir={dir}
-      className={`${inter.variable} ${plusJakarta.variable} ${notoSans.variable} ${notoSansTelugu.variable} h-full antialiased`}
+      className={`${inter.variable} ${plusJakarta.variable} ${roboto.variable} ${notoSans.variable} ${notoSansTelugu.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider messages={messages} locale={locale}>

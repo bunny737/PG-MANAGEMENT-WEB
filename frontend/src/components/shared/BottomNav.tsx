@@ -5,47 +5,58 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/session";
-import { SIDEBAR_NAV_ITEMS, MORE_NAV_ITEM } from "./NavItems";
+import { MOBILE_NAV_ITEMS, MORE_NAV_ITEM } from "./NavItems";
 
 /**
- * Mobile tab bar (< md) — displays first 3 permission-visible items plus a 4th "More" slot.
+ * Phone navigation bar (< md), Material 3 style like the Android app: Dashboard, Properties,
+ * Residents, Billing (each only if the user may open it) and More. The active tab shows a
+ * primary-container pill behind its icon.
  */
 export function BottomNav() {
   const pathname = usePathname();
   const t = useTranslations("common");
   const { can, ready } = useSession();
 
-  const visibleItems = SIDEBAR_NAV_ITEMS.filter(
-    (item) => !item.permission || (ready && can(item.permission))
-  );
-
-  const primaryItems = visibleItems.slice(0, 3);
-  const bottomBarItems = [...primaryItems, MORE_NAV_ITEM];
+  const visibleItems = MOBILE_NAV_ITEMS.filter((item) => !item.permission || (ready && can(item.permission)));
+  const bottomBarItems = [...visibleItems, MORE_NAV_ITEM];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-surface-card/95 shadow-[0_-4px_16px_-4px_rgb(11_18_32/0.08)] backdrop-blur-sm pb-[env(safe-area-inset-bottom)] ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)] md:hidden">
-      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
+    <nav
+      aria-label={t("phone.navigation")}
+      className="fixed inset-x-0 bottom-0 z-10 bg-m3-surface-container pb-[env(safe-area-inset-bottom)] ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)] md:hidden"
+    >
+      <ul className="mx-auto flex h-20 max-w-md items-stretch justify-around px-1">
         {bottomBarItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors",
-                isActive
-                  ? "bg-accent text-ink-inverse shadow-sm"
-                  : "text-ink-muted hover:text-ink"
-              )}
-            >
-              <Icon className="size-5" aria-hidden />
-              {t(item.labelKey)}
-            </Link>
+            <li key={item.href} className="flex min-w-0 flex-1">
+              <Link
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-m3-on-surface-variant"
+              >
+                <span
+                  className={cn(
+                    "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                    isActive ? "bg-m3-primary-container text-m3-on-primary-container" : ""
+                  )}
+                >
+                  <Icon className="size-6" aria-hidden />
+                </span>
+                <span
+                  className={cn(
+                    "w-full truncate px-0.5 text-center text-xs leading-4",
+                    isActive ? "font-bold text-m3-on-surface" : "font-medium"
+                  )}
+                >
+                  {t(item.labelKey)}
+                </span>
+              </Link>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </nav>
   );
 }

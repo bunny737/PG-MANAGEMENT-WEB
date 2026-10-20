@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
+  getPropertyLayout,
   listProperties,
   listBuildings,
   listFloors,
@@ -32,7 +33,15 @@ import {
   ApiError
 } from "@/lib/api";
 
-export function AdmissionWizard() {
+import { findBedChain, type BedChain } from "@/lib/admissionPreselect";
+
+interface AdmissionWizardProps {
+  /** A bed picked on the Vacancies screen. Pre-selects property → building → floor → room → bed for step 2;
+   * the wizard still starts at step 1, so the resident's details are collected first. */
+  preselect?: { propertyId: string; bedId: string };
+}
+
+export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   const router = useRouter();
   const t = useTranslations("admissions");
   const tCommon = useTranslations("common");
@@ -76,17 +85,42 @@ export function AdmissionWizard() {
   // Step 4: Collection
   const [paymentMode, setPaymentMode] = useState("upi");
 
+  // The requested bed's chain, resolved BEFORE any "pick the first one" default below runs and consumed as
+  // each level loads. Without this, those defaults (each loader's data[0]) would overwrite the requested bed
+  // as their async responses arrive.
+  const chainRef = useRef<BedChain | null>(null);
+  const preselectPropertyId = preselect?.propertyId;
+  const preselectBedId = preselect?.bedId;
+
   // Load properties on mount
   useEffect(() => {
-    listProperties()
-      .then((data) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listProperties();
+        if (cancelled) return;
         setProperties(data);
-        if (data.length > 0) {
-          setSelectedPropertyId(data[0].id);
+        let propertyId = data[0]?.id ?? "";
+        if (preselectPropertyId && preselectBedId && data.some((property) => property.id === preselectPropertyId)) {
+          try {
+            const chain = findBedChain(await getPropertyLayout(preselectPropertyId), preselectBedId);
+            if (chain) {
+              chainRef.current = chain;
+              propertyId = preselectPropertyId;
+            }
+          } catch {
+            // No layout access or a stale link: fall back to the normal wizard.
+          }
         }
-      })
-      .catch((err) => console.error("Failed to load properties:", err));
-  }, []);
+        if (!cancelled && propertyId) setSelectedPropertyId(propertyId);
+      } catch (err) {
+        console.error("Failed to load properties:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [preselectPropertyId, preselectBedId]);
 
   // Load buildings when property changes
   useEffect(() => {
@@ -96,7 +130,9 @@ export function AdmissionWizard() {
       .then((data) => {
         setBuildings(data);
         if (data.length > 0) {
-          setSelectedBuildingId(data[0].id);
+          const wanted = data.find((building) => building.id === chainRef.current?.buildingId);
+          if (!wanted) chainRef.current = null;
+          setSelectedBuildingId((wanted ?? data[0]).id);
         } else {
           setSelectedBuildingId("");
           setFloors([]);
@@ -118,7 +154,9 @@ export function AdmissionWizard() {
       .then((data) => {
         setFloors(data);
         if (data.length > 0) {
-          setSelectedFloorId(data[0].id);
+          const wanted = data.find((floor) => floor.id === chainRef.current?.floorId);
+          if (!wanted) chainRef.current = null;
+          setSelectedFloorId((wanted ?? data[0]).id);
         } else {
           setSelectedFloorId("");
           setRooms([]);
@@ -144,6 +182,16 @@ export function AdmissionWizard() {
       .then((data) => {
         setRooms(data);
         setIsLoadingLayout(false);
+        const chain = chainRef.current;
+        chainRef.current = null;
+        const room = chain ? data.find((candidate) => candidate.id === chain.roomId) : undefined;
+        const bed = room?.beds?.find((candidate) => candidate.id === chain?.bedId);
+        if (room && bed && bed.status === "available") {
+          setSelectedRoomId(room.id);
+          setSelectedRoomObj(room);
+          setSelectedBedId(bed.id);
+          setSelectedBedObj(bed);
+        }
       })
       .catch((err) => {
         console.error("Failed to load rooms:", err);

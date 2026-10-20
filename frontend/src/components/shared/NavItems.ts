@@ -34,6 +34,17 @@ export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
 ];
 
+/** Phone bottom bar (Android parity): these four, permission-filtered, then More. An explicit list
+ * rather than a slice of SIDEBAR_NAV_ITEMS, where Visitors comes before Billing. Everything else lives
+ * under More. */
+const MOBILE_NAV_HREFS = ["/dashboard", "/properties", "/residents", "/billing"] as const;
+
+export const MOBILE_NAV_ITEMS: readonly NavItem[] = MOBILE_NAV_HREFS.map((href) => {
+  const item = SIDEBAR_NAV_ITEMS.find((candidate) => candidate.href === href);
+  if (!item) throw new Error(`MOBILE_NAV_ITEMS: ${href} is not a sidebar item`);
+  return item;
+});
+
 export const MORE_NAV_ITEM: NavItem = {
   href: "/more",
   labelKey: "nav.more",

@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/shared/BrandMark";
 
-/** Placeholder wordmark: the same accent square + building mark the app shell uses.
- * Replace with the final logo SVG when one exists. */
+/** Wordmark: the PGLive app-icon mark plus the brand name. */
 export function Logo({
   name,
   homeLabel,
@@ -15,9 +14,7 @@ export function Logo({
 }) {
   return (
     <Link href="/" aria-label={homeLabel} className="inline-flex items-center gap-2.5">
-      <span className="flex size-9 items-center justify-center rounded-xl bg-accent text-ink-inverse shadow-sm">
-        <Building2 className="size-5" aria-hidden="true" />
-      </span>
+      <BrandMark />
       <span
         className={cn(
           "font-display text-xl font-extrabold tracking-tight",

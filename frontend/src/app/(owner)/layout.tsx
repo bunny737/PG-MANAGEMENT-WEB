@@ -7,7 +7,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BottomNav } from "@/components/shared/BottomNav";
 import { OfflineBanner } from "@/components/shared/OfflineBanner";
 import { PushRuntime } from "@/features/notifications/PushRuntime";
-import { InstallNudge } from "@/features/pwa/InstallNudge";
 import { SideNav } from "@/components/shared/SideNav";
 import { clearSession } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -69,11 +68,12 @@ export default function OwnerLayout({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-dvh">
+      <div className="phone-ui flex min-h-dvh max-md:bg-m3-surface-page">
         <SideNav />
-        <div className="flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
+        {/* min-w-0: a flex item will not shrink below its content, so a horizontally scrolling row inside (the
+            dashboard shortcuts, the filter chips) would otherwise widen the whole page past the screen. */}
+        <div className="min-w-0 flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
           <OfflineBanner />
-          <InstallNudge />
           {children}
         </div>
         <BottomNav />

@@ -34,7 +34,9 @@
     "occupancy": "{percent}% भरा हुआ",
     "buildingsCount": "{count} इमारतें",
     "viewBuildings": "इमारतें देखें",
-    "viewSettings": "सेटिंग्स"
+    "viewSettings": "सेटिंग्स",
+    "phoneTitle": "प्रॉपर्टी",
+    "noMatch": "इस चयन से कोई प्रॉपर्टी मेल नहीं खाती।"
   },
   "form": {
     "addTitle": "संपत्ति जोड़ें",
@@ -362,5 +364,12 @@
     "setUpNow": "Set up features",
     "manageFromPage": "Manage features",
     "manageFromPageHint": "Features are managed on their own page."
+  },
+  "typesShort": {
+    "pg": "पीजी",
+    "boys_hostel": "बॉयज हॉस्टल",
+    "girls_hostel": "गर्ल्स हॉस्टल",
+    "hostel": "हॉस्टल",
+    "co_living": "को-लिविंग"
   }
 }

@@ -3,6 +3,7 @@
 import { Suspense, use } from "react";
 import { RequirePermission } from "@/components/shared/RequirePermission";
 import { PropertyOverview } from "@/features/properties/PropertyOverview";
+import { LAYOUT_ENTRY_PERMISSIONS } from "@/lib/layoutAccess";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -15,9 +16,7 @@ export default function PropertyDetailPage({ params }: PageProps) {
   const { id } = use(params);
 
   return (
-    <RequirePermission
-      anyOf={["view_property_features", "manage_rooms_beds", "manage_admissions", "manage_allocations"]}
-    >
+    <RequirePermission anyOf={[...LAYOUT_ENTRY_PERMISSIONS]}>
       <main className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
         <Suspense>
           <PropertyOverview propertyId={id} />

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 // Brand name of the installed app (mirrors common.brandName in the message files; a manifest
 // can't use next-intl, and the brand is not translated).
-const APP_NAME = "PropManager";
+const APP_NAME = "PGLive";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -16,8 +16,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f4f6fa", // --color-surface-page
-    theme_color: "#101828", // --color-surface-inverse; same value as the viewport themeColor
+    background_color: "#fbf8ff", // --color-m3-surface (the phone UI background)
+    theme_color: "#fbf8ff", // --color-m3-surface; same value as the viewport themeColor
     categories: ["business", "productivity"],
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

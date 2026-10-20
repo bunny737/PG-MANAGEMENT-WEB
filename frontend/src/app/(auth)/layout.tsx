@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "PropManager - Sign In",
+  title: "PGLive - Sign In",
   description: "Access your PG properties, residents, and financials.",
 };
 

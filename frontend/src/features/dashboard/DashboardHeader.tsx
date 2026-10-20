@@ -1,31 +1,28 @@
 "use client";
 
-import { Bell, Building2, LogOut } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { BrandMark } from "@/components/shared/BrandMark";
 import { clearSession } from "@/lib/api";
 
+/** Phone dashboard top bar (the desktop dashboard has DesktopHeader): logo tile, app name, bell, sign out. */
 export function DashboardHeader() {
   const t = useTranslations("dashboard.header");
   const tCommon = useTranslations("common");
 
   return (
-    <header className="flex items-center justify-between px-4 py-4">
-      <div className="flex items-center gap-2.5">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-linear-to-br from-accent to-accent-hover text-ink-inverse shadow-sm">
-          <Building2 className="size-5" aria-hidden />
-        </span>
-        <span className="font-display text-lg font-extrabold text-ink">
-          {tCommon("brandName")}
-        </span>
+    <header className="sticky top-[var(--banner-h,0px)] z-20 flex min-h-16 items-center justify-between bg-m3-surface px-4 pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center gap-3">
+        <BrandMark className="size-12" />
+        <span className="text-[22px] leading-7 font-medium text-m3-on-surface">{tCommon("brandName")}</span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center">
         <button
           type="button"
           aria-label={t("notifications")}
-          className="relative flex size-9 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"
+          className="flex size-12 cursor-pointer items-center justify-center rounded-full text-m3-on-surface active:bg-m3-surface-container-high"
         >
-          <Bell className="size-5" aria-hidden />
-          <span className="absolute top-1.5 right-2 size-2 rounded-full bg-status-critical ring-2 ring-surface-page" />
+          <Bell className="size-6" aria-hidden />
         </button>
         <button
           type="button"
@@ -35,9 +32,9 @@ export function DashboardHeader() {
             window.location.href = "/login";
           }}
           title={t("signOut")}
-          className="flex size-9 cursor-pointer items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-card hover:text-ink"
+          className="flex size-12 cursor-pointer items-center justify-center rounded-full text-m3-on-surface active:bg-m3-surface-container-high"
         >
-          <LogOut className="size-5" aria-hidden />
+          <LogOut className="size-6" aria-hidden />
         </button>
       </div>
     </header>

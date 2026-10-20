@@ -44,7 +44,12 @@ export function useActiveProperty() {
     }
   }, [hydrated, urlPropertyId, store]);
 
-  const { data: properties = [], isSuccess: listLoaded } = useQuery({
+  const {
+    data: properties = [],
+    isSuccess: listLoaded,
+    isError: listError,
+    refetch: retryList,
+  } = useQuery({
     queryKey: queryKeys.properties.list,
     queryFn: listProperties,
     enabled: hydrated,
@@ -62,6 +67,11 @@ export function useActiveProperty() {
   return {
     propertyId,
     properties,
+    /** True once the properties list has loaded for this account (before that, `properties` is just empty). */
+    listLoaded,
+    /** The properties request failed (so `listLoaded` will not become true on its own); `retryList` retries it. */
+    listError,
+    retryList,
     accessRevoked,
     setPropertyId: store.setPropertyId,
   };

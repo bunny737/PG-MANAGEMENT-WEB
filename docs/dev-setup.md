@@ -80,4 +80,5 @@ Current diagram: [erd.png](erd.png).
   to the frontend container), then `docker compose up -d frontend`.
 - **iPhone testing** needs HTTPS (an ngrok tunnel or staging) and iOS 16.4+. In Safari use Share ->
   Add to Home Screen, then open the installed app; push is only offered from the installed app.
-- **Icons** are generated: `node scripts/generate-pwa-icons.mjs` (in `frontend/`).
+- **Icons** are the owner-supplied PGLive brand files in `frontend/public/icons/` (PWA, Apple touch),
+  `frontend/src/app/favicon.ico` + `icon.png` (browser tab), and `frontend/public/brand/` (in-app mark).

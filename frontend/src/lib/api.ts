@@ -1123,7 +1123,7 @@ export interface Complaint {
   updated_at: string;
 }
 
-export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string }) {
+export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string; property?: string }) {
   if (filters?.resident && !isUUID(filters.resident)) return Promise.resolve([]);
   let url = "/api/v1/complaints/";
   const params = new URLSearchParams();
@@ -1132,6 +1132,7 @@ export function listComplaints(filters?: { resident?: string; status?: string; c
     if (filters.status && filters.status !== "all") params.append("status", filters.status);
     if (filters.category && filters.category !== "all") params.append("category", filters.category);
     if (filters.priority && filters.priority !== "all") params.append("priority", filters.priority);
+    if (filters.property) params.append("property", filters.property);
   }
   const q = params.toString();
   if (q) url += `?${q}`;
@@ -1584,8 +1585,8 @@ export function endDiscount(id: string, validUntil: string) {
   return updateDiscount(id, { valid_until: validUntil });
 }
 
-export function listAdmissions() {
-  return apiFetch<Admission[] | { results: Admission[] }>("/api/v1/admissions/").then((data) =>
+export function listAdmissions(filters?: { property?: string }) {
+  return apiFetch<Admission[] | { results: Admission[] }>(`/api/v1/admissions/${buildQuery({ property: filters?.property })}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
 }

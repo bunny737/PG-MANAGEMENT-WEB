@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import type { ActivityItem } from "./types";
 
 /** Dynamically determines the appropriate icon and color scheme based on activity content */
-function getActivityIconConfig(item: ActivityItem) {
+export function getActivityIconConfig(item: ActivityItem) {
   const text = item.text.toLowerCase();
   
   if (text.includes("wifi") || text.includes("internet")) {
@@ -52,7 +52,7 @@ function getActivityIconConfig(item: ActivityItem) {
   };
 }
 
-function renderEmphasis(text: string) {
+export function renderEmphasis(text: string) {
   return text.split(/\*\*(.+?)\*\*/g).map((segment, index) =>
     index % 2 === 1 ? (
       <strong key={index} className="font-semibold text-ink">

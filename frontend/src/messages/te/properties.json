@@ -34,7 +34,9 @@
     "occupancy": "{percent}% ఆక్రమించబడింది",
     "buildingsCount": "{count} భవనాలు",
     "viewBuildings": "భవనాలను వీక్షించండి",
-    "viewSettings": "సెట్టింగ్‌లు"
+    "viewSettings": "సెట్టింగ్‌లు",
+    "phoneTitle": "ప్రాపర్టీలు",
+    "noMatch": "ఈ ఎంపికకు ప్రాపర్టీలు సరిపోలలేదు."
   },
   "form": {
     "addTitle": "ప్రాపర్టీని జోడించండి",
@@ -362,5 +364,12 @@
     "setUpNow": "ఫీచర్లను సెటప్ చేయండి",
     "manageFromPage": "ఫీచర్లను నిర్వహించండి",
     "manageFromPageHint": "ఫీచర్లు వాటి స్వంత పేజీలో నిర్వహించబడతాయి."
+  },
+  "typesShort": {
+    "pg": "PG",
+    "boys_hostel": "బాలుర హాస్టల్",
+    "girls_hostel": "బాలికల హాస్టల్",
+    "hostel": "హాస్టల్",
+    "co_living": "కో-లివింగ్"
   }
 }

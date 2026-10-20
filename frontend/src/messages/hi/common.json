@@ -1,6 +1,6 @@
 {
-  "appName": "प्रॉपमैनेजर",
-  "brandName": "प्रॉपमैनेजर",
+  "appName": "PGLive",
+  "brandName": "PGLive",
   "portalTitle": "स्टेज़मैनेजर प्रीमियम",
   "authCheck": "प्रमाणीकरण की जाँच की जा रही है...",
   "nav": {
@@ -69,5 +69,10 @@
     "call": "कॉल करें",
     "whatsapp": "व्हाट्सऐप",
     "sms": "एसएमएस"
+  },
+  "phone": {
+    "back": "वापस",
+    "propertyPicker": "प्रॉपर्टी",
+    "navigation": "मुख्य नेविगेशन"
   }
 }

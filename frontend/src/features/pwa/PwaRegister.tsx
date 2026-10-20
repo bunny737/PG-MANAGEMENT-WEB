@@ -60,7 +60,7 @@ export function PwaRegister() {
   return (
     <div
       role="status"
-      className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 flex items-center justify-between gap-3 rounded-xl bg-surface-inverse px-4 py-3 text-sm text-ink-inverse shadow-lg md:inset-x-auto md:right-4 md:bottom-4 md:w-96"
+      className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom)+var(--fab-stack,0px))] z-50 flex items-center justify-between gap-3 rounded-xl bg-surface-inverse px-4 py-3 text-sm text-ink-inverse shadow-lg md:inset-x-auto md:right-4 md:bottom-4 md:w-96"
     >
       <span>{t("available")}</span>
       <button

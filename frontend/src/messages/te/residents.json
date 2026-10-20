@@ -33,7 +33,17 @@
     "rentAmount": "₹{amount}/నెల",
     "unassigned": "కేటాయించబడలేదు",
     "mainBuilding": "ప్రధాన భవనం",
-    "sortTitle": "అక్షరక్రమంలో పేర్చండి"
+    "sortTitle": "అక్షరక్రమంలో పేర్చండి",
+    "phoneSearchLabel": "నివాసులను వెతకండి",
+    "phoneSearchPlaceholder": "పేరు లేదా ఫోన్ ద్వారా వెతకండి…",
+    "chipsLabel": "స్థితి ద్వారా ఫిల్టర్ చేయండి",
+    "chipAll": "అన్నీ",
+    "chipActive": "యాక్టివ్",
+    "chipNotice": "నోటీసు",
+    "chipVacated": "ఖాళీ చేసారు",
+    "rentNotSet": "అద్దె సెట్ చేయలేదు",
+    "phoneTitle": "నివాసులు",
+    "rentMonthly": "{amount}/నెల"
   },
   "profile": {
     "title": "నివాసి ప్రొఫైల్",

@@ -5,6 +5,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { ActiveIssuesCard } from "@/features/dashboard/ActiveIssuesCard";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
+import { InstallNudge } from "@/features/pwa/InstallNudge";
+import { PropertyPill } from "@/components/mobile/PropertyPill";
+import { WelcomeCard } from "@/features/dashboard/WelcomeCard";
+import {
+  MobileActivityCard,
+  MobileFinancialsCard,
+  MobileIssuesCard,
+  MobileOccupancyCard,
+} from "@/features/dashboard/MobileSections";
+import { formatDateDMY, isLocalToday } from "@/lib/date";
 import { DesktopHeader } from "@/features/dashboard/DesktopHeader";
 import { FinancialsCard } from "@/features/dashboard/FinancialsCard";
 import { OccupancyCard } from "@/features/dashboard/OccupancyCard";
@@ -46,34 +56,38 @@ function DashboardContent() {
   // Section-state rule: no permission -> the query is simply disabled, so
   // nothing is fetched and nothing renders for it; a real error gets its
   // own retry, never silently swallowed into an empty list.
+  // Every section follows the property selector, not just the summary above: the property is part of
+  // each key, so switching it refetches instead of showing another property's rows from the cache.
+  const property = propertyId ?? undefined;
   const complaintsQuery = useQuery({
-    queryKey: ["dashboard", "complaints"],
-    queryFn: () => listComplaints(),
+    queryKey: ["dashboard", "complaints", propertyId],
+    queryFn: () => listComplaints({ property }),
     enabled: canSeeComplaints,
   });
   const admissionsQuery = useQuery({
-    queryKey: ["dashboard", "admissions"],
-    queryFn: () => listAdmissions(),
+    queryKey: ["dashboard", "admissions", propertyId],
+    queryFn: () => listAdmissions({ property }),
     enabled: canSeeAdmissions,
   });
   const residentsQuery = useQuery({
-    queryKey: ["dashboard", "residents"],
-    queryFn: () => listResidents(),
+    queryKey: ["dashboard", "residents", propertyId],
+    queryFn: () => listResidents(property),
     enabled: canSeeResidents,
   });
   const paymentsQuery = useQuery({
-    queryKey: ["dashboard", "payments", month],
-    queryFn: () => listPaymentsFiltered({ month }),
+    queryKey: ["dashboard", "payments", month, propertyId],
+    queryFn: () => listPaymentsFiltered({ month, property }),
     enabled: canSeeFinance,
   });
 
-  const activity = useMemo<ActivityItem[]>(() => {
+  const { activity, todayActivity } = useMemo<{ activity: ActivityItem[]; todayActivity: ActivityItem[] }>(() => {
     const admissions = admissionsQuery.data ?? [];
     const residents = residentsQuery.data ?? [];
     const payments = paymentsQuery.data ?? [];
     const complaints = complaintsQuery.data ?? [];
 
-    const feed: Array<{ id: string; tone: ActivityItem["tone"]; text: string; date: Date }> = [];
+    // iso is the raw API value: a date-only string (joining/payment date) or a full timestamp (complaint).
+    const feed: Array<{ id: string; tone: ActivityItem["tone"]; text: string; date: Date; iso: string }> = [];
 
     admissions.forEach((a) => {
       const r = residents.find((res) => res.id === a.resident);
@@ -84,6 +98,7 @@ function DashboardContent() {
         tone: "info",
         text: t("activity.checkedIn", { name, room }),
         date: new Date(a.joining_date),
+        iso: a.joining_date,
       });
     });
 
@@ -96,6 +111,7 @@ function DashboardContent() {
           amount: formatMoney(p.amount),
         }),
         date: new Date(p.payment_date),
+        iso: p.payment_date,
       });
     });
 
@@ -108,18 +124,32 @@ function DashboardContent() {
           category: c.category.replace("_", " "),
         }),
         date: new Date(c.created_at),
+        iso: c.created_at,
       });
     });
 
-    return feed
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 5)
-      .map(({ id, tone, text, date }) => ({
+    const sorted = feed.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return {
+      // Desktop: the latest five, whatever day they happened.
+      activity: sorted.slice(0, 5).map(({ id, tone, text, date }) => ({
         id,
         tone,
         text,
         timestamp: date.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
-      }));
+      })),
+      // Phone: only what happened on the device's local calendar day, so the section name is truthful.
+      todayActivity: sorted
+        .filter(({ iso }) => isLocalToday(iso))
+        .slice(0, 8)
+        .map(({ id, tone, text, date, iso }) => ({
+          id,
+          tone,
+          text,
+          timestamp: iso.includes("T")
+            ? date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })
+            : formatDateDMY(iso),
+        })),
+    };
   }, [admissionsQuery.data, residentsQuery.data, paymentsQuery.data, complaintsQuery.data, t]);
 
   const issues = useMemo<ActiveIssue[]>(() => {
@@ -166,19 +196,23 @@ function DashboardContent() {
       {/* Mobile */}
       <div className="mx-auto flex max-w-md flex-col gap-4 pb-6 md:hidden">
         <DashboardHeader />
-        <QuickActions />
         <div className="flex flex-col gap-4 px-4">
+          <InstallNudge />
+          <PropertyPill wide />
+          <WelcomeCard />
+          <QuickActions />
           {summaryQuery.isLoading && <SectionSkeleton className="h-40" />}
           {summaryQuery.isError && <SectionError onRetry={() => summaryQuery.refetch()} />}
-          {occupancy && <OccupancyCard data={occupancy} />}
-          {canSeeFinance && financials && <FinancialsCard data={financials} />}
+          {occupancy && <MobileOccupancyCard data={occupancy} />}
+          {canSeeFinance && financials && <MobileFinancialsCard data={financials} />}
           {canSeeComplaints && (
             <>
               {complaintsQuery.isLoading && <SectionSkeleton className="h-32" />}
               {complaintsQuery.isError && <SectionError onRetry={() => complaintsQuery.refetch()} />}
-              {complaintsQuery.isSuccess && <ActiveIssuesCard issues={issues} highPriorityCount={highPriorityCount} />}
+              {complaintsQuery.isSuccess && <MobileIssuesCard issues={issues} highPriorityCount={highPriorityCount} />}
             </>
           )}
+          <MobileActivityCard items={todayActivity} />
         </div>
       </div>
 

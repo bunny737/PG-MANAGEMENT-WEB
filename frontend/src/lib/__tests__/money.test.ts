@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareMoney, formatMoney, isAtMost } from "../money";
+import { compareMoney, formatMoney, formatMoneyCompact, isAtMost } from "../money";
 
 describe("formatMoney", () => {
   test("formats a Decimal string as INR", () => {
@@ -43,5 +43,20 @@ describe("isAtMost", () => {
 
   test("an unparseable value is never treated as within balance", () => {
     expect(isAtMost("abc", "7000.00")).toBe(false);
+  });
+});
+
+describe("formatMoneyCompact", () => {
+  test("drops .00 from whole amounts only", () => {
+    expect(formatMoneyCompact("12000.00")).toBe("₹12,000");
+    expect(formatMoneyCompact("7500")).toBe("₹7,500");
+    expect(formatMoneyCompact("7500.50")).toBe("₹7,500.50");
+    expect(formatMoneyCompact("1234567.00")).toBe("₹12,34,567");
+  });
+
+  test("dash for null/undefined and raw string for unparseable, like formatMoney", () => {
+    expect(formatMoneyCompact(null)).toBe("—");
+    expect(formatMoneyCompact(undefined)).toBe("—");
+    expect(formatMoneyCompact("n/a")).toBe("n/a");
   });
 });

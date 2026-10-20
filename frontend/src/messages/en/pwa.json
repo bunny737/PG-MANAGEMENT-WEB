@@ -11,14 +11,14 @@
   },
   "install": {
     "title": "Install the app",
-    "description": "Add PropManager to your home screen to open it like an app.",
+    "description": "Add PGLive to your home screen to open it like an app.",
     "action": "Install",
     "dismiss": "Not now",
     "ios": {
       "title": "Install on iPhone",
       "step1": "Tap the Share button in Safari's toolbar.",
       "step2": "Choose “Add to Home Screen”.",
-      "step3": "Tap Add. PropManager now opens from your home screen.",
+      "step3": "Tap Add. PGLive now opens from your home screen.",
       "openInSafari": "Open this page in Safari to install the app. Browsers inside other apps, like WhatsApp or Instagram, can't add it to your home screen.",
       "done": "Got it"
     }

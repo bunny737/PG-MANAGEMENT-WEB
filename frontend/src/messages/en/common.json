@@ -1,6 +1,6 @@
 {
-  "appName": "PropManager",
-  "brandName": "PropManager",
+  "appName": "PGLive",
+  "brandName": "PGLive",
   "portalTitle": "StaysManager Premium",
   "authCheck": "Checking authentication...",
   "nav": {
@@ -69,6 +69,10 @@
     "call": "Call",
     "whatsapp": "WhatsApp",
     "sms": "SMS"
+  },
+  "phone": {
+    "back": "Back",
+    "propertyPicker": "Property",
+    "navigation": "Main navigation"
   }
 }
-

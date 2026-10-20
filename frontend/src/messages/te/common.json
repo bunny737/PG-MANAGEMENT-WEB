@@ -1,6 +1,6 @@
 {
-  "appName": "ప్రాప్ మేనేజర్",
-  "brandName": "ప్రోప్‌మేనేజర్",
+  "appName": "PGLive",
+  "brandName": "PGLive",
   "portalTitle": "స్టేస్ మేనేజర్ ప్రీమియం",
   "authCheck": "ప్రామాణీకరణను తనిఖీ చేస్తోంది...",
   "nav": {
@@ -69,6 +69,10 @@
     "call": "కాల్ చేయండి",
     "whatsapp": "వాట్సాప్",
     "sms": "ఎస్ఎంఎస్"
+  },
+  "phone": {
+    "back": "వెనుకకు",
+    "propertyPicker": "ప్రాపర్టీ",
+    "navigation": "ప్రధాన నావిగేషన్"
   }
 }
-

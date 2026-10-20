@@ -1,28 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Plus } from "lucide-react";
+import { BedDouble, Plus, Receipt } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
+import { LAYOUT_ENTRY_PERMISSIONS } from "@/lib/layoutAccess";
 
+const OUTLINED =
+  "flex h-14 shrink-0 items-center gap-2 rounded-2xl border border-m3-outline-variant bg-m3-surface px-5 text-base font-medium text-m3-primary active:bg-m3-surface-container-high";
+
+/**
+ * Phone dashboard shortcuts, scrolling sideways like the Android app's. Each one is gated by the
+ * permission of the screen it opens, so nobody sees a shortcut that would bounce them away.
+ */
 export function QuickActions() {
   const t = useTranslations("dashboard.quickActions");
 
   return (
-    <div className="grid grid-cols-2 gap-3 px-4">
-      <Link
-        href="/admissions"
-        className="flex items-center justify-center gap-2 rounded-xl bg-linear-to-br from-surface-inverse-soft to-surface-inverse px-4 py-3 text-sm font-semibold text-ink-inverse shadow-sm transition-colors hover:brightness-110"
-      >
-        <Plus className="size-4" aria-hidden />
-        {t("addResident")}
-      </Link>
-      <Link
-        href="/financials"
-        className="flex items-center justify-center gap-2 rounded-xl border border-accent-border bg-surface-card px-4 py-3 text-sm font-semibold text-accent shadow-xs transition-colors hover:bg-accent-soft"
-      >
-        <FileText className="size-4" aria-hidden />
-        {t("generateInvoices")}
-      </Link>
+    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+      <PermissionGate permission="manage_admissions">
+        <Link
+          href="/admissions"
+          className="flex h-14 shrink-0 items-center gap-2 rounded-2xl bg-m3-primary px-5 text-base font-medium text-m3-on-primary active:opacity-90"
+        >
+          <Plus className="size-5" aria-hidden />
+          {t("addResident")}
+        </Link>
+      </PermissionGate>
+      <PermissionGate anyOf={[...LAYOUT_ENTRY_PERMISSIONS]}>
+        <Link href="/vacancies" className={OUTLINED}>
+          <BedDouble className="size-5" aria-hidden />
+          {t("vacancies")}
+        </Link>
+      </PermissionGate>
+      <PermissionGate permission="view_finance">
+        <Link href="/billing" className={OUTLINED}>
+          <Receipt className="size-5" aria-hidden />
+          {t("billing")}
+        </Link>
+      </PermissionGate>
     </div>
   );
 }

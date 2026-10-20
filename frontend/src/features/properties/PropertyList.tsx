@@ -6,11 +6,14 @@ import { Plus, MapPin, Building, ChevronRight, LoaderCircle, AlertTriangle, Penc
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { ApiError, listProperties, type Property } from "@/lib/api";
+import { PropertiesPhoneList } from "./PropertiesPhoneList";
 
 export function PropertyList() {
   const t = useTranslations("properties");
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [error, setError] = useState("");
+
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,10 +28,20 @@ export function PropertyList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
   return (
-    <div className="space-y-6">
+    <>
+    <PropertiesPhoneList
+      properties={properties}
+      error={error}
+      onRetry={() => {
+        setError("");
+        setProperties(null);
+        setAttempt((n) => n + 1);
+      }}
+    />
+    <div className="hidden space-y-6 md:block">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -156,5 +169,6 @@ export function PropertyList() {
       </div>
       )}
     </div>
+    </>
   );
 }

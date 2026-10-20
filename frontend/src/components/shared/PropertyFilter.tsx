@@ -62,6 +62,8 @@ export function useActiveProperty() {
   return {
     propertyId,
     properties,
+    /** True once the properties list has loaded for this account (before that, `properties` is just empty). */
+    listLoaded,
     accessRevoked,
     setPropertyId: store.setPropertyId,
   };

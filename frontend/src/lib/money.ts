@@ -35,6 +35,17 @@ export function formatMoney(value: string | null | undefined): string {
   return DISPLAY_FORMATTER.format(paise / 100);
 }
 
+/** Like `formatMoney` but drops the ".00" of a whole amount: "₹12,000" (compact lists such as
+ * a resident card or a room's rate). Paise are kept when present: "₹7,500.50". String-based like
+ * the rest of this file: the whole rupees are grouped from the digits, never through float math. */
+export function formatMoneyCompact(value: string | null | undefined): string {
+  if (value == null) return "—";
+  const paise = toPaise(value);
+  if (paise === null) return value;
+  const full = formatMoney(value);
+  return paise % 100 === 0 ? full.replace(/.00$/, "") : full;
+}
+
 /** Compares two Decimal strings as integer paise. Returns null (not a
  * number) if either side fails to parse, so callers must handle "can't
  * tell" rather than silently treating it as equal. */

@@ -12,6 +12,7 @@ import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyF
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { queryKeys } from "@/lib/queryKeys";
+import { ResidentsPhoneList } from "./ResidentsPhoneList";
 
 const STATUS_TABS = ["all", "active", "notice_period", "vacated"] as const;
 
@@ -98,7 +99,18 @@ export function ResidentsDirectory() {
   const hasClientFilters = selectedBlock || selectedFloor;
 
   return (
-    <div className="space-y-6">
+    <>
+    <ResidentsPhoneList
+      residents={visibleResidents}
+      isLoading={isLoading}
+      isError={isError}
+      onRetry={() => refetch()}
+      searchTerm={searchTerm}
+      onSearchChange={setSearchTerm}
+      status={selectedStatus}
+      onStatusChange={setSelectedStatus}
+    />
+    <div className="hidden space-y-6 md:block">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -109,7 +121,7 @@ export function ResidentsDirectory() {
         </div>
         <PermissionGate permission="manage_admissions">
           <Link
-            href="/admissions/new"
+            href="/admissions"
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
           >
             <UserPlus className="size-4.5" />
@@ -330,5 +342,6 @@ export function ResidentsDirectory() {
         </div>
       )}
     </div>
+    </>
   );
 }

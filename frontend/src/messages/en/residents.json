@@ -33,7 +33,17 @@
     "rentAmount": "₹{amount}/mo",
     "unassigned": "Unassigned",
     "mainBuilding": "Main Building",
-    "sortTitle": "Sort Alphabetically"
+    "sortTitle": "Sort Alphabetically",
+    "phoneSearchLabel": "Search residents",
+    "phoneSearchPlaceholder": "Search by name or phone…",
+    "chipsLabel": "Filter by status",
+    "chipAll": "All",
+    "chipActive": "Active",
+    "chipNotice": "Notice",
+    "chipVacated": "Vacated",
+    "rentNotSet": "Rent not set",
+    "phoneTitle": "Residents",
+    "rentMonthly": "{amount}/mo"
   },
   "profile": {
     "title": "Resident Profile",

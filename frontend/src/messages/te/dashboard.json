@@ -23,7 +23,9 @@
     "title": "ఆర్థిక సారాంశం",
     "monthlyRevenue": "నెలవారీ రాబడి",
     "outstandingDues": "బాకీ ఉన్న నిల్వలు",
-    "securityDeposits": "సెక్యూరిటీ డిపాజిట్లు"
+    "securityDeposits": "సెక్యూరిటీ డిపాజిట్లు",
+    "viewBilling": "బిల్లింగ్ చూడండి",
+    "thisMonth": "ఈ నెల"
   },
   "issues": {
     "title": "యాక్టివ్ సమస్యలు",
@@ -33,11 +35,14 @@
     "issue": "సమస్య",
     "status": "స్థితి",
     "noIssues": "ప్రస్తుతం ఎలాంటి యాక్టివ్ సమస్యలు లేవు.",
-    "viewAllComplaints": "అన్ని ఫిర్యాదులను వీక్షించండి →"
+    "viewAllComplaints": "అన్ని ఫిర్యాదులను వీక్షించండి →",
+    "highShort": "{count} అధిక"
   },
   "quickActions": {
     "addResident": "నివాసిని జోడించండి",
-    "generateInvoices": "ఇన్‌వాయిస్‌లను ఉత్పత్తి చేయండి"
+    "generateInvoices": "ఇన్‌వాయిస్‌లను ఉత్పత్తి చేయండి",
+    "vacancies": "ఖాళీలు",
+    "billing": "బిల్లింగ్"
   },
   "activity": {
     "title": "నేటి యాక్టివిటీ",
@@ -47,5 +52,12 @@
     "checkedIn": "కొత్త నివాసితుడు {name} {room}కి చెక్ ఇన్ అయ్యారు.",
     "paymentReceived": "{room} కోసం అద్దె చెల్లింపు అందింది ({amount}).",
     "complaintLogged": "{room} కోసం కొత్త ఫిర్యాదు నమోదు చేయబడింది ({category})."
+  },
+  "phone": {
+    "welcomeBack": "తిరిగి స్వాగతం,",
+    "activityEmpty": "ఈ రోజు ఎలాంటి కార్యకలాపం లేదు.",
+    "occupancyTitle": "ఆక్యుపెన్సీ",
+    "financialsTitle": "ఆర్థికం",
+    "viewDetails": "వివరాలు చూడండి"
   }
 }

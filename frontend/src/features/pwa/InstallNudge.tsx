@@ -40,13 +40,13 @@ export function InstallNudge() {
 
   return (
     <>
-      <div className="mx-4 mt-3 flex items-center gap-3 rounded-xl border border-accent-border bg-accent-soft px-3 py-2.5 md:hidden">
-        <Download className="size-4 shrink-0 text-accent" aria-hidden />
+      <div className="mx-4 flex items-center gap-3 rounded-2xl border border-accent-border bg-accent-soft px-3 py-2.5 max-md:border-m3-outline-variant max-md:bg-m3-primary-container/50 md:hidden">
+        <Download className="size-4 shrink-0 text-accent max-md:text-m3-primary" aria-hidden />
         <p className="min-w-0 flex-1 text-xs font-medium text-ink">{t("description")}</p>
         <button
           type="button"
           onClick={() => (state === "installable" ? void install() : setIosOpen(true))}
-          className="shrink-0 cursor-pointer rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink-inverse transition-colors hover:bg-accent-hover"
+          className="shrink-0 cursor-pointer rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink-inverse transition-colors hover:bg-accent-hover max-md:bg-m3-primary"
         >
           {t("action")}
         </button>

@@ -576,7 +576,7 @@ and deliberately deviates from §3.2 (which had `/` redirecting to login) and th
 
 ### 12.1 Routes
 `/` landing · `/features` (per-surface availability) · `/pricing` · `/app` (Android landing + QR target) ·
-`/contact` · `/privacy` · `/terms` · app-wide 404. `robots.ts` / `sitemap.ts` / `opengraph-image` / `icon.svg`.
+`/contact` · `/privacy` · `/terms` · app-wide 404. `robots.ts` / `sitemap.ts` / `opengraph-image` / root `icon.png` + `favicon.ico`.
 The root layout sends `noindex` for everything; `(marketing)/layout.tsx` opts back in. `robots.txt` also
 disallows the owner routes (keep `APP_PATHS` in `app/robots.ts` in step with `app/(owner)`).
 

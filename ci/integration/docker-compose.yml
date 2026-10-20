@@ -1,0 +1,56 @@
+# End-to-end check of the BFF -> Django origin signature through real servers (docs/deployment.md,
+# WP7f): `next start` (standalone) + gunicorn with prod settings + Postgres with the production role
+# model. `edge-api` is nginx standing in for the Google load balancer in front of Django: it sets
+# X-Forwarded-Proto and overwrites X-PGLive-Client-IP with the caller's address, and passes the
+# request URI through unchanged. Run via ci/integration/run.sh, not directly.
+name: pglive-integration
+
+x-secrets: &secrets
+  BFF_ORIGIN_SECRET: integration-origin-secret
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: rootpw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 30
+
+  api:
+    image: ${API_IMAGE:-pglive-api:local}
+    environment:
+      <<: *secrets
+      SECRET_KEY: integration-only-secret-key-integration-only-secret-key-x
+      JWT_SIGNING_KEY: integration-only-jwt-key-integration-only-jwt-key-xxxxx
+      DB_HOST: db
+      DB_SSLMODE: disable
+      DB_USER: app_user
+      DB_PASSWORD: apppw
+      ALLOWED_HOSTS: api.pglive.in
+      REDIS_URL: redis://unreachable:6379/0
+      REDIS_CACHE_URL: redis://unreachable:6379/1
+    depends_on:
+      db:
+        condition: service_healthy
+
+  edge-api:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx-edge.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "18301:80"
+    depends_on: [api]
+
+  web:
+    image: ${WEB_IMAGE:-pglive-web:local}
+    environment:
+      <<: *secrets
+      INTERNAL_API_URL: http://edge-api
+      SITE_URL: https://www.pglive.in
+      COMPANY_NAME: PGLive Test Pvt Ltd
+      COMPANY_ADDRESS: Hyderabad, Telangana
+    ports:
+      - "18300:8080"
+    depends_on: [edge-api]

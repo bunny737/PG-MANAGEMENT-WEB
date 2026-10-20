@@ -1,0 +1,46 @@
+name: Deploy staging
+
+# Every push to dev, after CI. Staging has its own project, Cloud SQL, Razorpay TEST keys and Firebase project;
+# nothing here can touch production. See docs/deployment.md.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Release to staging
+        run: infra/deploy.sh staging "$GITHUB_SHA"
+        env:
+          # Non-secret values only (public Firebase/Maps identifiers, company identity). Secrets live in Secret Manager.
+          SITE_URL: ${{ vars.SITE_URL }}
+          COMPANY_NAME: ${{ vars.COMPANY_NAME }}
+          COMPANY_ADDRESS: ${{ vars.COMPANY_ADDRESS }}
+          APP_STATUS: ${{ vars.APP_STATUS }}
+          PLAY_STORE_URL: ${{ vars.PLAY_STORE_URL }}
+          SIGNUP_ENABLED: ${{ vars.SIGNUP_ENABLED }}
+          CSP_MODE: ${{ vars.CSP_MODE }}
+          CSP_REPORT_URI: ${{ vars.CSP_REPORT_URI }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}

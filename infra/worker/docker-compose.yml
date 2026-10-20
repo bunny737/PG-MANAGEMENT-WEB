@@ -1,0 +1,61 @@
+# Runs on the pglive-worker VM (/opt/pglive). Redis, one Celery worker, exactly ONE beat, and the Cloud SQL
+# proxy. Started by deploy.sh, which writes .env from Secret Manager (mode 600) and sets IMAGE.
+# The Redis password is required: Cloud Run reaches this port over Direct VPC egress, firewalled to the subnet.
+name: pglive-worker
+
+x-backend: &backend
+  image: ${IMAGE:?set by deploy.sh}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DB_HOST: cloud-sql-proxy
+    DB_PORT: "5432"
+    DB_SSLMODE: disable        # the proxy leg is already encrypted and IAM-authorised
+  depends_on: [cloud-sql-proxy, redis]
+  logging:
+    driver: gcplogs
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "${WORKER_IP:?}:6379:6379"     # bound to the private address only
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    logging:
+      driver: gcplogs
+
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+    restart: unless-stopped
+    command: ["--address", "0.0.0.0", "--port", "5432", "${SQL_CONNECTION:?}"]
+    logging:
+      driver: gcplogs
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency", "2", "--max-tasks-per-child", "200"]
+    environment:
+      DB_HOST: cloud-sql-proxy
+      DB_PORT: "5432"
+      DB_SSLMODE: disable
+      DB_USER: app_user
+
+  beat:
+    <<: *backend
+    # Exactly one beat instance, ever: it is the only scheduler of the DB-defined periodic tasks.
+    command: ["celery", "-A", "config", "beat", "-l", "info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
+    environment:
+      DB_HOST: cloud-sql-proxy
+      DB_PORT: "5432"
+      DB_SSLMODE: disable
+      DB_USER: app_user
+
+volumes:
+  redis-data:

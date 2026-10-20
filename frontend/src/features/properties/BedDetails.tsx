@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, Wrench, CheckCircle, User, Calendar, CheckCircle2, LoaderCircle, AlertTriangle, BedSingle, Lock } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
+import { formatDate } from "@/lib/date";
 import { getProperty, getFloor, getRoom, getBed, updateBed, type Property, type Floor, type Room, type Bed, type BedAvailability, ApiError } from "@/lib/api";
 
 const TRANSITION_ICONS: Record<BedAvailability, typeof CheckCircle> = {
@@ -251,7 +252,7 @@ export function BedDetails({
               </div>
               <div className="flex flex-col text-xs text-left sm:text-right space-y-0.5">
                 <span className="font-semibold text-ink">{t("moveInDateLabel")}</span>
-                <span className="font-mono text-ink-muted">{bed.current_occupant.joining_date}</span>
+                <span className="font-mono text-ink-muted">{formatDate(bed.current_occupant.joining_date)}</span>
                 {bed.current_occupant.rent && (
                   <span className="font-bold text-emerald-600 mt-1">{t("contractRentLabel", { amount: parseFloat(bed.current_occupant.rent).toFixed(2) })}</span>
                 )}

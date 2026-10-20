@@ -23,6 +23,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { StatusPill } from "@/components/shared/StatusPill";
+import { formatDateTime as formatDateTimeDMY } from "@/lib/date";
 
 export function VisitorsLog() {
   const t = useTranslations("visitors");
@@ -178,20 +179,7 @@ export function VisitorsLog() {
     }
   };
 
-  const formatDateTime = (isoString?: string | null) => {
-    if (!isoString) return "—";
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return isoString;
-    }
-  };
+  const formatDateTime = (isoString?: string | null) => formatDateTimeDMY(isoString, "—");
 
   return (
     <div className="space-y-6">

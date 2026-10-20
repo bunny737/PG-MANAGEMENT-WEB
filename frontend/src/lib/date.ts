@@ -1,27 +1,31 @@
-/**
- * Date helpers for display and for "is this today" checks on the phone screens.
- * Display-only: due dates, billing periods and every other business date are computed
- * server-side (apps/core/periods.py).
- */
+const pad = (n: number) => String(n).padStart(2, "0");
 
-const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})/;
+/** Formats an API date ("YYYY-MM-DD") or datetime (ISO 8601) as DD-MM-YYYY.
+ * Returns `fallback` for empty or unparseable input. Plain dates are split as
+ * strings, never routed through `Date`, so a timezone can't shift the day. */
+export function formatDate(value: string | Date | null | undefined, fallback = "--"): string {
+  if (!value) return fallback;
+  if (typeof value === "string") {
+    const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (plain) return `${plain[3]}-${plain[2]}-${plain[1]}`;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
+}
 
-/** "2026-08-27" (or an ISO timestamp) -> "27-08-2026". A date-only string is
- * formatted from its own digits, never through `new Date()`, so no timezone can shift the day. */
-export function formatDateDMY(value: string | null | undefined): string {
-  if (!value) return "—";
-  const match = DATE_ONLY.exec(value);
-  if (!match) return value;
-  const [, year, month, day] = match;
-  return `${day}-${month}-${year}`;
+/** DD-MM-YYYY HH:mm (24-hour, local time) for an ISO datetime. */
+export function formatDateTime(value: string | Date | null | undefined, fallback = "--"): string {
+  if (!value) return fallback;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return `${formatDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** The local calendar day of `date` as "YYYY-MM-DD" (not UTC: a payment at 11:30 PM
  * IST must count as today in India, not as tomorrow's UTC date). */
 export function localDateKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /** Whether a timestamp (a full ISO instant or a date-only string) falls on the device's

@@ -14,7 +14,7 @@ import {
   MobileIssuesCard,
   MobileOccupancyCard,
 } from "@/features/dashboard/MobileSections";
-import { formatDateDMY, isLocalToday } from "@/lib/date";
+import { formatDate, isLocalToday } from "@/lib/date";
 import { DesktopHeader } from "@/features/dashboard/DesktopHeader";
 import { FinancialsCard } from "@/features/dashboard/FinancialsCard";
 import { OccupancyCard } from "@/features/dashboard/OccupancyCard";
@@ -135,7 +135,7 @@ function DashboardContent() {
         id,
         tone,
         text,
-        timestamp: date.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+        timestamp: formatDate(date),
       })),
       // Phone: only what happened on the device's local calendar day, so the section name is truthful.
       todayActivity: sorted
@@ -147,7 +147,7 @@ function DashboardContent() {
           text,
           timestamp: iso.includes("T")
             ? date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })
-            : formatDateDMY(iso),
+            : formatDate(iso),
         })),
     };
   }, [admissionsQuery.data, residentsQuery.data, paymentsQuery.data, complaintsQuery.data, t]);

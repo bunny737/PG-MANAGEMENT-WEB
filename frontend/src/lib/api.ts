@@ -764,7 +764,10 @@ export interface Resident {
   emergency_contact_relation: string;
   emergency_contact_phone: string;
   aadhaar_number: string;
+  /** Absolute URL of the uploaded file, or null. */
+  aadhaar_document?: string | null;
   pan_number: string;
+  pan_document?: string | null;
   passport_number: string;
   employee_id: string;
   student_id: string;
@@ -863,6 +866,49 @@ export function updateResident(residentId: string, payload: Partial<CreateReside
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+export interface CreateTransferPayload {
+  resident: string;
+  new_bed: string;
+  /** YYYY-MM-DD */
+  transfer_date: string;
+  is_temporary: boolean;
+  reason?: string;
+  /** Permanent transfers only; omitted → the server uses the new bed's rack rate. */
+  new_rent?: string;
+  expected_move_date?: string | null;
+  temporary_note?: string;
+}
+
+export interface Transfer {
+  id: string;
+  resident: string;
+  previous_bed: string;
+  new_bed: string;
+  is_temporary: boolean;
+  reason: string;
+  transfer_date: string;
+  previous_rent: string;
+  new_rent: string;
+  rent_effective_date: string;
+  created_at: string;
+}
+
+export function createTransfer(payload: CreateTransferPayload) {
+  return apiFetch<Transfer>("/api/v1/transfers/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type ResidentDocumentField = "aadhaar_document" | "pan_document";
+
+/** Uploads (or replaces) one KYC file on the resident, as multipart. */
+export function uploadResidentDocument(residentId: string, field: ResidentDocumentField, file: File) {
+  const form = new FormData();
+  form.append(field, file);
+  return apiFetch<Resident>(`/api/v1/residents/${residentId}/`, { method: "PATCH", body: form });
 }
 
 export function updateResidentStatus(residentId: string, status: string) {

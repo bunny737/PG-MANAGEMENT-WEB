@@ -26,9 +26,26 @@ import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
-import { getResident, listComplaints, updateResident, type Complaint, type Resident, ApiError } from "@/lib/api";
+import {
+  getResident,
+  listComplaints,
+  updateResident,
+  uploadResidentDocument,
+  type Complaint,
+  type Resident,
+  type ResidentDocumentField,
+  ApiError,
+} from "@/lib/api";
+import { formatDate } from "@/lib/date";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { FinanceCard } from "./FinanceCard";
+import { TransferRoomDialog } from "./TransferRoomDialog";
+
+/** The two KYC files the backend stores on a resident. */
+const DOCUMENT_SLOTS = [
+  { field: "aadhaar_document", titleKey: "documents.aadhaarDoc", numberKey: "overview.aadhaar", number: "aadhaar_number" },
+  { field: "pan_document", titleKey: "documents.panDoc", numberKey: "overview.pan", number: "pan_number" },
+] as const;
 
 export function ResidentProfile({ id }: { id: string }) {
   const t = useTranslations("residents.profile");
@@ -69,6 +86,12 @@ export function ResidentProfile({ id }: { id: string }) {
     student_id: "",
   });
   const [formError, setFormError] = useState("");
+
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  // KYC document upload
+  const [uploadingField, setUploadingField] = useState<ResidentDocumentField | null>(null);
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -118,11 +141,13 @@ export function ResidentProfile({ id }: { id: string }) {
       return;
     }
 
-    const msg =
-      type === "transfer"
-        ? "Room transfer request initiated."
-        : "Vacate checkout procedure initialized.";
-    setActionAlert({ type, message: msg });
+    if (type === "transfer") {
+      setIsTransferring(true);
+      return;
+    }
+
+    // Vacate is still a placeholder: the real notice/settlement flow is not built on the web yet.
+    setActionAlert({ type, message: "Vacate checkout procedure initialized." });
     setTimeout(() => setActionAlert(null), 4000);
   };
 
@@ -142,6 +167,26 @@ export function ResidentProfile({ id }: { id: string }) {
       setFormError(err instanceof ApiError ? err.message : "Failed to update profile.");
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleDocumentSelected = async (field: ResidentDocumentField, file: File | undefined) => {
+    if (!file) return;
+    setUploadingField(field);
+    setUploadError("");
+    try {
+      const updated = await uploadResidentDocument(id, field, file);
+      // PATCH responses omit the detail-only `finance` block, so merge instead of replacing.
+      setResident((prev) => (prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated));
+      setActionAlert({ type: "document", message: t("documents.uploadedToast") });
+      setTimeout(() => setActionAlert(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setUploadError(
+        err instanceof ApiError ? (err.fieldError(field) ?? err.message) : t("documents.errUploadFailed")
+      );
+    } finally {
+      setUploadingField(null);
     }
   };
 
@@ -221,6 +266,7 @@ export function ResidentProfile({ id }: { id: string }) {
               {t("editProfile")}
             </button>
           </PermissionGate>
+          {(resident.status === "active" || resident.status === "notice_period") && (
           <PermissionGate permission="manage_allocations">
             <button
               onClick={() => handleAction("transfer")}
@@ -230,6 +276,7 @@ export function ResidentProfile({ id }: { id: string }) {
               {t("transferRoom")}
             </button>
           </PermissionGate>
+          )}
           <PermissionGate permission="manage_deposits">
             <button
               onClick={() => handleAction("vacate")}
@@ -283,7 +330,7 @@ export function ResidentProfile({ id }: { id: string }) {
               <MoneyText value={resident.contracted_rent} className="text-base font-extrabold text-accent" />
             </>
           )}
-          <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {resident.joining_date || resident.move_in_date || "--"}</span>
+          <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {formatDate(resident.joining_date || resident.move_in_date)}</span>
         </div>
       </div>
 
@@ -330,7 +377,7 @@ export function ResidentProfile({ id }: { id: string }) {
                 </div>
                 <div>
                   <span className="text-ink-muted">{t("overview.joiningDate")}</span>
-                  <p className="font-semibold text-ink mt-0.5">{resident.joining_date || resident.move_in_date || "--"}</p>
+                  <p className="font-semibold text-ink mt-0.5">{formatDate(resident.joining_date || resident.move_in_date)}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-ink-muted">{t("overview.permanentAddress")}</span>
@@ -436,44 +483,75 @@ export function ResidentProfile({ id }: { id: string }) {
       {/* Tab 3: Documents & KYC */}
       {activeTab === "documents" && (
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
-          <div className="flex justify-between items-center border-b border-border pb-3">
+          <div className="border-b border-border pb-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("documents.heading")}</h3>
-            <button className="rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer inline-flex items-center gap-1.5">
-              <FileCheck2 className="size-3.5" />
-              {t("documents.uploadNew")}
-            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <h4 className="font-bold text-ink">{t("documents.idProof")}</h4>
-                  <p className="text-[10px] text-ink-muted">{t("overview.aadhaar")}: {resident.aadhaar_number || t("documents.uploaded")}</p>
-                </div>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold">
-                  <CheckCircle className="size-3" /> {t("documents.verified")}
-                </span>
-              </div>
-              <button className="text-accent text-[11px] font-bold hover:underline self-start cursor-pointer pt-2">
-                {t("documents.download")} ›
-              </button>
+          {uploadError && (
+            <div role="alert" className="p-3 rounded-xl bg-status-critical-soft border border-status-critical/20 text-status-critical text-xs font-semibold">
+              {uploadError}
             </div>
+          )}
 
-            <div className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <h4 className="font-bold text-ink">{t("documents.leaseContract")}</h4>
-                  <p className="text-[10px] text-ink-muted">{t("documents.signedOn", { date: resident.joining_date || resident.move_in_date || "--" })}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            {DOCUMENT_SLOTS.map(({ field, titleKey, numberKey, number }) => {
+              const url = resident[field];
+              const isUploading = uploadingField === field;
+              return (
+                <div key={field} className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-ink">{t(titleKey)}</h4>
+                      <p className="text-[10px] text-ink-muted">{t(numberKey)}: {resident[number] || "--"}</p>
+                    </div>
+                    <span
+                      className={
+                        url
+                          ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold"
+                          : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-page text-ink-muted border border-border text-[9px] font-bold"
+                      }
+                    >
+                      {url && <CheckCircle className="size-3" />} {url ? t("documents.uploaded") : t("documents.notUploaded")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    {url ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent text-[11px] font-bold hover:underline cursor-pointer"
+                      >
+                        {t("documents.download")} ›
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-ink-faint">{t("documents.noDocs")}</span>
+                    )}
+                    <PermissionGate permission="manage_residents">
+                      <label
+                        className={`rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors inline-flex items-center gap-1.5 ${
+                          uploadingField ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                        }`}
+                      >
+                        {isUploading ? <LoaderCircle className="size-3.5 animate-spin" /> : <FileCheck2 className="size-3.5" />}
+                        {url ? t("documents.replace") : t("documents.uploadNew")}
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="sr-only"
+                          disabled={uploadingField !== null}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = ""; // allow re-selecting the same file after a failure
+                            void handleDocumentSelected(field, file);
+                          }}
+                        />
+                      </label>
+                    </PermissionGate>
+                  </div>
                 </div>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold">
-                  <CheckCircle className="size-3" /> {t("documents.verified")}
-                </span>
-              </div>
-              <button className="text-accent text-[11px] font-bold hover:underline self-start cursor-pointer pt-2">
-                {t("documents.download")} ›
-              </button>
-            </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -508,7 +586,7 @@ export function ResidentProfile({ id }: { id: string }) {
                           tone={getStatusTone(c.status)}
                         />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-ink-muted">{c.created_at?.split("T")[0]}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-muted">{formatDate(c.created_at, "")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -520,6 +598,19 @@ export function ResidentProfile({ id }: { id: string }) {
             )}
           </div>
         </div>
+      )}
+
+      {isTransferring && (
+        <TransferRoomDialog
+          resident={resident}
+          onClose={() => setIsTransferring(false)}
+          onTransferred={() => {
+            // The transfer response has no resident fields, so re-read the detail (bed, rent, finance).
+            getResident(id).then(setResident).catch(() => {});
+            setActionAlert({ type: "transfer", message: t("transferDone") });
+            setTimeout(() => setActionAlert(null), 4000);
+          }}
+        />
       )}
 
       {/* Edit Resident Profile Modal */}

@@ -12,7 +12,7 @@ import { PermissionGate } from "@/components/shared/PermissionGate";
 import { useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { getPropertyLayout, type Property } from "@/lib/api";
-import { formatDateDMY } from "@/lib/date";
+import { formatDate } from "@/lib/date";
 import { formatMoneyCompact } from "@/lib/money";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildPropertyVacancies, type PropertyVacancies, type VacancyRoom } from "@/lib/vacancies";
@@ -85,11 +85,11 @@ function RoomCard({ propertyId, room, t }: { propertyId: string; room: VacancyRo
                     </p>
                     <p className="text-base leading-6">
                       <span className="font-medium text-m3-warn">
-                        {t("notice", { date: formatDateDMY(resident.noticeDate) })}
+                        {t("notice", { date: formatDate(resident.noticeDate, "—") })}
                       </span>
                       <span className="text-m3-on-surface-variant">
                         {" · "}
-                        {t("vacating", { date: formatDateDMY(resident.vacatingDate) })}
+                        {t("vacating", { date: formatDate(resident.vacatingDate, "—") })}
                       </span>
                     </p>
                   </div>

@@ -156,3 +156,17 @@ tests, and deletes the instance.
   essentially no margin inside a $300 / 90-day trial).
 - Backup-bucket retention stays **unlocked** until export → restore → lifecycle behaviour is proven; locking is
   irreversible.
+
+### Frontend lint baseline
+
+`npm run lint` failed on 13 findings that predate the deployment work, which would have failed the CI/deploy
+workflows on their first run. They are recorded in `frontend/eslint-suppressions.json` (ESLint bulk suppressions)
+instead of being silenced in the rules: **existing findings are tolerated, any new one fails the build**, and fixing
+one makes ESLint ask you to prune the file (`npx eslint --prune-suppressions src next.config.ts`).
+
+Known debt it holds, owned by the feature authors, not part of this work:
+- `PropertyMapPicker.tsx`: 8 hard-coded UI strings (titles, placeholders, hints — **invariant 7**, i18n), 3
+  `setState`-in-effect, 1 `any`;
+- `VacanciesScreen.tsx`: 1 hard-coded string (`back="/dashboard"`).
+
+The i18n ones are product-language gaps (Telugu users see English there) — fix before the Telugu launch, then prune.

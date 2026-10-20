@@ -256,7 +256,7 @@ export function ResidentProfile({ id }: { id: string }) {
                 tone={getStatusTone(resident.status)}
               />
             </div>
-            <p className="text-xs text-ink-muted flex items-center gap-3 flex-wrap pt-0.5">
+            <div className="text-xs text-ink-muted flex items-center gap-3 flex-wrap pt-0.5">
               <span className="flex items-center gap-1">
                 <Building className="size-3.5 text-ink-faint" />
                 {resident.unit || t("overview.unassigned")} ({resident.block || t("overview.mainBuilding")})
@@ -272,7 +272,7 @@ export function ResidentProfile({ id }: { id: string }) {
                 {resident.email}
               </span>
               <ContactActions phone={resident.phone} />
-            </p>
+            </div>
           </div>
         </div>
 

@@ -9,6 +9,7 @@ import commonTe from "@/messages/te/common.json";
 import settingsTe from "@/messages/te/settings.json";
 import { SubscriptionPanel } from "../SubscriptionPanel";
 import { ApiError, getSubscription, listPlans, selectPlan, type Plan, type Subscription } from "@/lib/api";
+import { formatDate } from "@/lib/date";
 import { openSubscriptionCheckout } from "@/lib/razorpay";
 
 const session = vi.hoisted(() => ({
@@ -112,18 +113,15 @@ describe("SubscriptionPanel", () => {
     expect(screen.queryByText(/days left in your free trial/)).toBeNull();
   });
 
-  it("formats dates in the active language, not always English", async () => {
+  it.each(["en", "te"] as const)("formats dates as DD-MM-YYYY in %s", async (locale) => {
     const trialEnds = inDays(30);
-    const format = (locale: string) =>
-      new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(new Date(trialEnds));
-    expect(format("te")).not.toEqual(format("en-IN")); // the assertion below must be able to fail
     vi.mocked(listPlans).mockResolvedValue([BASIC, UNLIMITED]);
     vi.mocked(getSubscription).mockResolvedValue(subscription({ trial_ends_at: trialEnds }));
-    const { container } = renderPanel("te");
+    const { container } = renderPanel(locale);
 
     await waitFor(() => expect(container.querySelector("article")).not.toBeNull());
-    expect(container.textContent).toContain(format("te"));
-    expect(container.textContent).not.toContain(format("en-IN"));
+    expect(container.textContent).toContain(formatDate(trialEnds));
+    expect(formatDate(trialEnds)).toMatch(/^\d{2}-\d{2}-\d{4}$/);
   });
 
   it("warns when close to the bed limit", async () => {

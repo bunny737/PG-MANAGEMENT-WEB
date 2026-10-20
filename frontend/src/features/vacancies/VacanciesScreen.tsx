@@ -148,7 +148,7 @@ function PropertySection({
  */
 export function VacanciesScreen() {
   const t = useTranslations("vacancies");
-  const { propertyId, properties, listLoaded } = useActiveProperty();
+  const { propertyId, properties, listLoaded, listError, retryList } = useActiveProperty();
 
   const targets = propertyId ? properties.filter((property) => property.id === propertyId) : properties;
   const queries = useQueries({
@@ -158,7 +158,8 @@ export function VacanciesScreen() {
     })),
   });
 
-  const loading = !listLoaded || queries.some((query) => query.isPending);
+  // A failed properties request never becomes "loaded", so it must not read as "still loading" forever.
+  const loading = !listError && (!listLoaded || queries.some((query) => query.isPending));
   const failed = targets.flatMap((property, index) => (queries[index]?.isError ? [{ property, index }] : []));
   const loaded = targets.flatMap((property, index) => {
     const layout = queries[index]?.data;
@@ -174,12 +175,14 @@ export function VacanciesScreen() {
 
   return (
     <div className="pb-28 md:mx-auto md:max-w-3xl md:pb-8">
-      <MobileTopBar title={t("title")} back />
+      <MobileTopBar title={t("title")} back="/dashboard" />
       <h1 className="hidden px-8 pt-8 text-3xl font-bold text-ink md:block">{t("title")}</h1>
 
       <div className="flex flex-col gap-5 px-4 pt-2 md:px-8 md:pt-6">
         {/* The property picked on another screen limits this one too, so say so (and let it be changed). */}
         {propertyId && <PropertyPill wide className="md:hidden" />}
+
+        {listError && <SectionError message={t("loadAllFailed")} onRetry={() => void retryList()} />}
 
         {loading && !allFailed && <SectionSkeleton className="h-48" />}
 
@@ -190,7 +193,7 @@ export function VacanciesScreen() {
           />
         )}
 
-        {!allFailed && !loading && (
+        {!listError && !allFailed && !loading && (
           <>
             <div className="grid grid-cols-2 gap-3">
               <SummaryTile
@@ -221,7 +224,7 @@ export function VacanciesScreen() {
           />
         ))}
 
-        {!loading && !allFailed && withRooms.length === 0 && failed.length === 0 && (
+        {!listError && !loading && !allFailed && withRooms.length === 0 && failed.length === 0 && (
           <p className="rounded-2xl border border-m3-outline-variant bg-m3-surface px-4 py-10 text-center text-base text-m3-on-surface-variant">
             {t("empty")}
           </p>

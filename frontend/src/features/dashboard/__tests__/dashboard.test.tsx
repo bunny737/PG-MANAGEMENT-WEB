@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import DashboardPage from "@/app/(owner)/dashboard/page";
 import { localDateKey } from "@/lib/date";
@@ -168,5 +168,39 @@ describe("phone Today's Activity", () => {
 
     await waitFor(() => expect(state.api.listAdmissions).toHaveBeenCalled());
     expect(await phone().findByText("No activity today.")).toBeInTheDocument();
+  });
+
+  test("does not claim 'No activity today.' while the feed is still loading", async () => {
+    state.api.listAdmissions.mockReturnValue(new Promise(() => {})); // never settles
+    renderWithIntl(<DashboardPage />);
+
+    await waitFor(() => expect(state.api.listAdmissions).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(phone().queryByText("No activity today.")).toBeNull();
+    expect(phone().queryByText("Today's Activity")).toBeNull(); // a skeleton stands in for the card
+  });
+
+  test("a failed source shows an error with retry, not a misleading empty or partial feed", async () => {
+    state.api.listPaymentsFiltered.mockRejectedValue(new Error("down"));
+    renderWithIntl(<DashboardPage />);
+
+    const alerts = await phone().findAllByRole("alert");
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(phone().queryByText("No activity today.")).toBeNull();
+
+    state.api.listPaymentsFiltered.mockClear();
+    state.api.listPaymentsFiltered.mockResolvedValue([]);
+    fireEvent.click(within(alerts[alerts.length - 1]).getByRole("button", { name: /retry/i }));
+    await waitFor(() => expect(state.api.listPaymentsFiltered).toHaveBeenCalled());
+    expect(await phone().findByText("No activity today.")).toBeInTheDocument();
+  });
+
+  test("a user who can read none of the activity sources gets no activity card at all", async () => {
+    state.permissions = new Set(["view_dashboard"]);
+    renderWithIntl(<DashboardPage />);
+
+    await waitFor(() => expect(state.api.getAnalyticsSummary).toHaveBeenCalled());
+    expect(phone().queryByText("No activity today.")).toBeNull();
+    expect(phone().queryByText("Today's Activity")).toBeNull();
   });
 });

@@ -152,6 +152,17 @@ function DashboardContent() {
     };
   }, [admissionsQuery.data, residentsQuery.data, paymentsQuery.data, complaintsQuery.data, t]);
 
+  // The phone activity card is built from up to four queries. Until the ones this user can read have settled
+  // it must not claim "No activity today", and if one failed the feed is incomplete, not empty.
+  const activitySources = [
+    canSeeAdmissions && admissionsQuery,
+    canSeeResidents && residentsQuery,
+    canSeeFinance && paymentsQuery,
+    canSeeComplaints && complaintsQuery,
+  ].filter((query) => query !== false);
+  const activityFailed = activitySources.filter((query) => query.isError);
+  const activityPending = activityFailed.length === 0 && activitySources.some((query) => query.isPending);
+
   const issues = useMemo<ActiveIssue[]>(() => {
     const complaints = complaintsQuery.data ?? [];
     return complaints
@@ -212,7 +223,14 @@ function DashboardContent() {
               {complaintsQuery.isSuccess && <MobileIssuesCard issues={issues} highPriorityCount={highPriorityCount} />}
             </>
           )}
-          <MobileActivityCard items={todayActivity} />
+          {activitySources.length > 0 &&
+            (activityFailed.length > 0 ? (
+              <SectionError onRetry={() => activityFailed.forEach((query) => void query.refetch())} />
+            ) : activityPending ? (
+              <SectionSkeleton className="h-40" />
+            ) : (
+              <MobileActivityCard items={todayActivity} />
+            ))}
         </div>
       </div>
 

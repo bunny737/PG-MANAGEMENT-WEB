@@ -9,9 +9,13 @@ const state = vi.hoisted(() => ({
   propertyId: null as string | null,
   properties: [] as Array<{ id: string; name: string; city: string; state: string }>,
   getPropertyLayout: vi.fn(),
+  listLoaded: true,
+  listError: false,
+  retryList: vi.fn(),
+  push: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: state.push, back: vi.fn() }) }));
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ ready: true, authenticated: true, can: (code: string) => state.permissions.has(code) }),
 }));
@@ -19,7 +23,9 @@ vi.mock("@/components/shared/PropertyFilter", () => ({
   useActiveProperty: () => ({
     propertyId: state.propertyId,
     properties: state.properties,
-    listLoaded: true,
+    listLoaded: state.listLoaded,
+    listError: state.listError,
+    retryList: state.retryList,
     accessRevoked: false,
     setPropertyId: vi.fn(),
   }),
@@ -94,6 +100,10 @@ const SUNSHINE = layout("Sunshine", [
 beforeEach(() => {
   state.permissions = new Set(["view_property_features", "view_resident_profile", "manage_admissions"]);
   state.propertyId = null;
+  state.listLoaded = true;
+  state.listError = false;
+  state.retryList.mockReset();
+  state.push.mockReset();
   state.properties = [
     { id: "p1", name: "Greenwood Girls Hostel", city: "Hyderabad", state: "Telangana" },
     { id: "p2", name: "Sunshine Boys PG", city: "Bengaluru", state: "Karnataka" },
@@ -206,5 +216,36 @@ describe("VacanciesScreen", () => {
     expect(screen.getAllByText("Room 101")).toHaveLength(2);
     expect(screen.getByText("· Block A · Ground Floor")).toBeInTheDocument();
     expect(screen.getByText("· Block B · Ground Floor")).toBeInTheDocument();
+  });
+
+  test("a failed properties request shows an error with retry instead of loading forever", async () => {
+    state.listLoaded = false;
+    state.listError = true;
+    state.properties = [];
+    renderWithIntl(<VacanciesScreen />);
+
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Couldn't load vacancies.")).toBeInTheDocument();
+    expect(screen.queryByText("Vacant Beds")).toBeNull();
+
+    fireEvent.click(within(alert).getByRole("button", { name: /retry/i }));
+    expect(state.retryList).toHaveBeenCalledTimes(1);
+  });
+
+  test("while the properties request is genuinely in flight there is no error, just the loading skeleton", async () => {
+    state.listLoaded = false;
+    state.properties = [];
+    renderWithIntl(<VacanciesScreen />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("No vacant beds or residents on notice.")).toBeNull();
+  });
+
+  test("the back arrow goes to the dashboard, so opening /vacancies directly still has somewhere to go", async () => {
+    renderWithIntl(<VacanciesScreen />);
+    await screen.findByText("Room G01");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(state.push).toHaveBeenCalledWith("/dashboard");
   });
 });

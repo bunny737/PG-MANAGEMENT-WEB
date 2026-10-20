@@ -65,10 +65,6 @@ gcloud storage buckets update "gs://$BACKUP_BUCKET" --project "$PROJECT" --lifec
 SQL_AGENT="$(g sql instances describe "$SQL_INSTANCE" --format='value(serviceAccountEmailAddress)')"
 gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --project "$PROJECT" \
   --member "serviceAccount:$SQL_AGENT" --role roles/storage.objectCreator >/dev/null
-for name in export export-verify; do
-  gcloud storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" --project "$PROJECT" \
-    --member "serviceAccount:$(sa sa-$name)" --role projects/"$PROJECT"/roles/pglive.backupObjectReader >/dev/null 2>&1 || true
-done
 g iam roles describe pglive.backupObjectReader >/dev/null 2>&1 || g iam roles create pglive.backupObjectReader \
   --title "PGLive backup object reader" --permissions storage.objects.get,storage.objects.list,storage.objects.update
 for name in export export-verify; do

@@ -7,6 +7,7 @@ TAG="${1:?usage: deploy.sh <image-tag>}"
 cd /opt/pglive
 META='http://metadata.google.internal/computeMetadata/v1'
 md() { curl -fs -H 'Metadata-Flavor: Google' "$META/$1"; }
+opt() { md "instance/attributes/$1" 2>/dev/null || true; }   # optional VM metadata (gcloud compute instances add-metadata)
 PROJECT="$(md project/project-id)"; REGION="$(md instance/attributes/region)"
 SQL_CONNECTION="$(md instance/attributes/sql-connection)"; WORKER_IP="$(md instance/network-interfaces/0/ip)"
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/pglive/pglive-api:$TAG"
@@ -29,6 +30,13 @@ umask 077
   echo "SENTRY_DSN=$(secret SENTRY_DSN)"
   echo "GS_BUCKET_NAME=$PROJECT-media"
   echo "GS_PROJECT_ID=$PROJECT"
+  echo "GS_SA_EMAIL=$(md instance/service-accounts/default/email)"   # signs media URLs as the VM's own account
+  # SMTP settings (non-secret) come from VM metadata; unset ones are left out so settings defaults apply.
+  for pair in EMAIL_HOST=email-host EMAIL_PORT=email-port EMAIL_HOST_USER=email-host-user \
+              DEFAULT_FROM_EMAIL=default-from-email; do
+    value="$(opt "${pair#*=}")"
+    if [[ -n "$value" ]]; then echo "${pair%%=*}=$value"; fi
+  done
   echo "FIREBASE_USE_ADC=True"
   echo "FIREBASE_PROJECT_ID=$PROJECT"
   echo "ALLOWED_HOSTS=api.pglive.in"

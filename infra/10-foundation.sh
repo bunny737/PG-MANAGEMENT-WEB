@@ -37,9 +37,14 @@ JSON
 ) 2>/dev/null || true
 
 echo "== Service accounts"
+# IAM allows only a few account creations per minute per project (429 RESOURCE_EXHAUSTED): retry after a pause.
 for name in api web worker migrate bootstrap scheduler export export-verify smoke deployer; do
-  g iam service-accounts describe "$(sa sa-$name)" >/dev/null 2>&1 || \
-    g iam service-accounts create "sa-$name" --display-name "PGLive $name"
+  for attempt in 1 2 3 4; do
+    g iam service-accounts describe "$(sa "sa-$name")" >/dev/null 2>&1 && break
+    g iam service-accounts create "sa-$name" --display-name "PGLive $name" && break
+    echo "  retrying sa-$name in 65s (attempt $attempt)"; sleep 65
+  done
+  g iam service-accounts describe "$(sa "sa-$name")" >/dev/null   # fail here, not at the first binding
 done
 bind() { g projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$1" --role "$2" --condition=None >/dev/null; }
 for name in api worker migrate bootstrap; do bind "$(sa sa-$name)" roles/cloudsql.client; done
@@ -78,7 +83,7 @@ for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD DB_MIGRATION_PASSWORD RED
   secret_exists "$s" || g secrets create "$s" --replication-policy=user-managed --locations "$REGION"
 done
 # Per-secret access: nothing gets project-wide secretAccessor.
-allow() { g secrets add-iam-policy-binding "$1" --member "serviceAccount:$(sa sa-$2)" --role roles/secretmanager.secretAccessor >/dev/null; }
+allow() { g secrets add-iam-policy-binding "$1" --member "serviceAccount:$(sa "sa-$2")" --role roles/secretmanager.secretAccessor >/dev/null; }
 for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD REDIS_PASSWORD REDIS_URL REDIS_CACHE_URL \
          BFF_ORIGIN_SECRET RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN APP_MAINTENANCE_BYPASS_TOKEN; do
   allow "$s" api; allow "$s" worker

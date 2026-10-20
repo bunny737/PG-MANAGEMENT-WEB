@@ -15,6 +15,11 @@ g() { gcloud --project "$PROJECT" "$@"; }
 SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION@DB_NAME=$DB_NAME"
 COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod@GS_BUCKET_NAME=$MEDIA_BUCKET@GS_PROJECT_ID=$PROJECT"
 COMMON_ENV+="@FIREBASE_USE_ADC=True@FIREBASE_PROJECT_ID=$PROJECT@FRONTEND_BASE_URL=$SITE_URL"
+# SMTP settings (non-secret; the password is the EMAIL_HOST_PASSWORD secret). Only set ones are passed, so an
+# empty EMAIL_PORT can't break env.int() and unset ones keep the settings defaults.
+for v in EMAIL_HOST EMAIL_PORT EMAIL_HOST_USER DEFAULT_FROM_EMAIL; do
+  if [[ -n "${!v:-}" ]]; then COMMON_ENV+="@$v=${!v}"; fi
+done
 VPC=(--network "$NETWORK" --subnet "$SUBNET" --vpc-egress private-ranges-only)
 
 secrets() { # NAME[=SECRET] ... -> --set-secrets (all :latest)
@@ -32,6 +37,23 @@ service_url() { g run services describe "$1" --region "$REGION" --format='value(
 candidate_host() { local url; url="$(service_url "$1")"; [[ -n "$url" ]] && echo "candidate---${url#https://}"; }
 API_HOSTS="$ALLOWED_API_HOSTS"
 if cand="$(candidate_host pglive-api)" && [[ -n "$cand" ]]; then API_HOSTS="$API_HOSTS,$cand"; fi
+# Cloud Run rejects --no-traffic on a service's first deployment; that first revision takes the (still empty)
+# traffic instead. Ingress is internal + LB, so nothing reaches it before the load balancer exists.
+API_TRAFFIC=(); WEB_TRAFFIC=()
+if [[ -n "$(service_url pglive-api)" ]]; then API_TRAFFIC=(--no-traffic --tag candidate); fi
+if [[ -n "$(service_url pglive-web)" ]]; then WEB_TRAFFIC=(--no-traffic --tag candidate); fi
+
+echo "== preflight: every secret needs a version, or the deploy fails half-way"
+missing=0
+for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD DB_MIGRATION_PASSWORD REDIS_URL REDIS_CACHE_URL BFF_ORIGIN_SECRET \
+         RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN \
+         APP_MAINTENANCE_BYPASS_TOKEN SMOKE_USER_CREDENTIALS; do
+  if [[ -z "$(g secrets versions list "$s" --filter=state=ENABLED --limit 1 --format='value(name)' 2>/dev/null)" ]]; then
+    echo "  no enabled version: $s  (gcloud secrets versions add $s --data-file=-; a placeholder is fine for now)" >&2
+    missing=1
+  fi
+done
+(( missing == 0 )) || exit 1
 
 echo "== pglive-api"
 g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-account "$(sa sa-api)" \
@@ -42,7 +64,7 @@ g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-accoun
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/health/,httpGet.port=8080,periodSeconds=30,failureThreshold=3 \
   --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=app_user@ALLOWED_HOSTS=$API_HOSTS@CSRF_TRUSTED_ORIGINS=$SITE_URL@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa sa-api)@IAP_AUDIENCE=${IAP_AUDIENCE:-}@SECURE_HSTS_SECONDS=0" \
-  "$API_SECRETS" --no-traffic --tag candidate
+  "$API_SECRETS" "${API_TRAFFIC[@]}"
 
 echo "== pglive-web"
 g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-account "$(sa sa-web)" \
@@ -51,7 +73,7 @@ g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-accoun
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
   --set-env-vars "^@^INTERNAL_API_URL=https://api.pglive.in@SITE_URL=$SITE_URL@COMPANY_NAME=${COMPANY_NAME:?}@COMPANY_ADDRESS=${COMPANY_ADDRESS:?}@APP_STATUS=${APP_STATUS:-comingSoon}@PLAY_STORE_URL=${PLAY_STORE_URL:-}@SIGNUP_ENABLED=${SIGNUP_ENABLED:-false}@CSP_MODE=${CSP_MODE:-report-only}@CSP_REPORT_URI=${CSP_REPORT_URI:-}" \
-  "$(secrets BFF_ORIGIN_SECRET)" --no-traffic --tag candidate
+  "$(secrets BFF_ORIGIN_SECRET)" "${WEB_TRAFFIC[@]}"
 
 job() { # name service-account db-user secrets-flag django-command-and-args [nosql]
   local name="$1" account="$2" db_user="$3" secret_flag="$4" args="$5" nosql="${6:-}"

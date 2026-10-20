@@ -33,10 +33,16 @@ sa() { echo "sa-$1@$PROJECT.iam.gserviceaccount.com"; }   # sa api -> sa-api@...
 Get the code at the commit you are releasing, so the images are reproducible:
 
 ```bash
-git clone https://github.com/<owner>/<repo>.git pglive && cd pglive
-git checkout <commit-sha>            # e.g. a71441d… ; write the SHA down, it is your image tag
+git clone https://github.com/bunny737/PG-MANAGEMENT-WEB.git pglive && cd pglive
+# Private repo: at the prompt, username = your GitHub user, password = a fine-grained token limited to this
+# repository with Contents: read-only (delete it afterwards). Never put the token in the URL.
+git checkout feature/gcp-deployment  # the branch must be pushed first; a fresh clone only has what GitHub has
+git checkout <commit-sha>            # write the SHA down, it is your image tag
 export SHA=$(git rev-parse --short=12 HEAD)
 ```
+
+Don't `git pull` in this checkout until the release is fully deployed: `$SHA` and the images must stay on the
+same commit. If a later fix is needed only in an `infra/` file you are about to run, apply it to that file.
 
 ## 1. Project, billing, budget, APIs  (Console)
 
@@ -70,6 +76,15 @@ gcloud compute firewall-rules create pglive-allow-redis --network pglive --allow
 Cloud Run reaches Redis over *Direct VPC egress* from this subnet; nothing else may reach port 6379 and SSH is
 IAP-only (no public SSH).
 
+New projects also get a `default` network whose firewall allows SSH (22) and RDP (3389) from the whole internet.
+Nothing in this setup uses it; delete it so a VM created there by mistake isn't exposed:
+
+```bash
+for r in default-allow-icmp default-allow-internal default-allow-rdp default-allow-ssh; do
+  gcloud compute firewall-rules delete $r --quiet; done
+gcloud compute networks delete default --quiet
+```
+
 ## 3. Artifact Registry and the two images
 
 ```bash
@@ -97,14 +112,41 @@ docker push $AR/pglive-web:$SHA
 Leave the Firebase/Maps values empty for now if those aren't created yet (section 14) and rebuild later — the
 site works without them, push notifications and the map picker do not.
 
+**If `docker push` fails with `connection refused`** (it did for the API image from Cloud Shell on the first run,
+while the web image pushed fine), build in Cloud Build instead; it pushes from inside Google's network. New
+projects run builds as the Compute Engine default account, which needs these roles first. A `PERMISSION_DENIED`
+straight after enabling the API is propagation: wait two minutes and resubmit.
+
+```bash
+gcloud services enable cloudbuild.googleapis.com
+PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+for r in roles/artifactregistry.writer roles/logging.logWriter roles/storage.objectViewer; do
+  gcloud projects add-iam-policy-binding $PROJECT --member "serviceAccount:$PN-compute@developer.gserviceaccount.com" \
+    --role $r --condition=None >/dev/null
+done
+cat > /tmp/cb-api.yaml <<EOF
+steps:
+- name: gcr.io/cloud-builders/docker
+  args: ['build','-f','Dockerfile.prod','-t','$AR/pglive-api:$SHA','.']
+images: ['$AR/pglive-api:$SHA']
+options:
+  logging: CLOUD_LOGGING_ONLY
+EOF
+gcloud builds submit backend --config /tmp/cb-api.yaml
+```
+
+Check both images are there before going on: `gcloud artifacts docker images list $AR --format='value(package,tags)'`.
+
 ## 4. Service accounts and roles  (Console: IAM → Service accounts)
 
 One account per job, so a leaked credential can do only that job:
 
 ```bash
+# IAM allows only a few creations per minute per project (429 RESOURCE_EXHAUSTED); the pause avoids it.
 for n in api web worker migrate bootstrap scheduler export export-verify smoke; do
-  gcloud iam service-accounts create sa-$n --display-name "PGLive $n"
+  gcloud iam service-accounts create sa-$n --display-name "PGLive $n"; sleep 10
 done
+gcloud iam service-accounts list --format='value(email)' | grep -c '^sa-'     # must print 9 before going on
 
 bind() { gcloud projects add-iam-policy-binding $PROJECT --member "serviceAccount:$(sa $1)" --role "$2" --condition=None >/dev/null; }
 for n in api worker migrate bootstrap; do bind $n roles/cloudsql.client; done
@@ -159,9 +201,20 @@ put BFF_ORIGIN_SECRET        "$(openssl rand -hex 32)"
 put APP_MAINTENANCE_BYPASS_TOKEN "$(openssl rand -hex 24)"
 ```
 
-Values you supply yourself: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` (use **test**
-keys until live activation is complete; live keys never touch a test-mode DB, see section 14), `EMAIL_HOST_PASSWORD`
-(your SMTP provider), `SENTRY_DSN` (or a single space if you have none), `SMOKE_USER_CREDENTIALS` (later, section 12).
+Values you supply yourself: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` (live keys only —
+test keys and test-mode Plan IDs must never reach the production DB), `EMAIL_HOST_PASSWORD` (your SMTP provider),
+`SENTRY_DSN` (or a single space if you have none), `SMOKE_USER_CREDENTIALS` (later, section 12).
+
+**Every secret needs at least one version** or Cloud Run refuses to deploy anything that references it. Until you
+have the real values, store a placeholder and add the real one as a new version later (then redeploy, section 17):
+
+```bash
+for s in RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD; do put $s placeholder; done
+put SENTRY_DSN " "
+put SMOKE_USER_CREDENTIALS placeholder
+```
+
+With placeholders, payments and email simply don't work, and every Razorpay webhook is rejected (bad signature).
 Settings refuse to boot in prod with the development `SECRET_KEY`, so don't leave a placeholder there.
 
 Who may read what — nothing gets project-wide Secret Accessor:
@@ -310,6 +363,9 @@ API_SECRETS="SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY
 ```
 
 The `^@^` prefix tells gcloud to separate env vars with `@`, because `ALLOWED_HOSTS` values contain commas.
+These shell variables are lost when Cloud Shell restarts; re-paste this block (and section 0) after a restart.
+`jobs create` fails if the job already exists — to change one, use `gcloud run jobs update` with the same flags.
+SMTP settings are added later (section 14), not here.
 
 **9.1 Jobs first** (they need no traffic and are what you use to migrate):
 
@@ -558,8 +614,20 @@ and deployment.md §8. An export you have never restored is not a backup.
   (section 3) and rebuild/redeploy `pglive-web`. The backend uses the service account (no key file).
 - **Google Maps**: new key restricted to HTTP referrer `https://www.pglive.in/*`, Maps JavaScript API only, with a
   quota cap; also a build arg for the web image.
-- **Email**: SPF, DKIM, DMARC at GoDaddy; `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `DEFAULT_FROM_EMAIL`
-  as env vars on the API and VM (`--update-env-vars`, plus a line in the VM's `.env` via `deploy.sh`).
+- **Email**: SPF, DKIM, DMARC at GoDaddy. Email is sent by both the API (account emails) and the worker
+  (notifications), so both need the SMTP settings; the password is the `EMAIL_HOST_PASSWORD` secret (new version).
+  ```bash
+  gcloud run services update pglive-api --region $REGION \
+    --update-env-vars "EMAIL_HOST=smtp.example.com,EMAIL_PORT=587,EMAIL_HOST_USER=…,DEFAULT_FROM_EMAIL=PGLive <no-reply@pglive.in>"
+  for j in pglive-generate-invoices pglive-check-grace-periods; do
+    gcloud run jobs update $j --region $REGION --update-env-vars "EMAIL_HOST=smtp.example.com,EMAIL_PORT=587,EMAIL_HOST_USER=…,DEFAULT_FROM_EMAIL=PGLive <no-reply@pglive.in>"
+  done
+  # The worker VM reads them from instance metadata at each deploy.sh run:
+  gcloud compute instances add-metadata pglive-worker --zone $ZONE \
+    --metadata "email-host=smtp.example.com,email-port=587,email-host-user=…,default-from-email=PGLive <no-reply@pglive.in>"
+  gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo /opt/pglive/deploy.sh $SHA"
+  ```
+  Leave out any setting you don't need rather than setting it empty (an empty `EMAIL_PORT` stops Django booting).
 
 ## 15. Admin access through IAP (required before launch)
 

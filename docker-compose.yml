@@ -94,6 +94,9 @@ services:
       # feature-text normaliser against the backend's own fixture, so the two
       # can never silently disagree (see that test's comment).
       - ./backend/apps/properties/tests/fixtures:/backend/apps/properties/tests/fixtures:ro
+      # Same idea for the BFF origin signature: src/lib/server/__tests__/originSignature.test.ts
+      # asserts the vectors Django's apps/core/test_net.py asserts (docs/deployment.md, WP7).
+      - ./backend/apps/core/tests_fixtures:/backend/apps/core/tests_fixtures:ro
     environment:
       # Server-side only: the BFF proxy (frontend/src/app/api) and the marketing site's fetches call Django
       # from inside this container, where localhost is not Django. The browser only ever talks to this app.

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { GET, POST } from "../[...path]/route";
 import { POST as loginPost } from "../auth/login/route";
 import { POST as logoutPost } from "../auth/logout/route";
+import { signOrigin } from "@/lib/server/originSignature";
 
 const ORIGIN = "http://app.test";
 
@@ -42,13 +43,15 @@ describe("BFF proxy", () => {
     vi.unstubAllGlobals();
   });
 
-  test("attaches the bearer token from the cookie and forwards path, slash, query and client IP", async () => {
+  test("attaches the bearer token from the cookie and forwards path, slash, query and a signed client IP", async () => {
+    process.env.BFF_ORIGIN_SECRET = "test-secret";
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { results: [] }));
     const res = await GET(
       request("/api/v1/residents/?status=active", {
         headers: {
           cookie: "pg_access=tok-1; pg_refresh=ref-1; other=secret",
-          "x-forwarded-for": "203.0.113.9",
+          "x-pglive-client-ip": "203.0.113.9", // written by the load balancer
+          "x-forwarded-for": "198.51.100.66", // client-controlled: never forwarded
           "accept-language": "te",
         },
       }),
@@ -61,9 +64,28 @@ describe("BFF proxy", () => {
     expect(url).toBe("http://django.test/api/v1/residents/?status=active");
     const sent = init.headers as Headers;
     expect(sent.get("authorization")).toBe("Bearer tok-1");
-    expect(sent.get("x-forwarded-for")).toBe("203.0.113.9");
+    expect(sent.get("x-forwarded-for")).toBeNull();
+    expect(sent.get("x-pglive-origin-ip")).toBe("203.0.113.9");
+    const ts = sent.get("x-pglive-origin-ts")!;
+    expect(sent.get("x-pglive-origin-sig")).toBe(
+      signOrigin("test-secret", "203.0.113.9", ts, "GET", "/api/v1/residents/", "status=active")
+    );
     expect(sent.get("accept-language")).toBe("te");
     expect(sent.get("cookie")).toBeNull(); // cookies never reach Django
+    delete process.env.BFF_ORIGIN_SECRET;
+  });
+
+  test("sends no origin signature without a secret or a load-balancer client IP", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, {}));
+    await GET(request("/api/v1/residents/", { headers: { "x-pglive-client-ip": "203.0.113.9" } }), params("v1/residents/"));
+    process.env.BFF_ORIGIN_SECRET = "test-secret";
+    await GET(request("/api/v1/residents/", { headers: { "x-forwarded-for": "203.0.113.9" } }), params("v1/residents/"));
+    delete process.env.BFF_ORIGIN_SECRET;
+    for (const [, init] of fetchMock.mock.calls) {
+      const sent = init.headers as Headers;
+      expect(sent.get("x-pglive-origin-sig")).toBeNull();
+      expect(sent.get("x-forwarded-for")).toBeNull();
+    }
   });
 
   test("refreshes an expired access token server-side and replays the request body once", async () => {
@@ -266,6 +288,7 @@ describe("auth route handlers", () => {
   });
 
   test("login stores the token pair in httpOnly cookies and returns only the profile", async () => {
+    process.env.BFF_ORIGIN_SECRET = "test-secret";
     const access = jwt(900);
     const refresh = jwt(7 * 86400);
     fetchMock
@@ -275,10 +298,11 @@ describe("auth route handlers", () => {
     const res = await loginPost(
       request("/api/auth/login", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+        headers: { "content-type": "application/json", "x-pglive-client-ip": "203.0.113.9" },
         body: JSON.stringify({ email: "o@example.com", password: "pw" }),
       })
     );
+    delete process.env.BFF_ORIGIN_SECRET;
 
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -290,8 +314,15 @@ describe("auth route handlers", () => {
     expect(set).toContain(`pg_refresh=${refresh}`);
     expect(set).toContain("pg_session=1");
     expect((set.match(/HttpOnly/gi) ?? []).length).toBe(3);
-    // Login throttling and audit need the client IP, not the Next server's.
-    expect((fetchMock.mock.calls[0][1].headers as Headers).get("x-forwarded-for")).toBe("203.0.113.9");
+    // Login throttling and audit need the client IP, not the Next server's — signed, for both calls.
+    for (const [url, init] of fetchMock.mock.calls.slice(0, 2)) {
+      const sent = init.headers as Headers;
+      const { pathname } = new URL(url as string);
+      expect(sent.get("x-pglive-origin-ip")).toBe("203.0.113.9");
+      expect(sent.get("x-pglive-origin-sig")).toBe(
+        signOrigin("test-secret", "203.0.113.9", sent.get("x-pglive-origin-ts")!, init.method ?? "GET", pathname, "")
+      );
+    }
   });
 
   test("bad credentials pass Django's status and body through and set no cookies", async () => {

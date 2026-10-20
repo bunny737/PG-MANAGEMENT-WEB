@@ -49,7 +49,7 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
   const send = (access: string | null) =>
     fetch(target, {
       method: request.method,
-      headers: upstreamHeaders(request, access),
+      headers: upstreamHeaders(request, access, { method: request.method, url: target }),
       body,
       redirect: "manual",
       cache: "no-store",

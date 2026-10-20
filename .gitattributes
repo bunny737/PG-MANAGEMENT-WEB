@@ -1,0 +1,8 @@
+# Anything executed by Linux (containers, CI, the worker VM) must keep LF even on a Windows checkout
+# with core.autocrlf=true; a CRLF in a shebang line or a heredoc breaks the script.
+*.sh      text eol=lf
+*.sql     text eol=lf
+Dockerfile* text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.conf    text eol=lf

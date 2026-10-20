@@ -53,3 +53,4 @@ CELERY_TASK_EAGER_PROPAGATES = True
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     FIREBASE_CREDENTIALS_PATH = ''
     FIREBASE_CREDENTIALS_JSON = ''
+    FIREBASE_USE_ADC = False

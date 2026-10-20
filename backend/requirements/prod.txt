@@ -1,3 +1,5 @@
 -r base.txt
 gunicorn==22.*
 sentry-sdk[django]==2.*
+# Serves Django admin static files straight from the gunicorn container.
+whitenoise==6.*

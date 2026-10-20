@@ -18,6 +18,7 @@ from apps.core.authentication import BLOCKED_TENANT_STATUSES
 from apps.core.models import PlatformConfig
 from apps.core.modules import validate_levels_payload
 from apps.core.roles import Role, STAFF_ROLES, permissions_for_user
+from apps.core.tasks import enqueue
 from apps.subscriptions.models import Subscription
 
 from . import otp as otp_service
@@ -121,7 +122,7 @@ class SignupSerializer(serializers.Serializer):
         # Module 14: dispatched after commit so the Celery worker (which may
         # run before this transaction's row is visible otherwise) always
         # finds the User it's looking for.
-        transaction.on_commit(lambda: send_welcome_email_task.delay(str(user.id)))
+        transaction.on_commit(lambda: enqueue(send_welcome_email_task, str(user.id)))
         return user
 
 

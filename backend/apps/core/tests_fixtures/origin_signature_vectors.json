@@ -1,0 +1,112 @@
+{
+  "_comment": "Shared BFF origin-signature vectors (docs/deployment.md, WP7). Asserted by backend apps/core/test_net.py AND frontend src/lib/server/__tests__/originSignature.test.ts so the two implementations cannot drift. Regenerate both sides together.",
+  "secret": "test-origin-secret-v1",
+  "signatures": [
+    {
+      "name": "simple GET",
+      "ip": "203.0.113.9",
+      "ts": "1760000000",
+      "method": "GET",
+      "path": "/api/v1/residents/",
+      "query": "",
+      "canonical": "v1\n203.0.113.9\n1760000000\nGET\n/api/v1/residents/\n",
+      "signature": "0abf5de2c9d24e76d4b164f98bedbed8ff26fb8c7a9494ed1a8e4815fbe4d7d0"
+    },
+    {
+      "name": "lowercase method is upper-cased",
+      "ip": "203.0.113.9",
+      "ts": "1760000000",
+      "method": "post",
+      "path": "/api/v1/auth/login/",
+      "query": "",
+      "canonical": "v1\n203.0.113.9\n1760000000\nPOST\n/api/v1/auth/login/\n",
+      "signature": "e984fc139b4184c4acc58446554fe3054d26f05b82ceda21687faf5daf1ebe61"
+    },
+    {
+      "name": "no trailing slash",
+      "ip": "203.0.113.9",
+      "ts": "1760000000",
+      "method": "GET",
+      "path": "/api/v1/residents",
+      "query": "",
+      "canonical": "v1\n203.0.113.9\n1760000000\nGET\n/api/v1/residents\n",
+      "signature": "90ca4cc431c1fa51e2bd5f48f0da89638d05fb6398ac099fefb76e48c9f24e3c"
+    },
+    {
+      "name": "query kept raw and unsorted",
+      "ip": "198.51.100.7",
+      "ts": "1760000123",
+      "method": "GET",
+      "path": "/api/v1/invoices/",
+      "query": "status=due&property=a&property=b&empty=",
+      "canonical": "v1\n198.51.100.7\n1760000123\nGET\n/api/v1/invoices/\nstatus=due&property=a&property=b&empty=",
+      "signature": "012acdd677d0c1e955e6286b4728d6a1475e590caa12d296b3c829f14f6d7415"
+    },
+    {
+      "name": "percent-encoded slash stays encoded",
+      "ip": "198.51.100.7",
+      "ts": "1760000123",
+      "method": "GET",
+      "path": "/api/v1/files/a%2Fb/",
+      "query": "",
+      "canonical": "v1\n198.51.100.7\n1760000123\nGET\n/api/v1/files/a%2Fb/\n",
+      "signature": "a62d425198784e1bfae5c110d46c6b11ea1bbd7f42c37c2f93757c331ff9514e"
+    },
+    {
+      "name": "encoded space and plus",
+      "ip": "198.51.100.7",
+      "ts": "1760000123",
+      "method": "GET",
+      "path": "/api/v1/search/",
+      "query": "q=a%20b+c",
+      "canonical": "v1\n198.51.100.7\n1760000123\nGET\n/api/v1/search/\nq=a%20b+c",
+      "signature": "fca4db043a64dc2ff8af0a4ddafe163d49e5b2a129e403e48882fed338dedd89"
+    },
+    {
+      "name": "UTF-8 Telugu path segment",
+      "ip": "198.51.100.7",
+      "ts": "1760000123",
+      "method": "GET",
+      "path": "/api/v1/tags/%E0%B0%A4%E0%B1%86%E0%B0%B2%E0%B1%81%E0%B0%97%E0%B1%81/",
+      "query": "",
+      "canonical": "v1\n198.51.100.7\n1760000123\nGET\n/api/v1/tags/%E0%B0%A4%E0%B1%86%E0%B0%B2%E0%B1%81%E0%B0%97%E0%B1%81/\n",
+      "signature": "dba63e8d5a6b6d4581447c4242b817b4fe985ff316da6302812187f2068d55e1"
+    },
+    {
+      "name": "IPv6 compressed lowercase",
+      "ip": "2001:db8::1",
+      "ts": "1760000456",
+      "method": "PATCH",
+      "path": "/api/v1/residents/42/",
+      "query": "",
+      "canonical": "v1\n2001:db8::1\n1760000456\nPATCH\n/api/v1/residents/42/\n",
+      "signature": "ad8cd562fefd7569f1e2b2f127585b49ef10313e46c67cad11ec4c82accb2b7e"
+    }
+  ],
+  "normalize_ip": [
+    {
+      "input": "203.0.113.9",
+      "expected": "203.0.113.9"
+    },
+    {
+      "input": " 203.0.113.9 ",
+      "expected": "203.0.113.9"
+    },
+    {
+      "input": "2001:DB8:0:0:0:0:0:1",
+      "expected": "2001:db8::1"
+    },
+    {
+      "input": "::ffff:203.0.113.9",
+      "expected": "203.0.113.9"
+    },
+    {
+      "input": "not-an-ip",
+      "expected": null
+    },
+    {
+      "input": "",
+      "expected": null
+    }
+  ]
+}

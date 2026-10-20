@@ -40,6 +40,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Resolves the trusted client IP and rejects unverifiable BFF origin
+    # headers (apps.core.net). Before anything that logs or throttles by IP.
+    'apps.core.middleware.ClientIPMiddleware',
+    # Verifies IAP's signed header on /admin/ when IAP_REQUIRED (prod).
+    'apps.core.iap.IAPAdminMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -145,6 +150,20 @@ REST_FRAMEWORK = {
     },
 }
 
+# Trusted client IP (apps.core.net). X-Forwarded-For is never trusted. In prod
+# the load balancer sets CLIENT_IP_HEADER on every backend (overwriting any
+# client value); blank (dev) means REMOTE_ADDR. BFF_ORIGIN_SECRET verifies the
+# browser IP the Next BFF forwards; blank means such headers are rejected.
+CLIENT_IP_HEADER = env('CLIENT_IP_HEADER', default='')
+BFF_ORIGIN_SECRET = env('BFF_ORIGIN_SECRET', default='')
+# Readiness reports 503 unless the WSGI server exposes RAW_URI (prod).
+REQUIRE_RAW_URI = False
+
+# Django admin behind Identity-Aware Proxy (apps.core.iap). prod.py turns
+# IAP_REQUIRED on; IAP_AUDIENCE is the admin load-balancer backend's audience.
+IAP_REQUIRED = False
+IAP_AUDIENCE = env('IAP_AUDIENCE', default='')
+
 # Mobile app version policy / device registration (apps.devices).
 # off = never block; log = only log what WOULD be blocked; on = return
 # 426 (outdated build) / 503 (maintenance) to requests carrying X-App-* headers.
@@ -239,9 +258,14 @@ EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@localhost')
 
 from datetime import timedelta
+# A dedicated JWT key, so rotating SECRET_KEY (with SECRET_KEY_FALLBACKS) does
+# not log everyone out. Rotating JWT_SIGNING_KEY itself does force re-login —
+# accepted and scheduled (docs/deployment.md). prod.py requires it to be set.
+JWT_SIGNING_KEY = env('JWT_SIGNING_KEY', default='')
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'SIGNING_KEY': JWT_SIGNING_KEY or SECRET_KEY,
 }
 
 # Celery
@@ -266,6 +290,10 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 # simpler option for platforms without file mounts.
 FIREBASE_CREDENTIALS_PATH = env('FIREBASE_CREDENTIALS_PATH', default='')
 FIREBASE_CREDENTIALS_JSON = env('FIREBASE_CREDENTIALS_JSON', default='')
+# On GCP, prefer no key at all: FIREBASE_USE_ADC=True uses the runtime service
+# account (Application Default Credentials), which needs FCM send permission.
+FIREBASE_USE_ADC = env.bool('FIREBASE_USE_ADC', default=False)
+FIREBASE_PROJECT_ID = env('FIREBASE_PROJECT_ID', default='')
 
 # Razorpay (locked stack — platform subscription billing ONLY, never resident
 # rent). Blank in dev/test falls back to a local stub client (see
@@ -287,23 +315,34 @@ STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Expense receipts/bills (Module 20). Upload size is a technical limit, not a
-# plan limit. Attachments are only ever handed out as signed URLs with this
-# lifetime (S3); local dev storage serves plain media URLs.
-EXPENSE_ATTACHMENT_MAX_BYTES = env.int('EXPENSE_ATTACHMENT_MAX_BYTES', default=5 * 1024 * 1024)
-EXPENSE_ATTACHMENT_URL_TTL_SECONDS = env.int('EXPENSE_ATTACHMENT_URL_TTL_SECONDS', default=300)
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
 
-# AWS S3 (locked stack — resident ID document uploads etc.). Falls back to
-# local filesystem storage when no bucket is configured (dev/test), so this
-# environment doesn't need real AWS credentials; fill in .env to activate.
-AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')
-if AWS_STORAGE_BUCKET_NAME:
-    AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
-    AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
-    AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='ap-south-1')
-    AWS_DEFAULT_ACL = None
-    AWS_S3_FILE_OVERWRITE = False
-    STORAGES = {
-        'default': {'BACKEND': 'storages.backends.s3.S3Storage'},
-        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
-    }
+# Uploaded files are private and only handed out as signed URLs with this
+# lifetime (apps.core.storage). Local dev storage serves plain media URLs.
+MEDIA_URL_TTL_SECONDS = env.int('MEDIA_URL_TTL_SECONDS', default=300)
+
+# Expense receipts/bills (Module 20). Upload size is a technical limit, not a
+# plan limit.
+EXPENSE_ATTACHMENT_MAX_BYTES = env.int('EXPENSE_ATTACHMENT_MAX_BYTES', default=5 * 1024 * 1024)
+EXPENSE_ATTACHMENT_URL_TTL_SECONDS = env.int('EXPENSE_ATTACHMENT_URL_TTL_SECONDS', default=MEDIA_URL_TTL_SECONDS)
+
+# Google Cloud Storage (owner decision 2026-10-20: replaces AWS S3; see
+# docs/deployment.md). Falls back to local filesystem storage when no bucket
+# is configured (dev/test). On Cloud Run there is no key file: credentials
+# come from the runtime service account and URLs are signed through the IAM
+# SignBlob API (GS_IAM_SIGN_BLOB), which needs that SA to hold
+# iam.serviceAccountTokenCreator on itself.
+GS_BUCKET_NAME = env('GS_BUCKET_NAME', default='')
+if GS_BUCKET_NAME:
+    GS_PROJECT_ID = env('GS_PROJECT_ID', default=None)
+    GS_DEFAULT_ACL = None  # uniform bucket-level access; never per-object public ACLs
+    GS_QUERYSTRING_AUTH = True
+    GS_FILE_OVERWRITE = False
+    GS_EXPIRATION = timedelta(seconds=MEDIA_URL_TTL_SECONDS)
+    GS_IAM_SIGN_BLOB = env.bool('GS_IAM_SIGN_BLOB', default=True)
+    GS_SA_EMAIL = env('GS_SA_EMAIL', default=None)
+    STORAGES['default'] = {'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage'}

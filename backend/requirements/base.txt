@@ -9,8 +9,12 @@ redis==5.2.*
 django-celery-beat==2.9.*
 firebase-admin==6.*
 Pillow==11.*
-boto3==1.35.*
-django-storages[s3]==1.14.*
+# Uploaded files on Google Cloud Storage (owner decision 2026-10-20, replaces
+# S3). >=1.14.4 for GS_IAM_SIGN_BLOB (keyless URL signing on Cloud Run).
+django-storages[google]>=1.14.4,<1.15
+# Direct pin, not relied on transitively via firebase-admin: verifies the IAP
+# JWT on /admin/ (apps.core.iap) and backs keyless GCS signing.
+google-auth==2.*
 razorpay==1.4.*
 # razorpay 1.4.x still imports the legacy pkg_resources API, which setuptools
 # >=81 dropped entirely (import breaks without this pin) — see Module 13 spec.

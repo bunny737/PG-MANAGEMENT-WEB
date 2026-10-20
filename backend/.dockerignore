@@ -8,3 +8,8 @@ __pycache__
 htmlcov
 .git
 .gitignore
+.env
+.env.*
+media
+staticfiles
+*.mo

@@ -15,6 +15,7 @@ from apps.core.exceptions import Conflict
 from apps.core.idempotency import idempotency_key
 from apps.core.periods import local_today, month_end, month_key, month_start, parse_month
 from apps.core.permissions import require_permission_by_method
+from apps.core.storage import signed_url
 from apps.properties.services import scoped_property_ids, visible_property_ids
 
 from . import services
@@ -139,10 +140,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             if not expense.attachment:
                 raise NotFound(_('This expense has no attachment.'))
             ttl = settings.EXPENSE_ATTACHMENT_URL_TTL_SECONDS
-            try:
-                url = expense.attachment.storage.url(expense.attachment.name, expire=ttl)
-            except TypeError:  # local filesystem storage (dev): plain media URL
-                url = expense.attachment.url
+            url = signed_url(expense.attachment, ttl_seconds=ttl)
             return Response({
                 'url': request.build_absolute_uri(url),
                 'content_type': expense.attachment_content_type,

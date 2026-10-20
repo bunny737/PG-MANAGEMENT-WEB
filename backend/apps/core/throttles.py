@@ -2,12 +2,30 @@ import hashlib
 from collections.abc import Mapping
 
 from rest_framework.exceptions import ParseError
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import ScopedRateThrottle as DRFScopedRateThrottle
+from rest_framework.throttling import SimpleRateThrottle as DRFSimpleRateThrottle
+
+from .net import get_client_ip
+
+
+class TrustedIdentMixin:
+    """DRF's default ident trusts X-Forwarded-For (client-controlled behind
+    Google's load balancer). Key anonymous callers on the trusted IP instead."""
+
+    def get_ident(self, request):
+        return get_client_ip(request) or ''
+
+
+class SimpleRateThrottle(TrustedIdentMixin, DRFSimpleRateThrottle):
+    pass
+
+
+class ScopedRateThrottle(TrustedIdentMixin, DRFScopedRateThrottle):
+    pass
 
 
 class ContactIPThrottle(SimpleRateThrottle):
-    """Best-effort per-client-IP limit on the public contact form. Behind a proxy
-    the IP is only as trustworthy as the proxy setup (see module 01 spec, [OPEN])."""
+    """Per-client-IP limit on the public contact form (trusted IP, apps.core.net)."""
 
     scope = 'contact_message'
 

@@ -79,13 +79,19 @@ class ContactMessageAPITests(APITestCase):
         self.assertEqual(message.ip_address, '203.0.113.9')
         self.assertEqual(message.language, 'te')
 
-    def test_uses_the_forwarded_client_address(self):
-        self.post(HTTP_X_FORWARDED_FOR='198.51.100.7, 10.0.0.1')
+    def test_ignores_the_client_controlled_forwarded_for_header(self):
+        self.post(REMOTE_ADDR='10.0.0.1', HTTP_X_FORWARDED_FOR='198.51.100.7')
+        self.assertEqual(ContactMessage.objects.get().ip_address, '10.0.0.1')
+
+    @override_settings(CLIENT_IP_HEADER='X-PGLive-Client-IP')
+    def test_uses_the_load_balancer_client_address(self):
+        self.post(REMOTE_ADDR='10.0.0.1', HTTP_X_PGLIVE_CLIENT_IP='198.51.100.7')
         self.assertEqual(ContactMessage.objects.get().ip_address, '198.51.100.7')
 
-    def test_a_garbage_forwarded_address_never_reaches_the_ip_column(self):
-        self.assertEqual(self.post(HTTP_X_FORWARDED_FOR='not-an-ip').status_code, 201)
-        self.assertIsNone(ContactMessage.objects.get().ip_address)
+    @override_settings(CLIENT_IP_HEADER='X-PGLive-Client-IP')
+    def test_a_garbage_edge_address_never_reaches_the_ip_column(self):
+        self.assertEqual(self.post(REMOTE_ADDR='10.0.0.1', HTTP_X_PGLIVE_CLIENT_IP='not-an-ip').status_code, 201)
+        self.assertEqual(ContactMessage.objects.get().ip_address, '10.0.0.1')
 
     # --- validation ------------------------------------------------------------
 

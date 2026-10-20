@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from apps.audit import log as audit_log
 from apps.core.idempotency import idempotency_key, key_reused
 from apps.core.periods import local_today, month_end, month_start, parse_date, parse_month
+from apps.core.tasks import enqueue
 from apps.core.permissions import require_permission, require_permission_by_method
 from apps.notifications.tasks import send_invoice_issued_email_task
 from apps.properties.services import scoped_property_ids, visible_property_ids
@@ -184,7 +185,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         # Module 14: "Invoice generated notification to resident" (PRD).
         # Issuing (not the draft) is when it becomes a real obligation the
         # resident should be told about — see the Module 14 spec's Decisions.
-        transaction.on_commit(lambda: send_invoice_issued_email_task.delay(str(invoice.id)))
+        transaction.on_commit(lambda: enqueue(send_invoice_issued_email_task, str(invoice.id)))
         return Response(InvoiceSerializer(invoice).data)
 
     @action(detail=False, methods=['get'])

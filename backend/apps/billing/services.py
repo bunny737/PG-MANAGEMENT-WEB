@@ -15,6 +15,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.core.idempotency import key_reused
+from apps.core.tasks import enqueue
 from apps.notifications.tasks import send_payment_receipt_email_task
 from apps.residents.models import Admission
 
@@ -266,7 +267,7 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
         request=request,
     )
     # Module 14: "Payment receipt to resident" (PRD).
-    transaction.on_commit(lambda: send_payment_receipt_email_task.delay(str(payment.id)))
+    transaction.on_commit(lambda: enqueue(send_payment_receipt_email_task, str(payment.id)))
     return payment
 
 

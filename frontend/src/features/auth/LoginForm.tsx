@@ -16,6 +16,7 @@ import {
   UserCheck,
   ChevronRight,
 } from "lucide-react";
+import { BrandMark } from "@/components/shared/BrandMark";
 import { firstAllowedRoute } from "@/lib/permissions";
 import { ApiError, clearSession, login, loginPhone } from "@/lib/api";
 
@@ -273,9 +274,7 @@ export function LoginForm() {
       <div className="mx-auto w-full max-w-md space-y-8">
         {/* Mobile Brand Indicator */}
         <div className="flex items-center gap-2.5 lg:hidden">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-accent text-white">
-            <Building2 className="size-5" />
-          </span>
+          <BrandMark />
           <span className="text-lg font-bold text-ink">{tCommon("appName")}</span>
         </div>
 

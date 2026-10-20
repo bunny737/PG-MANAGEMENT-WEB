@@ -2,9 +2,10 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Building2, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "./BrandMark";
 import { clearSession } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { SIDEBAR_NAV_ITEMS } from "./NavItems";
@@ -25,9 +26,7 @@ export function SideNav() {
   return (
     <nav className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border bg-surface-card md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-linear-to-br from-accent to-accent-hover text-ink-inverse shadow-sm">
-          <Building2 className="size-5" aria-hidden />
-        </span>
+        <BrandMark />
         <span className="font-display text-lg font-extrabold text-ink">
           {t("appName")}
         </span>

@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#fbf8ff", // --color-m3-surface (the phone UI background)
+    background_color: "#ffffff", // matches the white icon artwork on the splash screen
     theme_color: "#fbf8ff", // --color-m3-surface; same value as the viewport themeColor
     categories: ["business", "productivity"],
     icons: [

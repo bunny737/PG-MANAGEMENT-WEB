@@ -373,7 +373,7 @@ F8. **The frontend never invents transitions.** Action buttons (vacate, abscond,
   Proxy responses are `Cache-Control: no-store`; redirects and file downloads are never cached.
 - **CI gate**: Lighthouse PWA installability + performance budget on the resident portal
   and owner dashboard. **Not built yet.**
-- **Built 2026-10-19:** manifest + generated icons (`scripts/generate-pwa-icons.mjs`), Serwist worker
+- **Built 2026-10-19:** manifest + icons (PGLive brand files in `public/icons/`), Serwist worker
   (`app/sw.ts`), manual registration with an "update available" toast, `OfflineBanner`, translated
   `/~offline` fallback, iOS safe-area/`dvh`/16px-input fixes, share-sheet downloads in an installed
   iOS app. Offline reads are served by `NetworkFirst` (3 s timeout) for `/api/v1/*` GETs (5-minute max

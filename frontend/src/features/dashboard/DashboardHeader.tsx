@@ -1,7 +1,8 @@
 "use client";
 
-import { Bell, Building2, LogOut } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { BrandMark } from "@/components/shared/BrandMark";
 import { clearSession } from "@/lib/api";
 
 /** Phone dashboard top bar (the desktop dashboard has DesktopHeader): logo tile, app name, bell, sign out. */
@@ -12,9 +13,7 @@ export function DashboardHeader() {
   return (
     <header className="sticky top-[var(--banner-h,0px)] z-20 flex min-h-16 items-center justify-between bg-m3-surface px-4 pt-[env(safe-area-inset-top)]">
       <div className="flex items-center gap-3">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-m3-primary text-m3-on-primary">
-          <Building2 className="size-6" aria-hidden />
-        </span>
+        <BrandMark className="size-12" />
         <span className="text-[22px] leading-7 font-medium text-m3-on-surface">{tCommon("brandName")}</span>
       </div>
       <div className="flex items-center">

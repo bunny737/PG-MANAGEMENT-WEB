@@ -1,5 +1,6 @@
-import { Building2, TrendingUp, Users, ShieldCheck } from "lucide-react";
+import { TrendingUp, Users, ShieldCheck } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { BrandMark } from "@/components/shared/BrandMark";
 
 export function VisualPromo() {
   const t = useTranslations("auth");
@@ -14,9 +15,7 @@ export function VisualPromo() {
 
       {/* Brand logo & title */}
       <div className="relative z-10 flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-500/30 text-white">
-          <Building2 className="size-6" />
-        </span>
+        <BrandMark className="size-10" />
         <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">{tCommon("appName")}</span>
       </div>
 

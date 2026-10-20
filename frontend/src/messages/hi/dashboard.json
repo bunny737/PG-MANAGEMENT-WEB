@@ -42,7 +42,8 @@
     "addResident": "निवासी जोड़ें",
     "generateInvoices": "चालान उत्पन्न करें",
     "vacancies": "रिक्तियां",
-    "billing": "बिलिंग"
+    "billing": "बिलिंग",
+    "expenses": "खर्चे"
   },
   "activity": {
     "title": "आज की गतिविधि",

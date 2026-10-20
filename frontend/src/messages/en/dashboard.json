@@ -42,7 +42,8 @@
     "addResident": "Add Resident",
     "generateInvoices": "Generate Invoices",
     "vacancies": "Vacancies",
-    "billing": "Billing"
+    "billing": "Billing",
+    "expenses": "Expenses"
   },
   "activity": {
     "title": "Today's Activity",

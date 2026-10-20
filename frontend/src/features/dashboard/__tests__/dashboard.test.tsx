@@ -53,6 +53,7 @@ const ALL_PERMISSIONS = [
   "manage_admissions",
   "view_resident_profile",
   "view_property_features",
+  "view_expenses",
 ];
 
 const SUMMARY = {
@@ -80,13 +81,25 @@ beforeEach(() => {
 describe("QuickActions (phone)", () => {
   const links = () => screen.queryAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]);
 
-  test("an owner gets Add Resident, Vacancies and Billing", () => {
+  test("an owner gets Add Resident, Vacancies, Billing and Expenses, in that order", () => {
     renderWithIntl(<QuickActions />);
     expect(links()).toEqual([
       ["Add Resident", "/admissions"],
       ["Vacancies", "/vacancies"],
       ["Billing", "/billing"],
+      ["Expenses", "/expenses"],
     ]);
+  });
+
+  test("Expenses needs view_expenses (finance access alone does not show it), and Billing is independent of it", () => {
+    state.permissions = new Set(["view_finance"]);
+    const { unmount } = renderWithIntl(<QuickActions />);
+    expect(links().map(([label]) => label)).toEqual(["Billing"]);
+    unmount();
+
+    state.permissions = new Set(["view_expenses"]);
+    renderWithIntl(<QuickActions />);
+    expect(links().map(([label]) => label)).toEqual(["Expenses"]);
   });
 
   test("each shortcut is gated by the permission of the screen it opens", () => {

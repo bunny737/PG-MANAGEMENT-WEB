@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BedDouble, Plus, Receipt } from "lucide-react";
+import { BedDouble, Plus, Receipt, Wallet } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { LAYOUT_ENTRY_PERMISSIONS } from "@/lib/layoutAccess";
@@ -37,6 +37,12 @@ export function QuickActions() {
         <Link href="/billing" className={OUTLINED}>
           <Receipt className="size-5" aria-hidden />
           {t("billing")}
+        </Link>
+      </PermissionGate>
+      <PermissionGate permission="view_expenses">
+        <Link href="/expenses" className={OUTLINED}>
+          <Wallet className="size-5" aria-hidden />
+          {t("expenses")}
         </Link>
       </PermissionGate>
     </div>

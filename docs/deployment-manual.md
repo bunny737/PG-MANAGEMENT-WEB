@@ -1,0 +1,686 @@
+# Manual deployment — step by step (GCP, pglive.in)
+
+Written for one operator creating everything by hand. It builds exactly the architecture in
+[deployment.md](deployment.md) §1; the `infra/*.sh` scripts are the same steps automated, so read them when you
+want the exact flags. Run the commands in **Google Cloud Shell** (gcloud, docker, psql and git are installed and
+already signed in) or on your own machine with the gcloud CLI. Console clicks are given where they are easier
+than the CLI.
+
+> Status: none of this has been run against a real project yet. Expect small corrections on the first pass and
+> record them in this file. Do the whole thing once in `pglive-staging` first (see the last section for what
+> differs), then repeat for `pglive-prod`.
+
+## 0. Variables used throughout
+
+Paste once per Cloud Shell session. Change `ENV` to `staging` for the rehearsal.
+
+```bash
+export ENV=prod
+export PROJECT=pglive-$ENV
+export REGION=asia-south1
+export ZONE=asia-south1-a
+export SQL_INSTANCE=pglive-pg-$ENV
+export SQL_CONN=$PROJECT:$REGION:$SQL_INSTANCE
+export DB_NAME=pg_platform
+export MEDIA_BUCKET=$PROJECT-media
+export BACKUP_BUCKET=$PROJECT-backups
+export AR=$REGION-docker.pkg.dev/$PROJECT/pglive
+export WORKER_IP=10.20.0.10
+gcloud config set project $PROJECT
+sa() { echo "sa-$1@$PROJECT.iam.gserviceaccount.com"; }   # sa api -> sa-api@...
+```
+
+Get the code at the commit you are releasing, so the images are reproducible:
+
+```bash
+git clone https://github.com/<owner>/<repo>.git pglive && cd pglive
+git checkout <commit-sha>            # e.g. a71441d… ; write the SHA down, it is your image tag
+export SHA=$(git rev-parse --short=12 HEAD)
+```
+
+## 1. Project, billing, budget, APIs  (Console)
+
+1. Console → *Create project* → ID `pglive-prod` (and later `pglive-staging`). Billing → link the billing account.
+2. Billing → *Budgets & alerts* → create a budget with alerts at 50 %, 80 %, 100 %, emailing you.
+3. Enable the APIs:
+
+```bash
+gcloud services enable run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
+  artifactregistry.googleapis.com compute.googleapis.com certificatemanager.googleapis.com \
+  cloudscheduler.googleapis.com workflows.googleapis.com workflowexecutions.googleapis.com \
+  iamcredentials.googleapis.com iap.googleapis.com logging.googleapis.com monitoring.googleapis.com \
+  fcm.googleapis.com cloudresourcemanager.googleapis.com
+```
+
+4. IAM & Admin → *Organization policies* (only if you have an organisation): enforce
+   `iam.disableServiceAccountKeyCreation`. No service-account keys are ever created in this setup.
+
+## 2. Network and firewall  (Console: VPC network)
+
+```bash
+gcloud compute networks create pglive --subnet-mode=custom
+gcloud compute networks subnets create pglive-$REGION --network pglive --region $REGION \
+  --range 10.20.0.0/24 --enable-private-ip-google-access
+gcloud compute firewall-rules create pglive-allow-iap-ssh --network pglive --allow tcp:22 \
+  --source-ranges 35.235.240.0/20 --target-tags worker
+gcloud compute firewall-rules create pglive-allow-redis --network pglive --allow tcp:6379 \
+  --source-ranges 10.20.0.0/24 --target-tags worker
+```
+
+Cloud Run reaches Redis over *Direct VPC egress* from this subnet; nothing else may reach port 6379 and SSH is
+IAP-only (no public SSH).
+
+## 3. Artifact Registry and the two images
+
+```bash
+gcloud artifacts repositories create pglive --repository-format docker --location $REGION
+gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+docker build -f backend/Dockerfile.prod -t $AR/pglive-api:$SHA backend
+docker push $AR/pglive-api:$SHA
+```
+
+The web image bakes `NEXT_PUBLIC_*` and company details in at build time, so build it with this environment's
+values (`SITE_URL=https://www.pglive.in`; `APP_STATUS=comingSoon` and `SIGNUP_ENABLED=false` until launch day):
+
+```bash
+docker build -f frontend/Dockerfile.prod -t $AR/pglive-web:$SHA \
+  --build-arg SITE_URL=https://www.pglive.in --build-arg SITE_ENV=production \
+  --build-arg COMPANY_NAME="…" --build-arg COMPANY_ADDRESS="…" \
+  --build-arg APP_STATUS=comingSoon --build-arg SIGNUP_ENABLED=false --build-arg PLAY_STORE_URL= \
+  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=… --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=… \
+  --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=… --build-arg NEXT_PUBLIC_FIREBASE_APP_ID=… \
+  --build-arg NEXT_PUBLIC_FIREBASE_VAPID_KEY=… --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=… frontend
+docker push $AR/pglive-web:$SHA
+```
+
+Leave the Firebase/Maps values empty for now if those aren't created yet (section 14) and rebuild later — the
+site works without them, push notifications and the map picker do not.
+
+## 4. Service accounts and roles  (Console: IAM → Service accounts)
+
+One account per job, so a leaked credential can do only that job:
+
+```bash
+for n in api web worker migrate bootstrap scheduler export export-verify smoke; do
+  gcloud iam service-accounts create sa-$n --display-name "PGLive $n"
+done
+
+bind() { gcloud projects add-iam-policy-binding $PROJECT --member "serviceAccount:$(sa $1)" --role "$2" --condition=None >/dev/null; }
+for n in api worker migrate bootstrap; do bind $n roles/cloudsql.client; done
+for n in api web worker migrate bootstrap scheduler export export-verify smoke; do bind $n roles/logging.logWriter; done
+bind worker roles/artifactregistry.reader
+bind api roles/firebasecloudmessaging.admin; bind worker roles/firebasecloudmessaging.admin
+
+# Keyless GCS URL signing: api and worker sign as themselves.
+for n in api worker; do
+  gcloud iam service-accounts add-iam-policy-binding $(sa $n) \
+    --member "serviceAccount:$(sa $n)" --role roles/iam.serviceAccountTokenCreator
+done
+```
+
+Custom roles for the weekly export (only needed once you set up section 13):
+
+```bash
+gcloud iam roles create pglive.sqlExporter --project $PROJECT --title "PGLive SQL exporter" \
+  --permissions cloudsql.instances.export,cloudsql.instances.get
+gcloud iam roles create pglive.backupObjectReader --project $PROJECT --title "PGLive backup object reader" \
+  --permissions storage.objects.get,storage.objects.list,storage.objects.update
+bind export projects/$PROJECT/roles/pglive.sqlExporter
+```
+
+You, as the human, deploy with your own Owner login, so no deployer account is needed. (`sa-deployer` exists only
+for the GitHub workflows, if you adopt them later.)
+
+## 5. Secrets  (Console: Security → Secret Manager)
+
+Create each secret with the *Secret Manager* page or CLI, region-restricted to `asia-south1`. Generate values
+with `openssl` and keep them out of shell history files and chat. Hex passwords avoid quoting trouble in URLs
+and psql.
+
+```bash
+mk() { gcloud secrets create $1 --replication-policy=user-managed --locations $REGION; }
+put() { printf '%s' "$2" | gcloud secrets versions add $1 --data-file=-; }
+
+for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD DB_MIGRATION_PASSWORD REDIS_PASSWORD REDIS_URL \
+  REDIS_CACHE_URL BFF_ORIGIN_SECRET RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET \
+  EMAIL_HOST_PASSWORD SENTRY_DSN APP_MAINTENANCE_BYPASS_TOKEN SMOKE_USER_CREDENTIALS; do mk $s; done
+
+put DJANGO_SECRET_KEY        "$(openssl rand -base64 64 | tr -d '\n')"
+put JWT_SIGNING_KEY          "$(openssl rand -base64 64 | tr -d '\n')"   # different from the line above
+put DB_PASSWORD              "$(openssl rand -hex 24)"
+put DB_MIGRATION_PASSWORD    "$(openssl rand -hex 24)"
+RP=$(openssl rand -hex 24)
+put REDIS_PASSWORD           "$RP"
+put REDIS_URL                "redis://:$RP@$WORKER_IP:6379/0"
+put REDIS_CACHE_URL          "redis://:$RP@$WORKER_IP:6379/1"
+unset RP
+put BFF_ORIGIN_SECRET        "$(openssl rand -hex 32)"
+put APP_MAINTENANCE_BYPASS_TOKEN "$(openssl rand -hex 24)"
+```
+
+Values you supply yourself: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` (use **test**
+keys until live activation is complete; live keys never touch a test-mode DB, see section 14), `EMAIL_HOST_PASSWORD`
+(your SMTP provider), `SENTRY_DSN` (or a single space if you have none), `SMOKE_USER_CREDENTIALS` (later, section 12).
+Settings refuse to boot in prod with the development `SECRET_KEY`, so don't leave a placeholder there.
+
+Who may read what — nothing gets project-wide Secret Accessor:
+
+```bash
+allow() { gcloud secrets add-iam-policy-binding $1 --member "serviceAccount:$(sa $2)" --role roles/secretmanager.secretAccessor >/dev/null; }
+for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD REDIS_PASSWORD REDIS_URL REDIS_CACHE_URL BFF_ORIGIN_SECRET \
+  RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN APP_MAINTENANCE_BYPASS_TOKEN; do
+  allow $s api; allow $s worker
+done
+allow DB_MIGRATION_PASSWORD migrate; allow DJANGO_SECRET_KEY migrate; allow JWT_SIGNING_KEY migrate
+allow DB_PASSWORD bootstrap; allow DJANGO_SECRET_KEY bootstrap; allow JWT_SIGNING_KEY bootstrap
+allow BFF_ORIGIN_SECRET web
+allow SMOKE_USER_CREDENTIALS smoke
+```
+
+## 6. Cloud SQL (PostgreSQL 16) and the two database roles  (Console: SQL)
+
+Create the instance (console: *Create instance → PostgreSQL → Enterprise*, or):
+
+```bash
+gcloud sql instances create $SQL_INSTANCE --database-version POSTGRES_16 --edition ENTERPRISE \
+  --tier db-custom-1-3840 --region $REGION --availability-type ZONAL \
+  --storage-type SSD --storage-size 20GB --storage-auto-increase \
+  --ssl-mode ENCRYPTED_ONLY \
+  --backup --backup-start-time 20:30 --retained-backups-count 14 \
+  --enable-point-in-time-recovery --retained-transaction-log-days 7 \
+  --maintenance-window-day SUN --maintenance-window-hour 20 --maintenance-release-channel production \
+  --database-flags log_min_duration_statement=500,log_connections=on,log_disconnections=on \
+  --deletion-protection
+```
+
+- Public IP stays on, but **add no authorized networks, ever**: the app uses the `/cloudsql` socket and you use
+  the Auth Proxy.
+- `db-g1-small` (~$30/mo instead of ~$60) is an option during the trial; it then has no SLA. If you pick it, set
+  `--max-instances 1` for the API in section 9 (connection budget in deployment.md).
+- Times are UTC: `20:30` = 02:00 IST backups, Sunday `20` = Monday 01:30 IST window; adjust to taste.
+
+Create the roles **with the SQL file, not `gcloud sql users create`** — that command makes the user a member of
+`cloudsqlsuperuser`, which `check_db_roles` rejects.
+
+```bash
+gcloud sql users set-password postgres --instance $SQL_INSTANCE --password "$(openssl rand -hex 24)"   # note it for this step only
+# Cloud Shell: install the proxy once
+curl -so cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+chmod +x cloud-sql-proxy
+./cloud-sql-proxy $SQL_CONN --port 5432 &        # keep running; Ctrl-C / kill %1 when done
+
+export PGPASSWORD='<the postgres password you just set>'
+psql "host=127.0.0.1 port=5432 user=postgres dbname=postgres" \
+  -v migration_password="$(gcloud secrets versions access latest --secret DB_MIGRATION_PASSWORD)" \
+  -v app_password="$(gcloud secrets versions access latest --secret DB_PASSWORD)" \
+  -v db_name=$DB_NAME -f infra/sql/roles-1-roles.sql
+```
+
+(Pin whichever proxy version is current; check the release page.) `postgres` is only used here; the app never
+gets its password. Grants (`roles-2-grants.sql`) are applied *after* the first migration, in section 10.
+
+## 7. Buckets  (Console: Cloud Storage)
+
+```bash
+mkb() { gcloud storage buckets create gs://$1 --location $2 --default-storage-class STANDARD \
+          --uniform-bucket-level-access --public-access-prevention; }
+mkb $MEDIA_BUCKET  $REGION
+gcloud storage buckets update gs://$MEDIA_BUCKET --versioning --soft-delete-duration=14d
+cat > media-lifecycle.json <<'JSON'
+{"rule":[{"action":{"type":"Delete"},"condition":{"daysSinceNoncurrentTime":60,"isLive":false}}]}
+JSON
+gcloud storage buckets update gs://$MEDIA_BUCKET --lifecycle-file=media-lifecycle.json
+for n in api worker; do
+  gcloud storage buckets add-iam-policy-binding gs://$MEDIA_BUCKET \
+    --member "serviceAccount:$(sa $n)" --role roles/storage.objectUser
+done
+
+mkb $BACKUP_BUCKET asia-south2
+gcloud storage buckets update gs://$BACKUP_BUCKET --retention-period=90d      # do NOT lock it yet
+cat > backup-lifecycle.json <<'JSON'
+{"rule":[{"action":{"type":"Delete"},"condition":{"age":91,"matchesPrefix":["sql/"]}}]}
+JSON
+gcloud storage buckets update gs://$BACKUP_BUCKET --lifecycle-file=backup-lifecycle.json
+SQL_AGENT=$(gcloud sql instances describe $SQL_INSTANCE --format='value(serviceAccountEmailAddress)')
+gcloud storage buckets add-iam-policy-binding gs://$BACKUP_BUCKET \
+  --member "serviceAccount:$SQL_AGENT" --role roles/storage.objectCreator
+for n in export export-verify; do
+  gcloud storage buckets add-iam-policy-binding gs://$BACKUP_BUCKET \
+    --member "serviceAccount:$(sa $n)" --role projects/$PROJECT/roles/pglive.backupObjectReader
+done
+```
+
+Locking a retention policy is irreversible and puts a lien on the project: leave it unlocked until export →
+restore → deletion has been proven.
+
+## 8. The worker VM (Celery worker, one beat, Redis)  (Console: Compute Engine)
+
+```bash
+gcloud compute instances create pglive-worker --zone $ZONE --machine-type e2-small \
+  --network pglive --subnet pglive-$REGION --private-network-ip $WORKER_IP --tags worker \
+  --service-account $(sa worker) --scopes cloud-platform \
+  --image-family debian-12 --image-project debian-cloud --boot-disk-size 20GB --boot-disk-type pd-balanced \
+  --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
+  --metadata region=$REGION,sql-connection=$SQL_CONN,enable-oslogin=TRUE
+```
+
+It keeps an ephemeral external IP only so it can reach Razorpay, FCM and SMTP without Cloud NAT; no firewall rule
+admits traffic from the internet. Log in over IAP and install Docker from Docker's own repository (Debian 12's
+own repositories have no Compose v2 plugin):
+
+```bash
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap
+# --- on the VM ---
+sudo apt-get update && sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo mkdir -p /opt/pglive && sudo chown $USER /opt/pglive
+curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+exit
+```
+
+Copy the two files and run the first deploy (it reads the secrets with the VM's own identity and writes a
+root-only `.env`):
+
+```bash
+gcloud compute scp infra/worker/docker-compose.yml infra/worker/deploy.sh pglive-worker:/opt/pglive/ \
+  --zone $ZONE --tunnel-through-iap
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap \
+  --command "chmod +x /opt/pglive/deploy.sh && sudo /opt/pglive/deploy.sh $SHA"
+```
+
+This will fail until the images exist (section 3) **and** the database is migrated (section 10); run it after
+section 10 if the worker complains about missing tables. Check: `sudo docker compose -f /opt/pglive/docker-compose.yml ps`
+shows redis, cloud-sql-proxy, worker, beat — **exactly one `beat`**.
+
+## 9. Cloud Run services and jobs  (Console: Cloud Run)
+
+Common values:
+
+```bash
+VPC="--network pglive --subnet pglive-$REGION --vpc-egress private-ranges-only"
+SQLENV="DB_HOST=/cloudsql/$SQL_CONN@DB_NAME=$DB_NAME"
+COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod@GS_BUCKET_NAME=$MEDIA_BUCKET@GS_PROJECT_ID=$PROJECT@FIREBASE_USE_ADC=True@FIREBASE_PROJECT_ID=$PROJECT@FRONTEND_BASE_URL=https://www.pglive.in"
+API_SECRETS="SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest,BFF_ORIGIN_SECRET=BFF_ORIGIN_SECRET:latest,RAZORPAY_KEY_ID=RAZORPAY_KEY_ID:latest,RAZORPAY_KEY_SECRET=RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=RAZORPAY_WEBHOOK_SECRET:latest,EMAIL_HOST_PASSWORD=EMAIL_HOST_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,APP_MAINTENANCE_BYPASS_TOKEN=APP_MAINTENANCE_BYPASS_TOKEN:latest,REDIS_URL=REDIS_URL:latest,REDIS_CACHE_URL=REDIS_CACHE_URL:latest"
+```
+
+The `^@^` prefix tells gcloud to separate env vars with `@`, because `ALLOWED_HOSTS` values contain commas.
+
+**9.1 Jobs first** (they need no traffic and are what you use to migrate):
+
+```bash
+job() {   # name service-account db-user secrets command-args [--clear-cloudsql-instances]
+  gcloud run jobs create "$1" --region $REGION --image $AR/pglive-api:$SHA --service-account "$(sa $2)" \
+    --max-retries 0 --task-timeout 1800 --set-cloudsql-instances $SQL_CONN $VPC \
+    --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=$3@ALLOWED_HOSTS=api.pglive.in" \
+    --set-secrets "$4" --command python --args "$5"
+}
+job pglive-migrate           migrate    migration_user "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_MIGRATION_PASSWORD:latest" "manage.py,migrate,--noinput"
+job pglive-check-roles       api        app_user       "$API_SECRETS" "manage.py,check_db_roles,--role,app_user"
+job pglive-generate-invoices api        app_user       "$API_SECRETS" "manage.py,generate_subscription_invoices"
+job pglive-check-grace-periods api      app_user       "$API_SECRETS" "manage.py,check_subscription_grace_periods"
+```
+
+(`migrate` uses `migration_user`'s password under the name `DB_PASSWORD` — the code only knows `DB_PASSWORD`.)
+
+**9.2 API service.** The first deploy of a new service cannot use `--no-traffic`, so on this first pass it takes
+traffic; that is safe because ingress is internal and nothing routes to it yet.
+
+```bash
+gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --service-account $(sa api) \
+  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --cpu 1 --memory 1Gi --concurrency 8 --timeout 60 --min-instances 1 --max-instances 3 \
+  --set-cloudsql-instances $SQL_CONN $VPC \
+  --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
+  --liveness-probe httpGet.path=/health/,httpGet.port=8080,periodSeconds=30,failureThreshold=3 \
+  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in@CSRF_TRUSTED_ORIGINS=https://www.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa api)@SECURE_HSTS_SECONDS=0" \
+  --set-secrets "$API_SECRETS"
+```
+
+`--allow-unauthenticated` here only means Cloud Run's own IAM check is off; the app does its own authentication
+and the ingress setting keeps it off the open internet.
+
+**9.3 Web service:**
+
+```bash
+gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --service-account $(sa web) \
+  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --cpu 1 --memory 512Mi --concurrency 40 --timeout 60 --min-instances 0 --max-instances 5 \
+  --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
+  --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
+  --set-env-vars "^@^INTERNAL_API_URL=https://api.pglive.in@SITE_URL=https://www.pglive.in@COMPANY_NAME=…@COMPANY_ADDRESS=…@APP_STATUS=comingSoon@SIGNUP_ENABLED=false@CSP_MODE=report-only" \
+  --set-secrets "BFF_ORIGIN_SECRET=BFF_ORIGIN_SECRET:latest"
+```
+
+`COMPANY_*` must equal what you built into the image. Keep `CSP_MODE=report-only` until a clean week of reports.
+
+Cost note: `--min-instances 1` on the API is what keeps logins fast; `0` saves ~$10/mo at the price of cold
+starts.
+
+## 10. First database migration, grants, bootstrap
+
+1. **Migrate** (as the owner role), then apply the grants once, then verify:
+
+```bash
+gcloud run jobs execute pglive-migrate --region $REGION --wait
+# proxy still running from section 6:
+psql "host=127.0.0.1 port=5432 user=postgres dbname=$DB_NAME" -f infra/sql/roles-2-grants.sql
+gcloud run jobs execute pglive-check-roles --region $REGION --wait      # must succeed
+```
+
+From now on every migration auto-grants to `app_user` (`ALTER DEFAULT PRIVILEGES FOR ROLE migration_user`);
+`pglive-check-roles` after each migrate proves it. If `check-roles` fails, read its log (Cloud Run → Jobs → Logs):
+it names the exact table or ownership problem.
+
+2. **Create the first Super Admin** with a temporary job and a temporary secret:
+
+```bash
+printf '%s' "$(openssl rand -base64 18)" | gcloud secrets create INITIAL_SUPERADMIN_PASSWORD \
+  --replication-policy=user-managed --locations $REGION --data-file=-
+gcloud secrets add-iam-policy-binding INITIAL_SUPERADMIN_PASSWORD \
+  --member "serviceAccount:$(sa bootstrap)" --role roles/secretmanager.secretAccessor
+gcloud run jobs create pglive-bootstrap --region $REGION --image $AR/pglive-api:$SHA \
+  --service-account $(sa bootstrap) --max-retries 0 --task-timeout 600 --set-cloudsql-instances $SQL_CONN $VPC \
+  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in@INITIAL_SUPERADMIN_EMAIL=you@yourdomain.com" \
+  --set-secrets "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest,INITIAL_SUPERADMIN_PASSWORD=INITIAL_SUPERADMIN_PASSWORD:latest" \
+  --command python --args "manage.py,bootstrap_platform"
+gcloud run jobs execute pglive-bootstrap --region $REGION --wait
+gcloud secrets versions access latest --secret INITIAL_SUPERADMIN_PASSWORD      # read it once to log in
+```
+
+The order matters — do not skip ahead: **log in as that Super Admin → change the password in the app → (if
+done) verify `/admin/` through IAP → only then**:
+
+```bash
+gcloud run jobs delete pglive-bootstrap --region $REGION
+gcloud secrets delete INITIAL_SUPERADMIN_PASSWORD
+```
+
+3. In Django admin or the Super Admin screens set the platform config (trial days, grace days, property/resident
+   caps — invariant 10) and create the live **Plans**. Never run `seed_data` here.
+
+4. Start (or restart) the worker: re-run the `deploy.sh $SHA` command from section 8.
+
+## 11. Load balancer and certificates  (Console: Network services → Load balancing)
+
+This is the fiddliest part. The console's wizard (*Create load balancer → Application LB (HTTP/S) → Public
+facing, Global external*) does the same as the commands below; the commands are given because the two custom
+headers (`X-PGLive-Client-IP`, HSTS) are easy to miss in the wizard.
+
+```bash
+gcloud compute addresses create pglive-ip --global --ip-version IPV4
+IP=$(gcloud compute addresses describe pglive-ip --global --format='value(address)'); echo $IP
+
+gcloud compute network-endpoint-groups create pglive-web-neg --region $REGION \
+  --network-endpoint-type=serverless --cloud-run-service=pglive-web
+gcloud compute network-endpoint-groups create pglive-api-neg --region $REGION \
+  --network-endpoint-type=serverless --cloud-run-service=pglive-api
+
+H=(--custom-request-header='X-PGLive-Client-IP:{client_ip_address}'
+   --custom-response-header='Strict-Transport-Security:max-age=300')
+for be in pglive-web-backend:pglive-web-neg pglive-api-backend:pglive-api-neg pglive-api-admin-backend:pglive-api-neg; do
+  gcloud compute backend-services create ${be%%:*} --global --load-balancing-scheme=EXTERNAL_MANAGED
+  gcloud compute backend-services update ${be%%:*} --global "${H[@]}"
+  gcloud compute backend-services add-backend ${be%%:*} --global \
+    --network-endpoint-group=${be##*:} --network-endpoint-group-region=$REGION
+done
+```
+
+All three backend services must carry **both** headers: the first makes Django trust the client IP the LB saw
+(it overwrites anything a client sends), the second is the only place HSTS is set (starts at 5 minutes).
+
+```bash
+gcloud compute url-maps create pglive-lb --default-service pglive-web-backend
+gcloud compute url-maps add-path-matcher pglive-lb --path-matcher-name api \
+  --default-service pglive-api-backend --new-hosts api.pglive.in \
+  --path-rules "/admin/*=pglive-api-admin-backend"
+# pglive.in and www.pglive.in fall through to the web backend; Next.js 301s the bare domain to www.
+```
+
+Certificates are validated by DNS, so they can be issued **before** any traffic moves:
+
+```bash
+for d in pglive.in www.pglive.in api.pglive.in; do
+  gcloud certificate-manager dns-authorizations create auth-${d//./-} --domain $d
+done
+gcloud certificate-manager certificates create pglive-cert --domains pglive.in,www.pglive.in,api.pglive.in \
+  --dns-authorizations auth-pglive-in,auth-www-pglive-in,auth-api-pglive-in
+gcloud certificate-manager maps create pglive-certmap
+for d in pglive.in www.pglive.in api.pglive.in; do
+  gcloud certificate-manager maps entries create entry-${d//./-} --map pglive-certmap \
+    --certificates pglive-cert --hostname $d
+done
+for d in pglive.in www.pglive.in api.pglive.in; do
+  gcloud certificate-manager dns-authorizations describe auth-${d//./-} \
+    --format='value(dnsResourceRecord.name,dnsResourceRecord.type,dnsResourceRecord.data)'
+done
+```
+
+Add those three CNAME records at GoDaddy now (**DNS → Add record**, type CNAME, name = the part before
+`.pglive.in`, value = the data column; keep any trailing dot GoDaddy accepts). Wait until
+`gcloud certificate-manager certificates describe pglive-cert` shows `ACTIVE` (minutes to an hour).
+
+```bash
+gcloud compute target-https-proxies create pglive-https --url-map pglive-lb --certificate-map pglive-certmap
+gcloud compute forwarding-rules create pglive-https-fr --global --load-balancing-scheme=EXTERNAL_MANAGED \
+  --address pglive-ip --target-https-proxy pglive-https --ports 443
+
+# Port 80 -> 443 redirect
+cat > redirect.yaml <<'YAML'
+name: pglive-http-redirect
+defaultUrlRedirect:
+  redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+  httpsRedirect: true
+YAML
+gcloud compute url-maps import pglive-http-redirect --global --source redirect.yaml --quiet
+gcloud compute target-http-proxies create pglive-http --url-map pglive-http-redirect
+gcloud compute forwarding-rules create pglive-http-fr --global --load-balancing-scheme=EXTERNAL_MANAGED \
+  --address pglive-ip --target-http-proxy pglive-http --ports 80
+```
+
+**Test before moving DNS**, pinning the name to the LB IP so no real user is affected:
+
+```bash
+curl -sI --resolve api.pglive.in:443:$IP https://api.pglive.in/health/            # 200, strict-transport-security
+curl -s  --resolve api.pglive.in:443:$IP https://api.pglive.in/health/ready/      # {"status": "ok", ...}
+curl -sI --resolve www.pglive.in:443:$IP https://www.pglive.in/                   # 200 (needs api for BFF routes → DNS)
+```
+
+The BFF talks to `https://api.pglive.in` through public DNS, so full web behaviour (login) can only be tested
+once the A records exist. That is why the site ships as `APP_STATUS=comingSoon`, `SIGNUP_ENABLED=false`.
+
+**Point DNS** (GoDaddy → DNS; set TTL 300 first):
+
+| Type | Name | Value |
+|---|---|---|
+| A | @ | the `$IP` |
+| A | www | the `$IP` |
+| A | api | the `$IP` |
+| TXT/CNAME | — | SPF / DKIM / DMARC from your email provider |
+
+Then verify: `curl -sI https://pglive.in` (301 → www, one HSTS header), `https://www.pglive.in`,
+`https://api.pglive.in/health/`. Raise HSTS in steps (300 → 86400 → 604800 → 31536000) by updating the
+`Strict-Transport-Security` header on all three backend services and re-checking each hostname each time.
+Add `includeSubDomains` only at the end, when every subdomain is HTTPS-only.
+
+## 12. Scheduler (nightly jobs) and the smoke user
+
+```bash
+S="--location $REGION --time-zone Asia/Kolkata --http-method POST --oauth-service-account-email $(sa scheduler) --oauth-token-scope https://www.googleapis.com/auth/cloud-platform --max-retry-attempts 3 --min-backoff 60s --max-backoff 600s"
+API=https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs
+gcloud scheduler jobs create http pglive-generate-invoices --schedule "0 2 * * *"  --uri $API/pglive-generate-invoices:run $S
+gcloud scheduler jobs create http pglive-check-grace-periods --schedule "30 2 * * *" --uri $API/pglive-check-grace-periods:run $S
+for j in pglive-generate-invoices pglive-check-grace-periods; do
+  gcloud run jobs add-iam-policy-binding $j --region $REGION \
+    --member "serviceAccount:$(sa scheduler)" --role roles/run.invoker
+done
+```
+
+Use **OAuth** (not OIDC) here: these are `googleapis.com` endpoints. Run each once by hand
+(`gcloud run jobs execute … --wait`) and confirm it succeeds before trusting the schedule. The periodic
+tasks stored in the database run on the worker VM's single beat, not here.
+
+Smoke test, optional on the very first pass (you are checking by hand): create the `smoke` job and the dedicated
+`smoke@pglive.in` account later, following deployment.md §6, once releases become routine.
+
+## 13. Weekly export (backups outside the project's own backups)
+
+Cloud SQL's automatic backups and PITR cover most failures; the export protects against losing the instance or
+region. Minimum viable manual version — run weekly until the Workflow is deployed:
+
+```bash
+gcloud sql export sql $SQL_INSTANCE gs://$BACKUP_BUCKET/sql/pg_platform-$(date -u +%Y%m%d-%H%M%S)Z.sql.gz \
+  --database=$DB_NAME
+```
+
+Automated version: create the `pglive-export-verify` job (same pattern as section 9.1 with `sa-export-verify`,
+`--clear-cloudsql-instances`, `EXPORT_BUCKET`, command `manage.py verify_latest_export`), then deploy
+`infra/workflows/weekly-export.yaml` as workflow `pglive-weekly-export` running as `sa-export`, grant `sa-export`
+`roles/run.invoker` on the job, grant `sa-scheduler` `roles/workflows.invoker`, and add a scheduler job for
+`Wed 22:30` pointing at the workflow's `…/executions` URL. **Before launch you must restore one export into a
+scratch instance in the separate `pglive-dr-test` project** (never staging) and time it — see `infra/dr/restore-drill.sh`
+and deployment.md §8. An export you have never restored is not a backup.
+
+## 14. Third-party configuration
+
+- **Razorpay** (platform subscriptions only — never resident rent). Dashboard → Webhooks → URL
+  `https://api.pglive.in/api/v1/subscriptions/webhook/`, subscription events, a new secret; put the same secret in
+  `RAZORPAY_WEBHOOK_SECRET`. Create the Plans in the live account through the app/admin so `razorpay_plan_id` is a
+  **live-mode** ID — test-mode IDs must never reach the production DB. Add new secret versions, then redeploy
+  `pglive-api` and the VM so they pick up `:latest`.
+- **Firebase** (FCM only): add Firebase to the project, register a web app for `https://www.pglive.in`, create a
+  VAPID key, restrict the web API key to referrer `https://www.pglive.in/*`; put the values in the web image build
+  (section 3) and rebuild/redeploy `pglive-web`. The backend uses the service account (no key file).
+- **Google Maps**: new key restricted to HTTP referrer `https://www.pglive.in/*`, Maps JavaScript API only, with a
+  quota cap; also a build arg for the web image.
+- **Email**: SPF, DKIM, DMARC at GoDaddy; `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `DEFAULT_FROM_EMAIL`
+  as env vars on the API and VM (`--update-env-vars`, plus a line in the VM's `.env` via `deploy.sh`).
+
+## 15. Admin access through IAP (required before launch)
+
+Django's own admin has no MFA. The control is **IAP + Google 2-Step Verification enforced for the admin group**,
+which the app double-checks (`apps/core/iap.py`). Until this is configured `/admin/` is refused in production, which
+is the safe default.
+
+1. Create a Cloud Identity Free (or Workspace) tenant for `pglive.in`; create group `pglive-admins@pglive.in`;
+   enforce 2-Step Verification (Admin console → Security → Authentication).
+2. Console → Security → Identity-Aware Proxy → configure the OAuth consent screen (Internal).
+3. ```bash
+   gcloud iap web enable --resource-type=backend-services --service=pglive-api-admin-backend
+   gcloud iap web add-iam-policy-binding --resource-type=backend-services --service=pglive-api-admin-backend \
+     --member=group:pglive-admins@pglive.in --role=roles/iap.httpsResourceAccessor
+   gcloud run services add-iam-policy-binding pglive-api --region $REGION \
+     --member=serviceAccount:service-$(gcloud projects describe $PROJECT --format='value(projectNumber)')@gcp-sa-iap.iam.gserviceaccount.com \
+     --role=roles/run.invoker
+   ```
+4. Set the audience on the API: `IAP_AUDIENCE=/projects/<project-number>/global/backendServices/<id of pglive-api-admin-backend>`
+   (`gcloud compute backend-services describe pglive-api-admin-backend --global --format='value(id)'`), via
+   `gcloud run services update pglive-api --region $REGION --update-env-vars IAP_AUDIENCE=…`.
+5. Visit `https://api.pglive.in/admin/` — Google sign-in first, then the Django login.
+
+## 16. Edge protection (Cloud Armor), alerts, and the go-live check
+
+- **Cloud Armor**: create policy `pglive-armor`; rule 900 *allow* `/api/v1/subscriptions/webhook/` (signed
+  payloads trip generic WAF rules); rule 1000 *throttle* 60 requests/min per IP on `/api/auth/*` and
+  `/api/v1/auth/*`; add the SQLi/XSS preconfigured rules in **preview** mode and review logs before enforcing.
+  Attach with `gcloud compute backend-services update <name> --global --security-policy=pglive-armor` to the web
+  and API backends.
+- **Monitoring** (Console: Monitoring → Alerting): uptime checks on `https://www.pglive.in/api/health` and
+  `https://api.pglive.in/health/ready/`; alerts for 5xx rate, p95 latency, Cloud SQL CPU/connections/disk, VM
+  CPU/disk, Cloud Run instances at max, and any failed job; notification channel = your email + phone.
+- **Go-live checklist** (every line must be true): billing account upgraded from trial · budgets on · backups and PITR
+  on, deletion protection on · one export restored in `pglive-dr-test` and timed · `check_db_roles` green ·
+  bootstrap job and password secret deleted · Razorpay live keys + webhook + unsigned webhooks off
+  (`RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS` not set) · HSTS verified on all three hosts · `/admin/` only via IAP ·
+  Aadhaar/PAN upload either legally signed off or switched off · worker VM shows exactly one beat ·
+  `APP_STATUS`/`SIGNUP_ENABLED` flipped (rebuild web) on launch day.
+
+## 17. Releasing a new version by hand
+
+```bash
+git checkout <new-sha>; export SHA=$(git rev-parse --short=12 HEAD)
+# 1. build + push both images (section 3)
+# 2. production only: on-demand backup, wait for SUCCESSFUL
+gcloud sql backups create --instance $SQL_INSTANCE --description "pre-release $SHA"
+gcloud sql backups list --instance $SQL_INSTANCE --limit 1            # status SUCCESSFUL before continuing
+# 3. point the jobs at the new image, migrate, verify roles
+for j in pglive-migrate pglive-check-roles pglive-generate-invoices pglive-check-grace-periods; do
+  gcloud run jobs update $j --region $REGION --image $AR/pglive-api:$SHA
+done
+gcloud run jobs execute pglive-migrate --region $REGION --wait && \
+gcloud run jobs execute pglive-check-roles --region $REGION --wait
+# 4. new revisions without traffic, then look at them via the tag
+gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --no-traffic --tag candidate
+gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --no-traffic --tag candidate
+# 5. send 10 %, watch Logs Explorer for 5xx for ten minutes, then 100 %
+gcloud run services update-traffic pglive-api --region $REGION --to-tags candidate=10
+gcloud run services update-traffic pglive-web --region $REGION --to-tags candidate=10
+gcloud run services update-traffic pglive-api --region $REGION --to-latest
+gcloud run services update-traffic pglive-web --region $REGION --to-latest
+# 6. the worker
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo /opt/pglive/deploy.sh $SHA"
+```
+
+`--set-env-vars`/`--set-secrets` carry over from the previous revision when you only pass `--image`.
+The tagged candidate URL is on internal ingress, so you can't open it from a laptop; that is what the
+`pglive-smoke` job (deployment.md §6) automates. Until it exists, use the 10 % step and watch the logs.
+
+**Rollback** (application): `gcloud run services update-traffic pglive-api --region $REGION --to-revisions
+<previous-revision>=100` (list with `gcloud run revisions list --service pglive-api --region $REGION`); the same
+for `pglive-web`; for the VM, `sudo /opt/pglive/deploy.sh <previous-sha>`. Migrations are expand/contract, so the
+previous code runs against the new schema. Database recovery from a bad migration is deployment.md §8 (PITR clone).
+
+## Deploying production directly (owner decision 2026-10-20: no staging rehearsal)
+
+Staging was meant to catch first-run mistakes in commands nobody has run yet. Without it, production is the
+rehearsal, so make that safe. While there are no users, a mistake costs only time: **delete and recreate anything**
+(Cloud SQL deletion protection can be switched off until launch, the database can be dropped and re-migrated).
+After the first real tenant signs up, that stops being true. So:
+
+1. **Stay invisible until every check below passes.** Ship as `APP_STATUS=comingSoon`, `SIGNUP_ENABLED=false`.
+   Create the certificates, test with `curl --resolve` (section 11), and **do not add the A records** until the
+   go-live list is true. Nobody can find the site before that.
+2. **Budget alert first** (section 1 step 2), before creating any resource. Upgrade the billing account from trial
+   before launch.
+3. **Razorpay: live keys only, no test data in this database.** Never create test-mode Plans here — their
+   `razorpay_plan_id` would sit in the production DB. Without staging, the stale and out-of-order webhook cases are
+   covered by the automated tests (`test_webhook_policy.py`, `test_webhook_ordering.py`, `test_webhook_delivery.py`)
+   and `ci/integration/run.sh`, not by a real-infrastructure run. Verify the end-to-end path with one real
+   minimum-amount subscription, then cancel and refund it, and watch the `razorpay_webhook_events` rows and
+   `subscription.stale_event_ignored` logs. If you want the full conflicting-event rehearsal on real
+   infrastructure later, do it in a throwaway project, not here.
+4. **Rollback drill before launch, on prod while it is empty:** deploy a second revision of `pglive-api`, shift
+   traffic to it, then roll back (section 17). Time it. Do the same for the worker VM with the previous SHA.
+5. **Restore drill is still mandatory before signups open**, and still in a separate `pglive-dr-test` project
+   (never in prod): export, restore, `check_db_roles`, record the duration (`infra/dr/restore-drill.sh`).
+6. **Run each job once by hand** (`gcloud run jobs execute … --wait`) and read its log before trusting a
+   schedule: migrate, check-roles, generate-invoices, check-grace-periods.
+7. **Do not attach Cloud Armor in enforce mode on day one**: preview rules only, webhook rule 900 first.
+8. **Keep a written log** of every command that needed a fix; fold the fixes back into this file and `infra/`.
+
+The table below is only for a future staging project.
+
+## Rehearsal in `pglive-staging`: what differs
+
+| | production | staging |
+|---|---|---|
+| Project / names | `pglive-prod` | `export ENV=staging` → `pglive-staging`, `pglive-pg-staging`, … |
+| Load balancer, Armor, IAP, certs | yes (section 11, 15, 16) | no — skip them |
+| Cloud Run ingress | `internal-and-cloud-load-balancing` | `all`; add the service's `*.run.app` host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, and set the web `INTERNAL_API_URL` to the API's `run.app` URL |
+| Razorpay | live | **test** keys (so test webhooks can arrive); exercise duplicated, out-of-order and `cancelled`-then-`charged` events |
+| Cloud SQL | `db-custom-1-3840`, deletion protection | `db-g1-small`, `--max-instances 1`; stop it when idle (`gcloud sql instances patch … --activation-policy NEVER`) |
+| Weekly export | scheduled | skip |
+
+Do in staging before touching production: the full section 10, one release (section 17), one rollback, one
+export + restore into `pglive-dr-test`, and the webhook cases above.
+
+## Things this guide knows are rough
+
+- Every command is unrun; first-run fixes belong in this file and in `infra/`.
+- The `infra/30-services.sh` script passes `--no-traffic` on a service's first deploy, which Cloud Run rejects; by
+  hand you avoid it (section 9.2); the script still needs a "first deploy" branch.
+- The web egress goes to the API through the public LB, so login only works once DNS points at it.

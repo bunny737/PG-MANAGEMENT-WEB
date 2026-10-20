@@ -19,7 +19,7 @@ g compute instances create "$WORKER_VM" --zone "${REGION}-a" --machine-type "${W
 set -euo pipefail
 [ -f /opt/pglive/.provisioned ] && exit 0
 apt-get update
-apt-get install -y ca-certificates curl gnupg docker.io docker-compose-plugin
+install -m 0755 -d /etc/apt/keyrings; curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc; echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list; apt-get update; apt-get install -y ca-certificates curl docker-ce docker-ce-cli containerd.io docker-compose-plugin
 curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && bash add-google-cloud-ops-agent-repo.sh --also-install
 systemctl enable --now docker
 mkdir -p /opt/pglive && touch /opt/pglive/.provisioned

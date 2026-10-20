@@ -64,7 +64,7 @@ LOGGING['handlers']['app_console']['formatter'] = 'json'
 LOGGING['loggers']['apps'] = {'handlers': ['app_console'], 'level': 'INFO', 'propagate': False}
 LOGGING['root'] = {'handlers': ['app_console'], 'level': 'WARNING'}
 
-SENTRY_DSN = env('SENTRY_DSN', default='')
+SENTRY_DSN = env('SENTRY_DSN', default='').strip()
 if SENTRY_DSN:
     import sentry_sdk
 

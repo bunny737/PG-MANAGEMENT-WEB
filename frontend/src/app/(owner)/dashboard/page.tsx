@@ -20,6 +20,7 @@ import {
 import { RequirePermission } from "@/components/shared/RequirePermission";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { useActiveProperty } from "@/components/shared/PropertyFilter";
+import { formatDate } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 import { currentMonthKey } from "@/lib/period";
 import { queryKeys } from "@/lib/queryKeys";
@@ -118,7 +119,7 @@ function DashboardContent() {
         id,
         tone,
         text,
-        timestamp: date.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+        timestamp: formatDate(date),
       }));
   }, [admissionsQuery.data, residentsQuery.data, paymentsQuery.data, complaintsQuery.data, t]);
 

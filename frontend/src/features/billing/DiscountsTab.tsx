@@ -9,6 +9,7 @@ import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
+import { formatDate } from "@/lib/date";
 import { queryKeys } from "@/lib/queryKeys";
 import { afterDiscountChange } from "@/lib/refresh";
 import { DiscountFormDialog } from "./DiscountFormDialog";
@@ -93,7 +94,7 @@ export function DiscountsTab() {
                   </div>
                   <div className="col-span-2 text-ink-muted">{tReason(discount.reason)}</div>
                   <div className="col-span-2 text-ink-muted">
-                    {discount.valid_from} – {discount.valid_until ?? t("indefinite")}
+                    {formatDate(discount.valid_from)} – {discount.valid_until ? formatDate(discount.valid_until) : t("indefinite")}
                   </div>
                   <div className="col-span-1 flex md:justify-end">
                     {active && (

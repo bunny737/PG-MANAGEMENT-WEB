@@ -29,6 +29,7 @@ import {
   ApiError
 } from "@/lib/api";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { formatDate } from "@/lib/date";
 
 const CATEGORY_MAP: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
   electrical: { icon: Wrench, color: "text-amber-500 bg-amber-50 border-amber-100" },
@@ -419,7 +420,7 @@ export function ComplaintsDashboard() {
                         <span>·</span>
                         <span>{t("list.room")}: {roomName}</span>
                         <span>·</span>
-                        <span>{c.created_at?.split("T")[0]}</span>
+                        <span>{formatDate(c.created_at, "")}</span>
                       </p>
                     </div>
                   </div>
@@ -501,7 +502,7 @@ export function ComplaintsDashboard() {
                 </div>
                 <div>
                   <span className="text-ink-muted">{t("detail.loggedOn")}</span>
-                  <p className="font-mono font-semibold text-ink mt-0.5">{selectedComplaint.created_at?.split("T")[0]}</p>
+                  <p className="font-mono font-semibold text-ink mt-0.5">{formatDate(selectedComplaint.created_at, "")}</p>
                 </div>
                 <div>
                   <span className="text-ink-muted">{t("modal.category")}</span>
@@ -559,7 +560,7 @@ export function ComplaintsDashboard() {
                               ? `${cmt.author_details.first_name} ${cmt.author_details.last_name}`
                               : t("detail.staffFallback")}
                           </span>
-                          <span className="font-mono">{cmt.created_at?.split("T")[0]}</span>
+                          <span className="font-mono">{formatDate(cmt.created_at, "")}</span>
                         </div>
                         <p className="text-ink leading-relaxed">{cmt.body}</p>
                       </div>

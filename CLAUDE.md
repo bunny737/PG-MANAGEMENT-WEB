@@ -10,7 +10,11 @@ residents, billing, and operations through a single system.
 - Backend: Python 3.12, Django 5.x, Django REST Framework
 - DB: PostgreSQL 16 with Row-Level Security (RLS)
 - Queue: Celery + Redis
-- Storage: AWS S3
+- Storage: Google Cloud Storage (owner decision 2026-10-20, superseding AWS S3) —
+  private bucket, files only ever served as short-lived IAM-signed URLs.
+- Hosting: Google Cloud Platform, asia-south1 (owner decision 2026-10-20): Cloud Run
+  (Next.js + Django), Cloud SQL PostgreSQL 16, one Compute Engine VM for Celery
+  worker/beat/Redis. Runbook and rationale: docs/deployment.md.
 - Payments: Razorpay — platform subscription billing ONLY, never resident rent
 - Web Frontend: Next.js 15 (App Router) + TypeScript + Tailwind CSS, installable PWA
   Confirmed by owner 2026-07-02. All frontend work follows docs/frontend-plan.md

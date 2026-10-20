@@ -204,11 +204,15 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
 - [OPEN 2026-10-19] **Retention:** `contact_messages` holds personal data (name, email, phone, free text, IP)
   and has no purge job (the devices module has one for installs). Decide a retention period and add a seeded
   periodic task; the privacy policy deliberately promises no number yet.
-- [OPEN 2026-10-19] **Trusted client IP:** `audit.log.client_ip` and DRF's throttle ident trust
-  `X-Forwarded-For`, which is client-controlled, and there is no `NUM_PROXIES`/trusted-proxy policy. The
-  stored IP and the per-IP throttle are best-effort until deployment fixes that; the per-email throttle is the
-  backstop. Also: `prod.py` has no CORS, so the browser form on `https://pglive.in` cannot post until the
-  deployment gate adds the origin.
+- [DECISION 2026-10-20] **Trusted client IP (supersedes the 2026-10-19 [OPEN]).** `X-Forwarded-For` is
+  never trusted. `apps/core/net.py`: the load balancer overwrites `X-PGLive-Client-IP` on every backend
+  (`CLIENT_IP_HEADER`); the Next BFF forwards the browser's address as `X-PGLive-Origin-IP` with an HMAC
+  (`BFF_ORIGIN_SECRET`) over `v1\n{ip}\n{ts}\n{METHOD}\n{raw path}\n{raw query}`, verified against gunicorn's
+  `RAW_URI` (never decoded `PATH_INFO`), 60 s skew, constant-time compare. `ClientIPMiddleware` answers 400
+  `INVALID_ORIGIN_SIGNATURE` to unverifiable origin headers instead of attributing them to the BFF. Used by
+  `audit.log.client_ip` and every throttle (`apps/core/throttles.py`). Shared vectors:
+  `apps/core/tests_fixtures/origin_signature_vectors.json` (asserted by Django and Vitest); real-server check:
+  `ci/integration/run.sh`. No CORS is needed: the browser only talks to the BFF (docs/frontend-plan.md §3.1).
 - [DECISION 2026-07-02] `users`, `tenants`, `otp_codes` are NOT under RLS:
   authentication must look up users before any tenant context exists. User
   queries are app-level scoped instead; every business table from Module 02 on
@@ -338,6 +342,10 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   a failed save rolls back to the last server-confirmed state, `409 ROLE_CHANGED` reloads).
 
 ## Changelog
+- 2026-10-20  GCP deployment readiness: trusted client IP (`apps/core/net.py`, `ClientIPMiddleware`, throttles);
+  dedicated `JWT_SIGNING_KEY` (`SIMPLE_JWT['SIGNING_KEY']`, required in prod); `bootstrap_platform` (initial
+  Super Admin, audited, idempotent); `check_db_roles`; health probes; IAP check on `/admin/`. See
+  docs/deployment.md. Tests: `core/test_net.py`, `core/test_deployment.py`.
 - 2026-06-xx  Created stub.
 - 2026-07-02  Built: tenancy/RLS infra, Tenant/User/OtpCode/PlatformConfig/
   AuditLog models, full auth API, staff management, permission matrix,

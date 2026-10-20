@@ -37,7 +37,7 @@ Table: expenses                                (RLS enforced)
   date            date                         not in the future
   payment_mode    upi | cash | bank_transfer | card | cheque | other
   note            text
-  attachment      file (S3 / local), random name under expenses/<tenant>/<expense>/
+  attachment      file (GCS / local), random name under expenses/<tenant>/<expense>/
   attachment_content_type   sniffed from magic bytes
   idempotency_key varchar(100) null  UNIQUE (tenant_id, key) WHERE NOT NULL
   created_by / updated_by / deleted_by   FK users (SET_NULL)
@@ -80,7 +80,7 @@ content → 409 `IDEMPOTENCY_KEY_REUSED`).
    (`attachment_type_not_allowed`), ≤ `EXPENSE_ATTACHMENT_MAX_BYTES`
    (default 5 MB, `attachment_too_large`). Never exposed as a stored URL —
    `GET …/attachment/` returns `{url, content_type, expires_in}` with a signed
-   URL valid `EXPENSE_ATTACHMENT_URL_TTL_SECONDS` (default 300) on S3.
+   URL valid `EXPENSE_ATTACHMENT_URL_TTL_SECONDS` (default 300) on GCS (`apps.core.storage.signed_url`; tests assert `X-Goog-Expires`).
 6. Categories: system ones are seeded per tenant on first list (idempotent,
    race-safe) and cannot be renamed/archived/deleted (`system_category`);
    custom names are unique case-insensitively (`duplicate_category`); a custom
@@ -143,6 +143,7 @@ and the staff module-access endpoints automatically (registry-driven).
   list and the test that guards it.
 
 ## Changelog
+- 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-10-16  Built: `apps.expenses` (ExpenseCategory, Expense, RLS), CRUD +
   summary + attachment + categories endpoints, permission codes and module
   access entry, data migration for customized staff, export (Module 17),

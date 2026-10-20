@@ -427,7 +427,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-01 Auth & shell | 01 | signup + trial, login (email/pw, OTP), verify, reset, role-based nav shell, staff accounts + property assignment, property switcher |
 | FE-02 Property setup | 02 | property CRUD, floor/room/bed builder, bed grid with statuses, rack rates (with/without food, per-bed override) |
 | FE-03 Property settings | 03 | transfer rent timing, penalty type/value/grace/compounding forms |
-| FE-04 Residents | 04 | list + status filters, profile, document upload (S3 presigned), blacklist warning on re-registration |
+| FE-04 Residents | 04 | list + status filters, profile, document upload (via BFF → GCS signed URLs), blacklist warning on re-registration |
 | FE-05 Admissions | 05 | pipeline board, admission form (billing mode, food preference, contracted rent snapshot display, advance, first-month note, hidden add-ons section) |
 | FE-06 Allocations | 06 | bed allocation, temporary-allocation badge + dedicated list, transfer flow showing `rent_effective_date` from property setting |
 | FE-D1 Occupancy dashboard | 02, 06 | beds total/occupied/vacant/reserved, trend, temp-allocation flags |
@@ -518,7 +518,7 @@ Small additions to note in the relevant module specs when built:
 2. **Permission matrix / allowed-actions in serializers** (module 01 onward) — invariant F8.
 3. Machine-readable error codes (e.g., `PLAN_LIMIT_REACHED`, `SUBSCRIPTION_SUSPENDED`,
    `BLACKLIST_MATCH`) on 4xx responses (module 01/13) — invariant F4 and suspension UX.
-4. S3 presigned upload endpoints (module 04) — document uploads go browser→S3 direct.
+4. Document uploads: uploads go browser→BFF→Django→GCS (never browser→bucket); files come back as 5-minute signed GCS URLs (docs/deployment.md). No presigned-upload endpoints.
 5. ~~V2: `push_subscriptions` endpoint for Web Push (module 14).~~ Done —
    see `docs/modules/14-notifications.md` (2026-09-17).
 

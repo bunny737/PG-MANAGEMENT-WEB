@@ -250,3 +250,44 @@ class DepositMigrationTests(ResidentAPITestCase):
         self.assertEqual(admission.security_deposit_amount, Decimal('1500.00'))
         self.assertEqual(admission.security_deposit_mode, 'upi')
         self.assertEqual(admission.advance_amount, Decimal('0.00'))
+
+
+class AdmissionPropertyFilterTests(ResidentAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.other_property = self.create_property(self.tenant, name='Other Property')
+        self.bed = self.create_bed(self.create_room(self.create_floor(self.property)))
+        self.other_bed = self.create_bed(self.create_room(self.create_floor(self.other_property)))
+        self.authenticate(self.owner)
+        self.admission_ids = {}
+        for key, prop, bed, phone in (
+            ('mine', self.property, self.bed, '9000000001'),
+            ('other', self.other_property, self.other_bed, '9000000002'),
+        ):
+            resident = self.create_resident(prop, status=Resident.Status.RESERVED, phone=phone)
+            response = self.client.post(reverse('admission-list'), {
+                'resident': str(resident.id), 'bed': str(bed.id), 'joining_date': '2026-07-01',
+                'billing_mode': 'monthly', 'expected_stay_duration': '6_months',
+                'food_preference': 'with_food',
+            }, format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+            self.admission_ids[key] = response.data['id']
+
+    def test_property_filter_returns_only_that_propertys_admissions(self):
+        response = self.client.get(reverse('admission-list'), {'property': str(self.property.id)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([a['id'] for a in response.data], [self.admission_ids['mine']])
+
+    def test_without_the_filter_every_visible_admission_is_returned(self):
+        response = self.client.get(reverse('admission-list'))
+
+        self.assertEqual({a['id'] for a in response.data}, set(self.admission_ids.values()))
+
+    def test_malformed_property_is_a_400_not_a_500(self):
+        response = self.client.get(reverse('admission-list'), {'property': 'nope'})
+
+        self.assertEqual(response.status_code, 400)

@@ -57,6 +57,7 @@ Table: admissions                               (RLS enforced, app: apps.residen
 ```
 GET|POST   /api/v1/admissions/          list/create (= Check-In)   manage_admissions
 GET        /api/v1/admissions/{id}/     retrieve                   manage_admissions
+           list filters: resident, bed, property (the bed's property; 2026-10-20, dashboard property scoping)
 ```
 No PATCH/DELETE — an admission is immutable once created (405 on both).
 
@@ -185,3 +186,6 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   Re-checked under the bed row lock as before (`serializers.bed_admits`).
   [DECISION 2026-10-16, owner] "Allow if for this resident".
   Tests: `properties/tests/test_bed_transitions.py::AdmissionToReservedBedTests`.
+- 2026-10-20: `property` filter on `GET /admissions/` (`AdmissionFilter`, UUID filter on the bed's property) so the
+  phone dashboard's activity feed follows the property selector. Narrows the caller's visible set only; a malformed
+  id is a 400. Tests: `AdmissionPropertyFilterTests`.

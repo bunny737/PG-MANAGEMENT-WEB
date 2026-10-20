@@ -1,3 +1,4 @@
+import django_filters
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -23,6 +24,16 @@ from .serializers import (
 )
 
 
+class ComplaintFilter(django_filters.FilterSet):
+    # The dashboard scopes every section to the selected property; a complaint belongs to
+    # a property through its resident.
+    property = django_filters.UUIDFilter(field_name='resident__property_id')
+
+    class Meta:
+        model = Complaint
+        fields = ['resident', 'status', 'priority', 'category', 'assigned_to', 'property']
+
+
 class ComplaintViewSet(viewsets.ModelViewSet):
     """Complaints (PRD Module 12). `manage_complaints` excludes Receptionist
     and Resident — see the Module 11 spec's Decisions for why true resident
@@ -32,7 +43,7 @@ class ComplaintViewSet(viewsets.ModelViewSet):
 
     permission_classes = [IsAuthenticated, require_permission('manage_complaints')]
     http_method_names = ['get', 'post', 'patch']
-    filterset_fields = ['resident', 'status', 'priority', 'category', 'assigned_to']
+    filterset_class = ComplaintFilter
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

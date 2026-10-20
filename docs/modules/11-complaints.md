@@ -52,6 +52,10 @@ GET|POST   /api/v1/complaints/{id}/comments/    comments thread                 
 ```
 No DELETE — a complaint is never removed, only closed.
 
+List filters: `resident`, `status`, `priority`, `category`, `assigned_to` and `property` (the resident's
+property; added 2026-10-20 so the phone dashboard's Active Issues follows the property selector).
+`property` can only narrow the caller's already-scoped list, never widen it; a malformed id is a 400.
+
 ## Business rules (each maps to a test)
 1. Logging a complaint (`POST /complaints/`) defaults `status=open`,
    `priority=medium`, stamps `raised_by` from the request user; `resident`
@@ -140,3 +144,5 @@ No DELETE — a complaint is never removed, only closed.
   (creation/edit, assignment validation, status transitions, comments,
   permission scoping, RLS isolation); full suite (287) green. Spec written
   to as-built.
+- 2026-10-20: `property` filter on `GET /complaints/` (`ComplaintFilter`, UUID filter on `resident__property_id`);
+  tests `ComplaintPropertyFilterTests`.

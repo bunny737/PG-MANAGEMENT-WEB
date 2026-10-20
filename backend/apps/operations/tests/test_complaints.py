@@ -281,3 +281,43 @@ class ComplaintScopingTests(OperationsAPITestCase):
 
         response = self.client.get(reverse('complaint-list'))
         self.assertEqual(response.status_code, 403)
+
+
+class ComplaintPropertyFilterTests(OperationsAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.other_property = self.create_property(self.tenant, name='Other Property')
+        self.complaint = self.create_complaint(self.create_resident(self.property))
+        self.other_complaint = self.create_complaint(
+            self.create_resident(self.other_property, phone='9000000002'),
+        )
+        self.authenticate(self.owner)
+
+    def test_property_filter_returns_only_that_propertys_complaints(self):
+        response = self.client.get(reverse('complaint-list'), {'property': str(self.property.id)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([c['id'] for c in response.data], [str(self.complaint.id)])
+
+    def test_without_the_filter_every_visible_complaint_is_returned(self):
+        response = self.client.get(reverse('complaint-list'))
+
+        self.assertEqual({c['id'] for c in response.data}, {str(self.complaint.id), str(self.other_complaint.id)})
+
+    def test_property_filter_cannot_widen_a_managers_scope(self):
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+        self.authenticate(manager)
+
+        response = self.client.get(reverse('complaint-list'), {'property': str(self.other_property.id)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_malformed_property_is_a_400_not_a_500(self):
+        response = self.client.get(reverse('complaint-list'), {'property': 'not-a-uuid'})
+
+        self.assertEqual(response.status_code, 400)

@@ -4,6 +4,8 @@
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
+import hashlib
+import json
 import logging
 import uuid
 
@@ -22,10 +24,11 @@ from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Property
 from apps.residents.models import Resident
 
-from . import pricing, razorpay_client
+from . import pricing, razorpay_client, webhook_policy
 from .models import (
     Plan,
     RazorpaySubscription,
+    RazorpayWebhookEvent,
     Subscription,
     SubscriptionInvoice,
     SubscriptionInvoiceLine,
@@ -394,22 +397,60 @@ def select_plan(*, subscription, plan, actor, request=None):
     return subscription
 
 
-@transaction.atomic
-def handle_webhook_event(payload):
+def _fallback_event_id(payload):
+    """Razorpay sends a unique `X-Razorpay-Event-Id` (the same on every retry). Without it, the body itself
+    identifies a redelivery."""
+    canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    return 'body:' + hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _event_time(payload):
+    """The event's own occurrence time (the payload's top-level `created_at`), or None."""
+    raw = payload.get('created_at')
+    if isinstance(raw, bool) or raw in (None, ''):
+        return None
+    try:
+        seconds = int(raw)
+        return datetime.fromtimestamp(seconds, tz=dt_timezone.utc) if seconds > 0 else None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def handle_webhook_event(payload, event_id=None):
     """Processes a Razorpay webhook payload (PRD Module 20: 'Razorpay
     webhook handling for payment success/failure'). Two independent event
     families, because FLAT_MONTHLY and PER_BED_MONTHLY use different
     Razorpay primitives (Phase 0 spike: Add-ons are deprecated, so arrears
     amounts are billed via Invoices, not Subscriptions):
 
-    - `subscription.*` — advance billing, keyed by `razorpay_subscription_id`.
+    - `subscription.*` / `payment.failed` — advance billing, keyed by `razorpay_subscription_id`.
+      Applied by `webhook_policy`: terminal and manual states first, then the newest event by
+      occurrence time, not delivery order.
     - `invoice.*` — arrears billing, keyed by `razorpay_invoice_id` on
-      `SubscriptionInvoice` (see `generate_invoice_for_subscription`)."""
+      `SubscriptionInvoice` (see `generate_invoice_for_subscription`).
+
+    Every valid event is stored (`RazorpayWebhookEvent`) whatever its outcome, and a redelivery of the
+    same `event_id` does nothing."""
     event = payload.get('event', '')
-    if event.startswith('invoice.'):
-        _handle_invoice_webhook(event, payload)
-    else:
-        _handle_subscription_webhook(event, payload)
+    entities = payload.get('payload', {})
+    subscription_entity = entities.get('subscription', {}).get('entity', {})
+    with transaction.atomic():
+        record, created = RazorpayWebhookEvent.objects.get_or_create(
+            event_id=event_id or _fallback_event_id(payload),
+            defaults={
+                'event_type': event[:60], 'payload': payload, 'occurred_at': _event_time(payload),
+                'razorpay_subscription_id': subscription_entity.get('id', '')[:100],
+            },
+        )
+        if not created:
+            return  # a redelivery of an event we already processed
+        if event.startswith('invoice.'):
+            _handle_invoice_webhook(event, payload)
+            outcome, detail, tenant_id = RazorpayWebhookEvent.Outcome.APPLIED, 'invoice event', None
+        else:
+            outcome, detail, tenant_id = _handle_subscription_webhook(event, payload, record.event_id)
+        record.outcome, record.detail, record.tenant_id = outcome, detail[:500], tenant_id
+        record.save(update_fields=['outcome', 'detail', 'tenant_id'])
 
 
 def _promote_ledger_row(subscription, row):
@@ -502,15 +543,96 @@ def _reconcile_non_current_event(event, subscription, row, *, razorpay_payment_i
     return True  # e.g. payment.failed on an unpaid or superseded subscription: nothing to do
 
 
-def _handle_subscription_webhook(event, payload):
-    """FLAT_MONTHLY: looks the Subscription up by its stored
-    `razorpay_subscription_id` since the webhook carries no concept of our
-    tenant id."""
+def _live_ledger_row(subscription, razorpay_subscription_id):
+    """The ledger row of the tenant's live Razorpay subscription, created if an older row predates the
+    ledger (it carries the ordering state, so it must exist). Caller holds the subscription lock."""
+    row = (
+        RazorpaySubscription.objects.select_for_update()
+        .filter(razorpay_subscription_id=razorpay_subscription_id).first()
+    )
+    if row is None and subscription.plan_id:
+        row = RazorpaySubscription.objects.create(
+            subscription=subscription, plan=subscription.plan,
+            razorpay_subscription_id=razorpay_subscription_id, state=RazorpaySubscription.State.CURRENT,
+        )
+    return row
+
+
+def _verify_with_razorpay(decision, razorpay_subscription_id, facts):
+    """Settles a Decision.VERIFY by asking Razorpay for the subscription's real status. Returns
+    (decision, remote_status). It never grants access it cannot confirm: an unreachable or unconfigured
+    Razorpay leaves the decision unresolved (VERIFY) and access unchanged."""
+    try:
+        remote = razorpay_client.fetch_razorpay_subscription_status(razorpay_subscription_id)
+    except Exception:
+        logger.exception('Could not verify subscription %s with Razorpay', razorpay_subscription_id)
+        return decision, None
+    if remote is None:
+        return decision, None
+    target = webhook_policy.tenant_status_for_remote(remote)
+    Action = webhook_policy.Action
+    if decision.reason == 'charged_after_halt':
+        if target == Tenant.Status.ACTIVE:
+            return webhook_policy.Decision(Action.APPLY, Tenant.Status.ACTIVE, f'razorpay confirms {remote}'), remote
+        return webhook_policy.Decision(
+            Action.DECLINED, reason=f'razorpay reports {remote}; stays suspended', flag_payment=True), remote
+    # missing_timestamp: believe Razorpay's current state rather than the undated snapshot.
+    if target is None or target == facts.tenant_status:
+        return webhook_policy.Decision(Action.NO_CHANGE, reason=f'razorpay reports {remote}'), remote
+    return webhook_policy.Decision(Action.APPLY, target, f'razorpay reports {remote}'), remote
+
+
+def _record_event_payment(kind, subscription, razorpay_payment_id, amount, payload):
+    """Keeps the money visible whatever the event's ordering outcome. Returns True if a new row was written.
+    Only charge and payment-failure events describe a payment attempt; a halted/cancelled/resumed payload may
+    still carry a payment entity, which is not a new payment."""
+    if kind not in (*webhook_policy.CHARGE_KINDS, 'payment_failed'):
+        return False
+    if razorpay_payment_id:
+        if SubscriptionPayment.objects.filter(razorpay_payment_id=razorpay_payment_id).exists():
+            return False
+    elif kind in webhook_policy.CHARGE_KINDS:
+        if SubscriptionPayment.objects.filter(
+            subscription=subscription, status=SubscriptionPayment.Status.SUCCESS,
+            created_at__date=timezone.now().date(),
+        ).exists():
+            return False
+    succeeded = kind in webhook_policy.CHARGE_KINDS
+    SubscriptionPayment.objects.create(
+        tenant_id=subscription.tenant_id, subscription=subscription,
+        razorpay_payment_id=razorpay_payment_id, amount=amount,
+        status=SubscriptionPayment.Status.SUCCESS if succeeded else SubscriptionPayment.Status.FAILED,
+        paid_at=timezone.now() if succeeded else None, raw_payload=payload,
+    )
+    return True
+
+
+_OUTCOME_BY_ACTION = {
+    webhook_policy.Action.APPLY: RazorpayWebhookEvent.Outcome.APPLIED,
+    webhook_policy.Action.NO_CHANGE: RazorpayWebhookEvent.Outcome.APPLIED,
+    webhook_policy.Action.STALE: RazorpayWebhookEvent.Outcome.STALE_IGNORED,
+    webhook_policy.Action.TERMINAL: RazorpayWebhookEvent.Outcome.TERMINAL_IGNORED,
+    webhook_policy.Action.MANUAL_HOLD: RazorpayWebhookEvent.Outcome.MANUAL_HOLD_IGNORED,
+    webhook_policy.Action.NOT_RECOVERY: RazorpayWebhookEvent.Outcome.NOT_RECOVERY_IGNORED,
+    webhook_policy.Action.VERIFY: RazorpayWebhookEvent.Outcome.NEEDS_VERIFICATION,
+    webhook_policy.Action.DECLINED: RazorpayWebhookEvent.Outcome.VERIFICATION_DECLINED,
+}
+
+
+def _handle_subscription_webhook(event, payload, event_id):
+    """FLAT_MONTHLY: looks the Subscription up by its stored `razorpay_subscription_id` since the
+    webhook carries no concept of our tenant id. Returns (outcome, detail, tenant_id) for the stored
+    `RazorpayWebhookEvent`.
+
+    Which events may change the tenant, and in what order, is `webhook_policy`'s decision; this carries
+    it out, keeps every captured payment on record, flags payments access must not honour, and audits
+    what it ignored."""
+    Outcome = RazorpayWebhookEvent.Outcome
     entity = payload.get('payload', {}).get('subscription', {}).get('entity', {})
     razorpay_subscription_id = entity.get('id', '')
 
     if not razorpay_subscription_id:
-        return
+        return Outcome.UNKNOWN_SUBSCRIPTION, 'no subscription id in the payload', None
     # Any Razorpay subscription we ever created for a tenant is in the ledger, in
     # whatever state it has reached, so an event for one we have since moved on from
     # (an abandoned plan choice, a replaced subscription) is still recognised. The
@@ -528,7 +650,7 @@ def _handle_subscription_webhook(event, payload):
         ).select_related('tenant', 'plan').first()
     )
     if subscription is None:
-        return  # unknown subscription — nothing to reconcile
+        return Outcome.UNKNOWN_SUBSCRIPTION, 'unknown subscription — nothing to reconcile', None
 
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
@@ -540,6 +662,11 @@ def _handle_subscription_webhook(event, payload):
         Decimal(raw_amount) / 100 if raw_amount is not None
         else (priced_plan.price_per_month if priced_plan and priced_plan.price_per_month else Decimal('0'))
     )
+    kind = webhook_policy.KIND_BY_EVENT.get(event)
+    occurred_at = _event_time(payload)
+    if occurred_at is None and not razorpay_client.is_configured():
+        # Local stub (dev/test) has no Razorpay to ask: fall back to arrival order. Production is always configured.
+        occurred_at = timezone.now()
 
     # No authenticated request set the Postgres tenant context (the webhook
     # is deliberately unauthenticated — see RazorpayWebhookView), so this
@@ -547,7 +674,7 @@ def _handle_subscription_webhook(event, payload):
     with tenant_context(subscription.tenant_id), transaction.atomic():
         # Lock the subscription for the rest of the handler so a replayed or
         # concurrently-delivered webhook for the same subscription serializes
-        # behind this one — the idempotency checks below then can't race.
+        # behind this one — the ordering checks below then can't race.
         subscription = (
             Subscription.objects.select_for_update(of=('self',))
             .select_related('tenant', 'plan')
@@ -555,6 +682,7 @@ def _handle_subscription_webhook(event, payload):
         )
         tenant = subscription.tenant
         before_status = tenant.status  # read under the lock (was a stale pre-lock read)
+        tenant_id = tenant.id
 
         # Re-read under the lock: a plan change may have moved the live id since the
         # unlocked lookup above. Only the live subscription drives the tenant's status;
@@ -568,71 +696,103 @@ def _handle_subscription_webhook(event, payload):
                 event, subscription, ledger_row, razorpay_payment_id=razorpay_payment_id,
                 charged_amount=charged_amount, payload=payload,
             ):
-                return
+                return Outcome.NON_CURRENT, 'not the tenant\'s live subscription', tenant_id
             # Promoted: it is now the live subscription, and this is its first charge.
-
-        if event in ('subscription.activated', 'subscription.charged'):
-            # Idempotency: a replayed webhook must not double-record the same charge.
-            if razorpay_payment_id:
-                if SubscriptionPayment.objects.filter(
-                    razorpay_payment_id=razorpay_payment_id
-                ).exists():
-                    return
-            else:
-                today = timezone.now().date()
-                if SubscriptionPayment.objects.filter(
-                    subscription=subscription, status=SubscriptionPayment.Status.SUCCESS, created_at__date=today
-                ).exists():
-                    return
-            tenant.status = Tenant.Status.ACTIVE
-            subscription.payment_failed_at = None
-            current_start = entity.get('current_start')
-            current_end = entity.get('current_end')
-            today = timezone.now().date()
-            subscription.current_period_start = (
-                datetime_from_epoch(current_start) if current_start else today
-            )
-            subscription.current_period_end = (
-                datetime_from_epoch(current_end) if current_end else pricing.next_cycle_end(today)
-            )
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=charged_amount,
-                status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
-            )
-        elif event == 'subscription.halted':
-            tenant.status = Tenant.Status.SUSPENDED
-        elif event == 'subscription.cancelled':
-            tenant.status = Tenant.Status.CANCELLED
-            if ledger_row is not None:
-                ledger_row.state = RazorpaySubscription.State.CANCELLED
-                ledger_row.cancelled_at = timezone.now()
-                ledger_row.save(update_fields=['state', 'cancelled_at', 'updated_at'])
-        elif event == 'payment.failed':
-            # Idempotency: a replayed failure webhook must not double-record it
-            # (also avoids tripping the unique_razorpay_payment_id constraint).
-            if razorpay_payment_id and SubscriptionPayment.objects.filter(
-                razorpay_payment_id=razorpay_payment_id
-            ).exists():
-                return
-            tenant.status = Tenant.Status.PAYMENT_FAILED
-            subscription.payment_failed_at = timezone.now()
-            SubscriptionPayment.objects.create(
-                tenant_id=tenant.id, subscription=subscription,
-                razorpay_payment_id=razorpay_payment_id, amount=charged_amount,
-                status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
-            )
         else:
-            return  # unhandled event type — ignore
+            ledger_row = _live_ledger_row(subscription, razorpay_subscription_id) or ledger_row
 
-        subscription.save()
-        tenant.save(update_fields=['status', 'updated_at'])
+        if kind is None:
+            return Outcome.UNHANDLED, f'{event} is not acted on', tenant_id
 
-        if tenant.status != before_status:
+        Action = webhook_policy.Action
+        facts = webhook_policy.Facts(
+            tenant_status=tenant.status,
+            row_cancelled=bool(ledger_row and ledger_row.state == RazorpaySubscription.State.CANCELLED),
+            manual_hold=subscription.status_hold == Subscription.STATUS_HOLD_MANUAL,
+            activated_before=bool(ledger_row and ledger_row.activated_at),
+            last=webhook_policy.LastEvent(
+                ledger_row.last_status_event_at, ledger_row.last_status_event_type, ledger_row.last_status_event_id,
+            ) if ledger_row else webhook_policy.LastEvent(),
+        )
+        decision = webhook_policy.decide(kind, occurred_at, facts)
+        remote_status = None
+        if decision.action == Action.VERIFY:
+            decision, remote_status = _verify_with_razorpay(decision, razorpay_subscription_id, facts)
+            if decision.action == Action.APPLY and occurred_at is None:
+                occurred_at = timezone.now()   # authoritative as of now
+
+        # The money is always recorded, however the event's ordering turned out.
+        new_payment = _record_event_payment(kind, subscription, razorpay_payment_id, charged_amount, payload)
+
+        if kind == 'cancelled' and ledger_row and ledger_row.state != RazorpaySubscription.State.CANCELLED:
+            # Terminal at Razorpay whatever the tenant's status: the ledger must say so.
+            ledger_row.state = RazorpaySubscription.State.CANCELLED
+            ledger_row.cancelled_at = timezone.now()
+            ledger_row.save(update_fields=['state', 'cancelled_at', 'updated_at'])
+
+        if decision.action == Action.APPLY:
+            _apply_status_event(
+                decision, kind, event, event_id, occurred_at, subscription, tenant, ledger_row, entity)
+            if tenant.status != before_status:
+                audit_log.record(
+                    action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
+                    before={'status': before_status}, after={'status': tenant.status},
+                )
+        elif decision.action != Action.NO_CHANGE:
             audit_log.record(
-                action='tenant.status_changed', tenant_id=tenant.id, obj=tenant,
-                before={'status': before_status}, after={'status': tenant.status},
+                action=('subscription.stale_event_ignored' if decision.action == Action.STALE
+                        else 'subscription.event_needs_verification' if decision.action == Action.VERIFY
+                        else 'subscription.event_ignored'),
+                tenant_id=tenant.id, obj=subscription,
+                after={
+                    'event': event, 'event_id': event_id, 'outcome': decision.action, 'reason': decision.reason,
+                    'occurred_at': occurred_at.isoformat() if occurred_at else None,
+                    'last_applied_at': facts.last.at.isoformat() if facts.last.at else None,
+                    'last_applied_event': facts.last.event_type, 'tenant_status': tenant.status,
+                    'razorpay_status': remote_status,
+                },
             )
+        if decision.flag_payment and new_payment and kind in webhook_policy.CHARGE_KINDS:
+            # A captured payment that access will not honour: keep it, and put it in front of ops.
+            audit_log.record(
+                action='subscription.payment_needs_refund', tenant_id=tenant.id, obj=subscription,
+                after={
+                    'razorpay_subscription_id': razorpay_subscription_id,
+                    'razorpay_payment_id': razorpay_payment_id, 'amount': str(charged_amount),
+                    'reason': decision.reason, 'event': event, 'event_id': event_id,
+                    'razorpay_status': remote_status,
+                },
+            )
+        return _OUTCOME_BY_ACTION[decision.action], decision.reason, tenant_id
+
+
+def _apply_status_event(decision, kind, event, event_id, occurred_at, subscription, tenant, ledger_row, entity):
+    """Carries out an APPLY decision: tenant status, billing period and grace clock, and the ledger's
+    last-applied-event marker. Caller holds the subscription lock and the audit/payment bookkeeping."""
+    tenant.status = decision.target
+    if decision.target == Tenant.Status.ACTIVE:
+        subscription.payment_failed_at = None
+    elif decision.target == Tenant.Status.PAYMENT_FAILED:
+        subscription.payment_failed_at = timezone.now()
+    if kind in webhook_policy.CHARGE_KINDS:
+        today = timezone.now().date()
+        current_start = entity.get('current_start')
+        current_end = entity.get('current_end')
+        subscription.current_period_start = datetime_from_epoch(current_start) if current_start else today
+        subscription.current_period_end = (
+            datetime_from_epoch(current_end) if current_end else pricing.next_cycle_end(today)
+        )
+    subscription.save()
+    tenant.save(update_fields=['status', 'updated_at'])
+    if ledger_row is not None:
+        ledger_row.last_status_event_at = occurred_at
+        ledger_row.last_status_event_type = event
+        ledger_row.last_status_event_id = event_id
+        fields = ['last_status_event_at', 'last_status_event_type', 'last_status_event_id', 'updated_at']
+        if kind in webhook_policy.CHARGE_KINDS and ledger_row.activated_at is None:
+            ledger_row.activated_at = timezone.now()
+            fields.append('activated_at')
+        ledger_row.save(update_fields=fields)
 
 
 def _invoice_for_webhook(entity):
@@ -699,7 +859,8 @@ def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
         invoice.save(update_fields=['status', 'paid_at'])
         subscription.payment_failed_at = None
         subscription.save(update_fields=['payment_failed_at', 'updated_at'])
-        if tenant.status == Tenant.Status.PAYMENT_FAILED:
+        if (tenant.status == Tenant.Status.PAYMENT_FAILED
+                and subscription.status_hold != Subscription.STATUS_HOLD_MANUAL):
             tenant.status = Tenant.Status.ACTIVE
         SubscriptionPayment.objects.create(
             tenant_id=tenant.id, subscription=subscription,
@@ -707,17 +868,21 @@ def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
             status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
         )
     elif event in ('invoice.expired', 'invoice.partially_paid'):
-        if invoice.status == SubscriptionInvoice.Status.FAILED:
-            return  # already processed this failure
+        if invoice.status in (SubscriptionInvoice.Status.FAILED, SubscriptionInvoice.Status.PAID):
+            return  # already processed this failure — or a late failure for an invoice that has since been paid
         if razorpay_payment_id and SubscriptionPayment.objects.filter(
             razorpay_payment_id=razorpay_payment_id
         ).exists():
             return
         invoice.status = SubscriptionInvoice.Status.FAILED
         invoice.save(update_fields=['status'])
-        tenant.status = Tenant.Status.PAYMENT_FAILED
-        subscription.payment_failed_at = timezone.now()
-        subscription.save(update_fields=['payment_failed_at', 'updated_at'])
+        # A failed invoice is still recorded, but it only starts the grace clock for a tenant in good
+        # standing: it never reaches a suspended or cancelled one, nor one a Super Admin holds.
+        if (tenant.status in (Tenant.Status.TRIAL, Tenant.Status.ACTIVE, Tenant.Status.PAYMENT_FAILED)
+                and subscription.status_hold != Subscription.STATUS_HOLD_MANUAL):
+            tenant.status = Tenant.Status.PAYMENT_FAILED
+            subscription.payment_failed_at = timezone.now()
+            subscription.save(update_fields=['payment_failed_at', 'updated_at'])
         SubscriptionPayment.objects.create(
             tenant_id=tenant.id, subscription=subscription,
             razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
@@ -800,13 +965,21 @@ def override_limits(*, subscription, max_properties_override, max_residents_over
     return subscription
 
 
+def set_manual_status_hold(tenant, held):
+    """A Super Admin's own suspension or cancellation sticks: while the hold is on, no webhook may change
+    the tenant's status (webhook_policy). Only an explicit reactivation clears it."""
+    Subscription.objects.filter(tenant=tenant).update(
+        status_hold=Subscription.STATUS_HOLD_MANUAL if held else '', updated_at=timezone.now())
+
+
 def suspend_tenant(*, tenant, actor, request=None):
     before_status = tenant.status
     tenant.status = Tenant.Status.SUSPENDED
     tenant.save(update_fields=['status', 'updated_at'])
+    set_manual_status_hold(tenant, True)
     audit_log.record(
         action='tenant.status_changed', actor=actor, tenant_id=tenant.id, obj=tenant,
-        before={'status': before_status}, after={'status': tenant.status}, request=request,
+        before={'status': before_status}, after={'status': tenant.status, 'status_hold': 'manual'}, request=request,
     )
     return tenant
 
@@ -815,6 +988,7 @@ def reactivate_tenant(*, tenant, actor, request=None):
     before_status = tenant.status
     tenant.status = Tenant.Status.ACTIVE
     tenant.save(update_fields=['status', 'updated_at'])
+    set_manual_status_hold(tenant, False)
     audit_log.record(
         action='tenant.status_changed', actor=actor, tenant_id=tenant.id, obj=tenant,
         before={'status': before_status}, after={'status': tenant.status}, request=request,

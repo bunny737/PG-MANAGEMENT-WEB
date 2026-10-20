@@ -11,10 +11,21 @@ import uuid
 from typing import NamedTuple
 
 import razorpay
+import requests
 from django.conf import settings
 
 # The only currency the platform bills in; also served by the public plan catalogue.
 PLATFORM_CURRENCY = 'INR'
+
+# (connect, read) seconds. The SDK sets none, so a stalled Razorpay would hang forever — and the webhook
+# handler asks Razorpay while holding a subscription row lock and a database connection.
+REQUEST_TIMEOUT = (3.05, 10)
+
+
+class _TimeoutSession(requests.Session):
+    def request(self, *args, **kwargs):
+        kwargs.setdefault('timeout', REQUEST_TIMEOUT)
+        return super().request(*args, **kwargs)
 
 
 def is_configured():
@@ -24,7 +35,8 @@ def is_configured():
 def get_client():
     if not is_configured():
         return None
-    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+    return razorpay.Client(
+        auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET), session=_TimeoutSession())
 
 
 def create_razorpay_plan(plan):

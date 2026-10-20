@@ -111,6 +111,14 @@ class TenantAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     readonly_fields = ('created_at', 'updated_at')
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change and 'status' in form.changed_data:
+            # A suspension or cancellation made here is manual: Razorpay webhooks must not undo it
+            # (apps.subscriptions.webhook_policy). Any other status clears the hold.
+            from apps.subscriptions.services import set_manual_status_hold
+            set_manual_status_hold(obj, obj.status in (Tenant.Status.SUSPENDED, Tenant.Status.CANCELLED))
+
 
 @admin.register(OtpCode)
 class OtpCodeAdmin(admin.ModelAdmin):

@@ -74,6 +74,19 @@ check "no Set-Cookie on anonymous marketing home" no "$(has "$(headers -H 'Host:
 check "404 status for unknown page" "404" \
   "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: www.pglive.in' -H 'cookie: pg_session=1' "$WEB/no-such-page")"
 
+echo "--- Razorpay webhook straight at the API (as Razorpay sends it), stored by the runtime role"
+body='{"event":"subscription.charged","created_at":1760000000,"payload":{"subscription":{"entity":{"id":"sub_integration_unknown"}}}}'
+sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac integration-webhook-secret | awk '{print $NF}')"
+hook() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' \
+  -H "X-Razorpay-Signature: $1" -H "X-Razorpay-Event-Id: $2" -d "$body" "$EDGE/api/v1/subscriptions/webhook/"; }
+check "webhook with a valid signature" 200 "$(hook "$sig" evt_integration_1)"
+check "webhook redelivery (same event id)" 200 "$(hook "$sig" evt_integration_1)"
+check "webhook with a bad signature is rejected" 400 "$(hook 00 evt_integration_2)"
+check "event stored once, by app_user, with its outcome" "1|unknown_subscription" \
+  "$(psql_db -d pg_platform -At -c "SELECT count(*) || '|' || max(outcome) FROM razorpay_webhook_events WHERE event_id = 'evt_integration_1'")"
+check "rejected event not stored" 0 \
+  "$(psql_db -d pg_platform -At -c "SELECT count(*) FROM razorpay_webhook_events WHERE event_id = 'evt_integration_2'")"
+
 echo "--- readiness (gunicorn exposes RAW_URI)"
 ready=$(curl -s "$EDGE/health/ready/")
 check "readiness" '{"status": "ok", "checks": {"database": "ok", "raw_uri": "ok"}}' "$ready"

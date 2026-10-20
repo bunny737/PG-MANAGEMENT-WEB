@@ -248,5 +248,6 @@ class RazorpayWebhookView(APIView):
         signature = request.headers.get('X-Razorpay-Signature', '')
         if not razorpay_client.verify_webhook_signature(request.body.decode('utf-8'), signature):
             return Response({'detail': 'Invalid signature.'}, status=status.HTTP_400_BAD_REQUEST)
-        services.handle_webhook_event(request.data)
+        # Razorpay's event id is the same on every retry of an event, which is what makes redelivery harmless.
+        services.handle_webhook_event(request.data, event_id=request.headers.get('X-Razorpay-Event-Id') or None)
         return Response({'status': 'ok'})

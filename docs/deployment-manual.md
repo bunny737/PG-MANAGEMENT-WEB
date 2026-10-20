@@ -204,13 +204,14 @@ Create the roles **with the SQL file, not `gcloud sql users create`** — that c
 `cloudsqlsuperuser`, which `check_db_roles` rejects.
 
 ```bash
-gcloud sql users set-password postgres --instance $SQL_INSTANCE --password "$(openssl rand -hex 24)"   # note it for this step only
+# The postgres password lives only in this shell; set a new one whenever you need it again.
+export PGPASSWORD=$(openssl rand -hex 24)
+gcloud sql users set-password postgres --instance $SQL_INSTANCE --password "$PGPASSWORD"
 # Cloud Shell: install the proxy once
-curl -so cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+curl -fso cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
 chmod +x cloud-sql-proxy
 ./cloud-sql-proxy $SQL_CONN --port 5432 &        # keep running; Ctrl-C / kill %1 when done
 
-export PGPASSWORD='<the postgres password you just set>'
 psql "host=127.0.0.1 port=5432 user=postgres dbname=postgres" \
   -v migration_password="$(gcloud secrets versions access latest --secret DB_MIGRATION_PASSWORD)" \
   -v app_password="$(gcloud secrets versions access latest --secret DB_PASSWORD)" \

@@ -16,9 +16,11 @@ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'migration_user')\gexec
 SELECT 'CREATE ROLE app_user LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT'
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user')\gexec
 
--- Re-assert attributes on pre-existing roles too.
-ALTER ROLE migration_user LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD :'migration_password';
-ALTER ROLE app_user LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'app_password';
+-- Re-assert attributes on pre-existing roles too. SUPERUSER/BYPASSRLS are left
+-- out: PG16 lets only a real superuser name them in ALTER ROLE (even to set
+-- false), and Cloud SQL's postgres is not one. check_db_roles verifies both.
+ALTER ROLE migration_user LOGIN NOCREATEDB NOCREATEROLE PASSWORD :'migration_password';
+ALTER ROLE app_user LOGIN NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'app_password';
 
 -- Cloud SQL's postgres is not a real superuser: it must be a member of
 -- migration_user to create a database owned by it (and to run part 2).

@@ -1,7 +1,7 @@
 // Content-Security-Policy for every HTML response (docs/deployment.md, WP11). Built per request in
 // src/proxy.ts with a fresh nonce: Next applies the nonce from the request's CSP header to its own
 // inline scripts, and 'strict-dynamic' lets those nonce'd scripts load Razorpay Checkout and the
-// Google Maps loader (both injected at runtime, see lib/razorpay.ts and PropertyMapPicker.tsx).
+// Google Maps loader (both injected at runtime, see lib/razorpay.ts and lib/googleMaps.ts).
 //
 // CSP_MODE (runtime env, read per request — switching needs no rebuild):
 //   report-only  Content-Security-Policy-Report-Only (default in production)

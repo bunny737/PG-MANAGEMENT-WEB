@@ -6,15 +6,23 @@ from django.core import signing
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
+from .normalization import normalize_email
+
 EMAIL_VERIFICATION_SALT = 'accounts.email-verification'
 
 
 def make_email_verification_token(user):
-    return signing.dumps({'uid': str(user.id)}, salt=EMAIL_VERIFICATION_SALT)
+    """Signed {uid, email}: the link verifies that address only, so a link sent
+    before an email change can't verify the new one."""
+    return signing.dumps(
+        {'uid': str(user.id), 'email': normalize_email(user.email)},
+        salt=EMAIL_VERIFICATION_SALT,
+    )
 
 
 def read_email_verification_token(token):
-    """Returns the user id or None if the token is invalid/expired."""
+    """Returns (user_id, email), or None if the token is invalid, expired, or a
+    legacy uid-only token (issued before tokens carried the address)."""
     try:
         payload = signing.loads(
             token,
@@ -23,7 +31,12 @@ def read_email_verification_token(token):
         )
     except signing.BadSignature:
         return None
-    return payload.get('uid')
+    if not isinstance(payload, dict):
+        return None
+    uid, email = payload.get('uid'), payload.get('email')
+    if not uid or not email:
+        return None
+    return uid, email
 
 
 def make_password_reset_credentials(user):

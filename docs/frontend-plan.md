@@ -463,7 +463,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; phone OTP/signup/reset still future work — forgot-password is still a simulated form and there is no `/reset-password` or `/verify-email` page yet) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; phone OTP/reset still future work — forgot-password is still a simulated form and there is no `/reset-password` page yet) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
@@ -592,7 +592,9 @@ layout, and `/en` `/te` URL prefixes (best SEO/CDN, but reverses the §11 "Local
 ### 12.3 Primary CTA
 Login only serves existing accounts and signup is unbuilt (FE-01), so the CTA never points at `/login`.
 `SIGNUP_ENABLED=false` (default): **"Request early access"** → WhatsApp (pre-filled) → email → `/contact`, from the
-Super-Admin-managed contacts. `SIGNUP_ENABLED=true`: **"Start free trial"** → `/signup` (build that route first).
+Super-Admin-managed contacts. `SIGNUP_ENABLED=true`: **"Start free trial"** → `/signup` (built 2026-10-21), and the
+login page shows a "Start free trial" link. The flag is **discovery-only** (owner decision 2026-10-21): `/signup` and
+the signup API stay reachable by URL while it is false, so early-access owners can be onboarded by sending the link.
 Logic: `features/marketing/cta.ts`. The header shows **"Open dashboard"** instead of "Log in" only for a session
 re-validated by `ensureFreshSession()` and only for roles that have a portal (owner/manager/receptionist).
 
@@ -636,7 +638,7 @@ Regenerate the QR with the `qrcode` npm package (v1.5.4, `QRCode.toString(url, {
 | `SITE_ENV` | `production` or `staging` (staging: no launch gate, `robots.txt` disallows all) | `production` |
 | `COMPANY_NAME`, `COMPANY_ADDRESS` | legal identity for footer / privacy / terms / JSON-LD | **required in production** |
 | `APP_STATUS`, `PLAY_STORE_URL` | `comingSoon` \| `live`, and the store link | `comingSoon` |
-| `SIGNUP_ENABLED` | flips the CTA to the trial | `false` |
+| `SIGNUP_ENABLED` | flips the CTA to the trial and shows the login page's signup link (discovery only — `/signup` works regardless) | `false` |
 | `INTERNAL_API_URL` | server-side Django origin (also used by the BFF proxy, §3.1) | falls back to `NEXT_PUBLIC_API_URL`, then `http://localhost:8000` |
 
 ### 12.8 Launch gates

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -20,6 +21,8 @@ import { BrandMark } from "@/components/shared/BrandMark";
 import { firstAllowedRoute } from "@/lib/permissions";
 import { ApiError, clearSession, login, loginPhone, type CurrentUser } from "@/lib/api";
 import { EmailCodeLogin, type CodeRequests } from "./EmailCodeLogin";
+import { ResendVerificationPrompt } from "./ResendVerificationPrompt";
+import { isValidEmail, normalizeInputPhone } from "./validation";
 
 type LoginView = "choice" | "owner" | "staff";
 type FlowState = "login" | "forgot_password";
@@ -30,7 +33,13 @@ type AuthMethod = "password" | "email_code";
 const OWNER_VIEW_ROLES = ["owner"];
 const STAFF_VIEW_ROLES = ["manager", "receptionist"];
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** SIGNUP_ENABLED: only decides whether the "Start free trial" link shows (discovery only;
+   * /signup itself stays reachable by URL). */
+  signupEnabled?: boolean;
+}
+
+export function LoginForm({ signupEnabled = false }: LoginFormProps) {
   const router = useRouter();
   const t = useTranslations("auth");
   const tCommon = useTranslations("common");
@@ -59,24 +68,15 @@ export function LoginForm() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
+  // Set when password login answered EMAIL_NOT_VERIFIED: offers a resend for this address.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+
   // Form States
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Validation
-  const validateEmail = (val: string) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(val);
-  };
-
-  const normalizeInputPhone = (val: string) => {
-    const digits = val.replace(/\D/g, "");
-    if (digits.length === 10 && /^[6-9]/.test(digits)) return digits;
-    if (digits.length === 11 && digits.startsWith("0") && /^[6-9]/.test(digits.slice(1))) return digits.slice(1);
-    if (digits.length === 12 && digits.startsWith("91") && /^[6-9]/.test(digits.slice(2))) return digits.slice(2);
-    return null;
-  };
+  const validateEmail = isValidEmail;
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +100,7 @@ export function LoginForm() {
     }
 
     setErrors({});
+    setUnverifiedEmail(null);
     setIsLoading(true);
 
     try {
@@ -123,6 +124,8 @@ export function LoginForm() {
           ? err.fieldError("detail") ?? t("login.errLoginFallback")
           : t("login.errServerUnreachable");
       setErrors({ password: message });
+      // Branch on the machine code, never on the (translated) message.
+      if (err instanceof ApiError && err.code === "EMAIL_NOT_VERIFIED") setUnverifiedEmail(email.trim());
     }
   };
 
@@ -182,6 +185,7 @@ export function LoginForm() {
   const backToChoice = () => {
     setLoginView("choice");
     setAuthMethod("password");
+    setUnverifiedEmail(null);
     setErrors({});
   };
 
@@ -426,7 +430,11 @@ export function LoginForm() {
                     type="email"
                     placeholder={t("login.emailPlaceholder")}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      // The resend offer is for the address that failed; never send to a stale one.
+                      setUnverifiedEmail(null);
+                    }}
                     className={`w-full rounded-xl border ${
                       errors.email ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
                     } bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink outline-none transition-all focus:ring-4`}
@@ -511,6 +519,9 @@ export function LoginForm() {
                 )}
               </button>
             </form>
+            {/* Outside the password form: the prompt is a form of its own. Keyed by address so a
+                different unverified address starts fresh. */}
+            {unverifiedEmail && <ResendVerificationPrompt key={unverifiedEmail} email={unverifiedEmail} />}
             {useEmailCodeLink}
             </>
             )}
@@ -642,6 +653,15 @@ export function LoginForm() {
             </>
             )}
           </div>
+        )}
+
+        {signupEnabled && (
+          <p className="text-center text-sm text-ink-muted">
+            {t("login.signupPrompt")}{" "}
+            <Link href="/signup" className="font-semibold text-accent hover:text-accent-hover">
+              {t("login.signupLink")}
+            </Link>
+          </p>
         )}
 
         {/* Demo Credentials Helper */}

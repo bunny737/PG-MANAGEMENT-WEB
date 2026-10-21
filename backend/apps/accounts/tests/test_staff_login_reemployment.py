@@ -337,16 +337,18 @@ class StaffLoginAndReemploymentTests(AuthAPITestCase):
     def test_staff_created_with_password_and_email_receives_verification_email(self):
         self.authenticate(self.owner)
         mail.outbox.clear()
-        res = self.client.post(
-            reverse('staff-list'),
-            {
-                'first_name': 'BothCreds',
-                'email': 'both@example.com',
-                'phone': '9876543210',
-                'role': Role.MANAGER,
-                'password': 'InitialPassword-999!',
-            },
-        )
+        # The verification email is queued after the staff transaction commits.
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.client.post(
+                reverse('staff-list'),
+                {
+                    'first_name': 'BothCreds',
+                    'email': 'both@example.com',
+                    'phone': '9876543210',
+                    'role': Role.MANAGER,
+                    'password': 'InitialPassword-999!',
+                },
+            )
         self.assertEqual(res.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Verify your email', mail.outbox[0].subject)

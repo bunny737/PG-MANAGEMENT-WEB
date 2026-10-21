@@ -2045,3 +2045,21 @@ msgid "It expires in %(count)d minute."
 msgid_plural "It expires in %(count)d minutes."
 msgstr[0] ""
 msgstr[1] ""
+
+#: apps/accounts/admin.py
+msgid "Send verification email"
+msgstr ""
+
+#: apps/accounts/admin.py
+msgid "Mark email verified"
+msgstr ""
+
+#: apps/accounts/admin.py
+#, python-format
+msgid "Verification emails queued: %(queued)d. Broker unavailable: %(broker)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(verified)d."
+msgstr ""
+
+#: apps/accounts/admin.py
+#, python-format
+msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
+msgstr ""

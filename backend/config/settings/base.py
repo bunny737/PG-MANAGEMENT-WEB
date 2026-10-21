@@ -136,6 +136,8 @@ REST_FRAMEWORK = {
         'login': '10/min',
         'verify_email': '10/min',
         'resend_verification': '5/min',
+        # Per requested email, so rotating IPs can't flood one inbox with links.
+        'resend_verification_email': '5/hour',
         'otp_request': '3/min',
         'otp_verify': '10/min',
         # Email code login: per client IP, plus per requested email (rotating

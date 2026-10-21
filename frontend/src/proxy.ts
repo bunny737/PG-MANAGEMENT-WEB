@@ -6,7 +6,7 @@ import { cspResponseHeaders, newNonce } from '@/lib/csp';
 import { SESSION_COOKIE } from '@/lib/server/bff';
 
 // Signed-out visitors may only see these. UX only — the API is the real authority.
-const PUBLIC_PATHS = ['/login', '/~offline'];
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/~offline'];
 
 // The public marketing site. These pages must not hand every anonymous visitor a Set-Cookie:
 // they render in the default language until the visitor picks one with the language switcher

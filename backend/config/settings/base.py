@@ -348,6 +348,12 @@ MEDIA_URL_TTL_SECONDS = env.int('MEDIA_URL_TTL_SECONDS', default=300)
 EXPENSE_ATTACHMENT_MAX_BYTES = env.int('EXPENSE_ATTACHMENT_MAX_BYTES', default=5 * 1024 * 1024)
 EXPENSE_ATTACHMENT_URL_TTL_SECONDS = env.int('EXPENSE_ATTACHMENT_URL_TTL_SECONDS', default=MEDIA_URL_TTL_SECONDS)
 
+# Resident Aadhaar/PAN uploads (Module 04). Launch gate (docs/deployment.md): production keeps new uploads
+# OFF until legal sign-off (prod.py defaults it to False). Clearing and reading a stored document stay
+# available either way. The size is a technical limit, not a plan limit.
+KYC_UPLOADS_ENABLED = env.bool('KYC_UPLOADS_ENABLED', default=True)
+KYC_DOCUMENT_MAX_BYTES = env.int('KYC_DOCUMENT_MAX_BYTES', default=5 * 1024 * 1024)
+
 # Google Cloud Storage (owner decision 2026-10-20: replaces AWS S3; see
 # docs/deployment.md). Falls back to local filesystem storage when no bucket
 # is configured (dev/test). On Cloud Run there is no key file: credentials

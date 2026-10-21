@@ -2243,3 +2243,7 @@ msgstr "ప్రస్తుత పాస్‌వర్డ్ తప్పు.
 #: apps/accounts/serializers.py
 msgid "The new password must be different from the current one."
 msgstr "కొత్త పాస్‌వర్డ్ ప్రస్తుత పాస్‌వర్డ్‌కు భిన్నంగా ఉండాలి."
+
+#: apps/residents/serializers.py
+msgid "Identity document uploads are not enabled yet."
+msgstr "గుర్తింపు పత్రాల అప్‌లోడ్‌లు ఇంకా ప్రారంభించబడలేదు."

@@ -2196,3 +2196,7 @@ msgstr ""
 #: apps/accounts/serializers.py
 msgid "The new password must be different from the current one."
 msgstr ""
+
+#: apps/residents/serializers.py
+msgid "Identity document uploads are not enabled yet."
+msgstr ""

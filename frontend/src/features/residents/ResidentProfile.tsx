@@ -53,7 +53,9 @@ export function ResidentProfile({ id }: { id: string }) {
   const tStatus = useTranslations("status");
   const [resident, setResident] = useState<Resident | null>(null);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const { can } = useSession();
+  const { can, user } = useSession();
+  // New Aadhaar/PAN uploads are behind a launch gate; stored documents stay viewable either way.
+  const kycUploadsEnabled = user?.kyc_uploads_enabled === true;
   // Billing figures belong to the Finance module: without view_finance the API omits
   // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
   const canSeeFinance = can("view_finance");
@@ -493,6 +495,10 @@ export function ResidentProfile({ id }: { id: string }) {
             </div>
           )}
 
+          {!kycUploadsEnabled && (
+            <p role="status" className="text-[11px] text-ink-muted leading-relaxed">{t("documents.uploadsDisabled")}</p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             {DOCUMENT_SLOTS.map(({ field, titleKey, numberKey, number }) => {
               const url = resident[field];
@@ -528,6 +534,7 @@ export function ResidentProfile({ id }: { id: string }) {
                       <span className="text-[11px] text-ink-faint">{t("documents.noDocs")}</span>
                     )}
                     <PermissionGate permission="manage_residents">
+                      {kycUploadsEnabled && (
                       <label
                         className={`rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors inline-flex items-center gap-1.5 ${
                           uploadingField ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
@@ -547,6 +554,7 @@ export function ResidentProfile({ id }: { id: string }) {
                           }}
                         />
                       </label>
+                      )}
                     </PermissionGate>
                   </div>
                 </div>

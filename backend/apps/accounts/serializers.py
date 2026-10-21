@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -502,17 +503,24 @@ class TenantUpdateSerializer(serializers.ModelSerializer):
 class MeSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer(read_only=True)
     permissions = serializers.SerializerMethodField()
+    kyc_uploads_enabled = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone', 'role',
-            'language_code', 'email_verified', 'tenant', 'permissions',
+            'language_code', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
         ]
-        read_only_fields = ['id', 'email', 'role', 'email_verified', 'tenant', 'permissions']
+        read_only_fields = [
+            'id', 'email', 'role', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
+        ]
 
     def get_permissions(self, obj) -> list[str]:
         return permissions_for_user(obj)
+
+    def get_kyc_uploads_enabled(self, obj) -> bool:
+        """Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False."""
+        return settings.KYC_UPLOADS_ENABLED
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):

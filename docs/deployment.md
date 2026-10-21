@@ -158,7 +158,9 @@ tests, and deletes the instance.
 ## 9. Launch gates and open items
 
 - **Aadhaar/PAN legal review** (lawful basis, consent text, purpose limitation, retention): until signed off,
-  ship with those uploads disabled.
+  ship with those uploads disabled. This is the `KYC_UPLOADS_ENABLED` setting, which defaults to **off in
+  production**: new Aadhaar/PAN files are refused (stored ones stay readable and can be cleared) until
+  `KYC_UPLOADS_ENABLED=true` is set on the API service.
 - **Razorpay live activation** (KYC, Subscriptions enabled) and **billing upgraded to a paid account before launch**.
 - **Stale webhook ordering** is an open decision — see [modules/13-subscription.md](modules/13-subscription.md).
 - Cost estimate must be an exported Pricing Calculator file before choosing the launch tier (the lean option leaves

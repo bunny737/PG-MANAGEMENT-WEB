@@ -1222,6 +1222,8 @@ export interface CurrentUser {
   tenant?: TenantDetails;
   tenant_id?: string;
   permissions?: string[];
+  /** Launch gate for new Aadhaar/PAN uploads. Absent (an older cached profile) means off. */
+  kyc_uploads_enabled?: boolean;
 }
 
 export function getCurrentUser() {

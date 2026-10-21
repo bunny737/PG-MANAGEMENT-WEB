@@ -15,6 +15,10 @@ if len(JWT_SIGNING_KEY) < 50:
     raise ImproperlyConfigured('JWT_SIGNING_KEY must be set to a random value of at least 50 characters.')
 SECRET_KEY_FALLBACKS = env.list('SECRET_KEY_FALLBACKS', default=[])
 
+# Launch gate: no new Aadhaar/PAN uploads in production until legal sign-off. Set
+# KYC_UPLOADS_ENABLED=true on the API service when that is given.
+KYC_UPLOADS_ENABLED = env.bool('KYC_UPLOADS_ENABLED', default=False)
+
 # The load balancer terminates TLS and Cloud Run forwards X-Forwarded-Proto.
 # Without this, SECURE_SSL_REDIRECT sees plain HTTP and redirects forever.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

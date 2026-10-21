@@ -169,8 +169,23 @@ lifecycle (`vacated`/`blacklisted`) instead.
   the requesting user lacks `manage_residents` (`permissions_for(user.role)`).
   This prevents financial terms from reaching the front desk even if the
   frontend tab is hidden.
+- [DECISION 2026-10-21] **Aadhaar/PAN upload launch gate.** `KYC_UPLOADS_ENABLED` (default `True` in dev,
+  `False` in `config/settings/prod.py`; set `KYC_UPLOADS_ENABLED=true` on the API service once legal signs
+  off, docs/deployment.md §9) refuses a NEW `aadhaar_document` / `pan_document` file on both create and
+  update with a 400 on that field (`kyc_uploads_disabled`). Gated per field in `ResidentSerializer`, not in
+  the view, so every write path is covered. **Clearing** a stored document (`null`) is always allowed
+  (data minimisation), and **stored documents stay readable** via their signed URLs, so an owner can still
+  see and delete what is already on file. When uploads are on, each file is checked with the shared
+  `apps/core/uploads.py` (`sniff_upload`: real type from the magic bytes, JPEG/PNG/WebP/PDF only, at most
+  `KYC_DOCUMENT_MAX_BYTES`, default 5 MB; codes `document_type_not_allowed` / `document_too_large`). The
+  expenses attachment check was refactored onto the same utility (its `attachment_*` codes are unchanged),
+  so residents do not import from expenses. `GET /auth/me/` exposes `kyc_uploads_enabled`; the web
+  resident profile hides the upload controls (and says why) when it is false or absent. Tests:
+  `apps/residents/tests/test_kyc_gate.py`, `apps/core/test_uploads.py`.
 
 ## Changelog
+- 2026-10-21  KYC upload launch gate + shared upload validation (see Decisions); `/auth/me/` gains
+  `kyc_uploads_enabled`.
 - 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: `Resident` model (RLS) with exact PRD status-transition

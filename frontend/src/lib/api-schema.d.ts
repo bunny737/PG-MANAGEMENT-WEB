@@ -3679,6 +3679,8 @@ export interface components {
             readonly email_verified: boolean;
             readonly tenant: components["schemas"]["Tenant"];
             readonly permissions: string[];
+            /** @description Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False. */
+            readonly kyc_uploads_enabled: boolean;
         };
         MeUpdate: {
             first_name: string;

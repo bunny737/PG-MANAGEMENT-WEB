@@ -158,10 +158,20 @@ page navigations, which never carry the `/api`-scoped cookies) and `app/api/[...
 else under `/api/v1/`). Behaviours worth knowing:
 
 - Login handlers return only the `/auth/me/` payload. The token-issuing endpoints
-  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`, `otp/email/verify`) are **404 through the
+  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`, `otp/email/verify`, `password/change`) are **404 through the
   generic proxy**, so a proxied call can never hand a token to page JS. Email-code login (2026-10-21) goes
   through its own handler, `login-email-otp`; its request step (`otp/email/request`) issues no tokens and uses
   the generic proxy. Phone OTP still needs its own handler when SMS delivery is built.
+- Change password (2026-10-21) has its own handler, `app/api/auth/change-password`, because Django ends every
+  session when a password changes and answers with a fresh token pair. The handler (`lib/server/authenticatedUpstream.ts`)
+  calls Django as the signed-in user with the same refresh rules as the proxy, installs the new pair in the
+  httpOnly cookies and returns a token-free `{ok: true}` (no follow-up `/auth/me/` that could fail and strand
+  the new session). A 400/429 leaves the session as it was; only a definitive 401 clears the cookies.
+- Forgot/reset password (2026-10-21): `/forgot-password` (always answers "if an account exists…") and
+  `/reset-password` (the emailed link carries `uid`+`token`, plus `invite=1` for staff, in the URL **fragment**,
+  stripped on load like `/verify-email`) go through the generic proxy; neither signs anyone in. The new-password
+  minimum (8) applies to signup, reset, invite and change only — sign-in accepts any non-empty password. `/login?view=staff|owner`
+  skips the role chooser (the landing spot after a staff invite).
 - Refresh is server-side. With no access cookie (it expired) the proxy refreshes **before** sending,
   so the request runs once; with an access cookie it is replayed only after the backend answered
   401 (which means it did not run). A request is therefore never executed twice — this matters for
@@ -463,7 +473,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; phone OTP/reset still future work — forgot-password is still a simulated form and there is no `/reset-password` page yet) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; real `/forgot-password` + `/reset-password` (also the staff-invite set-password page) and a real Settings → change-password (re-issues the session cookies) 2026-10-21; phone OTP still future work) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |

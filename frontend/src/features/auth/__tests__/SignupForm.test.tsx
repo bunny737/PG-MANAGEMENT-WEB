@@ -75,6 +75,16 @@ describe("SignupForm", () => {
     }
   });
 
+  test("rejects a password shorter than 8 characters before calling the API", async () => {
+    renderForm();
+    fillValid();
+    fireEvent.change(field(auth.login.passwordLabel), { target: { value: "Short1" } });
+    fireEvent.change(field(auth.signup.confirmPasswordLabel), { target: { value: "Short1" } });
+    await submit();
+    expect(screen.getByText(auth.login.errPasswordLength)).toBeTruthy();
+    expect(api.signup).not.toHaveBeenCalled();
+  });
+
   test("sends a normalized payload and shows the check-email panel", async () => {
     renderForm();
     fillValid();

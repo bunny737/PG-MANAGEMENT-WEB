@@ -276,9 +276,16 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   (validation answers 400) instead of raising.
 - [DECISION 2026-10-21] **Accepted narrow race:** a tenant suspended just after the locked eligibility
   check can still receive one email, but verify re-checks tenant status, so no tokens are issued.
-- [OPEN 2026-10-21] **Forgot-password page is not built.** The login screen's forgot-password form is
-  a simulated timeout, and the frontend has no `/reset-password` route although the reset and staff
-  invite emails link to it. (`/signup` and `/verify-email` were built 2026-10-21.)
+- [DECISION 2026-10-21] **Forgot, reset and change password are built in the web app** (closing the
+  earlier open item: the forgot form was a simulated timeout and `/reset-password` didn't exist, so
+  reset and staff-invite links 404'd). `/forgot-password` always answers "if an account exists…";
+  `/reset-password` reads `uid`/`token`/`invite` from the URL fragment and strips it; an invite's
+  success link opens `/login?view=staff`. Settings → change password goes through the
+  `change-password` BFF route, which installs the re-issued token pair (docs/frontend-plan.md §3.1).
+  The web new-password minimum is 8 (signup, reset, invite, change); the login form only requires a
+  non-empty password so older, shorter passwords still reach Django.
+  Staff with no email address can't use the emailed reset: the Owner sets their password
+  (`/staff/{id}/set-password/`).
 - [DECISION 2026-10-21] **Auth emails are branded multipart.** Verification, password-reset, staff-invite
   and sign-in-code emails render from `backend/templates/emails/` through `apps.core.email`, always in
   the user's `language_code` (reset and invite previously used the request language). See Module 14 for
@@ -588,3 +595,4 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   Read with `filter(pk=1).first()`, never `PlatformConfig.get()`, so a public GET never writes.
   Tests: `apps/core/test_support.py`. These are platform-wide contacts, not per-property/PG contacts.
 - 2026-10-21  Auth backend hardening: password-reset / staff-invite / password-changed emails moved to Celery (links in the URL fragment, 24 h), race-safe reset confirm (token rechecked under the user row lock), `POST /auth/password/change/` (current password checked under the lock, returns a fresh token pair), split reset throttle scopes, `user.password_reset` / `user.password_changed` audit records. New tests: `test_password_reset.py` (rewritten), `test_password_change.py`, `test_staff_invite.py`.
+- 2026-10-21  Web auth pages: real `/forgot-password` and `/reset-password` (also the staff-invite set-password page), `/login?view=staff`, Settings → change password via the `change-password` BFF route (`lib/server/authenticatedUpstream.ts`), shared `useEmailRequest` hook, 8-character new-password rule (login keeps non-empty only), removed the demo-credentials box and the unwired remember-me. Frontend tests: `ForgotPasswordForm`, `ResetPasswordForm`, `LoginForm.flows`, `GlobalSettings.password`, `bff` change-password cases.

@@ -1,10 +1,19 @@
-// Client-side checks shared by the login and signup forms. The backend re-validates everything;
-// these only catch obvious mistakes before a round trip.
+// Client-side checks shared by the auth forms. The backend re-validates everything; these only
+// catch obvious mistakes before a round trip.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(value: string): boolean {
   return EMAIL_RE.test(value);
+}
+
+/** Shortest password a form accepts when SETTING one (signup, reset, invite, change), matching
+ * Django's MinimumLengthValidator. Never applied when signing in: an older account may have a
+ * shorter password, and login must let Django decide. */
+export const NEW_PASSWORD_MIN = 8;
+
+export function isValidNewPassword(value: string): boolean {
+  return value.length >= NEW_PASSWORD_MIN;
 }
 
 /** Mirrors the backend's `normalize_phone`: 10 digits starting 6–9, optionally prefixed with 0 or

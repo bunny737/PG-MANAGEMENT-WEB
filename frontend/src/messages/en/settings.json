@@ -39,7 +39,7 @@
     "saveSetup": "Save Portal Setup",
     "portalSavedToast": "General portal configurations updated successfully.",
     "changePassword": "Change Password",
-    "changePasswordSub": "Update your login credentials. Security logs record all password reset timelines.",
+    "changePasswordSub": "Update your login password. You stay signed in on this device; every other device is signed out.",
     "currentPassword": "Current Password",
     "newPassword": "New Password",
     "confirmPassword": "Confirm New Password",
@@ -52,8 +52,11 @@
     "currencyEUR": "EUR (€) - Euro",
     "errCurrentRequired": "Current Password is required",
     "errNewRequired": "New Password is required",
-    "errNewMinLength": "Password must be at least 6 characters",
-    "errConfirmMatch": "Passwords do not match"
+    "errNewMinLength": "Password must be at least 8 characters",
+    "errConfirmMatch": "Passwords do not match",
+    "errPasswordUnreachable": "Could not reach the server. Please try again.",
+    "errPasswordThrottled": "Too many attempts. Please wait a minute and try again.",
+    "errPasswordFailed": "Could not change your password. Please try again."
   },
   "subscription": {
     "loading": "Loading your plan...",
@@ -163,6 +166,8 @@
     "emailVerified": "Verified",
     "emailNotVerified": "Not verified",
     "sendVerification": "Send verification email",
-    "verificationSent": "Verification email sent. Check your inbox."
+    "verificationSent": "Verification email sent. Check your inbox.",
+    "passwordLabel": "Password",
+    "changePassword": "Change password"
   }
 }

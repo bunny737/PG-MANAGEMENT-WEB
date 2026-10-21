@@ -344,6 +344,36 @@ export async function resendVerification(email: string) {
   });
 }
 
+/** Asks for a password-reset link. The reply is the same whether or not the address is
+ * registered, so success never means "registered". */
+export async function requestPasswordReset(email: string) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/password-reset/", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+    skipAuth: true,
+  });
+}
+
+/** Sets a new password from an emailed link (`uid` + `token`; also how staff invites set their
+ * first password). Never signs the user in. A 400 with a `token` field means the link is dead. */
+export async function confirmPasswordReset(payload: { uid: string; token: string; new_password: string }) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/password-reset/confirm/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+/** Changes the signed-in user's password. Django ends every session when it changes, so the
+ * route handler installs the replacement token pair in the httpOnly cookies; the caller stays
+ * signed in and never sees a token. */
+export async function changePassword(currentPassword: string, newPassword: string) {
+  await apiFetch<{ ok: boolean }>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
 export interface PropertyImage {
   id: string;
   image: string;

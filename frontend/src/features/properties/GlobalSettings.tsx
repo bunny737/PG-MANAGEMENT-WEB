@@ -17,17 +17,26 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
-import { getCurrentUser, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
+import {
+  ApiError,
+  changePassword,
+  getCurrentUser,
+  updateTenantDefaultLanguage,
+  updateTenantFiscalYearStart,
+} from "@/lib/api";
+import { isValidNewPassword } from "@/features/auth/validation";
 import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-export function GlobalSettings() {
+type SettingsTab = "property" | "security" | "subscription";
+
+export function GlobalSettings({ initialTab }: { initialTab?: SettingsTab }) {
   const t = useTranslations("settings");
   const locale = useLocale();
   const monthLabel = (month: number) =>
     new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
-  const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "property");
 
   // Portal setup states
   const [portalName, setPortalName] = useState("StaysManager Premium");
@@ -56,6 +65,7 @@ export function GlobalSettings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const triggerSaveAlert = (type: string, message: string) => {
     setSaveAlert({ type, message });
@@ -71,13 +81,13 @@ export function GlobalSettings() {
     }, 1000);
   };
 
-  const handleSaveSecurity = (e: React.FormEvent) => {
+  const handleSaveSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
 
     if (!currentPassword) errs.current = t("global.errCurrentRequired");
     if (!newPassword) errs.new = t("global.errNewRequired");
-    else if (newPassword.length < 6) errs.new = t("global.errNewMinLength");
+    else if (!isValidNewPassword(newPassword)) errs.new = t("global.errNewMinLength");
     if (newPassword !== confirmPassword) errs.confirm = t("global.errConfirmMatch");
 
     if (Object.keys(errs).length > 0) {
@@ -86,14 +96,31 @@ export function GlobalSettings() {
     }
 
     setPasswordErrors({});
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    setIsChangingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       triggerSaveAlert("password", t("global.passwordSavedToast"));
-    }, 1500);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status === 0) {
+        setPasswordErrors({ form: t("global.errPasswordUnreachable") });
+      } else if (err.status === 429) {
+        setPasswordErrors({ form: t("global.errPasswordThrottled") });
+      } else {
+        // The backend's messages arrive already translated (Accept-Language).
+        const current = err.fieldError("current_password");
+        const next = err.fieldError("new_password");
+        setPasswordErrors(
+          current || next
+            ? { ...(current ? { current } : {}), ...(next ? { new: next } : {}) }
+            : { form: t("global.errPasswordFailed") }
+        );
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleLanguageChange = async (e: React.FormEvent) => {
@@ -418,10 +445,11 @@ export function GlobalSettings() {
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.current ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.current && <p className="text-xs text-status-critical">{passwordErrors.current}</p>}
               </div>
@@ -436,10 +464,11 @@ export function GlobalSettings() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.new ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.new && <p className="text-xs text-status-critical">{passwordErrors.new}</p>}
               </div>
@@ -454,20 +483,25 @@ export function GlobalSettings() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.confirm ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.confirm && <p className="text-xs text-status-critical">{passwordErrors.confirm}</p>}
               </div>
 
+              {passwordErrors.form && (
+                <p role="alert" className="text-xs text-status-critical">{passwordErrors.form}</p>
+              )}
+
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isChangingPassword}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? t("global.savingCredentials") : t("global.updateCredentials")}
+                {isChangingPassword ? t("global.savingCredentials") : t("global.updateCredentials")}
               </button>
             </form>
           </div>

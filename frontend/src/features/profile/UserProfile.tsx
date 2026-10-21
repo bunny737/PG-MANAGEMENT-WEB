@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { User, Mail, Phone, Building, Camera, CheckCircle2, Shield, Globe } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { LOCALES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
@@ -277,6 +278,14 @@ export function UserProfile() {
                   disabled={isLoading}
                 />
               </div>
+            </div>
+
+            {/* Password lives in Settings → Account & Security */}
+            <div className="flex items-center justify-between sm:col-span-2 pt-2.5 border-t border-border/55 text-xs">
+              <span className="font-semibold uppercase tracking-wider text-ink-muted">{t("passwordLabel")}</span>
+              <Link href="/settings?tab=security" className="font-semibold text-accent hover:text-accent-hover transition-colors">
+                {t("changePassword")}
+              </Link>
             </div>
           </div>
 

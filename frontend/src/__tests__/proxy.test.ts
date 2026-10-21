@@ -78,10 +78,13 @@ describe("cookies and redirects (unchanged behaviour)", () => {
     expect(res.headers.get("set-cookie")).toContain("NEXT_LOCALE=");
   });
 
-  test.each(["/signup", "/verify-email"])("signed-out %s is reachable (no redirect to /login)", (path) => {
-    const res = run(path);
-    expect(res.headers.get("location")).toBeNull();
-  });
+  test.each(["/signup", "/verify-email", "/forgot-password", "/reset-password"])(
+    "signed-out %s is reachable (no redirect to /login)",
+    (path) => {
+      const res = run(path);
+      expect(res.headers.get("location")).toBeNull();
+    }
+  );
 
   test("other signed-out app pages still redirect to /login", () => {
     expect(run("/signup/extra").headers.get("location")).toBe(`${ORIGIN}/login`);

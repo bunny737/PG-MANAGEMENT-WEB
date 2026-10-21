@@ -29,6 +29,7 @@ const TOKEN_ISSUING_PATHS = new Set([
   "auth/token/refresh",
   "auth/otp/verify",
   "auth/otp/email/verify",
+  "auth/password/change",
 ]);
 
 export function isTokenIssuingPath(apiPath: string): boolean {

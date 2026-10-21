@@ -19,7 +19,7 @@ import {
 import { BrandMark } from "@/components/shared/BrandMark";
 import { firstAllowedRoute } from "@/lib/permissions";
 import { ApiError, clearSession, login, loginPhone, type CurrentUser } from "@/lib/api";
-import { EmailCodeLogin, type CodeRequest } from "./EmailCodeLogin";
+import { EmailCodeLogin, type CodeRequests } from "./EmailCodeLogin";
 
 type LoginView = "choice" | "owner" | "staff";
 type FlowState = "login" | "forgot_password";
@@ -39,8 +39,10 @@ export function LoginForm() {
   const [loginView, setLoginView] = useState<LoginView>("choice");
   const [flowState, setFlowState] = useState<FlowState>("login");
   const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
-  // Lives here, not in EmailCodeLogin, so the resend cooldown survives switching views or methods.
-  const [lastCodeRequest, setLastCodeRequest] = useState<CodeRequest | null>(null);
+  // Lives here, not in EmailCodeLogin, so resend cooldowns survive switching views or methods.
+  const [codeRequests, setCodeRequests] = useState<CodeRequests>({});
+  const recordCodeRequest = (address: string, sentAt: number) =>
+    setCodeRequests((prev) => ({ ...prev, [address]: sentAt }));
 
   // Email + Password Credentials
   const [email, setEmail] = useState("");
@@ -402,8 +404,8 @@ export function LoginForm() {
               <EmailCodeLogin
                 expectedRoles={OWNER_VIEW_ROLES}
                 initialEmail={email}
-                lastRequest={lastCodeRequest}
-                onCodeRequested={setLastCodeRequest}
+                codeRequests={codeRequests}
+                onCodeRequested={recordCodeRequest}
                 roleMismatchMessage={t("login.errRoleMismatchOwner")}
                 onSuccess={handleEmailCodeSuccess}
                 onUsePassword={usePasswordInstead}
@@ -538,8 +540,8 @@ export function LoginForm() {
             {authMethod === "email_code" ? (
               <EmailCodeLogin
                 expectedRoles={STAFF_VIEW_ROLES}
-                lastRequest={lastCodeRequest}
-                onCodeRequested={setLastCodeRequest}
+                codeRequests={codeRequests}
+                onCodeRequested={recordCodeRequest}
                 roleMismatchMessage={t("login.errRoleMismatchStaff")}
                 onSuccess={handleEmailCodeSuccess}
                 onUsePassword={usePasswordInstead}

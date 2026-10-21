@@ -17,14 +17,14 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
-import { EmailCodeLogin, RESEND_COOLDOWN_S, type CodeRequest } from "../EmailCodeLogin";
+import { EmailCodeLogin, RESEND_COOLDOWN_S, type CodeRequests } from "../EmailCodeLogin";
 
 const onSuccess = vi.fn();
 const onUsePassword = vi.fn();
 
-/** Stands in for LoginForm: owns the last request and unmounts the code form for "use password". */
+/** Stands in for LoginForm: owns the per-address requests and unmounts the code form for "use password". */
 function Harness({ expectedRoles }: { expectedRoles: string[] }) {
-  const [lastRequest, setLastRequest] = useState<CodeRequest | null>(null);
+  const [codeRequests, setCodeRequests] = useState<CodeRequests>({});
   const [showCodeForm, setShowCodeForm] = useState(true);
   if (!showCodeForm) {
     return <button onClick={() => setShowCodeForm(true)}>back-to-code</button>;
@@ -33,8 +33,8 @@ function Harness({ expectedRoles }: { expectedRoles: string[] }) {
     <EmailCodeLogin
       expectedRoles={expectedRoles}
       initialEmail=" owner@example.com "
-      lastRequest={lastRequest}
-      onCodeRequested={setLastRequest}
+      codeRequests={codeRequests}
+      onCodeRequested={(address, sentAt) => setCodeRequests((prev) => ({ ...prev, [address]: sentAt }))}
       roleMismatchMessage="Not an owner"
       onSuccess={onSuccess}
       onUsePassword={() => {
@@ -169,6 +169,37 @@ describe("EmailCodeLogin", () => {
     await sendCode();
     expect(api.requestEmailOtp).toHaveBeenCalledTimes(2);
     expect(api.requestEmailOtp).toHaveBeenLastCalledWith("other@example.com");
+  });
+
+  test("a case or spacing variant of the same address is still cooling down", async () => {
+    renderLogin();
+    await sendCode(); // owner@example.com
+    for (const variant of ["Owner@Example.COM", "  OWNER@example.com  "]) {
+      fireEvent.click(screen.getByRole("button", { name: auth.login.changeEmail }));
+      fireEvent.change(screen.getByLabelText(auth.login.emailLabel), { target: { value: variant } });
+      await sendCode();
+      expect(screen.getByLabelText(auth.login.otpCodeLabel)).toBeTruthy();
+      expect(screen.getByText(/^Resend OTP in \d+s$/)).toBeTruthy();
+    }
+    expect(api.requestEmailOtp).toHaveBeenCalledTimes(1);
+  });
+
+  test("requesting another address does not lift the first address's cooldown (A → B → A)", async () => {
+    renderLogin();
+    await sendCode(); // A
+    fireEvent.click(screen.getByRole("button", { name: auth.login.changeEmail }));
+    fireEvent.change(screen.getByLabelText(auth.login.emailLabel), { target: { value: "other@example.com" } });
+    await sendCode(); // B
+    fireEvent.click(screen.getByRole("button", { name: auth.login.changeEmail }));
+    fireEvent.change(screen.getByLabelText(auth.login.emailLabel), { target: { value: "owner@example.com" } });
+    await sendCode(); // back to A, still cooling down
+
+    expect(api.requestEmailOtp).toHaveBeenCalledTimes(2);
+    expect(api.requestEmailOtp.mock.calls.map(([address]) => address)).toEqual([
+      "owner@example.com",
+      "other@example.com",
+    ]);
+    expect(screen.getByText(/^Resend OTP in \d+s$/)).toBeTruthy();
   });
 
   test("leaving for the password form and coming back keeps the cooldown", async () => {

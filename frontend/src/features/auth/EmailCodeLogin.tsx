@@ -13,19 +13,30 @@ const CODE_RE = /^\d{6}$/;
 
 type Step = "email" | "code";
 
-/** The last code request. Held by the parent, which stays mounted when the user switches to the
- * password form and back, so leaving and returning cannot reset the resend cooldown. */
-export interface CodeRequest {
-  email: string;
-  sentAt: number;
+/** The address most recently sent a code, to prefill the form when the user comes back to it. */
+function mostRecent(requests: CodeRequests): string | undefined {
+  let latest: string | undefined;
+  for (const [address, sentAt] of Object.entries(requests)) {
+    if (latest === undefined || sentAt > requests[latest]) latest = address;
+  }
+  return latest;
 }
+
+/** When each address was last sent a code, keyed by `normalizeEmail`. Held by the parent, which stays
+ * mounted when the user switches to the password form and back, so leaving and returning cannot
+ * reset a cooldown, and one address per key so requesting B never lifts A's. */
+export type CodeRequests = Record<string, number>;
+
+/** Same normalization as the backend (`normalize_email`): case and surrounding spaces don't make a
+ * different address, so they can't make a different cooldown either. */
+export const normalizeEmail = (address: string) => address.trim().toLowerCase();
 
 interface EmailCodeLoginProps {
   /** Roles this login view admits; anyone else is signed straight back out (same as the password flows). */
   expectedRoles: string[];
   initialEmail?: string;
-  lastRequest: CodeRequest | null;
-  onCodeRequested: (request: CodeRequest) => void;
+  codeRequests: CodeRequests;
+  onCodeRequested: (email: string, sentAt: number) => void;
   roleMismatchMessage: string;
   onSuccess: (me: CurrentUser) => void;
   onUsePassword: () => void;
@@ -35,7 +46,7 @@ interface EmailCodeLoginProps {
 export function EmailCodeLogin({
   expectedRoles,
   initialEmail = "",
-  lastRequest,
+  codeRequests,
   onCodeRequested,
   roleMismatchMessage,
   onSuccess,
@@ -44,7 +55,7 @@ export function EmailCodeLogin({
   const t = useTranslations("auth");
 
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState(() => initialEmail.trim() || lastRequest?.email || "");
+  const [email, setEmail] = useState(() => initialEmail.trim() || mostRecent(codeRequests) || "");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,10 +63,10 @@ export function EmailCodeLogin({
   const [now, setNow] = useState(() => Date.now());
 
   /** Seconds until `address` may be sent another code (0 for any address not just requested). */
-  const cooldownFor = (address: string, at: number) =>
-    lastRequest && lastRequest.email === address
-      ? Math.max(0, Math.ceil((lastRequest.sentAt + RESEND_COOLDOWN_S * 1000 - at) / 1000))
-      : 0;
+  const cooldownFor = (address: string, at: number) => {
+    const sentAt = codeRequests[normalizeEmail(address)];
+    return sentAt === undefined ? 0 : Math.max(0, Math.ceil((sentAt + RESEND_COOLDOWN_S * 1000 - at) / 1000));
+  };
   const cooldown = step === "code" ? cooldownFor(email, now) : 0;
 
   useEffect(() => {
@@ -93,7 +104,7 @@ export function EmailCodeLogin({
     setIsLoading(true);
     try {
       await requestEmailOtp(trimmed);
-      onCodeRequested({ email: trimmed, sentAt: Date.now() });
+      onCodeRequested(normalizeEmail(trimmed), Date.now());
       setNow(Date.now());
       setEmail(trimmed);
       setCode("");

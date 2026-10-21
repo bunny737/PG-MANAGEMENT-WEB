@@ -35,10 +35,11 @@ API_SECRETS="$(secrets SECRET_KEY=DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD 
 # service exists, so a re-deploy knows it up front; the very first deploy needs this script run twice.
 service_url() { g run services describe "$1" --region "$REGION" --format='value(status.url)' 2>/dev/null || true; }
 candidate_host() { local url; url="$(service_url "$1")"; [[ -n "$url" ]] && echo "candidate---${url#https://}"; }
-API_HOSTS="$ALLOWED_API_HOSTS"
+# nginx on the worker VM (infra/edge/) sends Host = the run.app name, because Cloud Run routes on Host.
+API_HOSTS="$ALLOWED_API_HOSTS,pglive-api-$PROJECT_NUMBER.$REGION.run.app"
 if cand="$(candidate_host pglive-api)" && [[ -n "$cand" ]]; then API_HOSTS="$API_HOSTS,$cand"; fi
 # Cloud Run rejects --no-traffic on a service's first deployment; that first revision takes the (still empty)
-# traffic instead. Ingress is internal + LB, so nothing reaches it before the load balancer exists.
+# traffic instead. Ingress is internal (only the VM edge), so nothing reaches it before nginx is set up.
 API_TRAFFIC=(); WEB_TRAFFIC=()
 if [[ -n "$(service_url pglive-api)" ]]; then API_TRAFFIC=(--no-traffic --tag candidate); fi
 if [[ -n "$(service_url pglive-web)" ]]; then WEB_TRAFFIC=(--no-traffic --tag candidate); fi
@@ -58,19 +59,20 @@ done
 echo "== pglive-api"
 # No HTTP liveness probe: probes arrive as plain HTTP with the container address as Host, which prod Django
 # answers with 400 DisallowedHost (ALLOWED_HOSTS) before any view runs — Cloud Run would restart the API forever.
-# The TCP startup probe needs nothing from Django. Readiness is watched through the LB uptime check instead.
+# The TCP startup probe needs nothing from Django. Readiness is checked through nginx (https://api.pglive.in).
+# /admin/ is guarded by the nginx allowlist, not IAP (no load balancer), hence IAP_REQUIRED=False.
 g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-account "$(sa sa-api)" \
-  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --ingress internal --allow-unauthenticated \
   --cpu 1 --memory 1Gi --concurrency "$API_CONCURRENCY" --timeout 60 \
   --min-instances 1 --max-instances "$API_MAX_INSTANCES" \
   --set-cloudsql-instances "$SQL_CONNECTION" "${VPC[@]}" \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=app_user@ALLOWED_HOSTS=$API_HOSTS@CSRF_TRUSTED_ORIGINS=$SITE_URL@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa sa-api)@IAP_AUDIENCE=${IAP_AUDIENCE:-}@SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=app_user@ALLOWED_HOSTS=$API_HOSTS@CSRF_TRUSTED_ORIGINS=$SITE_URL,https://api.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa sa-api)@IAP_REQUIRED=False@SECURE_HSTS_SECONDS=0" \
   "$API_SECRETS" "${API_TRAFFIC[@]}"
 
 echo "== pglive-web"
 g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-account "$(sa sa-web)" \
-  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --ingress internal --allow-unauthenticated \
   --cpu 1 --memory 512Mi --concurrency 40 --timeout 60 --min-instances 0 --max-instances 5 \
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \

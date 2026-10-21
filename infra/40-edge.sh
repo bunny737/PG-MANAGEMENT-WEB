@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# NOT USED (owner decision 2026-10-21): production runs without a load balancer; the edge is nginx +
+# Let's Encrypt on the worker VM (infra/edge/). Kept for the scale path, when an LB, Cloud Armor and IAP return.
 # Phase 5: global external Application Load Balancer, certificates, Cloud Armor, IAP for /admin/.
 #   infra/40-edge.sh prod
 # Production only (staging has no LB: testers use the run.app URLs). After it runs it prints the IP and the DNS

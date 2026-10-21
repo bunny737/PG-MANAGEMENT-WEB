@@ -14,7 +14,8 @@ residents, billing, and operations through a single system.
   private bucket, files only ever served as short-lived IAM-signed URLs.
 - Hosting: Google Cloud Platform, asia-south1 (owner decision 2026-10-20): Cloud Run
   (Next.js + Django), Cloud SQL PostgreSQL 16, one Compute Engine VM for Celery
-  worker/beat/Redis. Runbook and rationale: docs/deployment.md.
+  worker/beat/Redis and, since 2026-10-21, the nginx + Let's Encrypt edge (no load
+  balancer; GoDaddy points at the VM). Runbook and rationale: docs/deployment.md.
 - Payments: Razorpay — platform subscription billing ONLY, never resident rent
 - Web Frontend: Next.js 15 (App Router) + TypeScript + Tailwind CSS, installable PWA
   Confirmed by owner 2026-07-02. All frontend work follows docs/frontend-plan.md

@@ -10,19 +10,28 @@ GitHub workflows are written but **have not been run against a real GCP project 
 
 ## 1. Architecture
 
+Owner decision 2026-10-21: **no load balancer, no Cloud DNS.** GoDaddy points straight at the worker VM, where
+nginx + Let's Encrypt is the edge ([infra/edge/](../infra/edge/)); Cloud Run ingress is `internal`, which admits
+that VM (same project network) and nothing on the internet. The load-balancer design (`infra/40-edge.sh`) is kept for
+the scale path. Trade-offs accepted: the VM is a single point of failure for the site; no Cloud Armor (nginx
+rate-limits login); `/admin/` is an nginx IP allowlist + Django password, not IAP + Google 2-Step Verification
+(`IAP_REQUIRED=False`). Step-by-step: [deployment-manual.md](deployment-manual.md).
+
 ```
-GoDaddy DNS: A @, www, api → one static IP
-Global external Application LB (Certificate Manager certs, Cloud Armor)
-  every backend: request header X-PGLive-Client-IP: {client_ip_address}   (overwrites a client-sent value)
-                 response header Strict-Transport-Security                 (the only place HSTS is set)
-  www.pglive.in            → backend-web        → Cloud Run pglive-web   (Next.js standalone, BFF)
-  pglive.in                → backend-web        → Next 301 → https://www.pglive.in   (next.config.ts redirects)
-  api.pglive.in            → backend-api        → Cloud Run pglive-api   (gunicorn, Django/DRF)
-  api.pglive.in/admin/*    → backend-api-admin  → same service, IAP enabled
-pglive-web → https://api.pglive.in (BFF; signed X-PGLive-Origin-*)      Razorpay webhook → api.pglive.in directly
+GoDaddy DNS: A @, www, api → the worker VM's static IP
+nginx on the worker VM (Let's Encrypt cert for all three names)
+  every request: X-PGLive-Client-IP: $remote_addr   (overwrites a client-sent value)
+                 Strict-Transport-Security          (the only place HSTS is set)
+                 Host = the run.app name (Cloud Run routes on it), X-Forwarded-Host = the public name
+  pglive.in                → 301 → https://www.pglive.in
+  www.pglive.in            → Cloud Run pglive-web   (Next.js standalone, BFF)
+  api.pglive.in            → Cloud Run pglive-api   (gunicorn, Django/DRF)
+  api.pglive.in/admin/*    → same, only from /etc/nginx/pglive-admin-allow.conf
+  /api/auth/*, /api/v1/auth/* rate-limited per IP
+pglive-web → https://api.pglive.in (BFF; signed X-PGLive-Origin-*)      Razorpay webhook → api.pglive.in
 pglive-api → Cloud SQL (/cloudsql socket)                                pglive-api → worker VM :6379 (Direct VPC egress)
-Worker VM (e2-small, IAP-only SSH): redis · celery worker · celery beat (exactly one) · cloud-sql-proxy
-Cloud Run Jobs (fixed commands): pglive-migrate · pglive-bootstrap · pglive-generate-invoices ·
+Worker VM (e2-small, IAP-only SSH): nginx edge · redis · celery worker · celery beat (exactly one) · cloud-sql-proxy
+Cloud Run Jobs (fixed commands): pglive-migrate · pglive-check-roles · pglive-bootstrap · pglive-generate-invoices ·
   pglive-check-grace-periods · pglive-smoke · pglive-export-verify
 GCS: pglive-prod-media (private) · pglive-prod-backups (asia-south2)
 ```

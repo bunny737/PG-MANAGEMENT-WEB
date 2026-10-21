@@ -308,20 +308,31 @@ done
 Locking a retention policy is irreversible and puts a lien on the project: leave it unlocked until export →
 restore → deletion has been proven.
 
-## 8. The worker VM (Celery worker, one beat, Redis)  (Console: Compute Engine)
+## 8. The worker VM: Celery worker, one beat, Redis, and the nginx edge  (Console: Compute Engine)
+
+Owner decision 2026-10-21: **no load balancer and no Cloud DNS.** GoDaddy's A records point straight at this VM's
+static IP; nginx with a Let's Encrypt certificate on the VM forwards to Cloud Run (section 11). Cloud Run ingress is
+`internal`, which admits this VM (same project's network) and nothing on the internet.
+
+Reserve the static IP, open 80/443 for the edge only, and create the VM with that IP:
 
 ```bash
+gcloud compute addresses create pglive-edge-ip --region $REGION
+EDGE_IP=$(gcloud compute addresses describe pglive-edge-ip --region $REGION --format='value(address)'); echo $EDGE_IP
+gcloud compute firewall-rules create pglive-allow-web --network pglive --allow tcp:80,tcp:443 \
+  --source-ranges 0.0.0.0/0 --target-tags edge
+
 gcloud compute instances create pglive-worker --zone $ZONE --machine-type e2-small \
-  --network pglive --subnet pglive-$REGION --private-network-ip $WORKER_IP --tags worker \
+  --network pglive --subnet pglive-$REGION --private-network-ip $WORKER_IP --address $EDGE_IP --tags worker,edge \
   --service-account $(sa worker) --scopes cloud-platform \
   --image-family debian-12 --image-project debian-cloud --boot-disk-size 20GB --boot-disk-type pd-balanced \
   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
   --metadata region=$REGION,sql-connection=$SQL_CONN,enable-oslogin=TRUE
 ```
 
-It keeps an ephemeral external IP only so it can reach Razorpay, FCM and SMTP without Cloud NAT; no firewall rule
-admits traffic from the internet. Log in over IAP and install Docker from Docker's own repository (Debian 12's
-own repositories have no Compose v2 plugin):
+Write `$EDGE_IP` down: it is what GoDaddy points at. SSH stays IAP-only; Redis is bound to the private address and
+firewalled to the subnet. Log in over IAP and install Docker (from Docker's own repository — Debian 12's has no
+Compose v2 plugin), nginx and certbot:
 
 ```bash
 gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap
@@ -331,31 +342,34 @@ sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
   | sudo tee /etc/apt/sources.list.d/docker.list
-sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-sudo mkdir -p /opt/pglive && sudo chown $USER /opt/pglive
+sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin \
+  nginx certbot gettext-base unattended-upgrades
+sudo mkdir -p /opt/pglive/edge && sudo chown -R $USER /opt/pglive
 curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install
 exit
 ```
 
-Copy the two files and run the first deploy (it reads the secrets with the VM's own identity and writes a
-root-only `.env`):
+Copy the files and run the first worker deploy (it reads the secrets with the VM's own identity and writes a
+root-only `.env`). The database must be migrated first (section 10):
 
 ```bash
 gcloud compute scp infra/worker/docker-compose.yml infra/worker/deploy.sh pglive-worker:/opt/pglive/ \
   --zone $ZONE --tunnel-through-iap
+gcloud compute scp infra/edge/pglive.conf.template infra/edge/setup-edge.sh pglive-worker:/opt/pglive/edge/ \
+  --zone $ZONE --tunnel-through-iap
 gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap \
-  --command "chmod +x /opt/pglive/deploy.sh && sudo /opt/pglive/deploy.sh $SHA"
+  --command "chmod +x /opt/pglive/deploy.sh /opt/pglive/edge/setup-edge.sh && sudo /opt/pglive/deploy.sh $SHA"
 ```
 
-This will fail until the images exist (section 3) **and** the database is migrated (section 10); run it after
-section 10 if the worker complains about missing tables. Check: `sudo docker compose -f /opt/pglive/docker-compose.yml ps`
-shows redis, cloud-sql-proxy, worker, beat — **exactly one `beat`**.
+Check: `sudo docker compose -f /opt/pglive/docker-compose.yml ps` shows redis, cloud-sql-proxy, worker, beat —
+**exactly one `beat`**. The edge (nginx) is set up in section 11, once DNS points here.
 
 ## 9. Cloud Run services and jobs  (Console: Cloud Run)
 
 Common values:
 
 ```bash
+PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')   # used in the run.app hostnames
 VPC="--network pglive --subnet pglive-$REGION --vpc-egress private-ranges-only"
 SQLENV="DB_HOST=/cloudsql/$SQL_CONN@DB_NAME=$DB_NAME"
 COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod@GS_BUCKET_NAME=$MEDIA_BUCKET@GS_PROJECT_ID=$PROJECT@FIREBASE_USE_ADC=True@FIREBASE_PROJECT_ID=$PROJECT@FRONTEND_BASE_URL=https://www.pglive.in"
@@ -389,11 +403,11 @@ traffic; that is safe because ingress is internal and nothing routes to it yet.
 
 ```bash
 gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --service-account $(sa api) \
-  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --ingress internal --allow-unauthenticated \
   --cpu 1 --memory 1Gi --concurrency 8 --timeout 60 --min-instances 1 --max-instances 3 \
   --set-cloudsql-instances $SQL_CONN $VPC \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in@CSRF_TRUSTED_ORIGINS=https://www.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa api)@SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in,pglive-api-$PN.$REGION.run.app@CSRF_TRUSTED_ORIGINS=https://www.pglive.in,https://api.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa api)@IAP_REQUIRED=False@SECURE_HSTS_SECONDS=0" \
   --set-secrets "$API_SECRETS"
 ```
 
@@ -402,13 +416,17 @@ and the ingress setting keeps it off the open internet.
 
 There is deliberately **no HTTP liveness probe** on the API: Cloud Run probes are plain HTTP with the container
 address as `Host`, which production Django rejects (400 `DisallowedHost`), so the container would be restarted in a
-loop. The TCP startup probe is enough; `/health/ready/` is watched by the uptime check through the LB (section 16).
+loop. The TCP startup probe is enough; `/health/ready/` is checked through nginx (sections 11 and 16).
+
+`ALLOWED_HOSTS` includes the `run.app` name because nginx must send it as `Host` (Cloud Run routes on Host);
+`https://api.pglive.in` is in `CSRF_TRUSTED_ORIGINS` for the Django admin login; `IAP_REQUIRED=False` because
+`/admin/` is guarded by the nginx allowlist (section 15), not IAP.
 
 **9.3 Web service:**
 
 ```bash
 gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --service-account $(sa web) \
-  --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
+  --ingress internal --allow-unauthenticated \
   --cpu 1 --memory 512Mi --concurrency 40 --timeout 60 --min-instances 0 --max-instances 5 \
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
@@ -453,7 +471,7 @@ gcloud secrets versions access latest --secret INITIAL_SUPERADMIN_PASSWORD      
 ```
 
 The order matters — do not skip ahead: **log in as that Super Admin → change the password in the app → (if
-done) verify `/admin/` through IAP → only then**:
+done) verify `/admin/` works from your allowlisted IP (section 15) → only then**:
 
 ```bash
 gcloud run jobs delete pglive-bootstrap --region $REGION
@@ -465,107 +483,58 @@ gcloud secrets delete INITIAL_SUPERADMIN_PASSWORD
 
 4. Start (or restart) the worker: re-run the `deploy.sh $SHA` command from section 8.
 
-## 11. Load balancer and certificates  (Console: Network services → Load balancing)
+## 11. Domain and HTTPS: GoDaddy → VM → nginx → Cloud Run
 
-This is the fiddliest part. The console's wizard (*Create load balancer → Application LB (HTTP/S) → Public
-facing, Global external*) does the same as the commands below; the commands are given because the two custom
-headers (`X-PGLive-Client-IP`, HSTS) are easy to miss in the wizard.
+No load balancer, no Cloud DNS (owner decision 2026-10-21). nginx on the VM does what the load balancer would have:
+TLS (Let's Encrypt), HSTS, the bare-domain redirect, the client-IP header, login rate limits and the `/admin/`
+allowlist. Config: `infra/edge/pglive.conf.template`, installed by `infra/edge/setup-edge.sh`. It was tested
+locally against real nginx: encoded paths and queries pass through byte for byte (the BFF signature needs this),
+a client-sent `X-PGLive-Client-IP` is overwritten, HSTS/redirects/rate limit/admin deny all behave.
 
-```bash
-gcloud compute addresses create pglive-ip --global --ip-version IPV4
-IP=$(gcloud compute addresses describe pglive-ip --global --format='value(address)'); echo $IP
-
-gcloud compute network-endpoint-groups create pglive-web-neg --region $REGION \
-  --network-endpoint-type=serverless --cloud-run-service=pglive-web
-gcloud compute network-endpoint-groups create pglive-api-neg --region $REGION \
-  --network-endpoint-type=serverless --cloud-run-service=pglive-api
-
-H=(--custom-request-header='X-PGLive-Client-IP:{client_ip_address}'
-   --custom-response-header='Strict-Transport-Security:max-age=300')
-for be in pglive-web-backend:pglive-web-neg pglive-api-backend:pglive-api-neg pglive-api-admin-backend:pglive-api-neg; do
-  gcloud compute backend-services create ${be%%:*} --global --load-balancing-scheme=EXTERNAL_MANAGED
-  gcloud compute backend-services update ${be%%:*} --global "${H[@]}"
-  gcloud compute backend-services add-backend ${be%%:*} --global \
-    --network-endpoint-group=${be##*:} --network-endpoint-group-region=$REGION
-done
-```
-
-All three backend services must carry **both** headers: the first makes Django trust the client IP the LB saw
-(it overwrites anything a client sends), the second is the only place HSTS is set (starts at 5 minutes).
-
-```bash
-gcloud compute url-maps create pglive-lb --default-service pglive-web-backend
-gcloud compute url-maps add-path-matcher pglive-lb --path-matcher-name api \
-  --default-service pglive-api-backend --new-hosts api.pglive.in \
-  --path-rules "/admin/*=pglive-api-admin-backend"
-# pglive.in and www.pglive.in fall through to the web backend; Next.js 301s the bare domain to www.
-```
-
-Certificates are validated by DNS, so they can be issued **before** any traffic moves:
-
-```bash
-for d in pglive.in www.pglive.in api.pglive.in; do
-  gcloud certificate-manager dns-authorizations create auth-${d//./-} --domain $d
-done
-gcloud certificate-manager certificates create pglive-cert --domains pglive.in,www.pglive.in,api.pglive.in \
-  --dns-authorizations auth-pglive-in,auth-www-pglive-in,auth-api-pglive-in
-gcloud certificate-manager maps create pglive-certmap
-for d in pglive.in www.pglive.in api.pglive.in; do
-  gcloud certificate-manager maps entries create entry-${d//./-} --map pglive-certmap \
-    --certificates pglive-cert --hostname $d
-done
-for d in pglive.in www.pglive.in api.pglive.in; do
-  gcloud certificate-manager dns-authorizations describe auth-${d//./-} \
-    --format='value(dnsResourceRecord.name,dnsResourceRecord.type,dnsResourceRecord.data)'
-done
-```
-
-Add those three CNAME records at GoDaddy now (**DNS → Add record**, type CNAME, name = the part before
-`.pglive.in`, value = the data column; keep any trailing dot GoDaddy accepts). Wait until
-`gcloud certificate-manager certificates describe pglive-cert` shows `ACTIVE` (minutes to an hour).
-
-```bash
-gcloud compute target-https-proxies create pglive-https --url-map pglive-lb --certificate-map pglive-certmap
-gcloud compute forwarding-rules create pglive-https-fr --global --load-balancing-scheme=EXTERNAL_MANAGED \
-  --address pglive-ip --target-https-proxy pglive-https --ports 443
-
-# Port 80 -> 443 redirect
-cat > redirect.yaml <<'YAML'
-name: pglive-http-redirect
-defaultUrlRedirect:
-  redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
-  httpsRedirect: true
-YAML
-gcloud compute url-maps import pglive-http-redirect --global --source redirect.yaml --quiet
-gcloud compute target-http-proxies create pglive-http --url-map pglive-http-redirect
-gcloud compute forwarding-rules create pglive-http-fr --global --load-balancing-scheme=EXTERNAL_MANAGED \
-  --address pglive-ip --target-http-proxy pglive-http --ports 80
-```
-
-**Test before moving DNS**, pinning the name to the LB IP so no real user is affected:
-
-```bash
-curl -sI --resolve api.pglive.in:443:$IP https://api.pglive.in/health/            # 200, strict-transport-security
-curl -s  --resolve api.pglive.in:443:$IP https://api.pglive.in/health/ready/      # {"status": "ok", ...}
-curl -sI --resolve www.pglive.in:443:$IP https://www.pglive.in/                   # 200 (needs api for BFF routes → DNS)
-```
-
-The BFF talks to `https://api.pglive.in` through public DNS, so full web behaviour (login) can only be tested
-once the A records exist. That is why the site ships as `APP_STATUS=comingSoon`, `SIGNUP_ENABLED=false`.
-
-**Point DNS** (GoDaddy → DNS; set TTL 300 first):
+**1. GoDaddy DNS** (*My Products → pglive.in → DNS*). Lower TTL to 600 (GoDaddy's minimum) a day before if records
+already exist. Then:
 
 | Type | Name | Value |
 |---|---|---|
-| A | @ | the `$IP` |
-| A | www | the `$IP` |
-| A | api | the `$IP` |
-| TXT/CNAME | — | SPF / DKIM / DMARC from your email provider |
+| A | @ | `$EDGE_IP` |
+| A | www | `$EDGE_IP` |
+| A | api | `$EDGE_IP` |
 
-Then verify: `curl -sI https://pglive.in` (301 → www, one HSTS header), `https://www.pglive.in`,
-`https://api.pglive.in/health/`. Raise HSTS in steps (300 → 86400 → 604800 → 31536000) by updating the
-`Strict-Transport-Security` header on all three backend services and re-checking each hostname each time.
-Add `includeSubDomains` only at the end, when every subdomain is HTTPS-only.
+Delete any GoDaddy "parked" A record or forwarding for `@`/`www`. Keep MX/TXT records for email. Wait until
+`dig +short pglive.in www.pglive.in api.pglive.in` (Cloud Shell) returns `$EDGE_IP` three times.
+
+**2. Certificate and nginx.** The Cloud Run hostnames follow `SERVICE-PROJECTNUMBER.REGION.run.app`:
+
+```bash
+PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+API_HOST=pglive-api-$PN.$REGION.run.app
+WEB_HOST=pglive-web-$PN.$REGION.run.app
+gcloud run services describe pglive-api --region $REGION --format='value(status.url)'   # must match $API_HOST
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command \
+  "sudo API_HOST=$API_HOST WEB_HOST=$WEB_HOST LE_EMAIL=you@yourdomain.com HSTS_MAX_AGE=300 /opt/pglive/edge/setup-edge.sh"
+```
+
+The script gets one certificate for `pglive.in`, `www` and `api` (HTTP-01 on port 80, which is why DNS must point
+here first), installs the config and reloads nginx. Renewal is automatic (certbot's timer) and reloads nginx.
+
+**3. Verify from Cloud Shell:**
+
+```bash
+curl -sI https://pglive.in | grep -iE '^(HTTP|location|strict)'          # 301 -> https://www.pglive.in/, HSTS
+curl -sI https://www.pglive.in | grep -iE '^(HTTP|strict)'                # 200, HSTS
+curl -s  https://api.pglive.in/health/ready/                              # {"status": "ok", ... "raw_uri": "ok"}
+curl -s -o /dev/null -w '%{http_code}\n' https://api.pglive.in/admin/     # 403 until you add your IP
+curl -sI http://www.pglive.in | grep -i '^location'                       # https://www.pglive.in/
+```
+
+**4. HSTS ramp**: re-run the step 2 command with `HSTS_MAX_AGE=86400`, then `604800`, then `31536000`, a few days
+apart, checking step 3 each time.
+
+**What this setup gives up compared with a load balancer** (accepted for now; `infra/40-edge.sh` is the way back):
+the VM is a single point of failure for the whole site (if it's down, so is pglive.in — alert on it, section 16);
+no Cloud Armor WAF (nginx rate-limits the login endpoints); `/admin/` is protected by an IP allowlist + the Django
+password instead of IAP + Google 2-Step Verification; every web request makes two hops through the VM, so watch its
+CPU and move to `e2-medium` or an LB if it is busy.
 
 ## 12. Scheduler (nightly jobs) and the smoke user
 
@@ -632,44 +601,39 @@ and deployment.md §8. An export you have never restored is not a backup.
   ```
   Leave out any setting you don't need rather than setting it empty (an empty `EMAIL_PORT` stops Django booting).
 
-## 15. Admin access through IAP (required before launch)
+## 15. Admin access (`/admin/`)
 
-Django's own admin has no MFA. The control is **IAP + Google 2-Step Verification enforced for the admin group**,
-which the app double-checks (`apps/core/iap.py`). Until this is configured `/admin/` is refused in production, which
-is the safe default.
+Without a load balancer there is no IAP, so the API runs with `IAP_REQUIRED=False` and nginx admits `/admin/` only
+from listed addresses; everyone else gets 403 before Django is reached. Django's own login is the second layer.
+This is weaker than IAP + Google 2-Step Verification (no MFA on Django admin) — keep the list short, use a long
+unique admin password, and prefer the in-app Super Admin screens for routine work.
 
-1. Create a Cloud Identity Free (or Workspace) tenant for `pglive.in`; create group `pglive-admins@pglive.in`;
-   enforce 2-Step Verification (Admin console → Security → Authentication).
-2. Console → Security → Identity-Aware Proxy → configure the OAuth consent screen (Internal).
-3. ```bash
-   gcloud iap web enable --resource-type=backend-services --service=pglive-api-admin-backend
-   gcloud iap web add-iam-policy-binding --resource-type=backend-services --service=pglive-api-admin-backend \
-     --member=group:pglive-admins@pglive.in --role=roles/iap.httpsResourceAccessor
-   gcloud run services add-iam-policy-binding pglive-api --region $REGION \
-     --member=serviceAccount:service-$(gcloud projects describe $PROJECT --format='value(projectNumber)')@gcp-sa-iap.iam.gserviceaccount.com \
-     --role=roles/run.invoker
-   ```
-4. Set the audience on the API: `IAP_AUDIENCE=/projects/<project-number>/global/backendServices/<id of pglive-api-admin-backend>`
-   (`gcloud compute backend-services describe pglive-api-admin-backend --global --format='value(id)'`), via
-   `gcloud run services update pglive-api --region $REGION --update-env-vars IAP_AUDIENCE=…`.
-5. Visit `https://api.pglive.in/admin/` — Google sign-in first, then the Django login.
+Add your current public IP (check it at `https://ifconfig.me` from that machine):
 
-## 16. Edge protection (Cloud Armor), alerts, and the go-live check
+```bash
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command \
+  "sudo sed -i '1i allow 203.0.113.10;' /etc/nginx/pglive-admin-allow.conf && sudo nginx -t && sudo systemctl reload nginx"
+```
 
-- **Cloud Armor**: create policy `pglive-armor`; rule 900 *allow* `/api/v1/subscriptions/webhook/` (signed
-  payloads trip generic WAF rules); rule 1000 *throttle* 60 requests/min per IP on `/api/auth/*` and
-  `/api/v1/auth/*`; add the SQLi/XSS preconfigured rules in **preview** mode and review logs before enforcing.
-  Attach with `gcloud compute backend-services update <name> --global --security-policy=pglive-armor` to the web
-  and API backends.
+`allow` lines go above `deny all;`, which must stay last. Home connections often change IP; remove old lines when
+they do (`sudo nano /etc/nginx/pglive-admin-allow.conf`, then `sudo nginx -t && sudo systemctl reload nginx`).
+
+## 16. Alerts and the go-live check
+
 - **Monitoring** (Console: Monitoring → Alerting): uptime checks on `https://www.pglive.in/api/health` and
-  `https://api.pglive.in/health/ready/`; alerts for 5xx rate, p95 latency, Cloud SQL CPU/connections/disk, VM
-  CPU/disk, Cloud Run instances at max, and any failed job; notification channel = your email + phone.
+  `https://api.pglive.in/health/ready/` (these go through nginx, so they also cover the VM edge); alerts for the
+  uptime checks failing, VM CPU/disk/memory, 5xx rate, Cloud SQL CPU/connections/disk, Cloud Run instances at max,
+  and any failed job; notification channel = your email + phone. The VM is now the front door: its uptime alert is
+  the one that matters most.
+- **Login rate limit**: nginx allows 60 requests/minute per IP (burst 20) on `/api/auth/*` and `/api/v1/auth/*`;
+  the app's own throttles stay underneath.
 - **Go-live checklist** (every line must be true): billing account upgraded from trial · budgets on · backups and PITR
   on, deletion protection on · one export restored in `pglive-dr-test` and timed · `check_db_roles` green ·
   bootstrap job and password secret deleted · Razorpay live keys + webhook + unsigned webhooks off
-  (`RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS` not set) · HSTS verified on all three hosts · `/admin/` only via IAP ·
-  Aadhaar/PAN upload either legally signed off or switched off · worker VM shows exactly one beat ·
-  `APP_STATUS`/`SIGNUP_ENABLED` flipped (rebuild web) on launch day.
+  (`RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS` not set) · HSTS verified on all three hosts · `/admin/` returns 403 except from
+  your listed IPs · certificate auto-renewal tested (`sudo certbot renew --dry-run` on the VM) · Aadhaar/PAN upload
+  either legally signed off or switched off · worker VM shows exactly one beat · `APP_STATUS`/`SIGNUP_ENABLED`
+  flipped (rebuild web) on launch day.
 
 ## 17. Releasing a new version by hand
 
@@ -713,9 +677,9 @@ rehearsal, so make that safe. While there are no users, a mistake costs only tim
 (Cloud SQL deletion protection can be switched off until launch, the database can be dropped and re-migrated).
 After the first real tenant signs up, that stops being true. So:
 
-1. **Stay invisible until every check below passes.** Ship as `APP_STATUS=comingSoon`, `SIGNUP_ENABLED=false`.
-   Create the certificates, test with `curl --resolve` (section 11), and **do not add the A records** until the
-   go-live list is true. Nobody can find the site before that.
+1. **Show only "coming soon" until every check below passes.** Ship as `APP_STATUS=comingSoon`,
+   `SIGNUP_ENABLED=false`. The A records have to exist before launch here (Let's Encrypt validates over them,
+   section 11), so the domain is reachable early — those two settings are what keep it closed.
 2. **Budget alert first** (section 1 step 2), before creating any resource. Upgrade the billing account from trial
    before launch.
 3. **Razorpay: live keys only, no test data in this database.** Never create test-mode Plans here — their
@@ -731,7 +695,8 @@ After the first real tenant signs up, that stops being true. So:
    (never in prod): export, restore, `check_db_roles`, record the duration (`infra/dr/restore-drill.sh`).
 6. **Run each job once by hand** (`gcloud run jobs execute … --wait`) and read its log before trusting a
    schedule: migrate, check-roles, generate-invoices, check-grace-periods.
-7. **Do not attach Cloud Armor in enforce mode on day one**: preview rules only, webhook rule 900 first.
+7. **Test the edge before launch**: certificate renewal (`sudo certbot renew --dry-run`), the `/admin/` 403 from an
+   unlisted address, and a 429 after ~80 rapid login attempts from one IP.
 8. **Keep a written log** of every command that needed a fix; fold the fixes back into this file and `infra/`.
 
 The table below is only for a future staging project.
@@ -741,8 +706,8 @@ The table below is only for a future staging project.
 | | production | staging |
 |---|---|---|
 | Project / names | `pglive-prod` | `export ENV=staging` → `pglive-staging`, `pglive-pg-staging`, … |
-| Load balancer, Armor, IAP, certs | yes (section 11, 15, 16) | no — skip them |
-| Cloud Run ingress | `internal-and-cloud-load-balancing` | `all`; add the service's `*.run.app` host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, and set the web `INTERNAL_API_URL` to the API's `run.app` URL |
+| nginx edge + certificates | yes (sections 11, 15) | no — skip them |
+| Cloud Run ingress | `internal` (only the VM edge) | `all`; add the service's `*.run.app` host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`, and set the web `INTERNAL_API_URL` to the API's `run.app` URL |
 | Razorpay | live | **test** keys (so test webhooks can arrive); exercise duplicated, out-of-order and `cancelled`-then-`charged` events |
 | Cloud SQL | `db-custom-1-3840`, deletion protection | `db-g1-small`, `--max-instances 1`; stop it when idle (`gcloud sql instances patch … --activation-policy NEVER`) |
 | Weekly export | scheduled | skip |
@@ -753,6 +718,7 @@ export + restore into `pglive-dr-test`, and the webhook cases above.
 ## Things this guide knows are rough
 
 - Every command is unrun; first-run fixes belong in this file and in `infra/`.
-- The `infra/30-services.sh` script passes `--no-traffic` on a service's first deploy, which Cloud Run rejects; by
-  hand you avoid it (section 9.2); the script still needs a "first deploy" branch.
-- The web egress goes to the API through the public LB, so login only works once DNS points at it.
+- The web service reaches the API at `https://api.pglive.in`, i.e. back through nginx on the VM, so login only
+  works once DNS and the certificate are in place (section 11).
+- Unverified until the first real run: that Cloud Run passes nginx's `X-Forwarded-Host` through unchanged (the BFF
+  rejects logins with 403 "Cross-origin request blocked" if it doesn't — the fix would be in nginx, not the app).

@@ -11,14 +11,15 @@ source "$(dirname "$0")/env.sh" "$1"
 : "${ALLOWED_API_HOSTS:=api.pglive.in}" "${SITE_URL:=https://www.pglive.in}"
 g() { gcloud --project "$PROJECT" "$@"; }
 
-# Env values contain commas (ALLOWED_HOSTS), so every --set-env-vars uses gcloud's custom delimiter: "^@^K=v@K2=v2".
-SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION@DB_NAME=$DB_NAME"
-COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod@GS_BUCKET_NAME=$MEDIA_BUCKET@GS_PROJECT_ID=$PROJECT"
-COMMON_ENV+="@FIREBASE_USE_ADC=True@FIREBASE_PROJECT_ID=$PROJECT@FRONTEND_BASE_URL=$SITE_URL"
+# Env values contain commas (ALLOWED_HOSTS) and @ (GS_SA_EMAIL, DEFAULT_FROM_EMAIL), so every --set-env-vars uses
+# gcloud's custom delimiter ";": "^;^K=v;K2=v2".
+SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION;DB_NAME=$DB_NAME"
+COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT"
+COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=$SITE_URL"
 # SMTP settings (non-secret; the password is the EMAIL_HOST_PASSWORD secret). Only set ones are passed, so an
 # empty EMAIL_PORT can't break env.int() and unset ones keep the settings defaults.
 for v in EMAIL_HOST EMAIL_PORT EMAIL_HOST_USER DEFAULT_FROM_EMAIL; do
-  if [[ -n "${!v:-}" ]]; then COMMON_ENV+="@$v=${!v}"; fi
+  if [[ -n "${!v:-}" ]]; then COMMON_ENV+=";$v=${!v}"; fi
 done
 VPC=(--network "$NETWORK" --subnet "$SUBNET" --vpc-egress private-ranges-only)
 
@@ -67,7 +68,7 @@ g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-accoun
   --min-instances 1 --max-instances "$API_MAX_INSTANCES" \
   --set-cloudsql-instances "$SQL_CONNECTION" "${VPC[@]}" \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=app_user@ALLOWED_HOSTS=$API_HOSTS@CSRF_TRUSTED_ORIGINS=$SITE_URL,https://api.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa sa-api)@IAP_REQUIRED=False@SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^;^$COMMON_ENV;$SQL_ENV;DB_USER=app_user;ALLOWED_HOSTS=$API_HOSTS;CSRF_TRUSTED_ORIGINS=$SITE_URL,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa sa-api);IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0" \
   "$API_SECRETS" "${API_TRAFFIC[@]}"
 
 echo "== pglive-web"
@@ -76,7 +77,7 @@ g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-accoun
   --cpu 1 --memory 512Mi --concurrency 40 --timeout 60 --min-instances 0 --max-instances 5 \
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
-  --set-env-vars "^@^INTERNAL_API_URL=https://api.pglive.in@SITE_URL=$SITE_URL@COMPANY_NAME=${COMPANY_NAME:?}@COMPANY_ADDRESS=${COMPANY_ADDRESS:?}@APP_STATUS=${APP_STATUS:-comingSoon}@PLAY_STORE_URL=${PLAY_STORE_URL:-}@SIGNUP_ENABLED=${SIGNUP_ENABLED:-false}@CSP_MODE=${CSP_MODE:-report-only}@CSP_REPORT_URI=${CSP_REPORT_URI:-}" \
+  --set-env-vars "^;^INTERNAL_API_URL=https://api.pglive.in;SITE_URL=$SITE_URL;COMPANY_NAME=${COMPANY_NAME:?};COMPANY_ADDRESS=${COMPANY_ADDRESS:?};APP_STATUS=${APP_STATUS:-comingSoon};PLAY_STORE_URL=${PLAY_STORE_URL:-};SIGNUP_ENABLED=${SIGNUP_ENABLED:-false};CSP_MODE=${CSP_MODE:-report-only};CSP_REPORT_URI=${CSP_REPORT_URI:-}" \
   "$(secrets BFF_ORIGIN_SECRET)" "${WEB_TRAFFIC[@]}"
 
 job() { # name service-account db-user secrets-flag django-command-and-args [nosql]
@@ -86,7 +87,7 @@ job() { # name service-account db-user secrets-flag django-command-and-args [nos
   g run jobs describe "$name" --region "$REGION" >/dev/null 2>&1 && verb=update
   g run jobs "$verb" "$name" --region "$REGION" --image "$API_IMAGE" --service-account "$(sa "$account")" \
     --max-retries 0 --task-timeout 1800 "${sql[@]}" "${VPC[@]}" \
-    --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=$db_user@ALLOWED_HOSTS=$ALLOWED_API_HOSTS@EXPORT_BUCKET=$BACKUP_BUCKET@EXPORT_MIN_TABLES=${EXPORT_MIN_TABLES:-60}" \
+    --set-env-vars "^;^$COMMON_ENV;$SQL_ENV;DB_USER=$db_user;ALLOWED_HOSTS=$ALLOWED_API_HOSTS;EXPORT_BUCKET=$BACKUP_BUCKET;EXPORT_MIN_TABLES=${EXPORT_MIN_TABLES:-60}" \
     "$secret_flag" --command python --args "manage.py,$args"
 }
 echo "== jobs"
@@ -108,7 +109,7 @@ smoke_verb=create; g run jobs describe pglive-smoke --region "$REGION" >/dev/nul
 API_CAND="$(service_url pglive-api)"; WEB_CAND="$(service_url pglive-web)"
 g run jobs "$smoke_verb" pglive-smoke --region "$REGION" --image "$API_IMAGE" --service-account "$(sa sa-smoke)" \
   --max-retries 0 --task-timeout 300 --network "$NETWORK" --subnet "$SUBNET" --vpc-egress all-traffic \
-  --set-env-vars "^@^SMOKE_API_URL=https://candidate---${API_CAND#https://}@SMOKE_WEB_URL=https://candidate---${WEB_CAND#https://}" \
+  --set-env-vars "^;^SMOKE_API_URL=https://candidate---${API_CAND#https://};SMOKE_WEB_URL=https://candidate---${WEB_CAND#https://}" \
   "$(secrets SMOKE_USER_CREDENTIALS)" --command python --args "scripts/smoke.py"
 
 echo "== Scheduler (OAuth tokens: these are googleapis.com endpoints, not Cloud Run URLs)"

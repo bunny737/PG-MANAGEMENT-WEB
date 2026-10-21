@@ -371,12 +371,13 @@ Common values:
 ```bash
 PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')   # used in the run.app hostnames
 VPC="--network pglive --subnet pglive-$REGION --vpc-egress private-ranges-only"
-SQLENV="DB_HOST=/cloudsql/$SQL_CONN@DB_NAME=$DB_NAME"
-COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod@GS_BUCKET_NAME=$MEDIA_BUCKET@GS_PROJECT_ID=$PROJECT@FIREBASE_USE_ADC=True@FIREBASE_PROJECT_ID=$PROJECT@FRONTEND_BASE_URL=https://www.pglive.in"
+SQLENV="DB_HOST=/cloudsql/$SQL_CONN;DB_NAME=$DB_NAME"
+COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT;FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=https://www.pglive.in"
 API_SECRETS="SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest,BFF_ORIGIN_SECRET=BFF_ORIGIN_SECRET:latest,RAZORPAY_KEY_ID=RAZORPAY_KEY_ID:latest,RAZORPAY_KEY_SECRET=RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=RAZORPAY_WEBHOOK_SECRET:latest,EMAIL_HOST_PASSWORD=EMAIL_HOST_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,APP_MAINTENANCE_BYPASS_TOKEN=APP_MAINTENANCE_BYPASS_TOKEN:latest,REDIS_URL=REDIS_URL:latest,REDIS_CACHE_URL=REDIS_CACHE_URL:latest"
 ```
 
-The `^@^` prefix tells gcloud to separate env vars with `@`, because `ALLOWED_HOSTS` values contain commas.
+The `^;^` prefix tells gcloud to separate env vars with `;`, because values contain commas (`ALLOWED_HOSTS`) and
+`@` (`GS_SA_EMAIL`, email addresses). Don't put `;` in any value (e.g. `COMPANY_ADDRESS`).
 These shell variables are lost when Cloud Shell restarts; re-paste this block (and section 0) after a restart.
 `jobs create` fails if the job already exists — to change one, use `gcloud run jobs update` with the same flags.
 SMTP settings are added later (section 14), not here.
@@ -387,7 +388,7 @@ SMTP settings are added later (section 14), not here.
 job() {   # name service-account db-user secrets command-args [--clear-cloudsql-instances]
   gcloud run jobs create "$1" --region $REGION --image $AR/pglive-api:$SHA --service-account "$(sa $2)" \
     --max-retries 0 --task-timeout 1800 --set-cloudsql-instances $SQL_CONN $VPC \
-    --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=$3@ALLOWED_HOSTS=api.pglive.in" \
+    --set-env-vars "^;^$COMMON;$SQLENV;DB_USER=$3;ALLOWED_HOSTS=api.pglive.in" \
     --set-secrets "$4" --command python --args "$5"
 }
 job pglive-migrate           migrate    migration_user "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_MIGRATION_PASSWORD:latest" "manage.py,migrate,--noinput"
@@ -407,7 +408,7 @@ gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --serv
   --cpu 1 --memory 1Gi --concurrency 8 --timeout 60 --min-instances 1 --max-instances 3 \
   --set-cloudsql-instances $SQL_CONN $VPC \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in,pglive-api-$PN.$REGION.run.app@CSRF_TRUSTED_ORIGINS=https://www.pglive.in,https://api.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa api)@IAP_REQUIRED=False@SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^;^$COMMON;$SQLENV;DB_USER=app_user;ALLOWED_HOSTS=api.pglive.in,pglive-api-$PN.$REGION.run.app;CSRF_TRUSTED_ORIGINS=https://www.pglive.in,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa api);IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0" \
   --set-secrets "$API_SECRETS"
 ```
 
@@ -430,7 +431,7 @@ gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --serv
   --cpu 1 --memory 512Mi --concurrency 40 --timeout 60 --min-instances 0 --max-instances 5 \
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
-  --set-env-vars "^@^INTERNAL_API_URL=https://api.pglive.in@SITE_URL=https://www.pglive.in@COMPANY_NAME=…@COMPANY_ADDRESS=…@APP_STATUS=comingSoon@SIGNUP_ENABLED=false@CSP_MODE=report-only" \
+  --set-env-vars "^;^INTERNAL_API_URL=https://api.pglive.in;SITE_URL=https://www.pglive.in;COMPANY_NAME=…;COMPANY_ADDRESS=…;APP_STATUS=comingSoon;SIGNUP_ENABLED=false;CSP_MODE=report-only" \
   --set-secrets "BFF_ORIGIN_SECRET=BFF_ORIGIN_SECRET:latest"
 ```
 
@@ -463,7 +464,7 @@ gcloud secrets add-iam-policy-binding INITIAL_SUPERADMIN_PASSWORD \
   --member "serviceAccount:$(sa bootstrap)" --role roles/secretmanager.secretAccessor
 gcloud run jobs create pglive-bootstrap --region $REGION --image $AR/pglive-api:$SHA \
   --service-account $(sa bootstrap) --max-retries 0 --task-timeout 600 --set-cloudsql-instances $SQL_CONN $VPC \
-  --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in@INITIAL_SUPERADMIN_EMAIL=you@yourdomain.com" \
+  --set-env-vars "^;^$COMMON;$SQLENV;DB_USER=app_user;ALLOWED_HOSTS=api.pglive.in;INITIAL_SUPERADMIN_EMAIL=you@yourdomain.com" \
   --set-secrets "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest,INITIAL_SUPERADMIN_PASSWORD=INITIAL_SUPERADMIN_PASSWORD:latest" \
   --command python --args "manage.py,bootstrap_platform"
 gcloud run jobs execute pglive-bootstrap --region $REGION --wait

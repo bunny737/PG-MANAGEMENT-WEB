@@ -353,6 +353,20 @@ Django-admin-only — superuser login, matching the MVP's original decision for
     on that device. Generic lock-screen push text is planned for a later PR.
 - [DECISION 2026-10-16] `NotificationLog.notification_type` widened 25 → 50
   (matches every other notification model; upcoming type names exceed 25).
+- [DECISION 2026-10-21] **Branded multipart emails.** Every email — the `apps.accounts.emails` auth
+  emails and the `EmailChannel` business notifications — is now sent as text + HTML by
+  `apps.core.email.send_templated_email`, rendered from `backend/templates/emails/` (`base.html`/`base.txt`
+  plus one pair per email: `verify_email`, `password_reset`, `staff_invite`, `login_code`,
+  `password_changed`, `notification`). Layout is table-based with inline CSS (Gmail/Outlook safe), the
+  web app's logo (`{FRONTEND_BASE_URL}/brand/pglive-logo.png`) and accent colour, a button plus a
+  plain-URL fallback for emails with a link, and dark-mode styles. The footer shows `COMPANY_NAME` /
+  `COMPANY_ADDRESS` (new backend settings, the same variables the web app reads) and the Super Admin
+  support email/phone from `PlatformConfig`, read with `filter(pk=1).first()` so an email never writes;
+  every footer field is optional. Copy is `{% trans %}` in the recipient's `language_code` (Telugu
+  translated; Hindi/Tamil/Malayalam fall back to English). The DB-backed `NotificationTemplate` text
+  stays the editable source: it is wrapped, HTML-escaped and `linebreaksbr`'d into `notification.html`,
+  and the plain-text part is the template text unchanged. The channel's never-raises contract is kept.
+  Tests: `apps/core/test_email_templates.py`.
 - [OPEN] Password-reset and staff-invite emails (`apps.accounts.emails`)
   stay synchronous and outside `NotificationLog`/the template system —
   unchanged from MVP's original scope decision.
@@ -439,3 +453,7 @@ Django-admin-only — superuser login, matching the MVP's original decision for
     the containers.
   - `manage.py test` blanks the Firebase credentials (`config/settings/dev.py`)
     so the suite can never reach real FCM.
+- 2026-10-21  Branded HTML emails: `apps.core.email`, `templates/emails/*`, `EmailChannel` and
+  `apps.accounts.emails` moved onto it, `COMPANY_NAME`/`COMPANY_ADDRESS` backend settings, Telugu
+  catalogue entries. Existing tests that simulated an SMTP outage now patch
+  `apps.core.email.EmailMultiAlternatives.send`. 15 new tests.

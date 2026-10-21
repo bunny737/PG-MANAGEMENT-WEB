@@ -263,6 +263,9 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@localhost')
+# Footer identity for transactional emails; the same variables the web app reads.
+COMPANY_NAME = env('COMPANY_NAME', default='')
+COMPANY_ADDRESS = env('COMPANY_ADDRESS', default='')
 
 from datetime import timedelta
 # A dedicated JWT key, so rotating SECRET_KEY (with SECRET_KEY_FALLBACKS) does

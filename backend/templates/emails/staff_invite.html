@@ -1,0 +1,10 @@
+{% extends "emails/base.html" %}{% load i18n %}
+{% block title %}{% blocktrans trimmed %}You have been invited to {{ business }}{% endblocktrans %}{% endblock %}
+{% block preheader %}{% trans "Set your password to get started." %}{% endblock %}
+{% block heading %}{% blocktrans trimmed %}You have been invited to {{ business }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px 0;">{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}</p>
+<p style="margin:0 0 12px 0;">{% blocktrans trimmed %}An account was created for you at {{ business }}.{% endblocktrans %} {% trans "Set your password to get started." %}</p>
+{% endblock %}
+{% block cta_label %}{% trans "Set your password" %}{% endblock %}
+{% block footnote %}{% trans "If you weren't expecting this invitation, you can ignore this email." %}{% endblock %}

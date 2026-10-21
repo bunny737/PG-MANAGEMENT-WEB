@@ -259,6 +259,11 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
 - [OPEN 2026-10-21] **Forgot-password page is not built.** The login screen's forgot-password form is
   a simulated timeout, and the frontend has no `/reset-password` route although the reset and staff
   invite emails link to it. (`/signup` and `/verify-email` were built 2026-10-21.)
+- [DECISION 2026-10-21] **Auth emails are branded multipart.** Verification, password-reset, staff-invite
+  and sign-in-code emails render from `backend/templates/emails/` through `apps.core.email`, always in
+  the user's `language_code` (reset and invite previously used the request language). See Module 14 for
+  the layout and footer rules. The password-reset and staff-invite emails are still sent synchronously
+  at this point; the same pass moves them to Celery.
 - [DECISION 2026-10-21] **Verification token is bound to the address.** The signed payload is
   `{uid, email}`, and `EmailVerificationSerializer.save()` compares the account's current normalized
   email under `select_for_update()` before marking it verified — so an admin email change can't land

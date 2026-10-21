@@ -2110,3 +2110,128 @@ msgstr "క్యూలో ఉంచిన ధృవీకరణ ఇమెయి
 #, python-format
 msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
 msgstr "ధృవీకరించినట్లు గుర్తించినవి: %(verified)d. దాటవేసినవి — నిష్క్రియ: %(inactive)d, ఇమెయిల్ లేనివి: %(no_email)d, ఇప్పటికే ధృవీకరించినవి: %(already)d."
+
+#: templates/emails/base.html
+msgid "If the button doesn't work, copy and paste this link into your browser:"
+msgstr "బటన్ పనిచేయకపోతే, ఈ లింక్‌ను కాపీ చేసి మీ బ్రౌజర్‌లో పేస్ట్ చేయండి:"
+
+#: templates/emails/base.html templates/emails/base.txt
+msgid "Need help?"
+msgstr "సహాయం కావాలా?"
+
+#: templates/emails/login_code.html
+msgid "Enter this code to sign in:"
+msgstr "సైన్ ఇన్ చేయడానికి ఈ కోడ్‌ను నమోదు చేయండి:"
+
+#: templates/emails/login_code.html templates/emails/login_code.txt
+#, python-format
+msgid "It expires in %(minutes)s minute."
+msgid_plural "It expires in %(minutes)s minutes."
+msgstr[0] "ఇది %(minutes)s నిమిషంలో గడువు ముగుస్తుంది."
+msgstr[1] "ఇది %(minutes)s నిమిషాల్లో గడువు ముగుస్తుంది."
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+msgid "Your password was changed"
+msgstr "మీ పాస్‌వర్డ్ మార్చబడింది"
+
+#: templates/emails/password_changed.html
+msgid "The password for your PGLive account was just changed."
+msgstr "మీ PGLive ఖాతా పాస్‌వర్డ్ ఇప్పుడే మార్చబడింది."
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+#, python-format
+msgid "Hi %(name)s,"
+msgstr "నమస్కారం %(name)s,"
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Hello,"
+msgstr "నమస్కారం,"
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+msgid "The password for your PGLive account was just changed, and you were signed out of your other devices."
+msgstr "మీ PGLive ఖాతా పాస్‌వర్డ్ ఇప్పుడే మార్చబడింది, మీ ఇతర పరికరాల నుండి మీరు సైన్ అవుట్ చేయబడ్డారు."
+
+#: templates/emails/password_changed.html
+#, python-format
+msgid "If this wasn't you, <a href=\"%(reset_url)s\" style=\"color:#4f46e5;\">reset your password</a> right away."
+msgstr "ఇది మీరు కాకపోతే, వెంటనే <a href=\"%(reset_url)s\" style=\"color:#4f46e5;\">మీ పాస్‌వర్డ్‌ను రీసెట్ చేయండి</a>."
+
+#: templates/emails/password_changed.txt
+#, python-format
+msgid "If this wasn't you, reset your password right away: %(reset_url)s"
+msgstr "ఇది మీరు కాకపోతే, వెంటనే మీ పాస్‌వర్డ్‌ను రీసెట్ చేయండి: %(reset_url)s"
+
+#: templates/emails/password_reset.html
+msgid "Choose a new password for your PGLive account."
+msgstr "మీ PGLive ఖాతాకు కొత్త పాస్‌వర్డ్‌ను ఎంచుకోండి."
+
+#: templates/emails/password_reset.html
+#, python-format
+msgid "We received a request to reset the password for your account. Use the button below to choose a new one. The link works once and is valid for %(hours)s hour."
+msgid_plural "We received a request to reset the password for your account. Use the button below to choose a new one. The link works once and is valid for %(hours)s hours."
+msgstr[0] "మీ ఖాతా పాస్‌వర్డ్‌ను రీసెట్ చేయమని అభ్యర్థన అందింది. కొత్తది ఎంచుకోవడానికి కింది బటన్‌ను ఉపయోగించండి. ఈ లింక్ ఒక్కసారి మాత్రమే పనిచేస్తుంది మరియు %(hours)s గంట పాటు చెల్లుబాటు అవుతుంది."
+msgstr[1] "మీ ఖాతా పాస్‌వర్డ్‌ను రీసెట్ చేయమని అభ్యర్థన అందింది. కొత్తది ఎంచుకోవడానికి కింది బటన్‌ను ఉపయోగించండి. ఈ లింక్ ఒక్కసారి మాత్రమే పనిచేస్తుంది మరియు %(hours)s గంటల పాటు చెల్లుబాటు అవుతుంది."
+
+#: templates/emails/password_reset.txt
+#, python-format
+msgid "We received a request to reset the password for your account. Use the link below to choose a new one. The link works once and is valid for %(hours)s hour."
+msgid_plural "We received a request to reset the password for your account. Use the link below to choose a new one. The link works once and is valid for %(hours)s hours."
+msgstr[0] "మీ ఖాతా పాస్‌వర్డ్‌ను రీసెట్ చేయమని అభ్యర్థన అందింది. కొత్తది ఎంచుకోవడానికి కింది లింక్‌ను ఉపయోగించండి. ఈ లింక్ ఒక్కసారి మాత్రమే పనిచేస్తుంది మరియు %(hours)s గంట పాటు చెల్లుబాటు అవుతుంది."
+msgstr[1] "మీ ఖాతా పాస్‌వర్డ్‌ను రీసెట్ చేయమని అభ్యర్థన అందింది. కొత్తది ఎంచుకోవడానికి కింది లింక్‌ను ఉపయోగించండి. ఈ లింక్ ఒక్కసారి మాత్రమే పనిచేస్తుంది మరియు %(hours)s గంటల పాటు చెల్లుబాటు అవుతుంది."
+
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+msgid "Reset password"
+msgstr "పాస్‌వర్డ్ రీసెట్ చేయండి"
+
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+msgid "If you didn't request this, you can ignore this email. Your password will not change."
+msgstr "మీరు దీనిని అభ్యర్థించకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు. మీ పాస్‌వర్డ్ మారదు."
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Set your password to get started."
+msgstr "ప్రారంభించడానికి మీ పాస్‌వర్డ్‌ను సెట్ చేయండి."
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+#, python-format
+msgid "An account was created for you at %(business)s."
+msgstr "%(business)s వద్ద మీ కోసం ఒక ఖాతా సృష్టించబడింది."
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Set your password"
+msgstr "మీ పాస్‌వర్డ్‌ను సెట్ చేయండి"
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "If you weren't expecting this invitation, you can ignore this email."
+msgstr "మీరు ఈ ఆహ్వానాన్ని ఊహించకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు."
+
+#: templates/emails/verify_email.html
+msgid "Confirm your email address to activate your PGLive account."
+msgstr "మీ PGLive ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి."
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+#, python-format
+msgid "Welcome, %(name)s!"
+msgstr "స్వాగతం, %(name)s!"
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "Welcome!"
+msgstr "స్వాగతం!"
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+#, python-format
+msgid "Confirm your email address to activate your account. This link is valid for %(hours)s hour."
+msgid_plural "Confirm your email address to activate your account. This link is valid for %(hours)s hours."
+msgstr[0] "మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి. ఈ లింక్ %(hours)s గంట పాటు చెల్లుబాటు అవుతుంది."
+msgstr[1] "మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి. ఈ లింక్ %(hours)s గంటల పాటు చెల్లుబాటు అవుతుంది."
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "Verify email"
+msgstr "ఇమెయిల్‌ను ధృవీకరించండి"
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "If you didn't create a PGLive account, you can safely ignore this email."
+msgstr "మీరు PGLive ఖాతాను సృష్టించకపోతే, ఈ ఇమెయిల్‌ను నిరభ్యంతరంగా విస్మరించవచ్చు."

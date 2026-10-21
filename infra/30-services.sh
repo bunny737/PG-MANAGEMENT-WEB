@@ -56,13 +56,15 @@ done
 (( missing == 0 )) || exit 1
 
 echo "== pglive-api"
+# No HTTP liveness probe: probes arrive as plain HTTP with the container address as Host, which prod Django
+# answers with 400 DisallowedHost (ALLOWED_HOSTS) before any view runs — Cloud Run would restart the API forever.
+# The TCP startup probe needs nothing from Django. Readiness is watched through the LB uptime check instead.
 g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-account "$(sa sa-api)" \
   --ingress internal-and-cloud-load-balancing --allow-unauthenticated \
   --cpu 1 --memory 1Gi --concurrency "$API_CONCURRENCY" --timeout 60 \
   --min-instances 1 --max-instances "$API_MAX_INSTANCES" \
   --set-cloudsql-instances "$SQL_CONNECTION" "${VPC[@]}" \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --liveness-probe httpGet.path=/health/,httpGet.port=8080,periodSeconds=30,failureThreshold=3 \
   --set-env-vars "^@^$COMMON_ENV@$SQL_ENV@DB_USER=app_user@ALLOWED_HOSTS=$API_HOSTS@CSRF_TRUSTED_ORIGINS=$SITE_URL@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa sa-api)@IAP_AUDIENCE=${IAP_AUDIENCE:-}@SECURE_HSTS_SECONDS=0" \
   "$API_SECRETS" "${API_TRAFFIC[@]}"
 

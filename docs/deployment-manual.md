@@ -393,13 +393,16 @@ gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --serv
   --cpu 1 --memory 1Gi --concurrency 8 --timeout 60 --min-instances 1 --max-instances 3 \
   --set-cloudsql-instances $SQL_CONN $VPC \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --liveness-probe httpGet.path=/health/,httpGet.port=8080,periodSeconds=30,failureThreshold=3 \
   --set-env-vars "^@^$COMMON@$SQLENV@DB_USER=app_user@ALLOWED_HOSTS=api.pglive.in@CSRF_TRUSTED_ORIGINS=https://www.pglive.in@APP_VERSION_ENFORCEMENT=log@GS_SA_EMAIL=$(sa api)@SECURE_HSTS_SECONDS=0" \
   --set-secrets "$API_SECRETS"
 ```
 
 `--allow-unauthenticated` here only means Cloud Run's own IAM check is off; the app does its own authentication
 and the ingress setting keeps it off the open internet.
+
+There is deliberately **no HTTP liveness probe** on the API: Cloud Run probes are plain HTTP with the container
+address as `Host`, which production Django rejects (400 `DisallowedHost`), so the container would be restarted in a
+loop. The TCP startup probe is enough; `/health/ready/` is watched by the uptime check through the LB (section 16).
 
 **9.3 Web service:**
 

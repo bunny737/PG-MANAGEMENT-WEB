@@ -4,8 +4,9 @@ see Module 09/10).
 
 Falls back to a local stub when `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`
 aren't configured, so dev/test can exercise the full select-plan/webhook
-flow without real credentials — same conditional-activation pattern as
-Module 04's S3/local document storage.
+flow without real credentials. Production never does: prod.py sets
+`RAZORPAY_ALLOW_STUB_CLIENT = False`, `get_client()` then raises, and the
+deploy check (checks.py) stops a revision with bad keys from starting.
 """
 import uuid
 from typing import NamedTuple
@@ -13,6 +14,7 @@ from typing import NamedTuple
 import razorpay
 import requests
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 # The only currency the platform bills in; also served by the public plan catalogue.
 PLATFORM_CURRENCY = 'INR'
@@ -34,6 +36,9 @@ def is_configured():
 
 def get_client():
     if not is_configured():
+        if not settings.RAZORPAY_ALLOW_STUB_CLIENT:
+            # Production: a missing key must not turn into fake `test_sub_…` ids on real tenants.
+            raise ImproperlyConfigured('Razorpay is not configured (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET).')
         return None
     return razorpay.Client(
         auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET), session=_TimeoutSession())

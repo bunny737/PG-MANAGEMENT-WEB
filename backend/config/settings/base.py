@@ -326,6 +326,9 @@ RAZORPAY_WEBHOOK_SECRET = env('RAZORPAY_WEBHOOK_SECRET', default='')
 # where an unverified payload could drive tenant status and platform payments.
 # dev.py flips this to True; base (prod) fails closed.
 RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = env.bool('RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS', default=False)
+# Dev/test run on a local stub client when no key is set (apps.subscriptions.razorpay_client). prod.py turns
+# that off so production can never invent `test_…` Razorpay ids.
+RAZORPAY_ALLOW_STUB_CLIENT = True
 
 # Storage
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

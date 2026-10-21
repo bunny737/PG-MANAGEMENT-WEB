@@ -51,4 +51,4 @@ RUN SECRET_KEY=build-only-not-a-secret-build-only-not-a-secret-xx \
 
 USER app
 EXPOSE 8080
-CMD ["gunicorn", "config.wsgi:application", "--config", "gunicorn.conf.py"]
+CMD ["sh", "bin/start-api.sh"]

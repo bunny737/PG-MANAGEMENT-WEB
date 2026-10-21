@@ -8,7 +8,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 source "$here/env.sh" "$1"
-SHA="${2:?git sha}"
+SHA="${2:?git sha}"; export SHA
 g() { gcloud --project "$PROJECT" "$@"; }
 export API_IMAGE="$AR_REPO/pglive-api:$SHA" WEB_IMAGE="$AR_REPO/pglive-web:$SHA"
 

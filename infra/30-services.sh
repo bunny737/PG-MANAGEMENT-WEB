@@ -16,6 +16,7 @@ g() { gcloud --project "$PROJECT" "$@"; }
 SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION;DB_NAME=$DB_NAME"
 COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT"
 COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=$SITE_URL"
+COMMON_ENV+=";APP_RELEASE=${SHA:-unknown};SENTRY_ENVIRONMENT=$([[ $ENVIRONMENT == prod ]] && echo production || echo staging)"
 # SMTP settings (non-secret; the password is the EMAIL_HOST_PASSWORD secret). Only set ones are passed, so an
 # empty EMAIL_PORT can't break env.int() and unset ones keep the settings defaults.
 for v in EMAIL_HOST EMAIL_PORT EMAIL_HOST_USER DEFAULT_FROM_EMAIL; do
@@ -48,10 +49,10 @@ if [[ -n "$(service_url pglive-web)" ]]; then WEB_TRAFFIC=(--no-traffic --tag ca
 echo "== preflight: every secret needs a version, or the deploy fails half-way"
 missing=0
 for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD DB_MIGRATION_PASSWORD REDIS_URL REDIS_CACHE_URL BFF_ORIGIN_SECRET \
-         RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN \
+         BFF_EDGE_KEY RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN \
          APP_MAINTENANCE_BYPASS_TOKEN SMOKE_USER_CREDENTIALS; do
   if [[ -z "$(g secrets versions list "$s" --filter=state=ENABLED --limit 1 --format='value(name)' 2>/dev/null)" ]]; then
-    echo "  no enabled version: $s  (gcloud secrets versions add $s --data-file=-; a placeholder is fine for now)" >&2
+    echo "  no enabled version: $s  (gcloud secrets versions add $s --data-file=-; the three RAZORPAY_* secrets need real values: the API refuses to start on placeholders)" >&2
     missing=1
   fi
 done
@@ -78,7 +79,7 @@ g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-accoun
   --startup-probe tcpSocket.port=8080,periodSeconds=3,failureThreshold=20 \
   --liveness-probe httpGet.path=/api/health,httpGet.port=8080,periodSeconds=30 \
   --set-env-vars "^;^INTERNAL_API_URL=https://api.pglive.in;SITE_URL=$SITE_URL;COMPANY_NAME=${COMPANY_NAME:?};COMPANY_ADDRESS=${COMPANY_ADDRESS:?};APP_STATUS=${APP_STATUS:-comingSoon};PLAY_STORE_URL=${PLAY_STORE_URL:-};SIGNUP_ENABLED=${SIGNUP_ENABLED:-false};CSP_MODE=${CSP_MODE:-report-only};CSP_REPORT_URI=${CSP_REPORT_URI:-}" \
-  "$(secrets BFF_ORIGIN_SECRET)" "${WEB_TRAFFIC[@]}"
+  "$(secrets BFF_ORIGIN_SECRET BFF_EDGE_KEY)" "${WEB_TRAFFIC[@]}"
 
 job() { # name service-account db-user secrets-flag django-command-and-args [nosql]
   local name="$1" account="$2" db_user="$3" secret_flag="$4" args="$5" nosql="${6:-}"
@@ -132,7 +133,6 @@ if [[ "$ENVIRONMENT" == prod ]]; then
   g workflows deploy pglive-weekly-export --location "$REGION" --service-account "$(sa sa-export)" \
     --source "$(dirname "$0")/workflows/weekly-export.yaml"
   g run jobs add-iam-policy-binding pglive-export-verify --region "$REGION" --member "serviceAccount:$(sa sa-export)" --role roles/run.invoker >/dev/null
-  g projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$(sa sa-scheduler)" --role roles/workflows.invoker --condition=None >/dev/null
   sched pglive-weekly-export "30 22 * * 3" \
     "https://workflowexecutions.googleapis.com/v1/projects/$PROJECT/locations/$REGION/workflows/pglive-weekly-export/executions"
 fi

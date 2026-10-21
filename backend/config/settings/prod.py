@@ -1,5 +1,5 @@
-"""Production settings (Cloud Run + Cloud SQL + GCS behind Google's external
-HTTPS load balancer). See docs/deployment.md."""
+"""Production settings (Cloud Run + Cloud SQL + GCS, behind the nginx edge on the worker VM:
+no load balancer since 2026-10-21). See docs/deployment.md."""
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *
@@ -19,21 +19,37 @@ SECRET_KEY_FALLBACKS = env.list('SECRET_KEY_FALLBACKS', default=[])
 # KYC_UPLOADS_ENABLED=true on the API service when that is given.
 KYC_UPLOADS_ENABLED = env.bool('KYC_UPLOADS_ENABLED', default=False)
 
-# The load balancer terminates TLS and Cloud Run forwards X-Forwarded-Proto.
+# Razorpay: never the local stub client, never an unsigned webhook, whatever the environment says. Missing or
+# placeholder keys are refused at start-up by the deploy check in apps.subscriptions.checks.
+RAZORPAY_ALLOW_STUB_CLIENT = False
+RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = False
+
+# A hung SMTP server must not hold a request thread (and, on the Celery worker, a task slot) for minutes.
+EMAIL_TIMEOUT = env.int('EMAIL_TIMEOUT', default=10)
+
+# The OpenAPI schema and Swagger UI describe every endpoint: Django-admin (Super Admin) sessions only.
+# The API's own authenticator is JWT-only, so the docs views need session authentication to see an admin.
+SPECTACULAR_SETTINGS = {
+    **SPECTACULAR_SETTINGS,
+    'SERVE_AUTHENTICATION': ['rest_framework.authentication.SessionAuthentication'],
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.IsAdminUser'],
+}
+
+# nginx terminates TLS and Cloud Run forwards X-Forwarded-Proto.
 # Without this, SECURE_SSL_REDIRECT sees plain HTTP and redirects forever.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
-# HSTS is owned by the load balancer (a custom response header on every
-# backend service), so all three hosts send exactly one, consistent header.
-# Set SECURE_HSTS_SECONDS only if Django is ever served without that LB.
+# HSTS is owned by the nginx edge (infra/edge/pglive.conf.template, one header on every
+# host), so all three hosts send exactly one, consistent header.
+# Set SECURE_HSTS_SECONDS only if Django is ever served without that edge.
 SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=0)
 if not SECURE_HSTS_SECONDS:
     SILENCED_SYSTEM_CHECKS = ['security.W004']
 
-# Trusted client IP: the LB overwrites this header on every backend.
+# Trusted client IP: nginx overwrites this header on every request to the backends.
 CLIENT_IP_HEADER = env('CLIENT_IP_HEADER', default='X-PGLive-Client-IP')
 REQUIRE_RAW_URI = True
 IAP_REQUIRED = env.bool('IAP_REQUIRED', default=True)

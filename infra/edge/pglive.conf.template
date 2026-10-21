@@ -9,12 +9,13 @@
 # - X-Forwarded-Host carries the public host: Cloud Run routes on Host, so Host must be the run.app name, and the
 #   BFF's same-origin check (frontend/src/lib/server/bff.ts) compares Origin with X-Forwarded-Host;
 # - the request URI is passed through untouched (no URI part in proxy_pass), which the BFF origin signature needs;
-# - login endpoints are rate-limited per client IP (what Cloud Armor did);
-# - /admin/ is allowed only from the addresses in /etc/nginx/pglive-admin-allow.conf.
+# - login endpoints are rate-limited per client IP (what Cloud Armor did); on the API host the web BFF and direct
+#   clients are counted separately (limits.conf), because every browser reaches the API from Cloud Run's addresses;
+# - the edge key header (X-PGLive-Edge-Key) is checked here and removed before the request goes upstream;
+# - /admin/ and the API schema/docs are allowed only from the addresses in /etc/nginx/pglive-admin-allow.conf.
 
 resolver 169.254.169.254 valid=300s ipv6=off;   # GCE metadata DNS; run.app addresses are re-resolved, not pinned
-limit_req_zone $binary_remote_addr zone=pglive_auth:10m rate=60r/m;
-limit_req_status 429;
+# The rate-limit zones and their keys are in conf.d/00-pglive-limits.conf (infra/edge/limits.conf).
 
 # Plain HTTP: certificate challenges, everything else to HTTPS. Unknown hosts get no answer.
 server {
@@ -65,11 +66,19 @@ server {
     include /etc/nginx/snippets/pglive-tls.conf;
     set $upstream_host ${API_HOST};
 
+    # Two counters, each counting only its own kind of caller (see limits.conf): direct clients per peer IP,
+    # the web BFF (proved by the edge key) per browser IP. A request lands in exactly one of them.
     location /api/v1/auth/ {
-        limit_req zone=pglive_auth burst=20 nodelay;
+        limit_req zone=pglive_auth_direct burst=20 nodelay;
+        limit_req zone=pglive_auth_bff burst=100 nodelay;
         include /etc/nginx/snippets/pglive-proxy.conf;
     }
     location /admin/ {
+        include /etc/nginx/pglive-admin-allow.conf;
+        include /etc/nginx/snippets/pglive-proxy.conf;
+    }
+    # The OpenAPI schema and Swagger UI: same network allowlist as /admin/ (Django also wants an admin session).
+    location ~ ^/api/(schema|docs)/ {
         include /etc/nginx/pglive-admin-allow.conf;
         include /etc/nginx/snippets/pglive-proxy.conf;
     }

@@ -77,6 +77,30 @@ describe("BFF proxy", () => {
     delete process.env.BFF_ORIGIN_SECRET;
   });
 
+  test("sends the edge key from the environment on every upstream call, and never one a browser supplies", async () => {
+    process.env.BFF_EDGE_KEY = "edge-key-0123456789abcdef0123456789abcdef";
+    fetchMock.mockResolvedValue(jsonResponse(200, {}));
+    await GET(
+      request("/api/v1/residents/", {
+        headers: { cookie: "pg_access=tok", "x-pglive-edge-key": "browser-forged-value" },
+      }),
+      params("v1/residents/")
+    );
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get("x-pglive-edge-key")).toBe(
+      "edge-key-0123456789abcdef0123456789abcdef"
+    );
+
+    delete process.env.BFF_EDGE_KEY;
+    fetchMock.mockClear();
+    await GET(
+      request("/api/v1/residents/", {
+        headers: { cookie: "pg_access=tok", "x-pglive-edge-key": "browser-forged-value" },
+      }),
+      params("v1/residents/")
+    );
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get("x-pglive-edge-key")).toBeNull();
+  });
+
   test("sends no origin signature without a secret or a load-balancer client IP", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, {}));
     await GET(request("/api/v1/residents/", { headers: { "x-pglive-client-ip": "203.0.113.9" } }), params("v1/residents/"));

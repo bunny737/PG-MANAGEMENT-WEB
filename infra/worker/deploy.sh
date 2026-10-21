@@ -28,6 +28,8 @@ umask 077
   echo "RAZORPAY_WEBHOOK_SECRET=$(secret RAZORPAY_WEBHOOK_SECRET)"
   echo "EMAIL_HOST_PASSWORD=$(secret EMAIL_HOST_PASSWORD)"
   echo "SENTRY_DSN=$(secret SENTRY_DSN)"
+  echo "SENTRY_ENVIRONMENT=production"
+  echo "APP_RELEASE=$TAG"
   echo "GS_BUCKET_NAME=$PROJECT-media"
   echo "GS_PROJECT_ID=$PROJECT"
   echo "GS_SA_EMAIL=$(md instance/service-accounts/default/email)"   # signs media URLs as the VM's own account

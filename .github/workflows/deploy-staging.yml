@@ -1,10 +1,11 @@
 name: Deploy staging
 
-# Every push to dev, after CI. Staging has its own project, Cloud SQL, Razorpay TEST keys and Firebase project;
-# nothing here can touch production. See docs/deployment.md.
+# DISABLED (2026-10-21): manual runs only. The owner chose to launch without a staging environment, and this
+# workflow must not run on every push to dev as it used to: it ignored CI, and infra/30-services.sh still
+# hard-codes the production API host (INTERNAL_API_URL=https://api.pglive.in) and Cloud Run ingress=internal
+# for both environments, so a staging web service would call the PRODUCTION API. Make 30-services.sh
+# environment-aware before re-enabling the push trigger. See docs/deployment.md.
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
 
 concurrency:

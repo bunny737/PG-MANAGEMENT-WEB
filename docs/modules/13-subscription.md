@@ -783,6 +783,16 @@ frontend always reaches a tenant's subscription via
   restored ABANDONED; payment-id idempotency is now checked before promotion
   (`_reconcile_non_current_event`). A genuinely new payment id on a restored ABANDONED
   row is still honoured — it is a new charge, not the one ops was told to refund.
+- [DECISION 2026-10-21] **Production never uses the Razorpay stub or a forgeable webhook.** The local stub
+  client (`test_sub_…` / `test_inv_…` ids when no key is set) stays for dev and tests only:
+  `config/settings/prod.py` sets `RAZORPAY_ALLOW_STUB_CLIENT = False` (so `razorpay_client.get_client()` raises
+  `ImproperlyConfigured` instead of returning `None`) and forces `RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = False`
+  whatever the environment says. `apps/subscriptions/checks.py` adds a **deploy system check**
+  (`subscriptions.E001`–`E005`): key id present and shaped `rzp_live_…`/`rzp_test_…`, key secret and webhook
+  secret present and not placeholder text, unsigned webhooks off. It is a check rather than a settings-import
+  guard so the migrate/bootstrap/export jobs and the image build don't need Razorpay keys; the API container
+  runs it at start-up (`backend/bin/start-api.sh`) and CI runs it with production settings and placeholder keys.
+  Tests: `apps/subscriptions/tests/test_deploy_checks.py`, `apps/core/test_prod_settings.py`.
 
 ## Changelog
 - 2026-10-20  Webhook ordering policy (rule 30, migration 0014): events applied by occurrence time with terminal/manual states first, every event stored (`razorpay_webhook_events`), manual `status_hold`, ledger last-event marker, Razorpay verification for undated or contradictory events, arrears-invoice guards, 10 s Razorpay timeout. Tests: `test_webhook_policy` (27), `test_webhook_ordering`, `test_webhook_delivery`. Earlier same day: duplicate and re-ordered *charge* Duplicates are tracked by event id.
@@ -845,3 +855,4 @@ frontend always reaches a tenant's subscription via
   failed, proration across tier boundaries and partial months, invoice
   generation + idempotency, RLS isolation for the three new tables); full
   subscriptions suite (90) green.
+- 2026-10-21  Razorpay deploy check and no-stub production settings (see Decisions).

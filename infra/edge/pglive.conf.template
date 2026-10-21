@@ -1,4 +1,5 @@
 # nginx edge for pglive.in on the pglive-worker VM (owner decision 2026-10-21: no load balancer).
+# Written for Debian 12's nginx 1.22 (hence "listen ... http2" rather than the 1.25+ "http2 on;").
 # Rendered by infra/edge/setup-edge.sh into /etc/nginx/conf.d/pglive.conf; ${API_HOST} and ${WEB_HOST} are the
 # Cloud Run *.run.app hostnames. Cloud Run ingress is "internal": only this VM (same project VPC) can reach it.
 #
@@ -28,7 +29,7 @@ server {
     location / { return 301 https://$host$request_uri; }
 }
 server {
-    listen 443 ssl default_server;
+    listen 443 ssl http2 default_server;
     server_name _;
     ssl_certificate     /etc/letsencrypt/live/pglive.in/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/pglive.in/privkey.pem;
@@ -37,16 +38,14 @@ server {
 
 # Bare domain -> www (one redirect, with HSTS).
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name pglive.in;
     include /etc/nginx/snippets/pglive-tls.conf;
     return 301 https://www.pglive.in$request_uri;
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name www.pglive.in;
     include /etc/nginx/snippets/pglive-tls.conf;
     set $upstream_host ${WEB_HOST};
@@ -61,8 +60,7 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name api.pglive.in;
     include /etc/nginx/snippets/pglive-tls.conf;
     set $upstream_host ${API_HOST};

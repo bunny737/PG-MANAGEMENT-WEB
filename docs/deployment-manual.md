@@ -510,7 +510,7 @@ Delete any GoDaddy "parked" A record or forwarding for `@`/`www`. Keep MX/TXT re
 PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 API_HOST=pglive-api-$PN.$REGION.run.app
 WEB_HOST=pglive-web-$PN.$REGION.run.app
-gcloud run services describe pglive-api --region $REGION --format='value(status.url)'   # must match $API_HOST
+gcloud run services describe pglive-api --region $REGION --format='value(metadata.annotations."run.googleapis.com/urls")'   # lists $API_HOST
 gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command \
   "sudo API_HOST=$API_HOST WEB_HOST=$WEB_HOST LE_EMAIL=you@yourdomain.com HSTS_MAX_AGE=300 /opt/pglive/edge/setup-edge.sh"
 ```

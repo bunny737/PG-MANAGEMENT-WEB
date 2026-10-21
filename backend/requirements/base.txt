@@ -8,7 +8,8 @@ celery==5.4.*
 redis==5.2.*
 django-celery-beat==2.9.*
 firebase-admin==6.*
-Pillow==11.*
+# 13.x: CVE fixes (incl. a CRITICAL JPEG decoder bug) exist only from 13.0.0 (Trivy, 2026-10-21).
+Pillow==13.*
 # Uploaded files on Google Cloud Storage (owner decision 2026-10-20, replaces
 # S3). >=1.14.4 for GS_IAM_SIGN_BLOB (keyless URL signing on Cloud Run).
 django-storages[google]>=1.14.4,<1.15
@@ -19,11 +20,9 @@ razorpay==1.4.*
 # razorpay 1.4.x still imports the legacy pkg_resources API, which setuptools
 # >=81 dropped entirely (import breaks without this pin) — see Module 13 spec.
 setuptools<81
-WeasyPrint==62.*
-# pydyf>=0.12 removed Stream.transform(), which WeasyPrint 62.x's PDF backend
-# still calls via super() — write_pdf() crashes with AttributeError without
-# this pin. See Module 17 spec.
-pydyf==0.11.*
+# 70.x: fixes SSRF and arbitrary code execution via PostScript images (CVE-2025-68616,
+# CVE-2026-106443). Its own pydyf requirement replaces the pydyf==0.11 pin 62.x needed (Module 17).
+WeasyPrint==70.*
 django-filter==24.*
 drf-spectacular==0.28.*
 openpyxl==3.*

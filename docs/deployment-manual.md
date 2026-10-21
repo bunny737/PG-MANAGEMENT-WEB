@@ -471,15 +471,17 @@ gcloud run jobs execute pglive-bootstrap --region $REGION --wait
 gcloud secrets versions access latest --secret INITIAL_SUPERADMIN_PASSWORD      # read it once to log in
 ```
 
-The order matters — do not skip ahead: **log in as that Super Admin → change the password in the app → (if
-done) verify `/admin/` works from your allowlisted IP (section 15) → only then**:
+The Super Admin signs in to **Django admin at `https://api.pglive.in/admin/`**, not the web app: the web login
+deliberately rejects `super_admin` ("This account is not an Owner") because the Super Admin web screens (FE-13) aren't
+built yet. So allowlist your IP first (section 15). The order matters — do not skip ahead: **log in to
+`/admin/` → change the password (top right) → only then**:
 
 ```bash
 gcloud run jobs delete pglive-bootstrap --region $REGION
 gcloud secrets delete INITIAL_SUPERADMIN_PASSWORD
 ```
 
-3. In Django admin or the Super Admin screens set the platform config (trial days, grace days, property/resident
+3. In Django admin set the platform config (trial days, grace days, property/resident
    caps — invariant 10) and create the live **Plans**. Never run `seed_data` here.
 
 4. Start (or restart) the worker: re-run the `deploy.sh $SHA` command from section 8.
@@ -607,9 +609,18 @@ and deployment.md §8. An export you have never restored is not a backup.
 Without a load balancer there is no IAP, so the API runs with `IAP_REQUIRED=False` and nginx admits `/admin/` only
 from listed addresses; everyone else gets 403 before Django is reached. Django's own login is the second layer.
 This is weaker than IAP + Google 2-Step Verification (no MFA on Django admin) — keep the list short, use a long
-unique admin password, and prefer the in-app Super Admin screens for routine work.
+unique admin password.
 
-Add your current public IP (check it at `https://ifconfig.me` from that machine):
+Open `https://api.pglive.in/admin/` once (you get 403), then read the address nginx actually saw — more reliable than
+an "what is my IP" site, which may show an IPv6 address while the site is reached over IPv4:
+
+```bash
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command \
+  "sudo grep ' /admin/' /var/log/nginx/access.log | tail -3"        # first field of each line = your IP
+```
+
+Add it (type the real address; a placeholder or an empty value writes `allow ;`, which nginx rejects — the running
+config stays, but delete that line before the next reload):
 
 ```bash
 gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command \

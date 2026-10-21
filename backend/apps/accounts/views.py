@@ -20,6 +20,8 @@ from apps.core.roles import STAFF_ROLES
 
 from .models import User
 from .serializers import (
+    EmailOtpRequestSerializer,
+    EmailOtpVerifySerializer,
     EmailVerificationSerializer,
     LoginSerializer,
     MeSerializer,
@@ -41,6 +43,7 @@ from .serializers import (
     TokenPairSerializer,
 )
 from .staff_access import locked_staff
+from .throttles import OtpEmailThrottle
 
 
 class _AnonPostView(APIView):
@@ -128,6 +131,30 @@ class OtpVerifyView(APIView):
     @extend_schema(request=OtpVerifySerializer, responses=TokenPairSerializer)
     def post(self, request):
         serializer = OtpVerifySerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
+
+
+class EmailOtpRequestView(_AnonPostView):
+    serializer_class = EmailOtpRequestSerializer
+    throttle_classes = [ScopedRateThrottle, OtpEmailThrottle]
+    throttle_scope = 'otp_email_request'
+    success_message = _('If that email can sign in with a code, a code has been sent.')
+
+
+class EmailOtpVerifyView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp_email_verify'
+
+    def get_authenticate_header(self, request):
+        # Makes failed code logins 401 (like /login/) instead of DRF's 403 fallback.
+        return 'Bearer realm="api"'
+
+    @extend_schema(request=EmailOtpVerifySerializer, responses=TokenPairSerializer)
+    def post(self, request):
+        serializer = EmailOtpVerifySerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         return Response(serializer.validated_data)
 

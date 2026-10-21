@@ -151,15 +151,17 @@ not a chart requiring palette validation.
 - Same-origin API calls mean no CORS config and the service worker can apply cache
   strategies uniformly.
 
-**Built 2026-10-19** (`feature/pwa-ios`). Route handlers: `app/api/auth/{login,login-phone,logout}`
+**Built 2026-10-19** (`feature/pwa-ios`). Route handlers: `app/api/auth/{login,login-phone,login-email-otp,logout}`
 (set/clear `pg_access` + `pg_refresh`, both `HttpOnly`, path `/api`, lifetimes read from each
 token's `exp`; and a secret-free `pg_session` marker on path `/` so `proxy.ts` can bounce signed-out
 page navigations, which never carry the `/api`-scoped cookies) and `app/api/[...path]` (everything
 else under `/api/v1/`). Behaviours worth knowing:
 
-- Login handlers return only the `/auth/me/` payload. The four token-issuing endpoints
-  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`) are **404 through the generic proxy**, so
-  a proxied call can never hand a token to page JS. OTP login needs its own handler when it is built.
+- Login handlers return only the `/auth/me/` payload. The token-issuing endpoints
+  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`, `otp/email/verify`) are **404 through the
+  generic proxy**, so a proxied call can never hand a token to page JS. Email-code login (2026-10-21) goes
+  through its own handler, `login-email-otp`; its request step (`otp/email/request`) issues no tokens and uses
+  the generic proxy. Phone OTP still needs its own handler when SMS delivery is built.
 - Refresh is server-side. With no access cookie (it expired) the proxy refreshes **before** sending,
   so the request runs once; with an access cookie it is replayed only after the backend answered
   401 (which means it did not run). A request is therefore never executed twice — this matters for
@@ -461,7 +463,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); OTP/signup/reset still future work) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; phone OTP/signup/reset still future work — forgot-password is still a simulated form and there is no `/reset-password` or `/verify-email` page yet) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |

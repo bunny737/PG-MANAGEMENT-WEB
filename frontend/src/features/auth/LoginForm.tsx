@@ -18,10 +18,17 @@ import {
 } from "lucide-react";
 import { BrandMark } from "@/components/shared/BrandMark";
 import { firstAllowedRoute } from "@/lib/permissions";
-import { ApiError, clearSession, login, loginPhone } from "@/lib/api";
+import { ApiError, clearSession, login, loginPhone, type CurrentUser } from "@/lib/api";
+import { EmailCodeLogin, type CodeRequest } from "./EmailCodeLogin";
 
 type LoginView = "choice" | "owner" | "staff";
 type FlowState = "login" | "forgot_password";
+/** Password is the default; the emailed code is the optional alternative in both views. */
+type AuthMethod = "password" | "email_code";
+
+/** Roles each login view admits (the email-code path enforces the same split as the password forms). */
+const OWNER_VIEW_ROLES = ["owner"];
+const STAFF_VIEW_ROLES = ["manager", "receptionist"];
 
 export function LoginForm() {
   const router = useRouter();
@@ -31,6 +38,9 @@ export function LoginForm() {
   // Navigation & Flow
   const [loginView, setLoginView] = useState<LoginView>("choice");
   const [flowState, setFlowState] = useState<FlowState>("login");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
+  // Lives here, not in EmailCodeLogin, so the resend cooldown survives switching views or methods.
+  const [lastCodeRequest, setLastCodeRequest] = useState<CodeRequest | null>(null);
 
   // Email + Password Credentials
   const [email, setEmail] = useState("");
@@ -158,6 +168,34 @@ export function LoginForm() {
       setErrors({ phonePassword: message });
     }
   };
+
+  const handleEmailCodeSuccess = (me: CurrentUser) => {
+    setTimeout(() => {
+      router.push(firstAllowedRoute(me.permissions ?? []));
+    }, 800);
+  };
+
+  const usePasswordInstead = () => setAuthMethod("password");
+
+  const backToChoice = () => {
+    setLoginView("choice");
+    setAuthMethod("password");
+    setErrors({});
+  };
+
+  const useEmailCodeLink = (
+    <button
+      type="button"
+      onClick={() => {
+        setAuthMethod("email_code");
+        setErrors({});
+      }}
+      disabled={isLoading || isSuccess}
+      className="w-full text-center text-sm font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer disabled:opacity-60"
+    >
+      {t("login.useEmailCode")}
+    </button>
+  );
 
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -344,10 +382,7 @@ export function LoginForm() {
         {loginView === "owner" && (
           <div className="space-y-6">
             <button
-              onClick={() => {
-                setLoginView("choice");
-                setErrors({});
-              }}
+              onClick={backToChoice}
               className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer"
             >
               <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
@@ -363,6 +398,18 @@ export function LoginForm() {
               </p>
             </div>
 
+            {authMethod === "email_code" ? (
+              <EmailCodeLogin
+                expectedRoles={OWNER_VIEW_ROLES}
+                initialEmail={email}
+                lastRequest={lastCodeRequest}
+                onCodeRequested={setLastCodeRequest}
+                roleMismatchMessage={t("login.errRoleMismatchOwner")}
+                onSuccess={handleEmailCodeSuccess}
+                onUsePassword={usePasswordInstead}
+              />
+            ) : (
+            <>
             <form onSubmit={handlePasswordSubmit} className="space-y-5">
               <div className="space-y-1.5">
                 <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
@@ -462,6 +509,9 @@ export function LoginForm() {
                 )}
               </button>
             </form>
+            {useEmailCodeLink}
+            </>
+            )}
           </div>
         )}
 
@@ -469,10 +519,7 @@ export function LoginForm() {
         {loginView === "staff" && (
           <div className="space-y-6">
             <button
-              onClick={() => {
-                setLoginView("choice");
-                setErrors({});
-              }}
+              onClick={backToChoice}
               className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer"
             >
               <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
@@ -488,6 +535,17 @@ export function LoginForm() {
               </p>
             </div>
 
+            {authMethod === "email_code" ? (
+              <EmailCodeLogin
+                expectedRoles={STAFF_VIEW_ROLES}
+                lastRequest={lastCodeRequest}
+                onCodeRequested={setLastCodeRequest}
+                roleMismatchMessage={t("login.errRoleMismatchStaff")}
+                onSuccess={handleEmailCodeSuccess}
+                onUsePassword={usePasswordInstead}
+              />
+            ) : (
+            <>
             <form onSubmit={handlePhoneSubmit} className="space-y-5">
               <div className="space-y-1.5">
                 <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
@@ -578,6 +636,9 @@ export function LoginForm() {
                 )}
               </button>
             </form>
+            {useEmailCodeLink}
+            </>
+            )}
           </div>
         )}
 

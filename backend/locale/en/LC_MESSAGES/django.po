@@ -2017,3 +2017,31 @@ msgstr ""
 #: apps/notifications/views.py
 msgid "This subscription was registered again since you last saw it; not deleted."
 msgstr ""
+
+#: apps/accounts/models.py
+msgid "Phone"
+msgstr ""
+
+#: apps/accounts/emails.py
+msgid "Your sign-in code"
+msgstr ""
+
+#: apps/accounts/emails.py
+#, python-format
+msgid "Your sign-in code is %(code)s."
+msgstr ""
+
+#: apps/accounts/emails.py
+msgid "If you didn't ask for this code, you can ignore this email. Your password has not changed."
+msgstr ""
+
+#: apps/accounts/views.py
+msgid "If that email can sign in with a code, a code has been sent."
+msgstr ""
+
+#: apps/accounts/emails.py
+#, python-format
+msgid "It expires in %(count)d minute."
+msgid_plural "It expires in %(count)d minutes."
+msgstr[0] ""
+msgstr[1] ""

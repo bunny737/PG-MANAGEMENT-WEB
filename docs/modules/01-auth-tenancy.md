@@ -10,7 +10,8 @@
 **Blocks:** all
 
 ## Purpose
-Tenant onboarding with configurable free trial, login (email/password + mobile OTP),
+Tenant onboarding with configurable free trial, login (email/password + mobile OTP,
+plus an optional emailed sign-in code),
 JWT session management, email verification, password reset, the 5-role permission
 model, Owner-managed staff accounts, and the tenant-isolation (RLS) infrastructure
 every later module builds on.
@@ -48,7 +49,8 @@ Table: users                        (NOT under RLS — see Decisions)
               user_staff_requires_phone, user_email_not_blank, user_phone_not_blank)
 
 Table: otp_codes                    (NOT under RLS — auth layer)
-  id uuid PK · user FK · code_hash · expires_at · attempts · used · created_at
+  id uuid PK · user FK · channel (phone | email) · code_hash · expires_at · attempts · used · created_at
+  index otp_user_chan_used_idx (user, channel, used, -created_at)  -- verify()'s filter + newest-first
 
 Table: audit_logs                   (RLS ENFORCED — first RLS table)
   id uuid PK · tenant_id uuid NULL (NULL = platform-level action)
@@ -91,6 +93,8 @@ POST /api/v1/auth/login-phone/             phone+pw → JWT pair w/ claims   All
 POST /api/v1/auth/token/refresh/           refresh + suspension + auth_ver AllowAny
 POST /api/v1/auth/otp/request/             issue OTP (silent)              AllowAny (3/min)
 POST /api/v1/auth/otp/verify/              phone+code → JWT pair           AllowAny (10/min)
+POST /api/v1/auth/otp/email/request/       queue email code (silent)       AllowAny (3/min per IP + 5/h per email)
+POST /api/v1/auth/otp/email/verify/        email+code → JWT pair           AllowAny (10/min)
 POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
 POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
@@ -112,7 +116,8 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
 3. Suspended/cancelled tenant: login, refresh, AND existing access tokens all
    rejected with `SUBSCRIPTION_SUSPENDED` (force logout ≤ 15 min).
 4. OTP: hashed at rest, single-use, 5-min TTL, max 5 attempts, new request
-   invalidates previous codes, unknown phone/email responses are silent.
+   invalidates previous codes **of the same channel**, unknown phone/email responses are silent.
+   A code verifies only on the channel it was issued for.
 5. Password-reset confirm also sets `email_verified` (completes staff invites).
 6. Staff accounts restricted to manager/receptionist roles; created without a
    password + invite email; deactivation blocks login; no hard delete.
@@ -129,6 +134,12 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
     never by themself; cross-tenant ids are 404.
 14. Module-access writes and role changes share one row-locked transaction; every write is
     audited (`staff.module_access_updated` / `staff.updated`) with before/after and IP.
+15. Email code login (optional; password stays the default): the request endpoint answers every
+    address identically and only queues `send_login_code_task`; the worker issues and emails a code
+    only to an active tenant user (Owner or staff with an email; never a Super Admin) whose tenant is
+    not suspended/cancelled. A correct code returns the JWT pair (current `auth_version`) and marks the
+    email verified in the same transaction that consumes the code. Malformed codes (not 6 digits) are
+    a 400 and use no attempt. Tests: `apps/accounts/tests/test_email_otp.py`.
 
 ## Permissions
 `apps/core/roles.py` holds `Role` + `PERMISSION_MATRIX` (the PRD §6 table, plus `view_dashboard`
@@ -181,11 +192,63 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
 - Password change between token issuance and use → `auth_version` mismatch triggers immediate rejection with `PASSWORD_CHANGED`.
 - OTP for unverified email → phone possession proven; does not gate on unverified email.
 - Phone login for staff with unverified/absent email → succeeds without requiring email verification.
+- Email code for an unverified email → succeeds and marks the email verified (inbox possession proven).
+- Email code issued to an account that is then deactivated, and the address reused by a new account →
+  the old code cannot authenticate the new account (verify resolves the active user, who has no code).
+- SMTP failure while sending an email code → production retries (each retry issues a fresh code, so only
+  the newest delivered code works); the request already got its generic 200 either way.
 - Nested `tenant_context()` restores the previous context (audit writes inside
   a request don't clobber the request's context).
 - Requests that never touch the DB don't open a connection just to clear GUCs.
 
 ## Open questions / Decisions
+- [DECISION 2026-10-21] **Email code login is optional; password stays the default** (owner decision).
+  Email delivery adds latency and a dependency on the mail provider, and staff may have no email at
+  all (phone is their mandatory identifier), so code-only login would lock some of them out. The
+  login screen offers "Email me a code instead" in both the Owner and Staff views; each view still
+  rejects the other's roles after login.
+- [DECISION 2026-10-21] **`otp_codes.channel` (phone | email).** A purpose such as "login" would let a
+  new email code cancel an outstanding phone code. Issue invalidates and verify matches only the same
+  channel. Migration `accounts.0008` backfills existing rows as `phone`; the default is not kept.
+- [DECISION 2026-10-21] **Issuance locks the user row** (`otp.issue`: `select_for_update(of=('self',))`)
+  so concurrent requests can't each invalidate the old codes and then both create one. The caller's
+  eligibility predicate re-runs on the locked row, so a deactivation, tenant suspension or email change
+  between the worker's lookup and the lock is seen; a user deleted before the lock gets `None`.
+  **`otp.verify` takes the same user-row lock first, then the code row** (user → OTP, as in issue).
+  Locking the code row first and updating `email_verified` afterwards deadlocked against a concurrent
+  resend (resend held the user and waited on the code rows; verify the reverse). Pinned by
+  `test_verify_locks_the_user_row_before_the_code_row` and a resend-vs-verify race test.
+- [DECISION 2026-10-21] **The 30 s resend cooldown is per address and survives navigation.** The last
+  request (`{email, sentAt}`) is held by `LoginForm`, which stays mounted while the user switches
+  between password and code or between views. Submitting the same address during the cooldown (e.g.
+  via "Change email") returns to code entry without a new request. A page reload resets it; the
+  backend's per-email throttle (5/h) is the real limit.
+- [DECISION 2026-10-21] **The request endpoint does no lookup and no SMTP; the worker generates the
+  code.** `EmailOtpRequestSerializer.save()` always calls `enqueue(send_login_code_task, email)`, so
+  timing, broker outages (`enqueue` swallows them) and SMTP failures look the same for every address.
+  The plaintext code is created on the worker (`tasks.deliver_login_code`) and never enters the Redis
+  payload — only the normalized email does. `send_login_code_task.expires = OTP_TTL_SECONDS` drops a
+  backlog older than a code's lifetime.
+- [DECISION 2026-10-21] **Eager-mode delivery failures are logged, not raised.** Dev/test run Celery
+  eagerly with `CELERY_TASK_EAGER_PROPAGATES`, which would turn an SMTP error for a registered address
+  into a 500 inside the request while unknown addresses get 200. The task checks
+  `self.request.is_eager`: eager → log and return; async (production) → `self.retry` up to 2 times,
+  5 s apart, then log. Logs never contain the code or the address.
+- [DECISION 2026-10-21] **Super Admins cannot use email code login.** They sign in through Django admin
+  behind IAP; the request side never issues them a code and verify only resolves users with a tenant.
+- [DECISION 2026-10-21] **A correct email code marks the email verified**, the same trust as completing
+  the invite/reset link (possession of the inbox). It happens in `otp.verify`'s transaction, together
+  with consuming the code (and sets `updated_at`, which `update()` skips). Callers must not wrap verify
+  in an outer transaction they roll back, or failed attempts would stop counting.
+- [DECISION 2026-10-21] **Per-email request throttle lives in `apps.accounts.throttles`**
+  (`OtpEmailThrottle`, SHA-256 of the normalized email), not a generalized core throttle, so
+  `apps.core` does not depend on `accounts` normalization. It ignores unparsable or non-object bodies
+  (validation answers 400) instead of raising.
+- [DECISION 2026-10-21] **Accepted narrow race:** a tenant suspended just after the locked eligibility
+  check can still receive one email, but verify re-checks tenant status, so no tokens are issued.
+- [OPEN 2026-10-21] **Forgot-password and email-verification pages are not built.** The login screen's
+  forgot-password form is a simulated timeout, and the frontend has no `/reset-password` or
+  `/verify-email` route although the backend emails link to both. Follow-up after email code login.
 - [DECISION 2026-10-19] **Contact form inbox is platform-level, not tenant data.** `ContactMessage`
   (`core.0007`) has no `tenant_id` and no RLS: the sender is an anonymous prospect, so invariant 1 has
   nothing to scope to (same class as `PlatformConfig`, `AppVersionPolicy`). It is readable only through
@@ -229,6 +292,8 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   when set because OTP login resolves the user by phone alone. **(Superseded 2026-10-10: uniqueness is scoped to `is_active=True`, freeing identifiers upon deactivation for cross-tenant re-employment).**
 - [DECISION 2026-07-02] OTP delivery is a stub (`accounts/otp.py:_deliver`,
   logs the code; console email backend in dev). SMS provider is V2 (PRD 18).
+  **(Amended 2026-10-21: the code is logged only when `DEBUG`; production logs are shipped and
+  retained, so they get a warning without the code.)**
 - [DECISION 2026-09-10] **`otp.verify` runs in a transaction and
   `select_for_update()` the OTP row.** The failed-attempt counter was a
   read-modify-write with no lock: N concurrent verify requests all read
@@ -342,6 +407,14 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   a failed save rolls back to the last server-confirmed state, `409 ROLE_CHANGED` reloads).
 
 ## Changelog
+- 2026-10-21  Optional email code login: `OtpCode.channel` + index (migration `accounts.0008`),
+  channel-aware row-locked `otp.issue` / `otp.verify`, `send_login_code_task` (worker-side code
+  generation, eager-safe retries), `send_login_code_email` (gettext + `ngettext` expiry, en/te),
+  `POST /auth/otp/email/request/` + `/auth/otp/email/verify/`, `OtpEmailThrottle`, phone OTP code no
+  longer logged outside `DEBUG`. Frontend: `app/api/auth/login-email-otp` BFF handler,
+  `requestEmailOtp` / `loginEmailOtp`, `features/auth/EmailCodeLogin.tsx` in the Owner and Staff login
+  views, strings in all five catalogs, regenerated `api-schema.d.ts`. Tests:
+  `apps/accounts/tests/test_email_otp.py`, `EmailCodeLogin.test.tsx`, `bff.test.ts`. ERD regenerated.
 - 2026-10-20  GCP deployment readiness: trusted client IP (`apps/core/net.py`, `ClientIPMiddleware`, throttles);
   dedicated `JWT_SIGNING_KEY` (`SIMPLE_JWT['SIGNING_KEY']`, required in prod); `bootstrap_platform` (initial
   Super Admin, audited, idempotent); `check_db_roles`; health probes; IAP check on `/admin/`. See

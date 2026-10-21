@@ -9,6 +9,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import translation
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from .tokens import make_email_verification_token, make_password_reset_credentials
 
@@ -48,6 +49,25 @@ def send_password_reset_email(user):
         _('Reset your password'),
         _('Use this link to reset your password: %(url)s') % {'url': url},
     )
+
+
+def send_login_code_email(user, code):
+    # Runs on the Celery worker (apps.accounts.tasks), where no request
+    # language is active, so the text is built inside the user's language.
+    minutes = max(1, settings.OTP_TTL_SECONDS // 60)
+    with translation.override(user.language_code or 'en'):
+        subject = _('Your sign-in code')
+        body = '\n\n'.join([
+            _('Your sign-in code is %(code)s.') % {'code': code},
+            ngettext(
+                'It expires in %(count)d minute.',
+                'It expires in %(count)d minutes.',
+                minutes,
+            ) % {'count': minutes},
+            _("If you didn't ask for this code, you can ignore this email. "
+              'Your password has not changed.'),
+        ])
+    _send(user, subject, body)
 
 
 def send_staff_invite_email(user, tenant):

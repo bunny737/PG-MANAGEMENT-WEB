@@ -329,6 +329,39 @@ export interface paths {
         patch: operations["v1_auth_me_partial_update"];
         trace?: never;
     };
+    "/api/v1/auth/otp/email/request/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Unauthenticated POST endpoint: validate serializer, run save(), reply 200. */
+        post: operations["v1_auth_otp_email_request_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/otp/email/verify/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_otp_email_verify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/otp/request/": {
         parameters: {
             query?: never;
@@ -1519,11 +1552,9 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * @description Register/unregister an FCM device token for the current user (web via
-         *     the Serwist service worker, or the Flutter app on Android/iOS — see
-         *     docs/push-notifications-integration.md). No special permission beyond
-         *     authentication — registering a device is a per-user action, not a
-         *     business permission, same as editing your own profile.
+         * @description Optional `?if_last_seen_at=<value from the POST/GET response>` makes the delete
+         *     conditional: 412 (and nothing deleted) if the row has been re-registered since. Clients that
+         *     don't send it (the mobile app) get the plain delete.
          */
         delete: operations["v1_notifications_push_subscriptions_destroy"];
         options?: never;
@@ -1842,6 +1873,53 @@ export interface paths {
          *     per property so there's no separate create endpoint.
          */
         patch: operations["v1_properties_settings_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/public/contact/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description The website contact form: stores a ContactMessage for a Super Admin to read in
+         *     the Django admin. Public and write-only (no GET: a visitor can never read messages).
+         *
+         *     Abuse controls, in order: a body-size cap before anything parses the request,
+         *     a per-IP and a per-email throttle, field validation, and a honeypot — a bot that
+         *     fills the hidden `website` field gets the same 201 as a human but nothing is saved,
+         *     so it learns nothing about being filtered.
+         */
+        post: operations["v1_public_contact_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/plans/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The plan lineup for the public marketing site (anonymous, GET-only).
+         *     Prices, caps and the trial length are read from the live catalogue and
+         *     `PlatformConfig` on every request, so a Super Admin edit shows up without a
+         *     deploy (invariant 10). Platform data only — never tenant data.
+         */
+        get: operations["v1_public_plans_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/residents/": {
@@ -3066,6 +3144,23 @@ export interface components {
             attachment?: string | null;
         };
         /**
+         * @description Body of POST /public/contact/. Kept as a plain Serializer (not a
+         *     ModelSerializer) so the public input contract is explicit: nothing the
+         *     sender posts can reach `status`, `ip_address` or any other model field.
+         */
+        ContactMessage: {
+            name: string;
+            /** Format: email */
+            email: string;
+            phone?: string;
+            message: string;
+            website?: string;
+        };
+        /** @description Response shape of POST /public/contact/ (schema only). */
+        ContactReceived: {
+            status: string;
+        };
+        /**
          * @description * `ac` - AC
          *     * `non_ac` - Non-AC
          * @enum {string}
@@ -3198,6 +3293,15 @@ export interface components {
          * @enum {string}
          */
         DuesRecoveryStatusEnum: "outstanding" | "partially_recovered" | "written_off";
+        EmailOtpRequest: {
+            /** Format: email */
+            email: string;
+        };
+        EmailOtpVerify: {
+            /** Format: email */
+            email: string;
+            code: string;
+        };
         EmailVerification: {
             token: string;
         };
@@ -4201,6 +4305,36 @@ export interface components {
          * @enum {string}
          */
         PropertyTypeEnum: "boys_hostel" | "girls_hostel" | "hostel" | "pg" | "co_living";
+        /**
+         * @description Allow-list of plan fields safe to show anonymously (marketing site).
+         *     Deliberately NOT a subclass of `PlanSerializer`: a field added there must
+         *     not leak into a public response by inheritance. Razorpay ids, tenant
+         *     counts and admin flags stay out.
+         */
+        PublicPlan: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            readonly pricing_type: components["schemas"]["PricingTypeEnum"];
+            /** Format: decimal */
+            readonly price_per_month: string | null;
+            readonly max_beds: number | null;
+            readonly bed_tiers: components["schemas"]["PublicPlanBedTier"][];
+            readonly is_trial_plan: boolean;
+        };
+        PublicPlanBedTier: {
+            readonly up_to_beds: number | null;
+            /** Format: decimal */
+            readonly rate_per_bed: string;
+        };
+        /** @description Response shape of GET /public/plans/ (documentation only). */
+        PublicPlanCatalog: {
+            currency: string;
+            trial_days: number;
+            /** Format: date-time */
+            updated_at: string | null;
+            plans: components["schemas"]["PublicPlan"][];
+        };
         PushInfo: {
             fcm_token?: string | null;
             permission: string;
@@ -4887,6 +5021,7 @@ export interface operations {
         parameters: {
             query?: {
                 bed?: string;
+                property?: string;
                 resident?: string;
             };
             header?: never;
@@ -5216,6 +5351,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeUpdate"];
+                };
+            };
+        };
+    };
+    v1_auth_otp_email_request_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailOtpRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmailOtpRequest"];
+                "multipart/form-data": components["schemas"]["EmailOtpRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailOtpRequest"];
+                };
+            };
+        };
+    };
+    v1_auth_otp_email_verify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailOtpVerify"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmailOtpVerify"];
+                "multipart/form-data": components["schemas"]["EmailOtpVerify"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
                 };
             };
         };
@@ -5806,6 +5991,7 @@ export interface operations {
                  *     * `urgent` - Urgent
                  */
                 priority?: "high" | "low" | "medium" | "urgent";
+                property?: string;
                 resident?: string;
                 /**
                  * @description * `open` - Open
@@ -7842,6 +8028,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Property"];
+                };
+            };
+        };
+    };
+    v1_public_contact_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactMessage"];
+                "application/x-www-form-urlencoded": components["schemas"]["ContactMessage"];
+                "multipart/form-data": components["schemas"]["ContactMessage"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactReceived"];
+                };
+            };
+        };
+    };
+    v1_public_plans_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPlanCatalog"];
                 };
             };
         };

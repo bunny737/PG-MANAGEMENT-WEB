@@ -794,7 +794,7 @@ msgstr "ఈ కేటగిరీని ఖర్చులు ఉపయోగి
 
 #: apps/notifications/models.py:13
 msgid "Email"
-msgstr ""
+msgstr "ఇమెయిల్"
 
 #: apps/notifications/models.py:14
 msgid "SMS"
@@ -2064,3 +2064,31 @@ msgstr "ఈ టెనెంట్ సస్పెండ్ చేయబడలే
 #: apps/notifications/views.py
 msgid "This subscription was registered again since you last saw it; not deleted."
 msgstr "ఈ సబ్‌స్క్రిప్షన్ మీరు చివరిసారి చూసిన తర్వాత మళ్లీ నమోదు చేయబడింది; తొలగించబడలేదు."
+
+#: apps/accounts/models.py
+msgid "Phone"
+msgstr "ఫోన్"
+
+#: apps/accounts/emails.py
+msgid "Your sign-in code"
+msgstr "మీ సైన్-ఇన్ కోడ్"
+
+#: apps/accounts/emails.py
+#, python-format
+msgid "Your sign-in code is %(code)s."
+msgstr "మీ సైన్-ఇన్ కోడ్ %(code)s."
+
+#: apps/accounts/emails.py
+msgid "If you didn't ask for this code, you can ignore this email. Your password has not changed."
+msgstr "మీరు ఈ కోడ్‌ను అభ్యర్థించకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు. మీ పాస్‌వర్డ్ మారలేదు."
+
+#: apps/accounts/views.py
+msgid "If that email can sign in with a code, a code has been sent."
+msgstr "ఆ ఇమెయిల్ కోడ్‌తో సైన్ ఇన్ చేయగలిగితే, ఒక కోడ్ పంపబడింది."
+
+#: apps/accounts/emails.py
+#, python-format
+msgid "It expires in %(count)d minute."
+msgid_plural "It expires in %(count)d minutes."
+msgstr[0] "ఇది %(count)d నిమిషంలో గడువు ముగుస్తుంది."
+msgstr[1] "ఇది %(count)d నిమిషాల్లో గడువు ముగుస్తుంది."

@@ -29,7 +29,7 @@ from .emails import (
 )
 from .models import Tenant, User
 from .normalization import normalize_email, normalize_phone
-from .tasks import send_welcome_email_task
+from .tasks import send_login_code_task, send_welcome_email_task
 from .tokens import (
     check_password_reset_token,
     read_email_verification_token,
@@ -212,7 +212,9 @@ class OtpRequestSerializer(serializers.Serializer):
         # Always succeed — never reveal whether a phone is registered.
         user = User.objects.filter(phone=self.validated_data['phone'], is_active=True).first()
         if user:
-            otp_service.issue(user)
+            code = otp_service.issue(user, otp_service.Channel.PHONE)
+            if code:
+                otp_service._deliver(user, code)
 
 
 class OtpVerifySerializer(serializers.Serializer):
@@ -233,10 +235,52 @@ class OtpVerifySerializer(serializers.Serializer):
             .filter(phone=phone, is_active=True)
             .first()
         )
-        if user is None or not otp_service.verify(user, attrs['code']):
+        if user is None or not otp_service.verify(user, attrs['code'], otp_service.Channel.PHONE):
             raise AuthenticationFailed(
                 _('The code is incorrect or has expired.'), code='invalid_otp'
             )
+        _check_user_can_authenticate(user, require_verified_email=False)
+        refresh = LoginSerializer.get_token(user)
+        return {'refresh': str(refresh), 'access': str(refresh.access_token)}
+
+
+class EmailOtpRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return normalize_email(value)
+
+    def save(self, **kwargs):
+        # Always succeed, and do the same work for every address: no user
+        # lookup or SMTP here, just queue the task (which decides eligibility on
+        # the worker). Timing, broker and SMTP failures can't reveal whether the
+        # email is registered. enqueue() already swallows broker errors.
+        enqueue(send_login_code_task, self.validated_data['email'])
+
+
+class EmailOtpVerifySerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    # Malformed codes are a 400 before any lookup, so they never use up one
+    # of the code's OTP_MAX_ATTEMPTS.
+    code = serializers.RegexField(r'^\d{6}$')
+
+    def validate_email(self, value):
+        return normalize_email(value)
+
+    def validate(self, attrs):
+        user = (
+            User.objects.select_related('tenant')
+            .filter(email__iexact=attrs['email'], is_active=True, tenant__isnull=False)
+            .first()
+        )
+        # No outer transaction: verify() commits the failed-attempt counter
+        # even though this raises.
+        if user is None or not otp_service.verify(user, attrs['code'], otp_service.Channel.EMAIL):
+            raise AuthenticationFailed(
+                _('The code is incorrect or has expired.'), code='invalid_otp'
+            )
+        # A correct code proved inbox ownership (verify() marked the email
+        # verified), so the email-verification gate does not apply.
         _check_user_can_authenticate(user, require_verified_email=False)
         refresh = LoginSerializer.get_token(user)
         return {'refresh': str(refresh), 'access': str(refresh.access_token)}

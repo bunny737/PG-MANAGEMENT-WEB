@@ -433,41 +433,6 @@ export interface Floor {
   updated_at: string;
 }
 
-const MOCK_PROPERTIES_MAP: Record<string, Property> = {
-  skyline: {
-    id: "skyline",
-    name: "Skyline Tower",
-    property_type: "pg",
-    address_line: "12, Outer Ring Road, Bellandur",
-    city: "Bengaluru",
-    state: "Karnataka",
-    contact_number: "9876543210",
-    status: "active",
-    buildings_count: 1,
-    floors_count: 12,
-    rooms_count: 288,
-    beds_count: 576,
-    occupancy_percent: 92,
-    images: [],
-  },
-  sunset: {
-    id: "sunset",
-    name: "Sunset Apartments Complex",
-    property_type: "apartment",
-    address_line: "Block B, Sunset Hills",
-    city: "Mumbai",
-    state: "Maharashtra",
-    contact_number: "9876543210",
-    status: "active",
-    buildings_count: 1,
-    floors_count: 5,
-    rooms_count: 60,
-    beds_count: 120,
-    occupancy_percent: 88,
-    images: [],
-  },
-};
-
 export function listProperties() {
   return apiFetch<Property[] | { results: Property[] }>("/api/v1/properties/").then((data) =>
     Array.isArray(data) ? data : data.results
@@ -475,11 +440,7 @@ export function listProperties() {
 }
 
 export function getProperty(id: string) {
-  if (!isUUID(id)) {
-    const mock = MOCK_PROPERTIES_MAP[id];
-    if (mock) return Promise.resolve(mock);
-    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
-  }
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   return apiFetch<Property>(`/api/v1/properties/${id}/`);
 }
 
@@ -491,11 +452,7 @@ export function createProperty(payload: PropertyPayload) {
 }
 
 export function updateProperty(id: string, payload: Partial<PropertyPayload>) {
-  if (!isUUID(id)) {
-    const mock = MOCK_PROPERTIES_MAP[id];
-    if (mock) return Promise.resolve({ ...mock, ...payload });
-    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
-  }
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   return apiFetch<Property>(`/api/v1/properties/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
@@ -520,25 +477,7 @@ export function deletePropertyImage(propertyId: string, imageId: string) {
 }
 
 export function listBuildings(propertyId: string) {
-  if (!isUUID(propertyId)) {
-    const mock = MOCK_PROPERTIES_MAP[propertyId];
-    if (mock) {
-      return Promise.resolve([
-        {
-          id: `bldg-${propertyId}`,
-          property: propertyId,
-          name: "Main Tower",
-          order: 1,
-          floors_count: mock.floors_count,
-          rooms_count: mock.rooms_count,
-          occupancy_percent: mock.occupancy_percent,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]);
-    }
-    return Promise.resolve([]);
-  }
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   return apiFetch<Building[] | { results: Building[] }>(`/api/v1/buildings/?property=${propertyId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -564,7 +503,7 @@ export function deleteBuilding(buildingId: string) {
 }
 
 export function listFloors(buildingId: string) {
-  if (!isUUID(buildingId)) return Promise.resolve([]);
+  if (!isUUID(buildingId)) return Promise.reject(new ApiError(404, { detail: "Building not found" }));
   return apiFetch<Floor[] | { results: Floor[] }>(`/api/v1/floors/?building=${buildingId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -646,7 +585,7 @@ export interface Bed {
 }
 
 export function listRooms(floorId: string) {
-  if (!isUUID(floorId)) return Promise.resolve([]);
+  if (!isUUID(floorId)) return Promise.reject(new ApiError(404, { detail: "Floor not found" }));
   return apiFetch<Room[] | { results: Room[] }>(`/api/v1/rooms/?floor=${floorId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -683,7 +622,7 @@ export function deleteRoom(roomId: string) {
 }
 
 export function listBeds(roomId: string) {
-  if (!isUUID(roomId)) return Promise.resolve([]);
+  if (!isUUID(roomId)) return Promise.reject(new ApiError(404, { detail: "Room not found" }));
   return apiFetch<Bed[] | { results: Bed[] }>(`/api/v1/beds/?room=${roomId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -896,7 +835,7 @@ export interface Admission {
 }
 
 export function listResidents(propertyId?: string, status?: string, search?: string) {
-  if (propertyId && !isUUID(propertyId)) return Promise.resolve([]);
+  if (propertyId && !isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   let url = "/api/v1/residents/";
   const params = new URLSearchParams();
   if (propertyId) params.append("property", propertyId);
@@ -1205,7 +1144,7 @@ export interface Complaint {
 }
 
 export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string; property?: string }) {
-  if (filters?.resident && !isUUID(filters.resident)) return Promise.resolve([]);
+  if (filters?.resident && !isUUID(filters.resident)) return Promise.reject(new ApiError(404, { detail: "Resident not found" }));
   let url = "/api/v1/complaints/";
   const params = new URLSearchParams();
   if (filters) {
@@ -1994,105 +1933,16 @@ export interface FeatureRef {
   is_paid?: boolean;
 }
 
-const MOCK_FEATURE_CATALOG: FeatureCatalogItem[] = [
-  { id: "fc-1", code: "furnished_rooms", category: "rooms", category_label: "Rooms & Furnishing", label: "Furnished rooms", display_order: 1, is_popular: true, is_active: true },
-  { id: "fc-2", code: "attached_bathroom", category: "rooms", category_label: "Rooms & Furnishing", label: "Attached bathroom", display_order: 2, is_popular: true, is_active: true },
-  { id: "fc-3", code: "mess_food_provided", category: "food", category_label: "Food & Kitchen", label: "Food / mess provided", display_order: 3, is_popular: true, is_active: true },
-  { id: "fc-4", code: "refrigerator", category: "food", category_label: "Food & Kitchen", label: "Refrigerator", display_order: 4, is_popular: false, is_active: true },
-  { id: "fc-5", code: "washing_machine", category: "housekeeping", category_label: "Housekeeping & Laundry", label: "Washing machine", display_order: 5, is_popular: true, is_active: true },
-  { id: "fc-6", code: "wifi", category: "connectivity", category_label: "Internet & Entertainment", label: "Wi-Fi", display_order: 6, is_popular: true, is_active: true },
-  { id: "fc-7", code: "power_backup", category: "utilities", category_label: "Utilities & Comfort", label: "Power backup", display_order: 7, is_popular: true, is_active: true },
-  { id: "fc-8", code: "hot_water_geyser", category: "utilities", category_label: "Utilities & Comfort", label: "Hot water / geyser", display_order: 8, is_popular: true, is_active: true },
-  { id: "fc-9", code: "cctv", category: "safety", category_label: "Safety & Security", label: "CCTV surveillance", display_order: 9, is_popular: true, is_active: true },
-  { id: "fc-10", code: "gym", category: "recreation", category_label: "Recreation & Common Areas", label: "Gym / fitness room", display_order: 10, is_popular: false, is_active: true },
-];
-
-const MOCK_PROPERTY_FEATURES: Record<string, PropertyFeaturesState> = {
-  skyline: {
-    property: "skyline",
-    building: null,
-    items: [
-      {
-        id: "feat-skyline-1",
-        source: "property",
-        building: null,
-        feature_type: "catalog",
-        code: "wifi",
-        tenant_feature: null,
-        label: "Wi-Fi",
-        category: "connectivity",
-        category_label: "Internet & Entertainment",
-        is_paid: false,
-        is_active: true,
-      },
-      {
-        id: "feat-skyline-2",
-        source: "property",
-        building: null,
-        feature_type: "catalog",
-        code: "power_backup",
-        tenant_feature: null,
-        label: "Power backup",
-        category: "utilities",
-        category_label: "Utilities & Comfort",
-        is_paid: false,
-        is_active: true,
-      },
-      {
-        id: "feat-skyline-3",
-        source: "property",
-        building: null,
-        feature_type: "catalog",
-        code: "cctv",
-        tenant_feature: null,
-        label: "CCTV surveillance",
-        category: "safety",
-        category_label: "Safety & Security",
-        is_paid: false,
-        is_active: true,
-      },
-      {
-        id: "feat-skyline-4",
-        source: "property",
-        building: null,
-        feature_type: "catalog",
-        code: "washing_machine",
-        tenant_feature: null,
-        label: "Washing machine",
-        category: "housekeeping",
-        category_label: "Housekeeping & Laundry",
-        is_paid: true,
-        is_active: true,
-      },
-    ],
-    excluded: [],
-    derived: {
-      sharing_types: [1, 2],
-      room_categories: ["ac", "non_ac"],
-    },
-  },
-  sunset: {
-    property: "sunset",
-    building: null,
-    items: [],
-    excluded: [],
-    derived: {
-      sharing_types: [1, 2, 3],
-      room_categories: ["ac", "non_ac"],
-    },
-  },
-};
-
 export function listFeatureCatalog() {
-  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/")
-    .then((data) => (Array.isArray(data) ? data : data.results))
-    .catch(() => MOCK_FEATURE_CATALOG);
+  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
 }
 
 export function listTenantFeatures() {
-  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/")
-    .then((data) => (Array.isArray(data) ? data : data.results))
-    .catch(() => []);
+  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
 }
 
 /** Idempotent: returns the existing feature when one with the same name already exists. */
@@ -2100,34 +1950,11 @@ export function createTenantFeature(label: string) {
   return apiFetch<TenantFeature>("/api/v1/tenant-features/", {
     method: "POST",
     body: JSON.stringify({ label }),
-  }).catch((err) => {
-    if (err instanceof ApiError && err.status === 400) throw err;
-    return {
-      id: `custom-${Date.now()}`,
-      label,
-      is_active: true,
-    };
   });
 }
 
 export function listPropertyFeatures(propertyId: string, buildingId?: string | null) {
-  if (!isUUID(propertyId)) {
-    const mock = MOCK_PROPERTIES_MAP[propertyId];
-    if (mock) {
-      const state = MOCK_PROPERTY_FEATURES[propertyId] || {
-        property: propertyId,
-        building: buildingId ?? null,
-        items: [],
-        excluded: [],
-        derived: { sharing_types: [1, 2], room_categories: ["ac", "non_ac"] },
-      };
-      return Promise.resolve({
-        ...state,
-        building: buildingId ?? null,
-      });
-    }
-    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
-  }
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   const query = buildingId ? `?building=${buildingId}` : "";
   return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/${query}`);
 }
@@ -2137,34 +1964,7 @@ export function replacePropertyFeatures(
   propertyId: string,
   payload: { building: string | null; items: FeatureRef[]; excluded?: FeatureRef[] }
 ) {
-  if (!isUUID(propertyId)) {
-    const mock = MOCK_PROPERTIES_MAP[propertyId];
-    if (mock) {
-      const items: PropertyFeature[] = (payload.items || []).map((ref, idx) => ({
-        id: `mock-feat-${idx}`,
-        source: payload.building ? ("building" as const) : ("property" as const),
-        building: payload.building,
-        feature_type: ref.code ? ("catalog" as const) : ("custom" as const),
-        code: ref.code ?? null,
-        tenant_feature: ref.tenant_feature ?? null,
-        label: ref.code ? ref.code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Custom feature",
-        category: "other",
-        category_label: "Other",
-        is_paid: ref.is_paid ?? false,
-        is_active: true,
-      }));
-      const newState: PropertyFeaturesState = {
-        property: propertyId,
-        building: payload.building,
-        items,
-        excluded: [],
-        derived: { sharing_types: [1, 2], room_categories: ["ac", "non_ac"] },
-      };
-      MOCK_PROPERTY_FEATURES[propertyId] = newState;
-      return Promise.resolve(newState);
-    }
-    return Promise.reject(new ApiError(404, { detail: "Property not found" }));
-  }
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   return apiFetch<PropertyFeaturesState>(`/api/v1/properties/${propertyId}/features/`, {
     method: "POST",
     body: JSON.stringify(payload),

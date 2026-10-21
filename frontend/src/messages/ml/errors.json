@@ -1,0 +1,7 @@
+{
+  "title": "Something went wrong",
+  "body": "An unexpected error occurred. Your data is safe. Please try again.",
+  "retry": "Try again",
+  "home": "Go to home",
+  "reference": "Reference: {code}"
+}

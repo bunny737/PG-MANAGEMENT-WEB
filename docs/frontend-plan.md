@@ -475,7 +475,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
 | FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; real `/forgot-password` + `/reset-password` (also the staff-invite set-password page) and a real Settings → change-password (re-issues the session cookies) 2026-10-21; phone OTP still future work) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
-| FE-03 | Property settings | ⬜ |
+| FE-03 | Property settings | ⬜ (the `/properties/[id]/settings` page is still the mock `PropertySettingsForm`; Settings no longer links real properties to it, 2026-10-21) |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
 | FE-05 | Admissions | ⬜ |
 | FE-06 | Allocations | ⬜ |
@@ -666,3 +666,5 @@ Regenerate the QR with the `qrcode` npm package (v1.5.4, `QRCode.toString(url, {
    "English governs" statement.
 7. **Brand:** resolved 2026-10-20 — the signed-in app is now **PGLive** too (`messages/*/common.json`, root metadata,
    manifest, auth and PWA strings), matching the marketing site. (The Android app's header still says "PG Mate".)
+
+**Production pass 2026-10-21 (error pages, no fabricated data).** `app/error.tsx` and `app/global-error.tsx` replace Next's default crash screen. Both render the shared `components/shared/ErrorView`; `global-error` replaces the root layout, so it has its own `<html>/<body>`, no providers, and reads the five `messages/<locale>/errors.json` catalogs statically (`lib/errorCopy.ts`, locale from the `NEXT_LOCALE` cookie, then the browser language). `lib/api.ts` no longer falls back to a built-in feature catalog, an empty list or an invented custom feature when a request fails, and the `skyline`/`sunset` demo ids are gone: a non-UUID id is a 404 and nothing is fetched. Settings → Property Setup lists the tenant's real properties; the fake "Save portal" form, its other-brand defaults and the starter/mock files were removed.

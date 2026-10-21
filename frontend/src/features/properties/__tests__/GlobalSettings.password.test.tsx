@@ -4,7 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import settings from "@/messages/en/settings.json";
 
-const api = vi.hoisted(() => ({ changePassword: vi.fn(), getCurrentUser: vi.fn() }));
+const api = vi.hoisted(() => ({ changePassword: vi.fn(), getCurrentUser: vi.fn(), listProperties: vi.fn() }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -41,6 +41,7 @@ describe("Settings → change password", () => {
   beforeEach(() => {
     for (const fn of Object.values(api)) fn.mockReset();
     api.getCurrentUser.mockResolvedValue({});
+    api.listProperties.mockResolvedValue([]);
     api.changePassword.mockResolvedValue(undefined);
   });
 

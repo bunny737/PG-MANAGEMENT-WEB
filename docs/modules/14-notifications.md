@@ -144,6 +144,11 @@ only — matching the MVP's original "no dedicated cross-tenant API" decision
    `transaction.on_commit`. The task logs one `NotificationLog(type=welcome)`
    row via `services.record_sent` — no second email is sent (unchanged from
    MVP; welcome does not go through the V2 template/channel system).
+   **Since 2026-10-21 (Module 01):** the task takes `(user_id, expected_email)`,
+   skips accounts that are inactive, already verified or no longer hold that
+   address (a pre-deploy job without `expected_email` is dropped), delivers through the shared `apps.accounts.tasks._deliver` helper
+   (retries on a worker, logs in eager mode), and calls `record_sent` **only
+   when the email was actually sent** — a failed send is never logged as sent.
 2. Issuing an invoice (`InvoiceViewSet.issue`) and recording a payment
    (`services.record_payment`) both call `services.notify()`, which resolves
    channels from `registry.channels_for(notification_type)` (`invoice_issued`

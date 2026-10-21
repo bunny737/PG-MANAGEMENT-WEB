@@ -6,11 +6,16 @@ import { useTranslations } from "next-intl";
 import { LOCALES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
 import { ApiError, getCurrentUser, updateMe } from "@/lib/api";
+import { useVerificationResend } from "@/features/auth/useVerificationResend";
 
 export function UserProfile() {
   const t = useTranslations("settings.profile");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  // null until /auth/me/ answers, so neither badge flashes on load.
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const verification = useVerificationResend();
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [languageCode, setLanguageCode] = useState(() => readLocaleCookie());
@@ -25,7 +30,10 @@ export function UserProfile() {
         if (user.first_name || user.last_name) {
           setName(`${user.first_name ?? ""} ${user.last_name ?? ""}`.trim());
         }
-        if (user.email) setEmail(user.email);
+        if (user.email) {
+          setEmail(user.email);
+          setEmailVerified(Boolean(user.email_verified));
+        }
         if (user.phone) setPhone(user.phone);
         if (user.tenant?.name) setCompany(user.tenant.name);
         if (user.language_code) setLanguageCode(user.language_code);
@@ -181,6 +189,33 @@ export function UserProfile() {
                 />
               </div>
               <p className="text-[9px] text-ink-faint italic ml-1">{t("emailOtpNotice")}</p>
+              {emailVerified === true && (
+                <p className="ml-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                  <CheckCircle2 className="size-3.5" /> {t("emailVerified")}
+                </p>
+              )}
+              {emailVerified === false && (
+                <div className="ml-1 flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                    {t("emailNotVerified")}
+                  </span>
+                  {verificationSent ? (
+                    <span className="text-ink-muted">{t("verificationSent")}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => setVerificationSent(await verification.send(email))}
+                      disabled={verification.sending}
+                      className="font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer disabled:opacity-60"
+                    >
+                      {t("sendVerification")}
+                    </button>
+                  )}
+                  {verification.error && (
+                    <span role="alert" className="text-status-critical">{verification.error}</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Phone Number */}

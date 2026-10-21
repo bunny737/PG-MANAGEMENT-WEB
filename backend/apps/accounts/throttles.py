@@ -8,13 +8,11 @@ from apps.core.throttles import SimpleRateThrottle
 from .normalization import normalize_email
 
 
-class OtpEmailThrottle(SimpleRateThrottle):
-    """Per requested email on the email-code request endpoint, so rotating IPs
-    cannot flood one inbox (the per-IP ScopedRateThrottle runs alongside).
-    Keyed on a digest — the cache never holds the address. Without a usable
-    email there is nothing to key on; validation rejects the request anyway."""
-
-    scope = 'otp_email_request_email'
+class EmailBodyThrottle(SimpleRateThrottle):
+    """Per requested email (the body's `email`), so rotating IPs cannot flood
+    one inbox; a per-IP ScopedRateThrottle runs alongside. Keyed on a digest —
+    the cache never holds the address. Without a usable email there is nothing
+    to key on; validation rejects the request anyway. Subclasses set `scope`."""
 
     def get_cache_key(self, request, view):
         try:
@@ -31,3 +29,15 @@ class OtpEmailThrottle(SimpleRateThrottle):
             return None
         digest = hashlib.sha256(normalized.encode()).hexdigest()
         return self.cache_format % {'scope': self.scope, 'ident': digest}
+
+
+class OtpEmailThrottle(EmailBodyThrottle):
+    """Email sign-in code requests."""
+
+    scope = 'otp_email_request_email'
+
+
+class VerificationEmailThrottle(EmailBodyThrottle):
+    """Verification-email resend requests."""
+
+    scope = 'resend_verification_email'

@@ -2092,3 +2092,21 @@ msgid "It expires in %(count)d minute."
 msgid_plural "It expires in %(count)d minutes."
 msgstr[0] "ఇది %(count)d నిమిషంలో గడువు ముగుస్తుంది."
 msgstr[1] "ఇది %(count)d నిమిషాల్లో గడువు ముగుస్తుంది."
+
+#: apps/accounts/admin.py
+msgid "Send verification email"
+msgstr "ధృవీకరణ ఇమెయిల్ పంపండి"
+
+#: apps/accounts/admin.py
+msgid "Mark email verified"
+msgstr "ఇమెయిల్ ధృవీకరించబడినట్లు గుర్తించండి"
+
+#: apps/accounts/admin.py
+#, python-format
+msgid "Verification emails queued: %(queued)d. Broker unavailable: %(broker)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(verified)d."
+msgstr "క్యూలో ఉంచిన ధృవీకరణ ఇమెయిల్‌లు: %(queued)d. బ్రోకర్ అందుబాటులో లేదు: %(broker)d. దాటవేసినవి — నిష్క్రియ: %(inactive)d, ఇమెయిల్ లేనివి: %(no_email)d, ఇప్పటికే ధృవీకరించినవి: %(verified)d."
+
+#: apps/accounts/admin.py
+#, python-format
+msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
+msgstr "ధృవీకరించినట్లు గుర్తించినవి: %(verified)d. దాటవేసినవి — నిష్క్రియ: %(inactive)d, ఇమెయిల్ లేనివి: %(no_email)d, ఇప్పటికే ధృవీకరించినవి: %(already)d."

@@ -86,8 +86,8 @@ Table: contact_messages             (platform-level, NOT tenant-scoped — no te
 ## API endpoints
 ```
 POST /api/v1/auth/signup/                  tenant + owner + trial          AllowAny (throttled 10/h)
-POST /api/v1/auth/verify-email/            signed-token verification       AllowAny
-POST /api/v1/auth/resend-verification/     silent resend                   AllowAny
+POST /api/v1/auth/verify-email/            signed-token verification       AllowAny (10/min)
+POST /api/v1/auth/resend-verification/     queue new link (silent)         AllowAny (5/min per IP + 5/h per email)
 POST /api/v1/auth/login/                   email+pw → JWT pair w/ claims   AllowAny (10/min)
 POST /api/v1/auth/login-phone/             phone+pw → JWT pair w/ claims   AllowAny (10/min)
 POST /api/v1/auth/token/refresh/           refresh + suspension + auth_ver AllowAny
@@ -140,6 +140,16 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
     not suspended/cancelled. A correct code returns the JWT pair (current `auth_version`) and marks the
     email verified in the same transaction that consumes the code. Malformed codes (not 6 digits) are
     a 400 and use no attempt. Tests: `apps/accounts/tests/test_email_otp.py`.
+16. Email verification: the link's token is signed `{uid, email}` (72 h) and travels in the URL
+    fragment (`/verify-email#token=…`). Verifying locks the user row and requires the account to be
+    active and still hold that exact (normalized) address; the link never signs anyone in.
+    Verification emails are always sent from a Celery task that re-checks eligibility on the worker:
+    signup → `send_welcome_email_task(user_id, expected_email)`; staff creation and Django-admin
+    paths → `send_verification_email_to_user_task(user_id, expected_email)`; anonymous resend →
+    `send_verification_email_to_address_task(email)`, queued for every address alike. A failed send is
+    never recorded as a sent notification. Admin "Send verification email" / "Mark email verified"
+    actions and admin email changes are audited; an admin email change resets verification and bumps
+    `auth_version`. Tests: `apps/accounts/tests/test_email_verification.py`.
 
 ## Permissions
 `apps/core/roles.py` holds `Role` + `PERMISSION_MATRIX` (the PRD §6 table, plus `view_dashboard`
@@ -246,9 +256,58 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   (validation answers 400) instead of raising.
 - [DECISION 2026-10-21] **Accepted narrow race:** a tenant suspended just after the locked eligibility
   check can still receive one email, but verify re-checks tenant status, so no tokens are issued.
-- [OPEN 2026-10-21] **Forgot-password and email-verification pages are not built.** The login screen's
-  forgot-password form is a simulated timeout, and the frontend has no `/reset-password` or
-  `/verify-email` route although the backend emails link to both. Follow-up after email code login.
+- [OPEN 2026-10-21] **Forgot-password page is not built.** The login screen's forgot-password form is
+  a simulated timeout, and the frontend has no `/reset-password` route although the reset and staff
+  invite emails link to it. (`/signup` and `/verify-email` were built 2026-10-21.)
+- [DECISION 2026-10-21] **Verification token is bound to the address.** The signed payload is
+  `{uid, email}`, and `EmailVerificationSerializer.save()` compares the account's current normalized
+  email under `select_for_update()` before marking it verified — so an admin email change can't land
+  between the check and the update and get the new address verified by a link sent to the old one.
+  Tokens issued before this (uid only) are rejected; the user requests a new link.
+- [DECISION 2026-10-21] **The token travels in the URL fragment** (`/verify-email#token=…`), which
+  browsers never send to a server, so the 72-hour token stays out of nginx / Next.js / proxy access
+  logs. The page reads it client-side and removes it with `history.replaceState`. A `?token=` query
+  is accepted as a fallback for hand-edited links; that one has already reached an access log, so the
+  fallback only minimizes exposure.
+- [DECISION 2026-10-21] **The link never signs the user in.** It stays valid for 72 h and can be
+  forwarded or prefetched, so it confirms the address only; the user then signs in with a password
+  (or an email code).
+- [DECISION 2026-10-21] **Three delivery tasks, account- or address-bound.** Lifecycle emails (signup,
+  staff creation, Django admin) are bound to `user_id + expected_email` and skipped if, by the time the
+  worker runs, the account is inactive, already verified, or no longer holds that address — so a job
+  queued for one account can't mail a link for another account that reused the address. Only the
+  anonymous resend is address-based (whoever owns the address now). A welcome job queued before this
+  deploy (no `expected_email`) can't prove which address it was for, so it is dropped rather than
+  sent; `expected_email` defaults to None only so such a job skips instead of raising. The owner can
+  request a link from the sign-in screen. `on_commit` callbacks capture plain values, never model
+  objects.
+- [DECISION 2026-10-21] **Delivery result contract.** `tasks._deliver` returns `SENT | SKIPPED |
+  FAILED` (a `str` Enum, internal — tasks return None). SMTP/OS errors are retried twice, 5 s apart, on
+  a worker; in eager mode (dev/test) or after the last retry they are logged without the address and
+  return FAILED. The welcome task records the `welcome` notification only on SENT. The email-code
+  task uses the same helper.
+- [DECISION 2026-10-21] **Resend is always queued.** `ResendVerificationSerializer` normalizes the
+  email and calls `enqueue(send_verification_email_to_address_task, email)` for every address: no
+  lookup or SMTP in the request, so timing, broker and SMTP failures can't reveal registration.
+  Throttled per IP (`resend_verification` 5/min) and per hashed email (`resend_verification_email`
+  5/h, `VerificationEmailThrottle`). Staff-creation verification moved to an `on_commit` enqueue, so
+  an SMTP failure can no longer roll back the account.
+- [DECISION 2026-10-21] **Django admin paths are audited.** `email_verified` is read-only in the change
+  form. "Send verification email" writes `user.verification_email_requested_by_admin` ("requested",
+  not "sent": `after={'email'}`) **before** enqueueing, so nothing is ever queued without its audit
+  record (a failed insert queues nothing). Audit rows are append-only, so a broker failure appends a
+  second row, `user.verification_email_queue_failed`. A strict audit/queue atomicity guarantee would
+  need a transactional outbox, which isn't warranted for a manual admin action. "Mark email verified"
+  locks the rows in pk order and audits `user.email_verified_by_admin` per user. Audit rows exist only
+  for eligible users; the skip counts (inactive / no email / already verified) appear in the admin
+  message, not the audit log. Creating a user queues the verification email
+  (`language_code` is on the add form). Changing a user's email (case-only edits don't count) resets
+  `email_verified`, sets `auth_version` from the locked row + 1 (ending every session — the sign-in and
+  recovery address changed), audits `user.email_changed_by_admin` and queues a link to the new address.
+- [DECISION 2026-10-21] **`SIGNUP_ENABLED` is discovery-only** (owner decision). It controls the
+  marketing CTA and the login page's "Start free trial" link; `/signup` and `POST /auth/signup/` stay
+  usable by anyone with the URL (useful for onboarding early-access owners by link). There is no
+  server-side switch.
 - [DECISION 2026-10-19] **Contact form inbox is platform-level, not tenant data.** `ContactMessage`
   (`core.0007`) has no `tenant_id` and no RLS: the sender is an anonymous prospect, so invariant 1 has
   nothing to scope to (same class as `PlatformConfig`, `AppVersionPolicy`). It is readable only through
@@ -407,6 +466,19 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   a failed save rolls back to the last server-confirmed state, `409 ROLE_CHANGED` reloads).
 
 ## Changelog
+- 2026-10-21  Signup with email verification, end to end: address-bound verification token checked
+  under a row lock and carried in the URL fragment; three account-/address-bound delivery tasks on a
+  shared `_deliver` helper (explicit result; welcome recorded only when sent); always-queued resend
+  with a per-email throttle; staff-creation verification queued on commit; Django admin "Send
+  verification email" / "Mark email verified" actions, read-only `email_verified`, `language_code` on
+  the add form, and audited email changes that reset verification and bump `auth_version`. Frontend:
+  `/signup` (`SignupForm`), `/verify-email` (`VerifyEmail`), `CheckEmailPanel` /
+  `ResendVerificationPrompt`, resend on `EMAIL_NOT_VERIFIED` login, "Start free trial" link behind
+  `SIGNUP_ENABLED`, profile verification badge, `ApiError.code`. Tests:
+  `apps/accounts/tests/test_email_verification.py`, `SignupForm` / `VerifyEmail` /
+  `LoginForm.verification` component tests, `proxy.test.ts`. Review fixes: the admin "send" action
+  audits before it enqueues (broker failure → `user.verification_email_queue_failed`); one-argument
+  pre-deploy welcome jobs are dropped; editing the login email withdraws the resend offer.
 - 2026-10-21  Optional email code login: `OtpCode.channel` + index (migration `accounts.0008`),
   channel-aware row-locked `otp.issue` / `otp.verify`, `send_login_code_task` (worker-side code
   generation, eager-safe retries), `send_login_code_email` (gettext + `ngettext` expiry, en/te),

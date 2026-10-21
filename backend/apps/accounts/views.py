@@ -43,7 +43,7 @@ from .serializers import (
     TokenPairSerializer,
 )
 from .staff_access import locked_staff
-from .throttles import OtpEmailThrottle
+from .throttles import OtpEmailThrottle, VerificationEmailThrottle
 
 
 class _AnonPostView(APIView):
@@ -81,6 +81,7 @@ class VerifyEmailView(_AnonPostView):
 
 class ResendVerificationView(_AnonPostView):
     serializer_class = ResendVerificationSerializer
+    throttle_classes = [ScopedRateThrottle, VerificationEmailThrottle]
     throttle_scope = 'resend_verification'
     success_message = _('If that email is registered, a verification link has been sent.')
 

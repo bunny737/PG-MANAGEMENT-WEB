@@ -4,6 +4,7 @@
 // Imported by route handlers only — never from a client component.
 
 import type { NextRequest, NextResponse } from "next/server";
+import { originHeaders } from "./originSignature";
 
 export const ACCESS_COOKIE = "pg_access";
 export const REFRESH_COOKIE = "pg_refresh";
@@ -91,18 +92,23 @@ export function hasForeignOrigin(request: NextRequest): boolean {
 /** Headers forwarded to Django. Everything else (cookies above all) stays behind. */
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "accept-language", "idempotency-key", "user-agent"];
 
-export function upstreamHeaders(request: NextRequest, accessToken?: string | null): Headers {
+/** Set by the load balancer on every request to this app, overwriting any client value. */
+const CLIENT_IP_HEADER = "x-pglive-client-ip";
+
+/** The upstream request being prepared: the browser IP signature covers its method and URL. */
+export type UpstreamTarget = { method: string; url: string };
+
+export function upstreamHeaders(request: NextRequest, accessToken: string | null, target: UpstreamTarget): Headers {
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  // Audit logs (invariant 9) and login throttling read the client IP from X-Forwarded-For.
-  // The edge (nginx) must overwrite this header, not append to a client-supplied one.
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  const realIp = request.headers.get("x-real-ip");
-  if (forwardedFor) headers.set("x-forwarded-for", forwardedFor);
-  else if (realIp) headers.set("x-forwarded-for", realIp);
+  // Audit logs (invariant 9) and login throttling need the browser's IP. X-Forwarded-For is
+  // client-controlled behind Google's load balancer, so it is never forwarded; the IP the load
+  // balancer wrote goes upstream signed instead (docs/deployment.md, WP7).
+  const origin = originHeaders(request.headers.get(CLIENT_IP_HEADER), target.method, target.url);
+  for (const [name, value] of Object.entries(origin)) headers.set(name, value);
   if (accessToken) headers.set("authorization", `Bearer ${accessToken}`);
   return headers;
 }
@@ -184,9 +190,10 @@ export type RefreshResult =
 /** Exchanges the refresh cookie for a new access token. Never throws; an unreachable backend is a 502. */
 export async function refreshAccess(refresh: string, request: NextRequest): Promise<RefreshResult> {
   try {
-    const headers = upstreamHeaders(request, null);
+    const url = `${apiOrigin()}/api/v1/auth/token/refresh/`;
+    const headers = upstreamHeaders(request, null, { method: "POST", url });
     headers.set("content-type", "application/json");
-    const res = await fetch(`${apiOrigin()}/api/v1/auth/token/refresh/`, {
+    const res = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({ refresh }),

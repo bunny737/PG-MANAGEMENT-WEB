@@ -64,6 +64,7 @@ Table: subscriptions                            (NOT under RLS — see Decisions
   razorpay_customer_id      varchar(100), blank
   current_period_start / current_period_end   date, null
   payment_failed_at     datetime, null          (start of the 5-day grace period)
+  status_hold           varchar(10), blank      ('manual' once a Super Admin suspended/cancelled the tenant; no webhook then changes its status — rule 30)
   max_properties_override    int, null          (Super Admin manual override)
   max_residents_override     int, null
   max_beds_override          int, null
@@ -77,9 +78,26 @@ Table: razorpay_subscriptions                   (NOT under RLS, like subscriptio
   state                 pending | current | replaced | abandoned | cancelling | cancelled   (see rule 27)
   cancel_from           varchar(10), blank   (REPLACED/ABANDONED: where a failed cancel returns to)
   cancel_attempts int · last_cancel_error text · last_cancel_attempt_at · cancelled_at
+  last_status_event_at datetime, null · last_status_event_type varchar(40) · last_status_event_id varchar(100)
+                        (the last webhook that moved the status, by occurrence time — rule 30)
+  activated_at          datetime, null   (set by the first activation/charge; `activated` is initial-only)
   index(state)
   -- Every Razorpay subscription we create. subscriptions.razorpay_subscription_id /
   -- pending_* remain as "which is live / which is newest"; this is the reconciliation record.
+
+Table: razorpay_webhook_events                  (NOT under RLS — the receiver is unauthenticated)
+  id                    uuid PK
+  event_id              varchar(100), UNIQUE   (X-Razorpay-Event-Id; body hash if the header is absent)
+  event_type            varchar(60)
+  razorpay_subscription_id  varchar(100), index
+  tenant_id             uuid, null
+  occurred_at           datetime, null         (payload top-level `created_at`)
+  received_at           datetime
+  outcome               pending | applied | stale_ignored | terminal_ignored | manual_hold_ignored |
+                        not_recovery_ignored | needs_verification | verification_declined | non_current |
+                        unhandled | unknown_subscription
+  detail                text · payload JSON
+  -- Every valid webhook, including stale and ignored ones. Contains customer contact details: retention [OPEN].
 
 Table: subscription_payments                    (RLS enforced, app: apps.subscriptions)
   id                    uuid PK
@@ -410,6 +428,27 @@ frontend always reaches a tenant's subscription via
     `issued` result from a call that a webhook overtook never undoes `paid`.
     Tests: `test_invoice_issuing.py`, `test_invoice_webhook.py`.
 
+30. **Webhook events are applied by occurrence time, with terminal and manual states first.**
+    Razorpay delivers at least once and not in order, so the tenant's status is decided per event by
+    `webhook_policy.decide()` from the event's `created_at`, the last applied event on the ledger row, the tenant's
+    status and whether a Super Admin set it. Every valid event is stored first in `razorpay_webhook_events`
+    (a repeated `X-Razorpay-Event-Id`, or body hash, is a no-op). In order of precedence:
+
+    | Situation | Result |
+    |---|---|
+    | tenant status set manually (`status_hold`) | no webhook changes it; payments recorded, captured ones flagged |
+    | `subscription.cancelled` | applies whatever its age; terminal — no later `activated`/`charged`/`resumed` reactivates; a later captured payment is recorded and flagged for refund |
+    | event has no `created_at` | ask Razorpay for the real status and apply that (never grants access if Razorpay can't be reached) |
+    | older than the last applied event (equal time: lower precedence) | recorded, `subscription.stale_event_ignored`, status unchanged |
+    | `payment.failed` (newer) | `active`/`trial` → `payment_failed`; no effect on a suspended tenant |
+    | `subscription.charged` (newer) | `payment_failed`/`trial` (or grace-suspended) → `active`; after a Razorpay halt → ask Razorpay, `active` only if it says so |
+    | `subscription.halted` (newer) | → `suspended`; stays so until a newer `subscription.resumed`, a new subscription or an admin |
+    | `subscription.resumed` (newer) | `suspended` by a halt → `active`; otherwise nothing |
+    | `subscription.activated` | initial activation only; never a recovery |
+
+    Tests: `test_webhook_policy` (matrix), `test_webhook_ordering` (through the endpoint), `test_webhook_delivery`
+    (duplicates).
+
 ## Permissions
 - `manage_subscription` (Super Admin, Owner): view plans, view own
   subscription + usage, select/change plan.
@@ -507,6 +546,34 @@ frontend always reaches a tenant's subscription via
   jobs).
 - [DECISION 2026-07-04] Pinned `setuptools<81` (see Edge cases) — a real
   bug fix to the already-locked `razorpay` dependency, not a workaround.
+- [DECISION 2026-10-20] **Webhook ordering: terminal and manual states win first; otherwise the newest event by
+  occurrence time wins, not the last one delivered** (owner). Rule 30 has the table; `webhook_policy.decide()` is
+  the pure implementation and `test_webhook_policy.py` the matrix. Choices made while building it:
+  - *Event time* is the payload's top-level `created_at`; at equal times the precedence is
+    `cancelled > halted > charged/resumed > activated > payment.failed`. The last applied event
+    (time, type, id) is stored on the live `razorpay_subscriptions` row.
+  - *Manual hold:* `Subscription.status_hold = 'manual'` is set by the Super Admin suspend action
+    (`suspend_tenant`) and by a status change to suspended/cancelled in the Django-admin Tenant form, and cleared by
+    `reactivate_tenant` (or a non-held status in that form). A suspension by the grace sweep is automatic, not
+    manual, so a later successful charge may still recover it.
+  - *Terminal:* `subscription.cancelled` applies whatever its age and marks the ledger row `cancelled`; nothing
+    afterwards reactivates it. `subscription.halted` suspends; only a newer `subscription.resumed`, a new
+    subscription, or an administrator recovers it. A `charged` after a halt is not trusted: Razorpay is asked, and
+    only a reported `active` restores access.
+  - *`subscription.activated`* is the initial activation only (`razorpay_subscriptions.activated_at`), never a
+    recovery.
+  - *Money is never dropped:* every captured payment is recorded; one that access will not honour (cancelled,
+    manual hold, halted and unconfirmed) is flagged with `subscription.payment_needs_refund` (reason in the audit
+    payload). Stale failures are recorded in billing history too.
+  - *Verification:* undated events, and charges that contradict a halt, call Razorpay
+    (`fetch_razorpay_subscription_status`, now with a 3 s connect / 10 s read timeout on every Razorpay call). Razorpay
+    unreachable or unconfigured never grants access (`needs_verification`). The local stub (no keys) has no
+    Razorpay to ask, so dev/test uses arrival order.
+  - *Invoices:* `invoice.expired`/`partially_paid` no longer touch a suspended, cancelled or held tenant, nor an
+    already-paid invoice; `invoice.paid` does not recover a held tenant.
+  - *RLS exemption:* `razorpay_webhook_events` carries a `tenant_id` but is outside RLS (listed in `check_db_roles`), like `subscriptions` and the ledger: the unauthenticated receiver inserts it before the tenant is known, and only Super Admin reads it (Django admin, read-only).
+  - *Retention [OPEN]:* `razorpay_webhook_events.payload` holds the customer's contact details; set a retention
+    period and a purge job before launch (like the contact-message and device-install retention items).
 - [OPEN] Billing history / invoice PDFs from the platform side ("Billing
   history and invoices from platform" per PRD Module 20): `FLAT_MONTHLY`
   is still covered only by `SubscriptionPayment` raw records.
@@ -718,6 +785,7 @@ frontend always reaches a tenant's subscription via
   row is still honoured — it is a new charge, not the one ops was told to refund.
 
 ## Changelog
+- 2026-10-20  Webhook ordering policy (rule 30, migration 0014): events applied by occurrence time with terminal/manual states first, every event stored (`razorpay_webhook_events`), manual `status_hold`, ledger last-event marker, Razorpay verification for undated or contradictory events, arrears-invoice guards, 10 s Razorpay timeout. Tests: `test_webhook_policy` (27), `test_webhook_ordering`, `test_webhook_delivery`. Earlier same day: duplicate and re-ordered *charge* Duplicates are tracked by event id.
 - 2026-10-18  Public plan catalogue `GET /public/plans/` for the pglive.in marketing
   site (allow-listed serializer, `currency` + `trial_days` envelope, throttled,
   cached 5 min); `PLATFORM_CURRENCY` constant replaces the three `'INR'` literals in

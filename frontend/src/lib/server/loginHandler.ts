@@ -28,9 +28,10 @@ export async function handleLogin(request: NextRequest, upstreamPath: string) {
   }
 
   try {
-    const headers = upstreamHeaders(request, null);
+    const loginUrl = `${apiOrigin()}${upstreamPath}`;
+    const headers = upstreamHeaders(request, null, { method: "POST", url: loginUrl });
     headers.set("content-type", "application/json");
-    const login = await fetch(`${apiOrigin()}${upstreamPath}`, {
+    const login = await fetch(loginUrl, {
       method: "POST",
       headers,
       body,
@@ -42,8 +43,9 @@ export async function handleLogin(request: NextRequest, upstreamPath: string) {
       return NextResponse.json(tokens, { status: login.ok ? 502 : login.status, headers: NO_STORE });
     }
 
-    const meHeaders = upstreamHeaders(request, tokens.access);
-    const me = await fetch(`${apiOrigin()}/api/v1/auth/me/`, { headers: meHeaders, cache: "no-store" });
+    const meUrl = `${apiOrigin()}/api/v1/auth/me/`;
+    const meHeaders = upstreamHeaders(request, tokens.access, { method: "GET", url: meUrl });
+    const me = await fetch(meUrl, { headers: meHeaders, cache: "no-store" });
     const profile = await me.json().catch(() => ({}));
     if (!me.ok) {
       return NextResponse.json(profile, { status: me.status, headers: NO_STORE });

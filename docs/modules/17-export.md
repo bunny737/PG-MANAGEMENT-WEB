@@ -118,6 +118,13 @@ everything the caller can see.
   `requirements/base.txt`. Also added `openpyxl==3.*` for the Excel export
   (nothing in the codebase used either dependency's actual functionality
   before this module).
+- [2026-10-21] **WeasyPrint 62 → 70 and Pillow 11 → 13** (security, owner
+  approved). Trivy flagged the production image: WeasyPrint 62.3 had SSRF and
+  arbitrary code execution via PostScript images (CVE-2025-68616,
+  CVE-2026-106443); Pillow 11.3 had 1 CRITICAL + 19 HIGH, some fixed only in
+  13.0.0. WeasyPrint 70 brings its own pydyf (0.13), so the `pydyf==0.11.*`
+  pin above is gone. Verified: full backend suite, the PDF export tests and
+  the Telugu receipt font test inside the prod image.
 
 ## Changelog
 - 2026-06-xx  Created stub.

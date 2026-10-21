@@ -5,18 +5,15 @@
                      obj=staff, before={'role': old}, after={'role': new},
                      request=request)
 """
+from apps.core.net import get_client_ip
 from apps.core.tenancy import tenant_context
 
 from .models import AuditLog
 
 
 def client_ip(request):
-    if request is None:
-        return None
-    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
-    if forwarded:
-        return forwarded.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR')
+    """Trusted caller IP — never raw X-Forwarded-For (see apps.core.net)."""
+    return get_client_ip(request)
 
 
 def record(*, action, actor=None, tenant_id=None, obj=None,

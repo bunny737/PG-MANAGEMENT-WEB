@@ -228,6 +228,10 @@ class Subscription(models.Model):
     # Start of the payment-failure grace period (PRD: 5 days, configurable
     # via PlatformConfig.payment_grace_days).
     payment_failed_at = models.DateTimeField(null=True, blank=True)
+    # Set when a Super Admin suspends or cancels the tenant by hand; no webhook may then change
+    # the tenant's status (webhook_policy). Cleared only by an explicit reactivation.
+    STATUS_HOLD_MANUAL = 'manual'
+    status_hold = models.CharField(max_length=10, blank=True, default='')
     # Super Admin manual override "for a specific tenant if needed (e.g.
     # grace period, enterprise negotiation)" — null defers to the plan.
     max_properties_override = models.PositiveIntegerField(null=True, blank=True)
@@ -316,6 +320,13 @@ class RazorpaySubscription(models.Model):
     last_cancel_error = models.TextField(blank=True)
     last_cancel_attempt_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    # The last webhook that moved (or deliberately kept) this subscription's status, by the event's own
+    # occurrence time (top-level `created_at`), not by delivery order — see webhook_policy.
+    last_status_event_at = models.DateTimeField(null=True, blank=True)
+    last_status_event_type = models.CharField(max_length=40, blank=True)
+    last_status_event_id = models.CharField(max_length=100, blank=True)
+    # Set by the first activation/charge; `subscription.activated` only ever does the initial activation.
+    activated_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -325,6 +336,47 @@ class RazorpaySubscription(models.Model):
 
     def __str__(self):
         return f'{self.razorpay_subscription_id} ({self.state})'
+
+
+class RazorpayWebhookEvent(models.Model):
+    """Every valid Razorpay webhook we receive, kept even when it is stale or changes nothing — the
+    audit trail for out-of-order and conflicting deliveries. `event_id` is Razorpay's
+    `X-Razorpay-Event-Id` (the same across retries, so it also de-duplicates redeliveries); without that
+    header it is a hash of the body. `occurred_at` is the payload's top-level `created_at`, which is what
+    orders events — `received_at` is when we saw it. Not under RLS, like the ledger: the receiver is
+    unauthenticated. The payload holds the customer's contact details, so rows are personal data (see the
+    Module 13 spec for retention)."""
+
+    class Outcome(models.TextChoices):
+        PENDING = 'pending', _('Pending')
+        APPLIED = 'applied', _('Applied')
+        STALE_IGNORED = 'stale_ignored', _('Stale, ignored')
+        TERMINAL_IGNORED = 'terminal_ignored', _('Subscription finished, ignored')
+        MANUAL_HOLD_IGNORED = 'manual_hold_ignored', _('Manual suspension/cancellation, ignored')
+        NOT_RECOVERY_IGNORED = 'not_recovery_ignored', _('Not a recovery event, ignored')
+        NEEDS_VERIFICATION = 'needs_verification', _('Needs verification with Razorpay')
+        VERIFICATION_DECLINED = 'verification_declined', _('Razorpay did not confirm, ignored')
+        NON_CURRENT = 'non_current', _('Not the live subscription')
+        UNHANDLED = 'unhandled', _('Unhandled event type')
+        UNKNOWN_SUBSCRIPTION = 'unknown_subscription', _('Unknown subscription')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event_id = models.CharField(max_length=100, unique=True)
+    event_type = models.CharField(max_length=60)
+    razorpay_subscription_id = models.CharField(max_length=100, blank=True, db_index=True)
+    tenant_id = models.UUIDField(null=True, blank=True)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+    outcome = models.CharField(max_length=30, choices=Outcome.choices, default=Outcome.PENDING)
+    detail = models.TextField(blank=True)
+    payload = models.JSONField()
+
+    class Meta:
+        db_table = 'razorpay_webhook_events'
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return f'{self.event_type} {self.event_id} ({self.outcome})'
 
 
 class SubscriptionPayment(TenantModelMixin):

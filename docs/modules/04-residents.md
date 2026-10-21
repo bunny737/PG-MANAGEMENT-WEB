@@ -89,7 +89,7 @@ lifecycle (`vacated`/`blacklisted`) instead.
    (`resident.created`, `resident.status_changed` with before/after).
 7. `residents` is RLS-enforced; isolation proven the same way as
    `properties`/`core`.
-8. Aadhaar/PAN uploads are optional `FileField`s; storage backend is S3 in
+8. Aadhaar/PAN uploads are optional `FileField`s; storage backend is GCS in
    production, local filesystem in dev/test (see Decisions) — no field is
    required to exist for a resident to be created.
 
@@ -132,6 +132,10 @@ lifecycle (`vacated`/`blacklisted`) instead.
   nullable) — even at the Inquiry stage a lead is inquiring about one
   specific property, and Manager/Receptionist property-assignment scoping
   needs it to filter on from day one.
+- [DECISION 2026-10-20] Storage moved from S3 to Google Cloud Storage (owner decision, GCP
+  hosting): `django-storages[google]`, `GS_BUCKET_NAME`, private bucket, IAM-signed 5-minute URLs
+  (`apps/core/storage.py`, `GS_IAM_SIGN_BLOB`); `boto3` removed. Aadhaar/PAN upload stays gated on the
+  legal review (docs/deployment.md, Phase 0). The 2026-07-03 entry below is historical.
 - [DECISION 2026-07-03] Wired `STORAGES`/`AWS_*` in `config/settings/base.py`
   (conditionally — falls back to local filesystem storage when
   `AWS_STORAGE_BUCKET_NAME` is unset) so Aadhaar/PAN uploads have
@@ -167,6 +171,7 @@ lifecycle (`vacated`/`blacklisted`) instead.
   frontend tab is hidden.
 
 ## Changelog
+- 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: `Resident` model (RLS) with exact PRD status-transition
   graph, profile CRUD + dedicated status-change endpoint, permission

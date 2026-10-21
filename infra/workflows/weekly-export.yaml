@@ -1,0 +1,97 @@
+# Weekly cross-region SQL export (docs/deployment.md, "Weekly export"). Triggered by Cloud Scheduler with an
+# OAuth token; runs as sa-export. Every step either succeeds or raises, so a failed execution is the alert.
+main:
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - region: asia-south1
+          - instance: ${"pglive-pg-prod"}
+          - database: pg_platform
+          - bucket: ${project + "-backups"}
+          - verify_job: pglive-export-verify
+    - make_object_name:
+        assign:
+          # Timestamped, never overwritten. The .gz suffix makes Cloud SQL gzip the dump.
+          - stamp: ${text.replace_all(text.replace_all(time.format(sys.now(), "UTC"), ":", ""), "-", "")}
+          - object: ${"sql/pg_platform-" + text.split(stamp, ".")[0] + ".sql.gz"}
+          - uri: ${"gs://" + bucket + "/" + object}
+    - start_export:
+        call: export_with_retry
+        args:
+          project: ${project}
+          instance: ${instance}
+          database: ${database}
+          uri: ${uri}
+        result: operation
+    - wait_for_export:
+        call: googleapis.sqladmin.v1.operations.get
+        args:
+          project: ${project}
+          operation: ${operation.name}
+        result: status
+    - check_export:
+        switch:
+          - condition: ${status.status == "DONE" and not("error" in status)}
+            next: set_content_type
+          - condition: ${status.status == "DONE"}
+            raise: ${status.error}
+        next: sleep_then_poll
+    - sleep_then_poll:
+        call: sys.sleep
+        args:
+          seconds: 30
+        next: wait_for_export
+    - set_content_type:
+        call: googleapis.storage.v1.objects.patch
+        args:
+          bucket: ${bucket}
+          object: ${text.url_encode(object)}
+          body:
+            contentType: application/gzip
+    - verify_export:
+        # Fixed job: finds the newest object itself, checks gzip integrity, pg_dump header/footer, table count.
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${"projects/" + project + "/locations/" + region + "/jobs/" + verify_job}
+    - done:
+        return: ${uri}
+
+# Cloud SQL answers 409 while a backup, maintenance or another operation is running: back off and retry
+# (5 min -> 80 min, 6 attempts) before failing.
+export_with_retry:
+  params: [project, instance, database, uri]
+  steps:
+    - attempt:
+        try:
+          call: googleapis.sqladmin.v1.instances.export
+          args:
+            project: ${project}
+            instance: ${instance}
+            body:
+              exportContext:
+                fileType: SQL
+                uri: ${uri}
+                databases:
+                  - ${database}
+                offload: false
+          result: op
+        retry:
+          predicate: ${is_operation_in_progress}
+          max_retries: 6
+          backoff:
+            initial_delay: 300
+            max_delay: 4800
+            multiplier: 2
+    - ok:
+        return: ${op}
+
+is_operation_in_progress:
+  params: [e]
+  steps:
+    - check:
+        switch:
+          - condition: ${("code" in e) and e.code == 409}
+            return: true
+    - otherwise:
+        return: false

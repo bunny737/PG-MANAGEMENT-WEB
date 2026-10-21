@@ -8,6 +8,7 @@ from .models import (
     Plan,
     PlanBedTier,
     RazorpaySubscription,
+    RazorpayWebhookEvent,
     Subscription,
     SubscriptionInvoice,
     SubscriptionInvoiceLine,
@@ -122,6 +123,26 @@ class RazorpaySubscriptionAdmin(admin.ModelAdmin):
     list_filter = ['state']
     search_fields = ['razorpay_subscription_id', 'subscription__tenant__name']
     readonly_fields = [f.name for f in RazorpaySubscription._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(RazorpayWebhookEvent)
+class RazorpayWebhookEventAdmin(admin.ModelAdmin):
+    """Every webhook received, including stale and ignored ones: the trail for out-of-order and conflicting
+    deliveries. Filter outcome=needs_verification / verification_declined for events ops should reconcile
+    against the Razorpay dashboard."""
+    list_display = ['received_at', 'event_type', 'razorpay_subscription_id', 'occurred_at', 'outcome', 'detail']
+    list_filter = ['outcome', 'event_type']
+    search_fields = ['event_id', 'razorpay_subscription_id']
+    readonly_fields = [f.name for f in RazorpayWebhookEvent._meta.fields]
 
     def has_add_permission(self, request):
         return False

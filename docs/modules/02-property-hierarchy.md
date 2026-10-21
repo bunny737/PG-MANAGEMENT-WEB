@@ -44,8 +44,8 @@ Table: property_images              (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
   property          FK -> properties (related_name='images')
-  image             ImageField      (local MEDIA_ROOT in dev, S3 when
-                                     AWS_STORAGE_BUCKET_NAME is set — same
+  image             ImageField      (local MEDIA_ROOT in dev, GCS when
+                                     GS_BUCKET_NAME is set — same
                                      storage abstraction as resident documents)
   order             positive smallint  (default 0, set to current count on
                                      upload — display order)
@@ -251,11 +251,11 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   Uploaded via plain multipart POST straight to Django (`ModelViewSet`
   action + `ImageField`), matching the precedent already set by
   `Resident.aadhaar_document`/`pan_document` and `Complaint.attachment`
-  — not the S3-presigned-direct-upload flow `docs/frontend-plan.md`
+  — not the presigned-direct-upload flow `docs/frontend-plan.md`
   aspirationally lists as a Module 04 prerequisite (that flow was never
   actually built; this module follows what's actually in the codebase).
   Storage is the existing project-wide abstraction (local `MEDIA_ROOT` in
-  dev, S3 when `AWS_STORAGE_BUCKET_NAME` is set) — no new S3 code.
+  dev, GCS when `GS_BUCKET_NAME` is set; S3 was replaced 2026-10-20, see docs/deployment.md) — no per-module storage code.
 - [DECISION 2026-07-05] `PropertyViewSet.http_method_names` now includes
   `'delete'` (previously excluded it as the mechanism blocking hard
   delete) so the nested `images/{id}/` DELETE route can dispatch. The "no
@@ -268,7 +268,7 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   uploaded files 404'd in local dev regardless of app (this predates this
   module's changes and also affected resident documents). Added the
   standard `if settings.DEBUG: urlpatterns += static(...)` — no effect in
-  prod, where S3 serves media directly.
+  prod, where files are served as signed GCS URLs.
 - [DECISION 2026-07-05] The frontend `AddPropertyForm` calls Django
   directly from the browser with a JWT in `localStorage`
   (`frontend/src/lib/api.ts`), not the httpOnly-cookie BFF proxy
@@ -380,6 +380,7 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   where the bug lived.
 
 ## Changelog
+- 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: Property/Floor/Room/Bed/PropertyStaffAssignment models
   (all RLS-enforced), property-visibility scoping service, full CRUD API,

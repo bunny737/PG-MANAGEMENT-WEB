@@ -1,0 +1,67 @@
+name: Deploy production
+
+# Annotated tags vX.Y.Z only, and only for commits that are already on main. The `production` Environment
+# requires a reviewer and accepts deployments from v* tags only; a GitHub ruleset restricts who can create
+# v* tags and forbids moving or deleting them. See docs/deployment.md, "Releases".
+on:
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  provenance:
+    # An approval says "yes, deploy this"; it does not say where the code came from. Tags can point anywhere.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tagged commit must be reachable from main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME is not on main - refusing to deploy"; exit 1; }
+      - name: Tag must be annotated
+        run: |
+          [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag ] \
+            || { echo "::error::$GITHUB_REF_NAME is a lightweight tag - use git tag -a"; exit 1; }
+
+  ci:
+    needs: provenance
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: [provenance, ci]
+    runs-on: ubuntu-latest
+    environment: production        # required reviewer; deployments limited to v* tags
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Release to production (backup -> migrate -> candidate -> smoke -> canary -> 100% -> worker)
+        run: infra/deploy.sh prod "$GITHUB_SHA"
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          COMPANY_NAME: ${{ vars.COMPANY_NAME }}
+          COMPANY_ADDRESS: ${{ vars.COMPANY_ADDRESS }}
+          APP_STATUS: ${{ vars.APP_STATUS }}
+          PLAY_STORE_URL: ${{ vars.PLAY_STORE_URL }}
+          SIGNUP_ENABLED: ${{ vars.SIGNUP_ENABLED }}
+          CSP_MODE: ${{ vars.CSP_MODE }}
+          CSP_REPORT_URI: ${{ vars.CSP_REPORT_URI }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}

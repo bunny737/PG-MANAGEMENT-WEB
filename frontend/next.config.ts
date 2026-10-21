@@ -21,9 +21,10 @@ const withSerwist = withSerwistInit({
   additionalPrecacheEntries: [{ url: "/~offline", revision: randomUUID() }],
 });
 
-// Safe baseline headers for every route. A Content-Security-Policy is deliberately
-// NOT here yet: Razorpay Checkout, Google Maps, Firebase and the API origin all have
-// to be inventoried and tried in report-only mode first (docs/frontend-plan.md §12).
+// Safe baseline headers for every route. The Content-Security-Policy is NOT here: it needs a
+// per-request nonce, so src/proxy.ts sets it on every document response (lib/csp.ts).
+// Strict-Transport-Security is not here either: the load balancer adds it to every response
+// on all three hosts (docs/deployment.md).
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -31,7 +32,34 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
 ];
 
+// Bare apex → canonical www (docs/deployment.md, WP17). The load balancer routes pglive.in to this
+// app rather than redirecting itself, so the 301 passes through the backend service that adds HSTS.
+// Derived from SITE_URL at build time; nothing to do when SITE_URL has no "www." host.
+function apexRedirects() {
+  let canonical: URL;
+  try {
+    canonical = new URL(process.env.SITE_URL ?? "");
+  } catch {
+    return [];
+  }
+  if (!canonical.hostname.startsWith("www.")) return [];
+  const apex = canonical.hostname.slice(4).replace(/\./g, "\\.");
+  return [
+    {
+      source: "/:path*",
+      has: [{ type: "host" as const, value: apex }],
+      destination: `${canonical.origin}/:path*`,
+      statusCode: 301 as const,
+    },
+  ];
+}
+
 const nextConfig: NextConfig = {
+  // Self-contained server bundle for the production image (frontend/Dockerfile.prod).
+  output: "standalone",
+  async redirects() {
+    return apexRedirects();
+  },
   // Next 16's dev server refuses dev resources (the HMR socket) from any host but localhost, and
   // the page then renders but never hydrates: buttons do nothing. Anything else that opens the dev
   // server — an ngrok tunnel, a phone on the LAN — must be listed, e.g.

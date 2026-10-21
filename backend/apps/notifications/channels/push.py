@@ -32,17 +32,24 @@ def _get_firebase_app():
     if _firebase_init_attempted:
         return _firebase_app
     _firebase_init_attempted = True
-    if not (settings.FIREBASE_CREDENTIALS_JSON or settings.FIREBASE_CREDENTIALS_PATH):
+    use_adc = settings.FIREBASE_USE_ADC
+    if not (settings.FIREBASE_CREDENTIALS_JSON or settings.FIREBASE_CREDENTIALS_PATH or use_adc):
         return None
     try:
         import firebase_admin
         from firebase_admin import credentials
 
+        options = None
         if settings.FIREBASE_CREDENTIALS_PATH:
             cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-        else:
+        elif settings.FIREBASE_CREDENTIALS_JSON:
             cred = credentials.Certificate(json.loads(settings.FIREBASE_CREDENTIALS_JSON))
-        _firebase_app = firebase_admin.initialize_app(cred)
+        else:
+            # Cloud Run / the worker VM: the runtime service account, no key file.
+            cred = credentials.ApplicationDefault()
+            if settings.FIREBASE_PROJECT_ID:
+                options = {'projectId': settings.FIREBASE_PROJECT_ID}
+        _firebase_app = firebase_admin.initialize_app(cred, options)
     except Exception:
         logger.exception('Failed to initialize Firebase app; push notifications disabled.')
         _firebase_app = None

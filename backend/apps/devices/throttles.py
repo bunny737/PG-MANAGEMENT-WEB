@@ -2,7 +2,8 @@ import uuid
 from collections.abc import Mapping
 
 from rest_framework.exceptions import ParseError
-from rest_framework.throttling import SimpleRateThrottle
+
+from apps.core.throttles import SimpleRateThrottle
 
 
 class DeviceRegisterIPThrottle(SimpleRateThrottle):

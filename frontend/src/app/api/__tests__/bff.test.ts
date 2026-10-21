@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET, POST } from "../[...path]/route";
 import { POST as loginPost } from "../auth/login/route";
+import { POST as loginEmailOtpPost } from "../auth/login-email-otp/route";
 import { POST as logoutPost } from "../auth/logout/route";
 import { signOrigin } from "@/lib/server/originSignature";
 
@@ -255,7 +256,13 @@ describe("BFF proxy", () => {
     expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBeNull();
   });
 
-  test.each(["v1/auth/login/", "v1/auth/login-phone/", "v1/auth/token/refresh/", "v1/auth/otp/verify/"])(
+  test.each([
+    "v1/auth/login/",
+    "v1/auth/login-phone/",
+    "v1/auth/token/refresh/",
+    "v1/auth/otp/verify/",
+    "v1/auth/otp/email/verify/",
+  ])(
     "token-issuing endpoint %s is not reachable through the generic proxy",
     async (path) => {
       const res = await POST(request(`/api/${path}`, { method: "POST", body: "{}" }), params(path));
@@ -333,6 +340,63 @@ describe("auth route handlers", () => {
     expect(res.status).toBe(401);
     expect((await res.json()).detail).toBe("No active account found.");
     expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  test("email-code login verifies against Django and keeps the tokens in httpOnly cookies", async () => {
+    const access = jwt(900);
+    const refresh = jwt(7 * 86400);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { access, refresh }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: "u1", role: "manager", permissions: [] }));
+
+    const res = await loginEmailOtpPost(
+      request("/api/auth/login-email-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "m@example.com", code: "123456" }),
+      })
+    );
+
+    expect(new URL(fetchMock.mock.calls[0][0] as string).pathname).toBe("/api/v1/auth/otp/email/verify/");
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain(access);
+    expect(text).not.toContain(refresh);
+    expect(JSON.parse(text)).not.toHaveProperty("access");
+    expect(JSON.parse(text)).not.toHaveProperty("refresh");
+    const set = res.headers.get("set-cookie") ?? "";
+    expect(set).toContain(`pg_access=${access}`);
+    expect(set).toContain(`pg_refresh=${refresh}`);
+    expect((set.match(/HttpOnly/gi) ?? []).length).toBe(3);
+  });
+
+  test("a wrong email code passes Django's 401 through and sets no cookies", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(401, { code: "INVALID_OTP", detail: "The code is incorrect or has expired." })
+    );
+    const res = await loginEmailOtpPost(
+      request("/api/auth/login-email-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "m@example.com", code: "000000" }),
+      })
+    );
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe("INVALID_OTP");
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no /auth/me/ without tokens
+  });
+
+  test("email-code login from a foreign origin is rejected before reaching Django", async () => {
+    const res = await loginEmailOtpPost(
+      request("/api/auth/login-email-otp", {
+        method: "POST",
+        headers: { origin: "https://evil.test", host: "app.test" },
+        body: "{}",
+      })
+    );
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("logout clears all three session cookies", async () => {

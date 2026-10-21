@@ -136,8 +136,15 @@ REST_FRAMEWORK = {
         'login': '10/min',
         'verify_email': '10/min',
         'resend_verification': '5/min',
+        # Per requested email, so rotating IPs can't flood one inbox with links.
+        'resend_verification_email': '5/hour',
         'otp_request': '3/min',
         'otp_verify': '10/min',
+        # Email code login: per client IP, plus per requested email (rotating
+        # IPs can't flood one inbox). Guessing is bounded per code by OTP_MAX_ATTEMPTS.
+        'otp_email_request': '3/min',
+        'otp_email_request_email': '5/hour',
+        'otp_email_verify': '10/min',
         'password_reset': '5/min',
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',

@@ -193,11 +193,19 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class OtpCode(models.Model):
-    """One-time login codes (PRD Module 1: Mobile OTP). Auth-layer table like
-    users — pre-tenant, so not under RLS. Codes are stored hashed."""
+    """One-time login codes (PRD Module 1: mobile OTP, plus the optional email
+    code login). Auth-layer table like users — pre-tenant, so not under RLS.
+    Codes are stored hashed. Each channel has its own active code: a new email
+    code never cancels an outstanding phone code, and a code only verifies on
+    the channel it was issued for."""
+
+    class Channel(models.TextChoices):
+        PHONE = 'phone', _('Phone')
+        EMAIL = 'email', _('Email')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='otp_codes')
+    channel = models.CharField(max_length=10, choices=Channel.choices)
     code_hash = models.CharField(max_length=128)
     expires_at = models.DateTimeField()
     attempts = models.PositiveSmallIntegerField(default=0)
@@ -206,3 +214,7 @@ class OtpCode(models.Model):
 
     class Meta:
         db_table = 'otp_codes'
+        indexes = [
+            # verify(): filter(user, channel, used) ordered newest first.
+            models.Index(fields=['user', 'channel', 'used', '-created_at'], name='otp_user_chan_used_idx'),
+        ]

@@ -72,6 +72,24 @@ email-verified gate, but the OTP delivery is still a backend stub that only logs
 server-side (no SMS provider wired up — PRD V2). **Don't build OTP UI yet** — phone+password (§1.2)
 is the intended path until SMS exists.
 
+### 1.5 Optional email code login (added 2026-10-21)
+An alternative to the password, offered on the web as "Email me a code instead" in both the Owner
+and Staff views. Works for any tenant user with an email (Owners, and staff who have one; never
+Super Admins).
+
+```
+POST /api/v1/auth/otp/email/request/   {"email": "..."}
+  → 200 {"detail": "..."}  for every address (never reveals whether it is registered)
+  → 429 when throttled (3/min per IP, 5/hour per email)
+POST /api/v1/auth/otp/email/verify/    {"email": "...", "code": "123456"}
+  → 200 {"access": "...", "refresh": "..."}   (same claims as password login)
+  → 400 when `code` is not exactly 6 digits (no attempt used)
+  → 401 INVALID_OTP (wrong, expired, used, or 5 wrong attempts) · 401 SUBSCRIPTION_SUSPENDED
+```
+The code expires in 5 minutes. A new request replaces the previous email code (a phone code is
+unaffected), so only the most recent email works. A successful verify also marks the email verified.
+Apply the same role check the screen applies to password login.
+
 ## 2. Token revocation: `PASSWORD_CHANGED`
 
 Every account now carries a server-side `auth_version` counter, stamped into both the access and

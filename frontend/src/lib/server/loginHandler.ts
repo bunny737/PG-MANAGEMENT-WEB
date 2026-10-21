@@ -1,4 +1,4 @@
-// Shared body of the two login route handlers (email/password and staff phone/password).
+// Shared body of the login route handlers (email/password, staff phone/password, email code).
 // Django returns the token pair; this stores it in httpOnly cookies and hands the browser
 // only the /auth/me/ payload, so no JWT ever reaches page JavaScript.
 

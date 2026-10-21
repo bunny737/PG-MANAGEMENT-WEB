@@ -56,6 +56,14 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 
+  /** The backend's machine-readable error code (always upper-case, e.g. `EMAIL_NOT_VERIFIED`).
+   * Branch on this, never on `detail` text, which is translated. Field-level validation errors
+   * only carry the generic `INVALID`. */
+  get code(): string | undefined {
+    const code = this.body.code;
+    return typeof code === "string" && code ? code.toUpperCase() : undefined;
+  }
+
   /** First message for a given field, if the backend returned a field-level validation error. */
   fieldError(field: string): string | undefined {
     const value = this.body[field];
@@ -251,12 +259,13 @@ export async function apiDownload(
   return { blob: await res.blob(), filename };
 }
 
-export async function login(email: string, password: string) {
+/** POSTs credentials to one of the login route handlers, which store the token pair in
+ * httpOnly cookies and return only the /auth/me/ payload, then records the session hints. */
+async function completeLogin(routePath: string, credentials: Record<string, string>) {
   await awaitPendingPurge();
-  // The route handler stores the token pair in httpOnly cookies and returns only the /auth/me/ payload.
-  const me = await apiFetch<CurrentUser>("/api/auth/login", {
+  const me = await apiFetch<CurrentUser>(routePath, {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(credentials),
     skipAuth: true,
   });
   localStorage.setItem("isLoggedIn", "true");
@@ -272,25 +281,67 @@ export async function login(email: string, password: string) {
   return me;
 }
 
-export async function loginPhone(phone: string, password: string) {
-  await awaitPendingPurge();
-  // The route handler stores the token pair in httpOnly cookies and returns only the /auth/me/ payload.
-  const me = await apiFetch<CurrentUser>("/api/auth/login-phone", {
+export function login(email: string, password: string) {
+  return completeLogin("/api/auth/login", { email, password });
+}
+
+export function loginPhone(phone: string, password: string) {
+  return completeLogin("/api/auth/login-phone", { phone, password });
+}
+
+/** Asks Django to email a sign-in code. The reply is the same whether or not the address can
+ * sign in with a code, so success here never means "registered". Issues no tokens, so it goes
+ * through the generic proxy. */
+export async function requestEmailOtp(email: string) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/otp/email/request/", {
     method: "POST",
-    body: JSON.stringify({ phone, password }),
+    body: JSON.stringify({ email }),
     skipAuth: true,
   });
-  localStorage.setItem("isLoggedIn", "true");
-  localStorage.setItem("userRole", me.role);
-  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(me.permissions ?? []));
-  localStorage.setItem("userName", `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim());
-  localStorage.setItem("currentUser", JSON.stringify(me));
-  const effectiveLang = me.language_code || me.tenant?.default_language || "en";
-  writeLocaleCookie(effectiveLang);
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("session-changed"));
-  }
-  return me;
+}
+
+export function loginEmailOtp(email: string, code: string) {
+  return completeLogin("/api/auth/login-email-otp", { email, code });
+}
+
+export interface SignupPayload {
+  business_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+  password: string;
+  language_code: string;
+}
+
+/** Creates the tenant + Owner and emails a verification link. Issues no tokens (the owner signs
+ * in after verifying), so it goes through the generic proxy. */
+export async function signup(payload: SignupPayload) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/signup/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+/** Confirms the address from an emailed link. Never signs the user in. Any 400 means the link is
+ * invalid or expired. */
+export async function verifyEmail(token: string) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/verify-email/", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+    skipAuth: true,
+  });
+}
+
+/** Asks for a new verification link. The reply is the same whether or not the address is
+ * registered or already verified, so success never means "registered". */
+export async function resendVerification(email: string) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/resend-verification/", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+    skipAuth: true,
+  });
 }
 
 export interface PropertyImage {

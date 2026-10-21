@@ -28,6 +28,7 @@ const TOKEN_ISSUING_PATHS = new Set([
   "auth/login-phone",
   "auth/token/refresh",
   "auth/otp/verify",
+  "auth/otp/email/verify",
 ]);
 
 export function isTokenIssuingPath(apiPath: string): boolean {

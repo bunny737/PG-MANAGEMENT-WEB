@@ -56,5 +56,6 @@ class AuthAPITestCase(APITestCase):
 
     @staticmethod
     def extract_query_param(email_body, param):
-        match = re.search(rf'[?&]{param}=([^\s&]+)', email_body)
+        # '#' too: the verification link carries its token in the URL fragment.
+        match = re.search(rf'[?&#]{param}=([^\s&]+)', email_body)
         return match.group(1) if match else None

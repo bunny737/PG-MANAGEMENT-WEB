@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -18,12 +19,27 @@ import {
 } from "lucide-react";
 import { BrandMark } from "@/components/shared/BrandMark";
 import { firstAllowedRoute } from "@/lib/permissions";
-import { ApiError, clearSession, login, loginPhone } from "@/lib/api";
+import { ApiError, clearSession, login, loginPhone, type CurrentUser } from "@/lib/api";
+import { EmailCodeLogin, type CodeRequests } from "./EmailCodeLogin";
+import { ResendVerificationPrompt } from "./ResendVerificationPrompt";
+import { isValidEmail, normalizeInputPhone } from "./validation";
 
 type LoginView = "choice" | "owner" | "staff";
 type FlowState = "login" | "forgot_password";
+/** Password is the default; the emailed code is the optional alternative in both views. */
+type AuthMethod = "password" | "email_code";
 
-export function LoginForm() {
+/** Roles each login view admits (the email-code path enforces the same split as the password forms). */
+const OWNER_VIEW_ROLES = ["owner"];
+const STAFF_VIEW_ROLES = ["manager", "receptionist"];
+
+interface LoginFormProps {
+  /** SIGNUP_ENABLED: only decides whether the "Start free trial" link shows (discovery only;
+   * /signup itself stays reachable by URL). */
+  signupEnabled?: boolean;
+}
+
+export function LoginForm({ signupEnabled = false }: LoginFormProps) {
   const router = useRouter();
   const t = useTranslations("auth");
   const tCommon = useTranslations("common");
@@ -31,6 +47,11 @@ export function LoginForm() {
   // Navigation & Flow
   const [loginView, setLoginView] = useState<LoginView>("choice");
   const [flowState, setFlowState] = useState<FlowState>("login");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
+  // Lives here, not in EmailCodeLogin, so resend cooldowns survive switching views or methods.
+  const [codeRequests, setCodeRequests] = useState<CodeRequests>({});
+  const recordCodeRequest = (address: string, sentAt: number) =>
+    setCodeRequests((prev) => ({ ...prev, [address]: sentAt }));
 
   // Email + Password Credentials
   const [email, setEmail] = useState("");
@@ -47,24 +68,15 @@ export function LoginForm() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
+  // Set when password login answered EMAIL_NOT_VERIFIED: offers a resend for this address.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+
   // Form States
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Validation
-  const validateEmail = (val: string) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(val);
-  };
-
-  const normalizeInputPhone = (val: string) => {
-    const digits = val.replace(/\D/g, "");
-    if (digits.length === 10 && /^[6-9]/.test(digits)) return digits;
-    if (digits.length === 11 && digits.startsWith("0") && /^[6-9]/.test(digits.slice(1))) return digits.slice(1);
-    if (digits.length === 12 && digits.startsWith("91") && /^[6-9]/.test(digits.slice(2))) return digits.slice(2);
-    return null;
-  };
+  const validateEmail = isValidEmail;
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +100,7 @@ export function LoginForm() {
     }
 
     setErrors({});
+    setUnverifiedEmail(null);
     setIsLoading(true);
 
     try {
@@ -111,6 +124,8 @@ export function LoginForm() {
           ? err.fieldError("detail") ?? t("login.errLoginFallback")
           : t("login.errServerUnreachable");
       setErrors({ password: message });
+      // Branch on the machine code, never on the (translated) message.
+      if (err instanceof ApiError && err.code === "EMAIL_NOT_VERIFIED") setUnverifiedEmail(email.trim());
     }
   };
 
@@ -158,6 +173,35 @@ export function LoginForm() {
       setErrors({ phonePassword: message });
     }
   };
+
+  const handleEmailCodeSuccess = (me: CurrentUser) => {
+    setTimeout(() => {
+      router.push(firstAllowedRoute(me.permissions ?? []));
+    }, 800);
+  };
+
+  const usePasswordInstead = () => setAuthMethod("password");
+
+  const backToChoice = () => {
+    setLoginView("choice");
+    setAuthMethod("password");
+    setUnverifiedEmail(null);
+    setErrors({});
+  };
+
+  const useEmailCodeLink = (
+    <button
+      type="button"
+      onClick={() => {
+        setAuthMethod("email_code");
+        setErrors({});
+      }}
+      disabled={isLoading || isSuccess}
+      className="w-full text-center text-sm font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer disabled:opacity-60"
+    >
+      {t("login.useEmailCode")}
+    </button>
+  );
 
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -344,10 +388,7 @@ export function LoginForm() {
         {loginView === "owner" && (
           <div className="space-y-6">
             <button
-              onClick={() => {
-                setLoginView("choice");
-                setErrors({});
-              }}
+              onClick={backToChoice}
               className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer"
             >
               <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
@@ -363,6 +404,18 @@ export function LoginForm() {
               </p>
             </div>
 
+            {authMethod === "email_code" ? (
+              <EmailCodeLogin
+                expectedRoles={OWNER_VIEW_ROLES}
+                initialEmail={email}
+                codeRequests={codeRequests}
+                onCodeRequested={recordCodeRequest}
+                roleMismatchMessage={t("login.errRoleMismatchOwner")}
+                onSuccess={handleEmailCodeSuccess}
+                onUsePassword={usePasswordInstead}
+              />
+            ) : (
+            <>
             <form onSubmit={handlePasswordSubmit} className="space-y-5">
               <div className="space-y-1.5">
                 <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
@@ -377,7 +430,11 @@ export function LoginForm() {
                     type="email"
                     placeholder={t("login.emailPlaceholder")}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      // The resend offer is for the address that failed; never send to a stale one.
+                      setUnverifiedEmail(null);
+                    }}
                     className={`w-full rounded-xl border ${
                       errors.email ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
                     } bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink outline-none transition-all focus:ring-4`}
@@ -462,6 +519,12 @@ export function LoginForm() {
                 )}
               </button>
             </form>
+            {/* Outside the password form: the prompt is a form of its own. Keyed by address so a
+                different unverified address starts fresh. */}
+            {unverifiedEmail && <ResendVerificationPrompt key={unverifiedEmail} email={unverifiedEmail} />}
+            {useEmailCodeLink}
+            </>
+            )}
           </div>
         )}
 
@@ -469,10 +532,7 @@ export function LoginForm() {
         {loginView === "staff" && (
           <div className="space-y-6">
             <button
-              onClick={() => {
-                setLoginView("choice");
-                setErrors({});
-              }}
+              onClick={backToChoice}
               className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer"
             >
               <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
@@ -488,6 +548,17 @@ export function LoginForm() {
               </p>
             </div>
 
+            {authMethod === "email_code" ? (
+              <EmailCodeLogin
+                expectedRoles={STAFF_VIEW_ROLES}
+                codeRequests={codeRequests}
+                onCodeRequested={recordCodeRequest}
+                roleMismatchMessage={t("login.errRoleMismatchStaff")}
+                onSuccess={handleEmailCodeSuccess}
+                onUsePassword={usePasswordInstead}
+              />
+            ) : (
+            <>
             <form onSubmit={handlePhoneSubmit} className="space-y-5">
               <div className="space-y-1.5">
                 <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
@@ -578,7 +649,19 @@ export function LoginForm() {
                 )}
               </button>
             </form>
+            {useEmailCodeLink}
+            </>
+            )}
           </div>
+        )}
+
+        {signupEnabled && (
+          <p className="text-center text-sm text-ink-muted">
+            {t("login.signupPrompt")}{" "}
+            <Link href="/signup" className="font-semibold text-accent hover:text-accent-hover">
+              {t("login.signupLink")}
+            </Link>
+          </p>
         )}
 
         {/* Demo Credentials Helper */}

@@ -30,8 +30,10 @@ for origin in [
     if origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(origin)
 
-# Auth emails (verification, OTP fallback, resets) print to the console in dev.
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Auth emails (verification, sign-in codes, resets) print to the console in dev. To send real
+# mail through the EMAIL_* SMTP settings, set
+# EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend in .env.
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
 
 # Single-process in dev, and `manage.py test` has no Redis — the shared Redis
 # cache (base.py, for cross-process throttle state) is a prod-only concern.

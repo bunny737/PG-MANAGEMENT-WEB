@@ -2188,3 +2188,11 @@ msgstr ""
 #: templates/emails/verify_email.html templates/emails/verify_email.txt
 msgid "If you didn't create a PGLive account, you can safely ignore this email."
 msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "Current password is incorrect."
+msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "The new password must be different from the current one."
+msgstr ""

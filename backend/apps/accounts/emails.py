@@ -2,9 +2,8 @@
 from templates/emails/ by apps.core.email, always in the recipient's language
 (invariant 7). Verification emails (signup welcome, resend, staff and admin
 lifecycle) and sign-in codes are sent from Celery tasks in apps.accounts.tasks,
-which re-check eligibility on the worker. Password-reset and staff-invite stay
-synchronous; they're outside Module 14's literal MVP scope (email-only
-welcome/trial/invoice/receipt notifications) — revisit together later if useful."""
+which re-check eligibility on the worker. Password-reset, staff-invite and
+password-changed emails are sent the same way (see tasks.py)."""
 from django.conf import settings
 from django.utils.translation import gettext as _
 
@@ -42,6 +41,8 @@ def send_verification_email(user):
 
 
 def send_password_reset_email(user):
+    # Like the verification link, uid and token ride in the URL fragment so the
+    # reset token never reaches a server access log.
     creds = make_password_reset_credentials(user)
     _send(
         user,
@@ -50,10 +51,19 @@ def send_password_reset_email(user):
         context={
             'cta_url': (
                 f'{settings.FRONTEND_BASE_URL}/reset-password'
-                f'?uid={creds["uid"]}&token={creds["token"]}'
+                f'#uid={creds["uid"]}&token={creds["token"]}'
             ),
             'valid_hours': settings.PASSWORD_RESET_TIMEOUT // 3600,
         },
+    )
+
+
+def send_password_changed_email(user):
+    _send(
+        user,
+        subject=lambda: _('Your password was changed'),
+        template='password_changed',
+        context={'reset_url': f'{settings.FRONTEND_BASE_URL}/forgot-password'},
     )
 
 
@@ -79,7 +89,7 @@ def send_staff_invite_email(user, tenant):
             'business': business,
             'cta_url': (
                 f'{settings.FRONTEND_BASE_URL}/reset-password'
-                f'?uid={creds["uid"]}&token={creds["token"]}&invite=1'
+                f'#uid={creds["uid"]}&token={creds["token"]}&invite=1'
             ),
         },
     )

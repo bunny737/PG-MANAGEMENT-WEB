@@ -367,9 +367,10 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   stays the editable source: it is wrapped, HTML-escaped and `linebreaksbr`'d into `notification.html`,
   and the plain-text part is the template text unchanged. The channel's never-raises contract is kept.
   Tests: `apps/core/test_email_templates.py`.
-- [OPEN] Password-reset and staff-invite emails (`apps.accounts.emails`)
-  stay synchronous and outside `NotificationLog`/the template system —
-  unchanged from MVP's original scope decision.
+- [DECISION 2026-10-21] Password-reset, staff-invite and password-changed emails
+  (`apps.accounts.emails`) are now Celery tasks (Module 01), but
+  stay outside `NotificationLog`/the DB template system — unchanged from
+  the MVP's original scope decision.
 - [OPEN] SMS/WhatsApp provider selection — see the stubbing decision above.
 - [OPEN] Django admin's visibility into RLS-protected tables
   (`NotificationLog`, `PushSubscription`, `NotificationPreference`,

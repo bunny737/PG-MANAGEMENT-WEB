@@ -2235,3 +2235,11 @@ msgstr "ఇమెయిల్‌ను ధృవీకరించండి"
 #: templates/emails/verify_email.html templates/emails/verify_email.txt
 msgid "If you didn't create a PGLive account, you can safely ignore this email."
 msgstr "మీరు PGLive ఖాతాను సృష్టించకపోతే, ఈ ఇమెయిల్‌ను నిరభ్యంతరంగా విస్మరించవచ్చు."
+
+#: apps/accounts/serializers.py
+msgid "Current password is incorrect."
+msgstr "ప్రస్తుత పాస్‌వర్డ్ తప్పు."
+
+#: apps/accounts/serializers.py
+msgid "The new password must be different from the current one."
+msgstr "కొత్త పాస్‌వర్డ్ ప్రస్తుత పాస్‌వర్డ్‌కు భిన్నంగా ఉండాలి."

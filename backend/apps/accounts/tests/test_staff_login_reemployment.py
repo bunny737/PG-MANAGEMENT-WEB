@@ -295,15 +295,16 @@ class StaffLoginAndReemploymentTests(AuthAPITestCase):
     def test_staff_created_with_phone_email_no_password_triggers_invite(self):
         self.authenticate(self.owner)
         mail.outbox.clear()
-        res = self.client.post(
-            reverse('staff-list'),
-            {
-                'first_name': 'Kavita',
-                'email': 'kavita@example.com',
-                'phone': '9876543210',
-                'role': Role.RECEPTIONIST,
-            },
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.client.post(
+                reverse('staff-list'),
+                {
+                    'first_name': 'Kavita',
+                    'email': 'kavita@example.com',
+                    'phone': '9876543210',
+                    'role': Role.RECEPTIONIST,
+                },
+            )
         self.assertEqual(res.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Set your password to get started', mail.outbox[0].body)

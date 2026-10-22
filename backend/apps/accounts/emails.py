@@ -7,6 +7,7 @@ scope (email-only welcome/trial/invoice/receipt notifications) — revisit
 together later if useful."""
 from django.conf import settings
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from django.utils import translation
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
@@ -14,7 +15,7 @@ from django.utils.translation import ngettext
 from .tokens import make_email_verification_token, make_password_reset_credentials
 
 
-def _send(user, subject, body):
+def _send(user, subject, body, html_message=None):
     if not user.email:
         return
     with translation.override(user.language_code or 'en'):
@@ -24,7 +25,18 @@ def _send(user, subject, body):
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
             fail_silently=False,
+            html_message=html_message,
         )
+
+
+def _render_html(template, **context):
+    """Branded HTML part. Must run inside the recipient's language override so
+    the template's {% trans %} strings and <html lang> match the plain text."""
+    return render_to_string(template, {
+        'brand': settings.EMAIL_BRAND_NAME,
+        'lang': translation.get_language(),
+        **context,
+    })
 
 
 def send_verification_email(user):
@@ -40,7 +52,13 @@ def send_verification_email(user):
         body = _('Welcome, %(name)s! Verify your email to activate your account: %(url)s') % {
             'name': user.first_name, 'url': url,
         }
-    _send(user, subject, body)
+        html = _render_html(
+            'emails/verify_email.html',
+            name=user.first_name,
+            url=url,
+            ttl_hours=settings.EMAIL_VERIFICATION_TTL_SECONDS // 3600,
+        )
+    _send(user, subject, body, html_message=html)
 
 
 def send_password_reset_email(user):

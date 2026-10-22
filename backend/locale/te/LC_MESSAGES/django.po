@@ -2122,3 +2122,44 @@ msgstr "కొత్త పాస్‌వర్డ్ మీ ప్రస్త
 #: apps/accounts/serializers.py
 msgid "Password changed. Please sign in again with your new password."
 msgstr "పాస్‌వర్డ్ మార్చబడింది. దయచేసి మీ కొత్త పాస్‌వర్డ్‌తో మళ్లీ సైన్ ఇన్ చేయండి."
+
+#: templates/emails/verify_email.html
+msgid "Confirm your email address to activate your account."
+msgstr "మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి."
+
+#: templates/emails/verify_email.html
+#, python-format
+msgid "Welcome, %(name)s!"
+msgstr "స్వాగతం, %(name)s!"
+
+#: templates/emails/verify_email.html
+msgid ""
+"Thanks for signing up. Confirm your email address to activate your account "
+"and start managing your PG."
+msgstr ""
+"సైన్ అప్ చేసినందుకు ధన్యవాదాలు. మీ ఖాతాను సక్రియం చేసి, మీ PGని నిర్వహించడం "
+"ప్రారంభించడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి."
+
+#: templates/emails/verify_email.html
+msgid "Verify email address"
+msgstr "ఇమెయిల్ చిరునామాను ధృవీకరించండి"
+
+#: templates/emails/verify_email.html
+#, python-format
+msgid "This link expires in %(hours)s hour."
+msgid_plural "This link expires in %(hours)s hours."
+msgstr[0] "ఈ లింక్ %(hours)s గంటలో గడువు ముగుస్తుంది."
+msgstr[1] "ఈ లింక్ %(hours)s గంటల్లో గడువు ముగుస్తుంది."
+
+#: templates/emails/verify_email.html
+msgid "Button not working? Copy and paste this link into your browser:"
+msgstr "బటన్ పని చేయలేదా? ఈ లింక్‌ను కాపీ చేసి మీ బ్రౌజర్‌లో పేస్ట్ చేయండి:"
+
+#: templates/emails/verify_email.html
+msgid "If you didn't create this account, you can safely ignore this email."
+msgstr "మీరు ఈ ఖాతాను సృష్టించకపోతే, ఈ ఇమెయిల్‌ను నిరభ్యంతరంగా విస్మరించవచ్చు."
+
+#: templates/emails/base.html
+#, python-format
+msgid "You received this email because of activity on your %(brand)s account."
+msgstr "మీ %(brand)s ఖాతాలోని కార్యకలాపం కారణంగా మీకు ఈ ఇమెయిల్ వచ్చింది."

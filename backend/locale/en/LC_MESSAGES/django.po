@@ -2075,3 +2075,42 @@ msgstr ""
 #: apps/accounts/serializers.py
 msgid "Password changed. Please sign in again with your new password."
 msgstr ""
+
+#: templates/emails/verify_email.html
+msgid "Confirm your email address to activate your account."
+msgstr ""
+
+#: templates/emails/verify_email.html
+#, python-format
+msgid "Welcome, %(name)s!"
+msgstr ""
+
+#: templates/emails/verify_email.html
+msgid ""
+"Thanks for signing up. Confirm your email address to activate your account "
+"and start managing your PG."
+msgstr ""
+
+#: templates/emails/verify_email.html
+msgid "Verify email address"
+msgstr ""
+
+#: templates/emails/verify_email.html
+#, python-format
+msgid "This link expires in %(hours)s hour."
+msgid_plural "This link expires in %(hours)s hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/verify_email.html
+msgid "Button not working? Copy and paste this link into your browser:"
+msgstr ""
+
+#: templates/emails/verify_email.html
+msgid "If you didn't create this account, you can safely ignore this email."
+msgstr ""
+
+#: templates/emails/base.html
+#, python-format
+msgid "You received this email because of activity on your %(brand)s account."
+msgstr ""

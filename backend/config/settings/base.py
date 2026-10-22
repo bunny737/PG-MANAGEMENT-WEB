@@ -254,6 +254,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # Auth flow settings (technical tuning — plan limits live in PlatformConfig).
 FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:3000')
 EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60 * 72  # 3 days
+# Product name shown in the header/footer of HTML emails (templates/emails/).
+EMAIL_BRAND_NAME = env('EMAIL_BRAND_NAME', default='PGLive')
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
 

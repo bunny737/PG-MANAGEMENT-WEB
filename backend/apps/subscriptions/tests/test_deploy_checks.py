@@ -7,6 +7,7 @@ GOOD = {
     'RAZORPAY_KEY_SECRET': 'a-real-looking-secret-0123456789',
     'RAZORPAY_WEBHOOK_SECRET': 'a-real-looking-webhook-secret-01',
     'RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS': False,
+    'RAZORPAY_REQUIRE_LIVE_MODE': True,
 }
 
 
@@ -16,9 +17,22 @@ def ids(**overrides):
 
 
 class RazorpayDeployCheckTests(SimpleTestCase):
-    def test_valid_live_and_test_keys_pass(self):
+    def test_a_live_key_passes(self):
         self.assertEqual(ids(), [])
-        self.assertEqual(ids(RAZORPAY_KEY_ID='rzp_test_AbCdEfGhIjKlMn'), [])
+
+    def test_a_test_key_fails_when_live_mode_is_required(self):
+        # Production (prod.py's default) must never go live on a test-mode key.
+        self.assertEqual(ids(RAZORPAY_KEY_ID='rzp_test_AbCdEfGhIjKlMn'), ['subscriptions.E006'])
+
+    def test_a_test_key_passes_when_live_mode_is_not_required(self):
+        # Staging intentionally runs on test keys (infra/README.md; infra/30-services.sh sets
+        # RAZORPAY_REQUIRE_LIVE_MODE=false there).
+        self.assertEqual(
+            ids(RAZORPAY_KEY_ID='rzp_test_AbCdEfGhIjKlMn', RAZORPAY_REQUIRE_LIVE_MODE=False), []
+        )
+
+    def test_a_live_key_passes_regardless_of_the_live_mode_setting(self):
+        self.assertEqual(ids(RAZORPAY_REQUIRE_LIVE_MODE=False), [])
 
     def test_a_missing_key_id_is_an_error(self):
         self.assertEqual(ids(RAZORPAY_KEY_ID=''), ['subscriptions.E001'])

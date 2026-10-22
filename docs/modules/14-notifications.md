@@ -367,6 +367,13 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   stays the editable source: it is wrapped, HTML-escaped and `linebreaksbr`'d into `notification.html`,
   and the plain-text part is the template text unchanged. The channel's never-raises contract is kept.
   Tests: `apps/core/test_email_templates.py`.
+- [DECISION 2026-10-22] **`COMPANY_NAME`/`COMPANY_ADDRESS` must reach the Celery worker, not just the API
+  service.** `apps.core.email` reads them from Django settings, and the worker — not the API request
+  thread — is what actually sends every one of these emails. `infra/30-services.sh`'s `COMMON_ENV` (shared
+  by the API and web Cloud Run services) and `infra/worker/deploy.sh`'s VM-metadata env forwarding
+  (`company-name` / `company-address`, alongside the existing `EMAIL_*` keys) both now pass them through;
+  before this they were only wired to the frontend service, so production emails silently fell back to the
+  "PGLive" default and an empty address.
 - [DECISION 2026-10-21] Password-reset, staff-invite and password-changed emails
   (`apps.accounts.emails`) are now Celery tasks (Module 01), but
   stay outside `NotificationLog`/the DB template system — unchanged from
@@ -458,3 +465,5 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   `apps.accounts.emails` moved onto it, `COMPANY_NAME`/`COMPANY_ADDRESS` backend settings, Telugu
   catalogue entries. Existing tests that simulated an SMTP outage now patch
   `apps.core.email.EmailMultiAlternatives.send`. 15 new tests.
+- 2026-10-22  `COMPANY_NAME`/`COMPANY_ADDRESS` now also reach the Celery worker, which is what
+  actually sends these emails — see Decisions.

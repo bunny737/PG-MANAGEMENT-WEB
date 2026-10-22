@@ -60,3 +60,12 @@ class SniffUploadTests(SimpleTestCase):
         with self.assertRaises(ValidationError) as caught:
             sniff_upload(upload(b'nope'), field='pan_document', max_bytes=1024, code_prefix='kyc')
         self.assertEqual(list(caught.exception.detail), ['pan_document'])
+
+    def test_allowed_types_restricts_what_a_caller_accepts(self):
+        restricted = {'allowed_types': {'image/jpeg', 'image/png', 'application/pdf'}}
+        self.assertEqual(sniff(PDF, **restricted), 'application/pdf')
+        with self.assertRaises(ValidationError) as caught:
+            sniff(WEBP, **restricted)
+        error = caught.exception.detail['document'][0]
+        self.assertEqual(error.code, 'doc_type_not_allowed')
+        self.assertNotIn('WebP', str(error))

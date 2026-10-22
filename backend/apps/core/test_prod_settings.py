@@ -69,6 +69,7 @@ class ProductionDeployCheckTests(SimpleTestCase):
         cases = {
             'subscriptions.E001': {'RAZORPAY_KEY_ID': ''},
             'subscriptions.E003': {'RAZORPAY_KEY_SECRET': 'placeholder'},
+            'subscriptions.E006': {'RAZORPAY_KEY_ID': 'rzp_test_CIonlyNotReal00'},
             'core.E001': {'FRONTEND_BASE_URL': 'http://www.pglive.in'},
         }
         for check_id, overrides in cases.items():
@@ -81,6 +82,15 @@ class ProductionDeployCheckTests(SimpleTestCase):
         result = run_prod(['manage.py', 'check', '--deploy', '--fail-level', 'ERROR'], FRONTEND_BASE_URL=None)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('core.E001', result.stderr + result.stdout)
+
+    def test_a_test_mode_key_passes_only_when_live_mode_is_not_required(self):
+        # infra/30-services.sh sets RAZORPAY_REQUIRE_LIVE_MODE=false for a staging deploy, since
+        # staging intentionally runs on Razorpay test keys (infra/README.md).
+        result = run_prod(
+            ['manage.py', 'check', '--deploy', '--fail-level', 'ERROR'],
+            RAZORPAY_KEY_ID='rzp_test_CIonlyNotReal00', RAZORPAY_REQUIRE_LIVE_MODE='false',
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_jobs_that_never_use_razorpay_or_email_still_load_with_only_the_django_keys(self):
         """migrate, bootstrap, exports and the image build set nothing else."""

@@ -33,9 +33,12 @@ umask 077
   echo "GS_BUCKET_NAME=$PROJECT-media"
   echo "GS_PROJECT_ID=$PROJECT"
   echo "GS_SA_EMAIL=$(md instance/service-accounts/default/email)"   # signs media URLs as the VM's own account
-  # SMTP settings (non-secret) come from VM metadata; unset ones are left out so settings defaults apply.
+  # SMTP + company-identity settings (non-secret) come from VM metadata; unset ones are left out so
+  # settings defaults apply. COMPANY_NAME/COMPANY_ADDRESS feed every email's footer (apps.core.email) —
+  # this worker is the process that actually sends them, so it needs its own copy, not just the web service's.
   for pair in EMAIL_HOST=email-host EMAIL_PORT=email-port EMAIL_HOST_USER=email-host-user \
-              DEFAULT_FROM_EMAIL=default-from-email; do
+              DEFAULT_FROM_EMAIL=default-from-email COMPANY_NAME=company-name \
+              COMPANY_ADDRESS=company-address; do
     value="$(opt "${pair#*=}")"
     if [[ -n "$value" ]]; then echo "${pair%%=*}=$value"; fi
   done

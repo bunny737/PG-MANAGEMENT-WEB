@@ -17,9 +17,14 @@ SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION;DB_NAME=$DB_NAME"
 COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT"
 COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=$SITE_URL"
 COMMON_ENV+=";APP_RELEASE=${SHA:-unknown};SENTRY_ENVIRONMENT=$([[ $ENVIRONMENT == prod ]] && echo production || echo staging)"
-# SMTP settings (non-secret; the password is the EMAIL_HOST_PASSWORD secret). Only set ones are passed, so an
-# empty EMAIL_PORT can't break env.int() and unset ones keep the settings defaults.
-for v in EMAIL_HOST EMAIL_PORT EMAIL_HOST_USER DEFAULT_FROM_EMAIL; do
+# Staging intentionally runs on Razorpay test keys (infra/README.md); only a prod deploy requires
+# a live key (apps.subscriptions.checks, backend/bin/start-api.sh).
+COMMON_ENV+=";RAZORPAY_REQUIRE_LIVE_MODE=$([[ $ENVIRONMENT == prod ]] && echo true || echo false)"
+# SMTP + company-identity settings (non-secret; the SMTP password is the EMAIL_HOST_PASSWORD secret).
+# COMPANY_NAME/COMPANY_ADDRESS also feed every outgoing email's footer (apps.core.email) — both the
+# API and the worker send mail, so worker/deploy.sh forwards the same two vars. Only set ones are
+# passed, so an empty EMAIL_PORT can't break env.int() and unset ones keep the settings defaults.
+for v in EMAIL_HOST EMAIL_PORT EMAIL_HOST_USER DEFAULT_FROM_EMAIL COMPANY_NAME COMPANY_ADDRESS; do
   if [[ -n "${!v:-}" ]]; then COMMON_ENV+=";$v=${!v}"; fi
 done
 VPC=(--network "$NETWORK" --subnet "$SUBNET" --vpc-egress private-ranges-only)

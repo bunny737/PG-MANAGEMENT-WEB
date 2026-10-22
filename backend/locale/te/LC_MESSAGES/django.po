@@ -771,6 +771,10 @@ msgstr "ఫైల్ %(mb)s MB కంటే పెద్దదిగా ఉం�
 msgid "Attach a JPEG, PNG, WebP or PDF file."
 msgstr "JPEG, PNG, WebP లేదా PDF ఫైల్‌ను జత చేయండి."
 
+#: apps/core/uploads.py:43
+msgid "Attach a JPEG, PNG or PDF file."
+msgstr "JPEG, PNG లేదా PDF ఫైల్‌ను జత చేయండి."
+
 #: apps/expenses/views.py:96
 #, python-brace-format
 msgid "Use PUT /expenses/{id}/attachment/ to replace the file."

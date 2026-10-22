@@ -329,6 +329,10 @@ RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = env.bool('RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS', 
 # Dev/test run on a local stub client when no key is set (apps.subscriptions.razorpay_client). prod.py turns
 # that off so production can never invent `test_…` Razorpay ids.
 RAZORPAY_ALLOW_STUB_CLIENT = True
+# Whether apps.subscriptions.checks.check_razorpay_settings requires an rzp_live_… key. Only
+# meaningful under --deploy (prod.py defaults it True; a staging deploy sets it False to allow
+# staging's intentional rzp_test_… keys — infra/README.md).
+RAZORPAY_REQUIRE_LIVE_MODE = env.bool('RAZORPAY_REQUIRE_LIVE_MODE', default=False)
 
 # Storage
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

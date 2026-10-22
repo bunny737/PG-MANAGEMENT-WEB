@@ -19,10 +19,12 @@ SECRET_KEY_FALLBACKS = env.list('SECRET_KEY_FALLBACKS', default=[])
 # KYC_UPLOADS_ENABLED=true on the API service when that is given.
 KYC_UPLOADS_ENABLED = env.bool('KYC_UPLOADS_ENABLED', default=False)
 
-# Razorpay: never the local stub client, never an unsigned webhook, whatever the environment says. Missing or
-# placeholder keys are refused at start-up by the deploy check in apps.subscriptions.checks.
+# Razorpay: never the local stub client, never an unsigned webhook, whatever the environment says. Missing,
+# placeholder or (outside of staging) test-mode keys are refused at start-up by the deploy check in
+# apps.subscriptions.checks. infra/30-services.sh sets RAZORPAY_REQUIRE_LIVE_MODE=false for a staging deploy.
 RAZORPAY_ALLOW_STUB_CLIENT = False
 RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = False
+RAZORPAY_REQUIRE_LIVE_MODE = env.bool('RAZORPAY_REQUIRE_LIVE_MODE', default=True)
 
 # A hung SMTP server must not hold a request thread (and, on the Celery worker, a task slot) for minutes.
 EMAIL_TIMEOUT = env.int('EMAIL_TIMEOUT', default=10)

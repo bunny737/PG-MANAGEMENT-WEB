@@ -743,6 +743,10 @@ msgstr ""
 msgid "Attach a JPEG, PNG, WebP or PDF file."
 msgstr ""
 
+#: apps/core/uploads.py:43
+msgid "Attach a JPEG, PNG or PDF file."
+msgstr ""
+
 #: apps/expenses/views.py:96
 #, python-brace-format
 msgid "Use PUT /expenses/{id}/attachment/ to replace the file."

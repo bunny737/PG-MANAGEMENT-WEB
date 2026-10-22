@@ -52,9 +52,9 @@ class KycTestCase(ResidentAPITestCase):
 
 @override_settings(MEDIA_ROOT=_MEDIA_ROOT, KYC_UPLOADS_ENABLED=True, KYC_DOCUMENT_MAX_BYTES=1024)
 class KycUploadsEnabledTests(KycTestCase):
-    def test_accepts_pdf_jpeg_png_and_webp(self):
+    def test_accepts_pdf_jpeg_and_png(self):
         for index, (name, content) in enumerate(
-            [('a.pdf', PDF), ('a.jpg', JPEG), ('a.png', PNG), ('a.webp', WEBP)]
+            [('a.pdf', PDF), ('a.jpg', JPEG), ('a.png', PNG)]
         ):
             response = self.client.post(
                 reverse('resident-list'),
@@ -65,6 +65,50 @@ class KycUploadsEnabledTests(KycTestCase):
             self.assertEqual(response.status_code, 201, response.data)
             self.assertTrue(response.data['aadhaar_document'])
             self.assertTrue(response.data['pan_document'])
+
+    def test_webp_is_not_in_the_approved_kyc_set(self):
+        # apps.core.uploads also backs expenses, which does accept WebP — KYC passes its own
+        # narrower allowed_types, since only PDF/JPEG/PNG were approved for identity documents.
+        response = self.create(aadhaar_document=self.doc('a.webp', WEBP))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['aadhaar_document'][0].code, 'document_type_not_allowed')
+
+    def test_clearing_a_document_deletes_the_stored_file(self):
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        with tenant_context(self.tenant.id):
+            stored = Resident.objects.get(pk=created.data['id']).aadhaar_document
+            storage, name = stored.storage, stored.name
+        self.assertTrue(storage.exists(name))
+        with self.captureOnCommitCallbacks(execute=True):
+            cleared = self.patch(created.data['id'], {'aadhaar_document': None}, format='json')
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        self.assertFalse(storage.exists(name))
+
+    def test_replacing_a_document_deletes_the_old_file_only_after_commit(self):
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        with tenant_context(self.tenant.id):
+            stored = Resident.objects.get(pk=created.data['id']).aadhaar_document
+            storage, first = stored.storage, stored.name
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            replaced = self.patch(created.data['id'], {'aadhaar_document': self.doc('b.pdf', PDF)})
+        self.assertEqual(replaced.status_code, 200, replaced.data)
+        self.assertTrue(storage.exists(first))  # nothing is deleted before the commit
+        for callback in callbacks:
+            callback()
+        self.assertFalse(storage.exists(first))
+        with tenant_context(self.tenant.id):
+            second = Resident.objects.get(pk=created.data['id']).aadhaar_document.name
+        self.assertTrue(storage.exists(second))
+
+    def test_an_invalid_replacement_does_not_delete_the_existing_file(self):
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        with tenant_context(self.tenant.id):
+            stored = Resident.objects.get(pk=created.data['id']).aadhaar_document
+            storage, name = stored.storage, stored.name
+        with self.captureOnCommitCallbacks(execute=True):
+            bad = self.patch(created.data['id'], {'aadhaar_document': self.doc('x.pdf', EXECUTABLE)})
+        self.assertEqual(bad.status_code, 400)
+        self.assertTrue(storage.exists(name))
 
     def test_the_real_type_is_checked_not_the_filename(self):
         for field in ('aadhaar_document', 'pan_document'):
@@ -125,6 +169,9 @@ class KycUploadsDisabledTests(KycTestCase):
             created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
         url = created.data['aadhaar_document']
         self.assertTrue(url)
+        with tenant_context(self.tenant.id):
+            stored = Resident.objects.get(pk=created.data['id']).aadhaar_document
+            storage, name = stored.storage, stored.name
 
         detail = reverse('resident-detail', args=[created.data['id']])
         self.assertEqual(self.client.get(detail).data['aadhaar_document'], url)  # still readable
@@ -132,10 +179,13 @@ class KycUploadsDisabledTests(KycTestCase):
         replacement = self.patch(created.data['id'], {'aadhaar_document': self.doc('b.pdf', PDF)})
         self.assertEqual(replacement.status_code, 400)  # but not replaceable
         self.assertEqual(self.client.get(detail).data['aadhaar_document'], url)
+        self.assertTrue(storage.exists(name))
 
-        cleared = self.patch(created.data['id'], {'aadhaar_document': None}, format='json')
+        with self.captureOnCommitCallbacks(execute=True):
+            cleared = self.patch(created.data['id'], {'aadhaar_document': None}, format='json')
         self.assertEqual(cleared.status_code, 200, cleared.data)
         self.assertIsNone(cleared.data['aadhaar_document'])
+        self.assertFalse(storage.exists(name))  # clearing deletes the file, not just the reference
 
     def test_a_resident_of_another_tenant_cannot_be_touched(self):
         resident = self.create().data

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -149,7 +150,10 @@ class ResidentSerializer(serializers.ModelSerializer):
                 _('Identity document uploads are not enabled yet.'), code='kyc_uploads_disabled'
             )
         try:
-            sniff_upload(upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES, code_prefix='document')
+            sniff_upload(
+                upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES, code_prefix='document',
+                allowed_types={'image/jpeg', 'image/png', 'application/pdf'},  # approved set; no WebP (plan rev 2)
+            )
         except serializers.ValidationError as exc:
             raise serializers.ValidationError(exc.detail[field])
         return upload
@@ -159,6 +163,23 @@ class ResidentSerializer(serializers.ModelSerializer):
 
     def validate_pan_document(self, value):
         return self._validate_kyc_document(value, 'pan_document')
+
+    _KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
+
+    def update(self, instance, validated_data):
+        """Clearing or replacing a KYC file only repoints the FileField; Django never
+        deletes the old object from storage on its own. Capture it before `super().update()`
+        overwrites the reference, and only remove it once the row update has committed —
+        a failed save must not orphan-delete a file still referenced by the row."""
+        previous = [
+            (getattr(instance, field).storage, getattr(instance, field).name)
+            for field in self._KYC_FILE_FIELDS
+            if field in validated_data and getattr(instance, field)
+        ]
+        instance = super().update(instance, validated_data)
+        for storage, name in previous:
+            transaction.on_commit(lambda storage=storage, name=name: storage.delete(name))
+        return instance
 
 
 class ResidentStatusUpdateSerializer(serializers.ModelSerializer):

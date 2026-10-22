@@ -788,13 +788,23 @@ frontend always reaches a tenant's subscription via
   `config/settings/prod.py` sets `RAZORPAY_ALLOW_STUB_CLIENT = False` (so `razorpay_client.get_client()` raises
   `ImproperlyConfigured` instead of returning `None`) and forces `RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = False`
   whatever the environment says. `apps/subscriptions/checks.py` adds a **deploy system check**
-  (`subscriptions.E001`–`E005`): key id present and shaped `rzp_live_…`/`rzp_test_…`, key secret and webhook
-  secret present and not placeholder text, unsigned webhooks off. It is a check rather than a settings-import
-  guard so the migrate/bootstrap/export jobs and the image build don't need Razorpay keys; the API container
-  runs it at start-up (`backend/bin/start-api.sh`) and CI runs it with production settings and placeholder keys.
-  Tests: `apps/subscriptions/tests/test_deploy_checks.py`, `apps/core/test_prod_settings.py`.
+  (`subscriptions.E001`–`E006`): key id present and shaped `rzp_live_…`/`rzp_test_…`, key secret and webhook
+  secret present and not placeholder text, unsigned webhooks off, and (E006) live mode when required. It is a
+  check rather than a settings-import guard so the migrate/bootstrap/export jobs and the image build don't need
+  Razorpay keys; the API container runs it at start-up (`backend/bin/start-api.sh`) and CI runs it with
+  production settings and placeholder keys. Tests: `apps/subscriptions/tests/test_deploy_checks.py`,
+  `apps/core/test_prod_settings.py`.
+- [DECISION 2026-10-22] **A test-mode key (`rzp_test_…`) is itself a deploy-check error (E006), gated by a
+  setting.** Without this, a production deploy running on test-mode keys would pass the E001–E005 check
+  cleanly — it only validated the key's *shape*, not its mode — and would silently bill nobody while looking
+  fully configured. `RAZORPAY_REQUIRE_LIVE_MODE` (`config/settings/base.py`, default `False`) is overridden to
+  `True` in `prod.py`; `infra/30-services.sh` sets it back to `False` for a staging deploy, since staging
+  intentionally runs on Razorpay test keys (`infra/README.md`). A hardcoded "must be `rzp_live_…`" check in
+  prod.py would have made that staging case impossible to express without another settings module.
 
 ## Changelog
+- 2026-10-22  Deploy check E006: a test-mode Razorpay key now fails the check unless
+  `RAZORPAY_REQUIRE_LIVE_MODE=false` (staging only; see Decisions).
 - 2026-10-20  Webhook ordering policy (rule 30, migration 0014): events applied by occurrence time with terminal/manual states first, every event stored (`razorpay_webhook_events`), manual `status_hold`, ledger last-event marker, Razorpay verification for undated or contradictory events, arrears-invoice guards, 10 s Razorpay timeout. Tests: `test_webhook_policy` (27), `test_webhook_ordering`, `test_webhook_delivery`. Earlier same day: duplicate and re-ordered *charge* Duplicates are tracked by event id.
 - 2026-10-18  Public plan catalogue `GET /public/plans/` for the pglive.in marketing
   site (allow-listed serializer, `currency` + `trial_days` envelope, throttled,

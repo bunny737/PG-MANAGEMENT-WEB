@@ -97,6 +97,7 @@ POST /api/v1/auth/otp/email/request/       queue email code (silent)       Allow
 POST /api/v1/auth/otp/email/verify/        email+code → JWT pair           AllowAny (10/min)
 POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
 POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
+POST /api/v1/auth/change-password/        own password (needs current)    IsAuthenticated (5/min per user)
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
 GET /api/v1/support/                       platform support contacts       AllowAny (public, cached 5 min)
 POST /api/v1/public/contact/               website contact form -> ContactMessage   AllowAny (public, write-only, throttled 5/h per IP + 3/h per email, 16 KiB body cap)
@@ -259,6 +260,16 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
 - [OPEN 2026-10-21] **Forgot-password page is not built.** The login screen's forgot-password form is
   a simulated timeout, and the frontend has no `/reset-password` route although the reset and staff
   invite emails link to it. (`/signup` and `/verify-email` were built 2026-10-21.)
+- [DECISION 2026-10-22] **Signed-in password change** (`POST /auth/change-password/`, built for the
+  Settings → Account & Security form, which had been a simulated save). It requires the current
+  password even with a valid session, rejects a new password equal to the current one, and runs
+  Django's password validators (min length 8). It is throttled per user (`change_password`, 5/min), so
+  it can't be used to guess the current password. `set_password()` bumps `auth_version`, which
+  revokes every session including the caller's own, so the response tells the client to sign in
+  again and the frontend signs the user out and sends them to `/login`. A narrow
+  `save(update_fields=['password', 'updated_at'])` is used, and a `user.password_changed` audit
+  entry is written with no password material. Tests: `apps/accounts/tests/test_change_password.py`
+  (incl. another tenant's user is untouched).
 - [DECISION 2026-10-21] **Verification token is bound to the address.** The signed payload is
   `{uid, email}`, and `EmailVerificationSerializer.save()` compares the account's current normalized
   email under `select_for_update()` before marking it verified — so an admin email change can't land

@@ -2063,3 +2063,15 @@ msgstr ""
 #, python-format
 msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
 msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "Your current password is incorrect."
+msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "The new password must be different from your current password."
+msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "Password changed. Please sign in again with your new password."
+msgstr ""

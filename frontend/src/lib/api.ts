@@ -1249,6 +1249,15 @@ export function getCurrentTenant() {
   return apiFetch<TenantDetails>("/api/v1/tenants/current/");
 }
 
+/** Signed-in password change. The backend revokes every session on success (including this
+ * one), so the caller must sign the user out and send them to /login. */
+export function changePassword(payload: { current_password: string; new_password: string }) {
+  return apiFetch<{ detail: string }>("/api/v1/auth/change-password/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function updateTenantFiscalYearStart(fiscal_year_start_month: number) {
   return apiFetch<TenantDetails>("/api/v1/tenants/current/", {
     method: "PATCH",

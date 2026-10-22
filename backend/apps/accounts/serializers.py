@@ -2,6 +2,7 @@ import logging
 from datetime import timedelta
 
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -401,6 +402,51 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         # Completing the flow proves email ownership (also finishes staff invites).
         user.email_verified = True
         user.save(update_fields=['password', 'email_verified', 'updated_at'])
+        return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """The signed-in user changes their own password. The current password is required
+    even with a valid session, so a hijacked or left-open session can't lock the owner out."""
+
+    current_password = serializers.CharField(write_only=True, trim_whitespace=False)
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    def validate_current_password(self, value):
+        if not self.context['request'].user.check_password(value):
+            raise serializers.ValidationError(_('Your current password is incorrect.'), code='wrong_password')
+        return value
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if attrs['new_password'] == attrs['current_password']:
+            raise serializers.ValidationError(
+                {'new_password': _('The new password must be different from your current password.')},
+                code='password_unchanged',
+            )
+        try:
+            validate_password(attrs['new_password'], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'new_password': list(exc.messages)}, code='password_too_weak')
+        return attrs
+
+    def save(self, **kwargs):
+        request = self.context['request']
+        user = request.user
+        with transaction.atomic():
+            user.set_password(self.validated_data['new_password'])
+            # Narrow save: a stale instance must not overwrite concurrent profile edits.
+            # set_password() flags auth_version for a bump, so every token issued before
+            # this moment, including the caller's own, stops working.
+            user.save(update_fields=['password', 'updated_at'])
+            audit_log.record(
+                action='user.password_changed',
+                actor=user,
+                obj=user,
+                before={'password_changed': False},
+                after={'password_changed': True},
+                request=request,
+            )
         return user
 
 

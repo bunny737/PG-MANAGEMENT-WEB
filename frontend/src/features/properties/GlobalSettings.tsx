@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Building,
   ArrowRight,
@@ -14,7 +15,15 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
-import { getCurrentUser, listProperties, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
+import {
+  ApiError,
+  changePassword,
+  clearSession,
+  getCurrentUser,
+  listProperties,
+  updateTenantDefaultLanguage,
+  updateTenantFiscalYearStart,
+} from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
@@ -23,6 +32,7 @@ const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 export function GlobalSettings() {
   const t = useTranslations("settings");
   const tProperties = useTranslations("properties");
+  const router = useRouter();
   const locale = useLocale();
   const monthLabel = (month: number) =>
     new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
@@ -58,13 +68,13 @@ export function GlobalSettings() {
     setTimeout(() => setSaveAlert(null), 4000);
   };
 
-  const handleSaveSecurity = (e: React.FormEvent) => {
+  const handleSaveSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
 
     if (!currentPassword) errs.current = t("global.errCurrentRequired");
     if (!newPassword) errs.new = t("global.errNewRequired");
-    else if (newPassword.length < 6) errs.new = t("global.errNewMinLength");
+    else if (newPassword.length < 8) errs.new = t("global.errNewMinLength");
     if (newPassword !== confirmPassword) errs.confirm = t("global.errConfirmMatch");
 
     if (Object.keys(errs).length > 0) {
@@ -74,13 +84,28 @@ export function GlobalSettings() {
 
     setPasswordErrors({});
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      await changePassword({ current_password: currentPassword, new_password: newPassword });
+    } catch (err) {
+      const apiError = err instanceof ApiError ? err : null;
+      const current = apiError?.fieldError("current_password");
+      const next = apiError?.fieldError("new_password");
+      if (current || next) {
+        setPasswordErrors({ ...(current ? { current } : {}), ...(next ? { new: next } : {}) });
+      } else {
+        triggerSaveAlert("password", apiError?.message ?? t("global.passwordErrorToast"));
+      }
       setIsLoading(false);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      triggerSaveAlert("password", t("global.passwordSavedToast"));
-    }, 1500);
+      return;
+    }
+    // Success revokes every session, this one included: tell the user, then sign in again.
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    triggerSaveAlert("password", t("global.passwordSavedToast"));
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    await clearSession();
+    router.replace("/login");
   };
 
   const handleLanguageChange = async (e: React.FormEvent) => {

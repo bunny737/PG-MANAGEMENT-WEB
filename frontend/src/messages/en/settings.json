@@ -36,17 +36,18 @@
     "confirmPassword": "Confirm New Password",
     "savingCredentials": "Saving Credentials...",
     "updateCredentials": "Update Security Credentials",
-    "passwordSavedToast": "Security credentials updated successfully.",
+    "passwordSavedToast": "Password changed. For your security you are being signed out. Please sign in again with your new password.",
     "savedPrefix": "{type} Saved",
     "errCurrentRequired": "Current Password is required",
     "errNewRequired": "New Password is required",
-    "errNewMinLength": "Password must be at least 6 characters",
+    "errNewMinLength": "Password must be at least 8 characters",
     "errConfirmMatch": "Passwords do not match",
     "propertiesLoading": "Loading your properties...",
     "propertiesLoadError": "We couldn't load your properties.",
     "propertiesRetry": "Try again",
     "propertiesEmpty": "You haven't added a property yet. Add one to configure its billing policy and floor setup.",
-    "propertiesAdd": "Add property"
+    "propertiesAdd": "Add property",
+    "passwordErrorToast": "Couldn't change your password. Please try again."
   },
   "subscription": {
     "loading": "Loading your plan...",

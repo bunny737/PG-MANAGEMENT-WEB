@@ -22,6 +22,7 @@ from .models import User
 from .serializers import (
     EmailOtpRequestSerializer,
     EmailOtpVerifySerializer,
+    ChangePasswordSerializer,
     EmailVerificationSerializer,
     LoginSerializer,
     MeSerializer,
@@ -170,6 +171,22 @@ class PasswordResetConfirmView(_AnonPostView):
     serializer_class = PasswordResetConfirmSerializer
     throttle_scope = 'password_reset'
     success_message = _('Password updated. You can log in now.')
+
+
+class ChangePasswordView(APIView):
+    """Signed-in password change. Revokes every session (auth_version), including this one:
+    the client signs in again with the new password."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'change_password'
+
+    @extend_schema(request=ChangePasswordSerializer, responses={200: None})
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': _('Password changed. Please sign in again with your new password.')})
 
 
 class MeView(RetrieveUpdateAPIView):

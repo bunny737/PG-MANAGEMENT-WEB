@@ -165,6 +165,12 @@ jobs:
 
   secrets-scan:
     runs-on: ubuntu-latest
+    # On a pull_request event, gitleaks-action calls the GitHub API to list the PR's commits
+    # (ScanPullRequest); the workflow-level `contents: read` alone gets a 403
+    # ("Resource not accessible by integration") on that call.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:

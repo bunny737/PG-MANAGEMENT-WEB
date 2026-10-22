@@ -67,7 +67,18 @@ describe("session purge vs Cache Storage", () => {
 });
 
 describe("marketing pages stay out of the worker's page cache", () => {
-  test.each(["/", "/features", "/pricing", "/app", "/contact", "/privacy", "/terms", "/pricing/", "/features/x"])(
+  test.each([
+    "/",
+    "/features",
+    "/pricing",
+    "/app",
+    "/contact",
+    "/privacy",
+    "/terms",
+    "/refund-policy",
+    "/pricing/",
+    "/features/x",
+  ])(
     "%s is a marketing path",
     (path) => expect(isMarketingPath(path)).toBe(true)
   );

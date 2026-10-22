@@ -32,6 +32,10 @@
       "title": "సేవా నిబంధనలు — PGLive",
       "description": "మీరు PGLive ఉపయోగించినప్పుడు వర్తించే నిబంధనలు."
     },
+    "refund": {
+      "title": "రీఫండ్ & రద్దు విధానం — PGLive",
+      "description": "PGLive సబ్‌స్క్రిప్షన్‌లకు రద్దు, ప్లాన్ మార్పులు మరియు రీఫండ్‌లు ఎలా పనిచేస్తాయి."
+    },
     "notFound": {
       "title": "పేజీ కనుగొనబడలేదు — PGLive"
     }
@@ -423,6 +427,7 @@
     "legal": "చట్టపరమైన",
     "privacy": "గోప్యతా విధానం",
     "terms": "సేవా నిబంధనలు",
+    "refund": "రీఫండ్ & రద్దు విధానం",
     "copyright": "© {year} {company}. అన్ని హక్కులూ ప్రత్యేకించబడ్డాయి."
   },
   "notFound": {
@@ -431,30 +436,38 @@
     "home": "హోమ్‌కు తిరిగి వెళ్ళండి"
   },
   "legal": {
-    "draftNotice": "Draft pending legal review. This text may change before launch.",
     "privacy": {
       "title": "Privacy Policy",
-      "intro": "This policy explains what information PGLive collects, why, and the choices you have. \"We\" means {company}.",
+      "updated": "Last updated: 22 October 2026",
+      "intro": "This policy explains what personal information PGLive collects, why we collect it, who can see it and the choices you have. \"We\" means {company}, which provides PGLive.",
       "sections": [
         {
+          "heading": "Who is responsible for your data",
+          "body": "For information about you and your staff (your account, business and billing details) we decide how it is used, so we are responsible for it. For the records you enter about your residents, you decide what to collect and why. We store and process those records for you, only to provide PGLive."
+        },
+        {
           "heading": "Information we collect",
-          "body": "Account details (name, email, phone, password), details of your business and properties, and the records you enter about residents, such as contact details, emergency contacts and ID documents. We also collect basic technical data such as device and app version."
+          "body": "Account details: name, email address, phone number, role and a securely stored (hashed) password. Business details: your business name and the properties, rooms and beds you set up, including addresses. Resident records you enter: names, contact details, emergency contacts, ID details such as Aadhaar or PAN numbers and uploaded ID documents (if you choose to add them), and tenancy, rent, payment and complaint records. Billing records: your plan, invoices, and payment status and reference ids from Razorpay. Technical data: device and app version, IP address, language and error logs."
+        },
+        {
+          "heading": "Why we use it",
+          "body": "To create and run your account, provide the features you use, send invoices, receipts and service messages (such as sign-in and verification codes), take subscription payments, keep the service secure, prevent fraud and misuse, give support, meet legal duties and improve PGLive. We do not sell your data and we do not use it for third-party advertising."
         },
         {
           "heading": "Contact form",
           "body": "If you write to us through the contact form we store your name, email address, phone number (if you give one), your message, the language you were using and your IP address, so that we can reply and keep spam out. We use it only to answer you and to keep a record of the conversation, and we delete it when you ask."
         },
         {
-          "heading": "How we use it",
-          "body": "To provide the service, send invoices and notifications, keep accounts secure, prevent misuse, provide support and improve the product."
-        },
-        {
           "heading": "Your residents' information",
-          "body": "You decide what you record about your residents. You are responsible for having a lawful basis and any needed consent to collect it. We process it on your behalf and do not use it for our own marketing."
+          "body": "You decide what you record about your residents. You are responsible for telling them what you collect and why, and for having a lawful basis and any needed consent. We process it on your behalf, only to provide PGLive, and do not use it for our own marketing."
         },
         {
-          "heading": "Browser storage and cookies",
-          "body": "We store your sign-in session and preferences in your browser's local storage, and your language choice in a cookie named NEXT_LOCALE. These are needed for the service to work."
+          "heading": "Aadhaar, PAN and ID documents",
+          "body": "Collect these only if you need them and the law allows it. Uploaded documents are kept in private storage and are shown only through short-lived links to staff who have access. We do not use them for any other purpose. Document uploads may be unavailable at times."
+        },
+        {
+          "heading": "Cookies and browser storage",
+          "body": "We use a few cookies that the service needs to work: sign-in session cookies (which scripts on the page cannot read) and a language cookie named NEXT_LOCALE. We also keep small preferences, such as your selected property, in your browser's local storage. The installed web app may keep recently viewed data on your device so it can open offline, and clears it when you sign out. We do not use advertising or tracking cookies, and we do not use third-party analytics."
         },
         {
           "heading": "Mobile app",
@@ -462,45 +475,70 @@
         },
         {
           "heading": "Payments",
-          "body": "Subscription payments are processed by Razorpay. We do not store your card or UPI details. Resident rent is not collected through PGLive."
+          "body": "Subscription payments are processed by Razorpay, which handles your card, UPI or bank details under its own privacy policy. We do not store them. We keep only the payment status, amount and reference ids that Razorpay sends us. For automatic renewals, your bank or Razorpay tells you before each debit, and you can cancel the automatic payment from your bank or UPI app. Resident rent is not collected through PGLive."
         },
         {
           "heading": "Notifications",
-          "body": "We send service emails and, where you allow it, push notifications about your account, invoices and receipts."
+          "body": "We send service emails and, where you allow it, push notifications about your account, invoices and receipts. These are service messages, not advertising."
         },
         {
-          "heading": "Service providers",
-          "body": "We use providers for hosting and file storage, email delivery, push notifications and payments. They process data only to provide those services to us."
+          "heading": "Service providers and where data is stored",
+          "body": "We use Google Cloud for hosting and file storage (in Mumbai, India), an email delivery provider, Google Firebase for push notifications, Google Maps for address search when you set a property location, Sentry for error reports, and Razorpay for payments. They process data only to provide those services to us, and some may process limited data outside India. We share data with authorities only when the law requires it."
         },
         {
-          "heading": "Retention",
-          "body": "We keep your data while your account is active. After cancellation we keep it for a limited period (currently 30 days) so you can come back, and then it becomes eligible for deletion."
+          "heading": "Security",
+          "body": "Each business's data is kept separate at the database level, connections are encrypted, important changes are recorded in an audit log, and access is limited by role. No system is perfectly secure. If a breach affects your personal data, we will tell you and the authorities as the law requires."
         },
         {
-          "heading": "Your rights and contact",
-          "body": "You can ask to access, correct or delete your data. Use the contact details on our Contact page."
+          "heading": "How long we keep it",
+          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can ask us to delete your data at any time."
+        },
+        {
+          "heading": "Your rights",
+          "body": "You can ask us for a summary of the personal data we hold about you, ask us to correct or delete it, withdraw a consent you gave, and name someone to exercise these rights for you if you cannot. If you are a resident, please ask your PG owner first, because they decide how your records are used. You can also contact us and we will help."
+        },
+        {
+          "heading": "Children",
+          "body": "PGLive is for businesses and is not meant to be used by anyone under 18. If you record residents under 18, you are responsible for getting a parent's or guardian's consent."
+        },
+        {
+          "heading": "Complaints and contact",
+          "body": "For any privacy question or complaint, use the contact details on our Contact page. We confirm complaints within 48 hours and aim to resolve them within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India under the Digital Personal Data Protection Act, 2023, once it is able to take complaints."
         },
         {
           "heading": "Changes",
-          "body": "We will post any changes to this policy on this page."
+          "body": "We will post any changes to this policy on this page and update the date above. For significant changes we will also tell you by email or in the app."
         }
       ]
     },
     "terms": {
       "title": "Terms of Service",
+      "updated": "Last updated: 22 October 2026",
       "intro": "These terms apply when you use PGLive, provided by {company}. By creating an account or using the service you agree to them.",
       "sections": [
         {
           "heading": "The service",
-          "body": "PGLive is software for managing PG and hostel properties, residents, billing and operations. Features are described on our website and may change over time."
+          "body": "PGLive is software for managing PG and hostel properties, residents, billing and operations. Features are described on our website and may change over time. PGLive is a record-keeping and management tool: it does not collect rent from your residents or hold your money."
+        },
+        {
+          "heading": "Who can use PGLive",
+          "body": "PGLive is for people and businesses that run PGs, hostels and similar properties. You must be at least 18 and able to enter into a contract. If you sign up for a business, you confirm that you can bind it to these terms."
         },
         {
           "heading": "Accounts",
-          "body": "You are responsible for your account, for keeping your password secure and for the actions of the staff you add."
+          "body": "You are responsible for your account, for keeping your password secure and for the actions of the staff you add. Tell us promptly if you think someone has used your account without permission."
         },
         {
           "heading": "Free trial and subscription",
-          "body": "New accounts start with a free trial. After that, a fixed monthly plan is billed monthly in advance through Razorpay and renews automatically until cancelled. A change to another fixed plan takes effect once the new plan is paid; there is no proration or refund of the previous period. A per-bed plan starts when you select it and is billed monthly in arrears for the beds you had, prorated by day."
+          "body": "New accounts start with a free trial. After that, a fixed monthly plan is billed monthly in advance through Razorpay and renews automatically until cancelled. A change to another fixed plan takes effect once the new plan is paid; there is no proration or refund of the previous period. A per-bed plan starts when you select it and is billed monthly in arrears for the beds you had, prorated by day. Prices are in Indian rupees and shown on our pricing page. If taxes apply, they are shown before you pay."
+        },
+        {
+          "heading": "Automatic payments",
+          "body": "Fixed monthly plans renew using a recurring payment that you authorise through Razorpay (card, UPI AutoPay or e-mandate). Your bank or Razorpay tells you before each debit, and you can cancel the automatic payment at any time from your bank or UPI app. If you cancel it without telling us, the next payment will fail and the non-payment terms below apply. We will give you notice before a price change takes effect for you."
+        },
+        {
+          "heading": "Cancellation and refunds",
+          "body": "You can cancel at any time by contacting us. How cancellation, plan changes and refunds work is set out in our Refund & Cancellation Policy, which is part of these terms."
         },
         {
           "heading": "Non-payment",
@@ -508,27 +546,98 @@
         },
         {
           "heading": "Your data",
-          "body": "You own the data you enter. You grant us permission to process it to provide the service. You are responsible for the lawfulness of the resident data you collect."
+          "body": "You own the data you enter. You grant us permission to process it to provide the service, as described in our Privacy Policy. You can ask us for a copy of your data."
+        },
+        {
+          "heading": "Resident data and your legal duties",
+          "body": "You decide what to collect about your residents. You must tell them what you collect and why, get any consent the law requires, collect Aadhaar or other ID details only where the law allows it, and follow the Digital Personal Data Protection Act, 2023 and any other law that applies to you. We process this data only on your instructions, to provide PGLive."
         },
         {
           "heading": "Acceptable use",
-          "body": "Do not misuse the service, attempt to access other businesses' data, or use it for unlawful purposes."
+          "body": "Do not misuse the service, attempt to access other businesses' data, interfere with or overload the service, scrape it, or use it for unlawful purposes."
         },
         {
-          "heading": "Availability",
-          "body": "We work to keep the service available but do not guarantee uninterrupted operation."
+          "heading": "Our rights in PGLive",
+          "body": "PGLive, its software, design and branding belong to us or our licensors. While your account is in good standing we give you a limited, non-exclusive right to use it for your business. You may not copy, resell or reverse engineer it."
+        },
+        {
+          "heading": "Availability and support",
+          "body": "We work to keep the service available but do not guarantee uninterrupted operation. You can reach support through the details on our Contact page."
+        },
+        {
+          "heading": "Suspension and ending",
+          "body": "We may suspend or close an account for non-payment, unlawful use or breach of these terms, and we will give notice where we reasonably can. You can stop using PGLive at any time. After an account is closed, your data is handled as described in our Privacy Policy."
+        },
+        {
+          "heading": "Information you rely on",
+          "body": "PGLive calculates and records rent, deposits and dues from the information you enter. You remain responsible for checking it, for your agreements with residents and for your own accounting, tax and legal compliance. PGLive does not give legal, tax or accounting advice."
         },
         {
           "heading": "Liability",
-          "body": "To the extent permitted by law, our liability is limited to the fees you paid in the three months before the claim."
+          "body": "To the extent permitted by law, we are not liable for indirect or consequential loss or loss of profit, and our total liability is limited to the fees you paid in the three months before the claim. Nothing in these terms limits a liability that the law does not allow to be limited."
         },
         {
-          "heading": "Governing law",
-          "body": "These terms are governed by the laws of India."
+          "heading": "Governing law and disputes",
+          "body": "These terms are governed by the laws of India. Please contact us first so we can try to resolve any dispute. Courts at the place of our registered office have jurisdiction, subject to any rights you have under the law."
         },
         {
           "heading": "Changes and contact",
-          "body": "We may update these terms and will post the new version here. Contact us using the details on our Contact page."
+          "body": "We may update these terms. We will post the new version here and tell you about significant changes by email or in the app. If you keep using PGLive after a change takes effect, you accept it. Contact us using the details on our Contact page."
+        }
+      ]
+    },
+    "refund": {
+      "title": "Refund & Cancellation Policy",
+      "updated": "Last updated: 22 October 2026",
+      "intro": "This policy explains how cancellation, plan changes and refunds work for PGLive subscriptions, provided by {company}.",
+      "sections": [
+        {
+          "heading": "What this covers",
+          "body": "This policy covers the fees you pay us for PGLive, charged through Razorpay. It does not cover rent, deposits or any other money between you and your residents: PGLive records those but never collects or refunds them."
+        },
+        {
+          "heading": "Pricing and charges",
+          "body": "Plan prices are in Indian rupees and shown on our pricing page. A fixed monthly plan is charged each month in advance. A per-bed plan is billed after each month ends, for the beds you had, prorated by day. If taxes apply, they are shown before you pay."
+        },
+        {
+          "heading": "Free trial",
+          "body": "New accounts start with a free trial and no card is needed. Nothing is charged unless you choose a plan and pay."
+        },
+        {
+          "heading": "Cancelling",
+          "body": "To cancel, write to us through the Contact page from the email address on your account. We stop future renewals, and your plan stays active until the end of the period you have already paid for. You can also cancel the automatic payment from your bank or UPI app, but please tell us too, or the next payment will fail and your account will be paused."
+        },
+        {
+          "heading": "Refunds for a period already paid",
+          "body": "You can use PGLive for the whole period you have paid for, so we do not refund a period that has started, or the unused part of it, unless this policy or the law says otherwise."
+        },
+        {
+          "heading": "Changing plans",
+          "body": "A change to another fixed plan takes effect once the new plan is paid, and the old plan is cancelled at that point. There is no proration or refund of the previous period. You can move to a smaller plan only if the beds you have set up fit within it."
+        },
+        {
+          "heading": "Failed payments",
+          "body": "If a payment fails we allow a short grace period. After that the account is paused and sign-in is blocked, while your data is kept. Access returns once the payment goes through."
+        },
+        {
+          "heading": "When we do refund",
+          "body": "We refund a charge in full if it was taken twice, if it was more than the price of the plan you chose, if it was taken after we confirmed your cancellation, or if the payment went through but we could not apply the plan to your account."
+        },
+        {
+          "heading": "How refunds are paid",
+          "body": "Approved refunds go back to the original payment method through Razorpay. After we start a refund, banks and payment providers usually take 5 to 7 working days to show it."
+        },
+        {
+          "heading": "How to ask for a refund",
+          "body": "Contact us through the Contact page with the email on your account, the date and amount of the charge and, if you have it, the Razorpay payment id. We will confirm your request within 2 working days and tell you the outcome within 7 working days."
+        },
+        {
+          "heading": "Disputes",
+          "body": "Please contact us before raising a dispute with your bank so we can fix it quickly. If we cannot resolve it, you keep the right to dispute a charge with your bank or card issuer."
+        },
+        {
+          "heading": "Changes",
+          "body": "We will post any changes to this policy on this page and update the date above."
         }
       ]
     }

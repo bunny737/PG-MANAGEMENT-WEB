@@ -77,6 +77,11 @@ export async function MarketingFooter() {
                 {t("footer.terms")}
               </Link>
             </li>
+            <li>
+              <Link href="/refund-policy" className="hover:text-ink-inverse">
+                {t("footer.refund")}
+              </Link>
+            </li>
           </ul>
         </Container>
       </div>

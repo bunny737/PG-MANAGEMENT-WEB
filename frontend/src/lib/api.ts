@@ -459,6 +459,34 @@ export function updateProperty(id: string, payload: Partial<PropertyPayload>) {
   });
 }
 
+export interface PropertySettings {
+  id: string;
+  room_transfer_rent_timing: "next_billing_cycle" | "immediate";
+  late_payment_penalty_type: "none" | "fixed" | "percentage";
+  /** Decimal string (₹ for fixed, % for percentage); null when no penalty is set. */
+  penalty_value: string | null;
+  penalty_grace_days: number;
+  penalty_applies_to: "full_invoice" | "outstanding_balance";
+  penalty_compounding: "one_time" | "monthly";
+  created_at: string;
+  updated_at: string;
+}
+
+export type PropertySettingsPayload = Partial<Omit<PropertySettings, "id" | "created_at" | "updated_at">>;
+
+export function getPropertySettings(propertyId: string) {
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  return apiFetch<PropertySettings>(`/api/v1/properties/${propertyId}/settings/`);
+}
+
+export function updatePropertySettings(propertyId: string, payload: PropertySettingsPayload) {
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
+  return apiFetch<PropertySettings>(`/api/v1/properties/${propertyId}/settings/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function uploadPropertyImage(propertyId: string, file: File) {
   if (!isUUID(propertyId)) return Promise.reject(new ApiError(400, { detail: "Invalid property ID" }));
   const formData = new FormData();

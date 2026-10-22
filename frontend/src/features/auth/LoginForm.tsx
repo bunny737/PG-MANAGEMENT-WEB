@@ -663,18 +663,6 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
             </Link>
           </p>
         )}
-
-        {/* Demo Credentials Helper */}
-        <div className="rounded-xl border border-border bg-surface-card p-4 text-xs space-y-1">
-          <p className="font-semibold text-ink">{t("login.demoTitle")}</p>
-          <div className="grid grid-cols-[auto_1fr] gap-x-2 text-ink-muted">
-            <span className="font-medium text-ink-faint">{t("login.demoPasswordTab")}</span>
-            <span>{t("login.demoPasswordText")}</span>
-            <span className="font-medium text-ink-faint">{t("login.demoPhoneTab")}</span>
-            <span>{t("login.demoPhoneText")}</span>
-          </div>
-        </div>
-
       </div>
     </div>
   );

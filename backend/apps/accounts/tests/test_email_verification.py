@@ -103,6 +103,17 @@ class VerificationTokenTests(VerificationTestCase):
         token = self.extract_query_param(body, 'token')
         self.assertEqual(self.verify(token).status_code, 200)
 
+    def test_email_has_a_branded_html_part_with_button_and_copy_link(self):
+        send_verification_email(self.owner)
+        message = mail.outbox[0]
+        (html, mimetype), = message.alternatives
+        self.assertEqual(mimetype, 'text/html')
+        url = '/verify-email#token='
+        self.assertIn(url, message.body)  # plain-text fallback keeps the link
+        self.assertIn('Verify email address', html)  # the button
+        self.assertIn('Copy and paste this link', html)  # fallback instruction
+        self.assertEqual(html.count(url), 3)  # button href + fallback link's href and visible text
+
     def test_email_is_written_in_the_users_language(self):
         User.objects.filter(pk=self.owner.pk).update(language_code='te')
         send_verification_email(self.refresh(self.owner))

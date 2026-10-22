@@ -63,7 +63,7 @@ describe.each([
 });
 
 describe("cookies and redirects (unchanged behaviour)", () => {
-  test.each(["/", "/features", "/pricing/", "/app", "/contact", "/privacy", "/terms"])(
+  test.each(["/", "/features", "/pricing/", "/app", "/contact", "/privacy", "/terms", "/refund-policy"])(
     "anonymous marketing page %s gets no Set-Cookie and no redirect",
     (path) => {
       setEnv("report-only");

@@ -6,12 +6,13 @@ import dashboard from "@/messages/en/dashboard.json";
 import properties from "@/messages/en/properties.json";
 import pwa from "@/messages/en/pwa.json";
 import residents from "@/messages/en/residents.json";
+import settings from "@/messages/en/settings.json";
 import status from "@/messages/en/status.json";
 import vacancies from "@/messages/en/vacancies.json";
 
 const LOCALE = "en";
 
-export const EN_MESSAGES = { common, dashboard, properties, pwa, residents, status, vacancies };
+export const EN_MESSAGES = { common, dashboard, properties, pwa, residents, settings, status, vacancies };
 
 /** Renders with the English catalogs and a fresh, non-retrying TanStack client. */
 export function renderWithIntl(ui: React.ReactElement) {

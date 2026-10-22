@@ -4,35 +4,31 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building,
-  Settings,
-  ShieldAlert,
   ArrowRight,
   ShieldCheck,
   CreditCard,
   Layers,
-  Home,
   Lock,
   Globe
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { mockProperties } from "./mock-properties";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
-import { getCurrentUser, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
+import { getCurrentUser, listProperties, updateTenantDefaultLanguage, updateTenantFiscalYearStart } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export function GlobalSettings() {
   const t = useTranslations("settings");
+  const tProperties = useTranslations("properties");
   const locale = useLocale();
   const monthLabel = (month: number) =>
     new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
   const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
 
-  // Portal setup states
-  const [portalName, setPortalName] = useState("StaysManager Premium");
-  const [notificationEmail, setNotificationEmail] = useState("support@staysmanager.in");
-  const [currency, setCurrency] = useState("INR");
+  const properties = useQuery({ queryKey: queryKeys.properties.list, queryFn: listProperties });
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
@@ -60,15 +56,6 @@ export function GlobalSettings() {
   const triggerSaveAlert = (type: string, message: string) => {
     setSaveAlert({ type, message });
     setTimeout(() => setSaveAlert(null), 4000);
-  };
-
-  const handleSavePortal = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      triggerSaveAlert("portal", t("global.portalSavedToast"));
-    }, 1000);
   };
 
   const handleSaveSecurity = (e: React.FormEvent) => {
@@ -178,17 +165,45 @@ export function GlobalSettings() {
 
       {/* 1. Property Setup Tab */}
       {activeTab === "property" && (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 items-start animate-fade-in">
-          {/* Left Column: Property Configuration Profiles */}
-          <div className="md:col-span-7 space-y-6">
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
-                <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
-              </div>
+        <div className="animate-fade-in">
+          <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
+              <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
+            </div>
 
+            {properties.isPending && (
+              <p className="text-xs text-ink-muted">{t("global.propertiesLoading")}</p>
+            )}
+
+            {properties.isError && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-page/35 p-4 text-xs text-ink-muted">
+                <span>{t("global.propertiesLoadError")}</span>
+                <button
+                  type="button"
+                  onClick={() => properties.refetch()}
+                  className="font-semibold text-accent hover:text-accent-hover cursor-pointer"
+                >
+                  {t("global.propertiesRetry")}
+                </button>
+              </div>
+            )}
+
+            {properties.isSuccess && properties.data.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
+                <p className="text-xs text-ink-muted">{t("global.propertiesEmpty")}</p>
+                <Link
+                  href="/properties/add"
+                  className="inline-flex rounded-xl bg-accent px-4 py-2 text-xs font-bold text-ink-inverse hover:bg-accent-hover transition-colors"
+                >
+                  {t("global.propertiesAdd")}
+                </Link>
+              </div>
+            )}
+
+            {properties.isSuccess && properties.data.length > 0 && (
               <div className="space-y-5">
-                {mockProperties.map((p) => (
+                {properties.data.map((p) => (
                   <div
                     key={p.id}
                     className="border border-border rounded-2xl p-5 bg-surface-card shadow-sm space-y-4 hover:shadow-md transition-shadow"
@@ -200,7 +215,9 @@ export function GlobalSettings() {
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-ink">{p.name}</h4>
-                        <p className="text-[10px] text-ink-muted">{p.type} · {p.city}, {p.state}</p>
+                        <p className="text-[10px] text-ink-muted">
+                          {tProperties(`types.${p.property_type as "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living"}`)} · {p.city}, {p.state}
+                        </p>
                       </div>
                     </div>
 
@@ -227,92 +244,11 @@ export function GlobalSettings() {
                         </div>
                         <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
                       </Link>
-
-                      <Link
-                        href={`/properties/${p.id}/floors/${p.id === "skyline" ? "4" : "1"}/rooms`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Home className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.roomsInventory")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Right Column: General Setup */}
-          <div className="md:col-span-5 space-y-6">
-            <form onSubmit={handleSavePortal} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
-                <Settings className="size-4.5 text-ink-muted" />
-                {t("global.portalSetup")}
-              </h2>
-
-              <div className="space-y-1.5">
-                <label htmlFor="portalName" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.brandTitle")}
-                </label>
-                <input
-                  id="portalName"
-                  type="text"
-                  value={portalName}
-                  onChange={(e) => setPortalName(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.notificationEmail")}
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={notificationEmail}
-                  onChange={(e) => setNotificationEmail(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="currency" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.baseCurrency")}
-                </label>
-                <select
-                  id="currency"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                >
-                  <option value="USD">{t("global.currencyUSD")}</option>
-                  <option value="INR">{t("global.currencyINR")}</option>
-                  <option value="EUR">{t("global.currencyEUR")}</option>
-                </select>
-              </div>
-
-              <div className="bg-slate-50 border border-border/80 p-3 rounded-xl flex gap-2 text-[10px] text-ink-muted">
-                <ShieldAlert className="size-4.5 text-amber-500 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
-                  {t("global.privilegesWarning")}
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
-              >
-                {isLoading ? t("global.savingSetup") : t("global.saveSetup")}
-              </button>
-            </form>
+            )}
           </div>
         </div>
       )}

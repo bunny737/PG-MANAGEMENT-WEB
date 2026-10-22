@@ -37,6 +37,7 @@ export const queryKeys = {
     all: ["properties"] as const,
     list: ["properties", "list"] as const,
     detail: (id: string) => ["properties", "detail", id] as const,
+    settings: (id: string) => ["properties", "settings", id] as const,
     layout: (id: string, period?: string) => ["properties", "layout", id, period] as const,
   },
   rooms: {

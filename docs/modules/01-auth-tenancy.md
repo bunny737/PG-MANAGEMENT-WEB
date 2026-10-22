@@ -58,7 +58,7 @@ Table: audit_logs                   (RLS ENFORCED — first RLS table)
   before jsonb · after jsonb · ip_address · created_at
 
 Table: platform_config              (singleton, id=1)
-  trial_days (default 45; PRD says 60, owner changed it 2026-10-18) · payment_grace_days (default 5) · updated_at
+  trial_days (default 30; PRD says 60, owner changed it to 45 on 2026-10-18 and to 30 on 2026-10-22) · payment_grace_days (default 5) · updated_at
   trial_reminder_first_days_before (default 15)   -- added by Module 14
   trial_reminder_second_days_before (default 5)   -- added by Module 14
   support_email · support_phone · support_whatsapp · support_website · support_hours  -- blank = channel not offered
@@ -556,3 +556,9 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   (`devices.middleware.EXEMPT_PREFIXES`) so an outdated build or a maintenance window can still show it.
   Read with `filter(pk=1).first()`, never `PlatformConfig.get()`, so a public GET never writes.
   Tests: `apps/core/test_support.py`. These are platform-wide contacts, not per-property/PG contacts.
+- [DECISION 2026-10-22] **Free trial is 30 days** (owner decision, was 45). `PlatformConfig.trial_days`
+  default is now 30, and migration `core.0008` moves an existing row from 45 to 30 — only when it
+  still holds 45, so a value a Super Admin chose is never overwritten (invariant 10). It depends on
+  `subscriptions.0006`, which seeds 45, so it always runs after it. Reverse is a no-op. Existing
+  tenants keep their `trial_ends_at`; the Module 14 reminders (15 and 5 days before expiry) are
+  offsets, so they now fire on day 15 and 25.

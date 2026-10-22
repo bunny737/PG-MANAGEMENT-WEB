@@ -328,7 +328,7 @@ frontend always reaches a tenant's subscription via
 25. **Launch lineup (data, seeded by migration 0006):** Basic — flat ₹149/month,
     `max_beds=500`, the trial plan; Unlimited — flat ₹249/month,
     `max_beds=null`. Properties and residents are uncapped on both. The trial
-    is 45 days (`PlatformConfig.trial_days`).
+    was 45 days (`PlatformConfig.trial_days`); now 30 (migration `core.0008`, see Decisions).
 26. **A flat plan change is pending until paid, then promoted.** The first
     `subscription.activated`/`charged` webhook on a pending Razorpay
     subscription (`_promote_ledger_row`, under the Subscription lock) makes its

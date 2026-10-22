@@ -45,13 +45,13 @@ class SignupTests(AuthAPITestCase):
         expected_end = timezone.now() + timedelta(days=30)
         self.assertLess(abs(tenant.trial_ends_at - expected_end), timedelta(minutes=5))
 
-    def test_default_trial_is_45_days(self):
-        # The migration-seeded PlatformConfig value (owner decision 2026-10-18).
+    def test_default_trial_is_30_days(self):
+        # The migrated PlatformConfig value (owner decision 2026-10-22; 45 before that).
         response = self.client.post(reverse('auth-signup'), signup_payload())
 
         self.assertEqual(response.status_code, 201)
         tenant = Tenant.objects.get(name='Sunrise PG')
-        expected_end = timezone.now() + timedelta(days=45)
+        expected_end = timezone.now() + timedelta(days=30)
         self.assertLess(abs(tenant.trial_ends_at - expected_end), timedelta(minutes=5))
 
     def test_signup_sends_verification_email_and_writes_audit_log(self):

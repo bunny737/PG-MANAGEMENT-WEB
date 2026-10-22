@@ -160,7 +160,8 @@
       "notUploaded": "Not uploaded",
       "replace": "Replace",
       "uploadedToast": "Document uploaded",
-      "errUploadFailed": "Couldn't upload the document. Please try again."
+      "errUploadFailed": "Couldn't upload the document. Please try again.",
+      "uploadsDisabled": "New document uploads are switched off for now. Documents already on file can still be viewed."
     },
     "maintenance": {
       "heading": "Maintenance & Service Requests",

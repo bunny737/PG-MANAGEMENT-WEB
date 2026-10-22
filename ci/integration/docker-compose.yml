@@ -30,6 +30,14 @@ services:
       DB_USER: app_user
       DB_PASSWORD: apppw
       ALLOWED_HOSTS: api.pglive.in
+      # The image's start-up deploy check (backend/bin/start-api.sh) needs these. Valid in shape, useless
+      # against Razorpay; the webhook below only reaches an unknown subscription, so no Razorpay call is made.
+      FRONTEND_BASE_URL: https://www.pglive.in
+      RAZORPAY_KEY_ID: rzp_test_IntegrationOnly00
+      RAZORPAY_KEY_SECRET: integration-razorpay-secret-0123456789
+      # This fixture key is test-mode, like staging's (infra/README.md) — without this, the deploy
+      # check's E006 (apps.subscriptions.checks) refuses the key and the api container never starts.
+      RAZORPAY_REQUIRE_LIVE_MODE: "false"
       REDIS_URL: redis://unreachable:6379/0
       REDIS_CACHE_URL: redis://unreachable:6379/1
     depends_on:

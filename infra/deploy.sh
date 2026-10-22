@@ -8,7 +8,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 source "$here/env.sh" "$1"
-SHA="${2:?git sha}"
+SHA="${2:?git sha}"; export SHA
 g() { gcloud --project "$PROJECT" "$@"; }
 export API_IMAGE="$AR_REPO/pglive-api:$SHA" WEB_IMAGE="$AR_REPO/pglive-web:$SHA"
 
@@ -25,7 +25,8 @@ docker build -f frontend/Dockerfile.prod -t "$WEB_IMAGE" \
   --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}" \
   --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-}" \
   --build-arg NEXT_PUBLIC_FIREBASE_VAPID_KEY="${NEXT_PUBLIC_FIREBASE_VAPID_KEY:-}" \
-  --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}" frontend
+  --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}" \
+  --build-arg NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID="${NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID:-}" frontend
 docker push "$API_IMAGE"; docker push "$WEB_IMAGE"
 
 if [[ "$ENVIRONMENT" == prod ]]; then

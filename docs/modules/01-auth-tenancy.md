@@ -95,9 +95,9 @@ POST /api/v1/auth/otp/request/             issue OTP (silent)              Allow
 POST /api/v1/auth/otp/verify/              phone+code → JWT pair           AllowAny (10/min)
 POST /api/v1/auth/otp/email/request/       queue email code (silent)       AllowAny (3/min per IP + 5/h per email)
 POST /api/v1/auth/otp/email/verify/        email+code → JWT pair           AllowAny (10/min)
-POST /api/v1/auth/password-reset/          silent reset email              AllowAny (5/min)
-POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny
-POST /api/v1/auth/change-password/        own password (needs current)    IsAuthenticated (5/min per user)
+POST /api/v1/auth/password-reset/          queue reset email (silent)     AllowAny (5/min per IP + 5/h per email)
+POST /api/v1/auth/password-reset/confirm/  set pw + mark email verified    AllowAny (10/min, own scope)
+POST /api/v1/auth/password/change/         current+new pw → new JWT pair   IsAuthenticated (5/min per user)
 GET|PATCH /api/v1/auth/me/                 profile + tenant + permissions  IsAuthenticated
 GET /api/v1/support/                       platform support contacts       AllowAny (public, cached 5 min)
 POST /api/v1/public/contact/               website contact form -> ContactMessage   AllowAny (public, write-only, throttled 5/h per IP + 3/h per email, 16 KiB body cap)
@@ -121,7 +121,7 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
    A code verifies only on the channel it was issued for.
 5. Password-reset confirm also sets `email_verified` (completes staff invites).
 6. Staff accounts restricted to manager/receptionist roles; created without a
-   password + invite email; deactivation blocks login; no hard delete.
+   password + invite email (queued after commit); deactivation blocks login; no hard delete.
 7. Staff queries are tenant-scoped (cross-tenant detail → 404).
 8. Role/deactivation changes and staff creation write audit logs (before/after).
 9. RLS: tenant context sees only its rows; no context sees none; super admin
@@ -151,6 +151,25 @@ JWT claims: `tenant_id`, `role`, `language`, `auth_version`. Access 15 min / ref
     never recorded as a sent notification. Admin "Send verification email" / "Mark email verified"
     actions and admin email changes are audited; an admin email change resets verification and bumps
     `auth_version`. Tests: `apps/accounts/tests/test_email_verification.py`.
+17. Password reset: the request endpoint answers every address identically and only queues
+    `send_password_reset_task`; the worker mails a link only to an active tenant user (never a Super
+    Admin) whose tenant isn't suspended/cancelled. The link is `/reset-password#uid=…&token=…`
+    (staff invites add `&invite=1`), valid 24 h (`PASSWORD_RESET_TIMEOUT`) and single-use (Django's
+    token is bound to the password hash). Confirmation runs in one transaction that locks the user row
+    and **rechecks the token under the lock** before `set_password`, so two requests carrying one
+    token can't both succeed. It bumps `auth_version` (every session ends), marks the email verified,
+    writes a `user.password_reset` audit record with no actor (`tenant_id` and object = the user) and
+    queues a "password was changed" email after commit. Request and confirm are separate throttle
+    scopes. Tests: `test_password_reset.py` (incl. a threaded race test).
+18. Staff invites: `send_staff_invite_task(user_id, expected_email)` is queued after commit and, on
+    the worker, sends only if the account is still active, in an eligible tenant, still holds that
+    address and has no usable password. An SMTP or broker outage can't roll back staff creation.
+    Tests: `test_staff_invite.py`.
+19. Change password (`POST /auth/password/change/`): checks the current password **on the row-locked
+    user**, validates the new one against that user, bumps `auth_version`, audits
+    `user.password_changed`, queues the "password was changed" email after commit (never blocks the
+    change) and returns a fresh `{access, refresh}` minted from the post-change row. Every older
+    access/refresh token is rejected. Tests: `test_password_change.py` (incl. a threaded race test).
 
 ## Permissions
 `apps/core/roles.py` holds `Role` + `PERMISSION_MATRIX` (the PRD §6 table, plus `view_dashboard`
@@ -257,19 +276,27 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   (validation answers 400) instead of raising.
 - [DECISION 2026-10-21] **Accepted narrow race:** a tenant suspended just after the locked eligibility
   check can still receive one email, but verify re-checks tenant status, so no tokens are issued.
-- [OPEN 2026-10-21] **Forgot-password page is not built.** The login screen's forgot-password form is
-  a simulated timeout, and the frontend has no `/reset-password` route although the reset and staff
-  invite emails link to it. (`/signup` and `/verify-email` were built 2026-10-21.)
-- [DECISION 2026-10-22] **Signed-in password change** (`POST /auth/change-password/`, built for the
-  Settings → Account & Security form, which had been a simulated save). It requires the current
-  password even with a valid session, rejects a new password equal to the current one, and runs
-  Django's password validators (min length 8). It is throttled per user (`change_password`, 5/min), so
-  it can't be used to guess the current password. `set_password()` bumps `auth_version`, which
-  revokes every session including the caller's own, so the response tells the client to sign in
-  again and the frontend signs the user out and sends them to `/login`. A narrow
-  `save(update_fields=['password', 'updated_at'])` is used, and a `user.password_changed` audit
-  entry is written with no password material. Tests: `apps/accounts/tests/test_change_password.py`
-  (incl. another tenant's user is untouched).
+- [DECISION 2026-10-21] **Forgot, reset and change password are built in the web app** (closing the
+  earlier open item: the forgot form was a simulated timeout and `/reset-password` didn't exist, so
+  reset and staff-invite links 404'd). `/forgot-password` always answers "if an account exists…";
+  `/reset-password` reads `uid`/`token`/`invite` from the URL fragment and strips it; an invite's
+  success link opens `/login?view=staff`. Settings → change password goes through the
+  `change-password` BFF route, which installs the re-issued token pair (docs/frontend-plan.md §3.1).
+  The web new-password minimum is 8 (signup, reset, invite, change); the login form only requires a
+  non-empty password so older, shorter passwords still reach Django.
+  Staff with no email address can't use the emailed reset: the Owner sets their password
+  (`/staff/{id}/set-password/`).
+- [DECISION 2026-10-21] **Auth emails are branded multipart.** Verification, password-reset, staff-invite
+  and sign-in-code emails render from `backend/templates/emails/` through `apps.core.email`, always in
+  the user's `language_code` (reset and invite previously used the request language). See Module 14 for
+  the layout and footer rules.
+- [DECISION 2026-10-21] **Reset, invite and password-changed emails are Celery tasks** (they were
+  synchronous: an SMTP error returned a 500 only for registered addresses, an enumeration and timing
+  leak, and an invite failure rolled back staff creation). Links use the URL fragment so tokens stay out
+  access logs; `PASSWORD_RESET_TIMEOUT` is set to 24 h. Super Admins are excluded from emailed resets
+  (they use Django admin behind IAP). Reset audit records have no actor because the request is
+  anonymous. Change-password returns a new token pair because the change bumps `auth_version`; the web
+  BFF must install it so the caller stays signed in.
 - [DECISION 2026-10-21] **Verification token is bound to the address.** The signed payload is
   `{uid, email}`, and `EmailVerificationSerializer.save()` compares the account's current normalized
   email under `select_for_update()` before marking it verified — so an admin email change can't land
@@ -567,3 +594,5 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   (`devices.middleware.EXEMPT_PREFIXES`) so an outdated build or a maintenance window can still show it.
   Read with `filter(pk=1).first()`, never `PlatformConfig.get()`, so a public GET never writes.
   Tests: `apps/core/test_support.py`. These are platform-wide contacts, not per-property/PG contacts.
+- 2026-10-21  Auth backend hardening: password-reset / staff-invite / password-changed emails moved to Celery (links in the URL fragment, 24 h), race-safe reset confirm (token rechecked under the user row lock), `POST /auth/password/change/` (current password checked under the lock, returns a fresh token pair), split reset throttle scopes, `user.password_reset` / `user.password_changed` audit records. New tests: `test_password_reset.py` (rewritten), `test_password_change.py`, `test_staff_invite.py`.
+- 2026-10-21  Web auth pages: real `/forgot-password` and `/reset-password` (also the staff-invite set-password page), `/login?view=staff`, Settings → change password via the `change-password` BFF route (`lib/server/authenticatedUpstream.ts`), shared `useEmailRequest` hook, 8-character new-password rule (login keeps non-empty only), removed the demo-credentials box and the unwired remember-me. Frontend tests: `ForgotPasswordForm`, `ResetPasswordForm`, `LoginForm.flows`, `GlobalSettings.password`, `bff` change-password cases.

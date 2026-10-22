@@ -22,7 +22,6 @@ from .models import User
 from .serializers import (
     EmailOtpRequestSerializer,
     EmailOtpVerifySerializer,
-    ChangePasswordSerializer,
     EmailVerificationSerializer,
     LoginSerializer,
     MeSerializer,
@@ -30,6 +29,7 @@ from .serializers import (
     ModuleAccessWriteSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     PhoneLoginSerializer,
@@ -44,7 +44,7 @@ from .serializers import (
     TokenPairSerializer,
 )
 from .staff_access import locked_staff
-from .throttles import OtpEmailThrottle, VerificationEmailThrottle
+from .throttles import OtpEmailThrottle, PasswordResetEmailThrottle, VerificationEmailThrottle
 
 
 class _AnonPostView(APIView):
@@ -163,30 +163,31 @@ class EmailOtpVerifyView(APIView):
 
 class PasswordResetRequestView(_AnonPostView):
     serializer_class = PasswordResetRequestSerializer
-    throttle_scope = 'password_reset'
+    throttle_classes = [ScopedRateThrottle, PasswordResetEmailThrottle]
+    throttle_scope = 'password_reset_request'
     success_message = _('If that email is registered, a reset link has been sent.')
 
 
 class PasswordResetConfirmView(_AnonPostView):
     serializer_class = PasswordResetConfirmSerializer
-    throttle_scope = 'password_reset'
+    throttle_scope = 'password_reset_confirm'
     success_message = _('Password updated. You can log in now.')
 
 
-class ChangePasswordView(APIView):
-    """Signed-in password change. Revokes every session (auth_version), including this one:
-    the client signs in again with the new password."""
+class PasswordChangeView(APIView):
+    """Signed-in user changes their own password. Returns a fresh token pair:
+    the change ends every session, including the caller's, so the web BFF
+    stores the new pair and the caller stays signed in."""
 
     permission_classes = [IsAuthenticated]
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'change_password'
+    throttle_scope = 'password_change'
 
-    @extend_schema(request=ChangePasswordSerializer, responses={200: None})
+    @extend_schema(request=PasswordChangeSerializer, responses=TokenPairSerializer)
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({'detail': _('Password changed. Please sign in again with your new password.')})
+        return Response(serializer.save())
 
 
 class MeView(RetrieveUpdateAPIView):

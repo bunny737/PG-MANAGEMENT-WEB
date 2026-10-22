@@ -1,44 +1,91 @@
-{% load i18n %}<!DOCTYPE html>
-<html lang="{{ lang }}">
+{% load i18n %}{% get_current_language as LANGUAGE_CODE %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE }}" xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="x-apple-disable-message-reformatting">
-<meta name="color-scheme" content="light">
-<title>{% block title %}{% endblock %}</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{% block title %}PGLive{% endblock %}</title>
+<style>
+  body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table, td { mso-table-lspace: 0; mso-table-rspace: 0; }
+  img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+  a { color: #4f46e5; }
+  @media only screen and (max-width: 620px) {
+    .container { width: 100% !important; }
+    .px { padding-left: 20px !important; padding-right: 20px !important; }
+    .btn a { display: block !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body, .page { background-color: #0b1220 !important; }
+    .card { background-color: #151d2e !important; border-color: #2a3447 !important; }
+    .ink { color: #f1f4f9 !important; }
+    .muted { color: #9aa6ba !important; }
+    .code-box { background-color: #1f2a44 !important; border-color: #3b4a73 !important; color: #ffffff !important; }
+    .divider { border-top-color: #2a3447 !important; }
+    a { color: #a5b4fc !important; }
+    .btn a { background-color: #6366f1 !important; color: #ffffff !important; }
+  }
+</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f6fa;-webkit-text-size-adjust:100%;">
-{# Hidden preview line shown next to the subject in the inbox list. #}
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f6fa;">{% block preheader %}{% endblock %}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6fa;">
+<body style="margin:0;padding:0;background-color:#f4f6fa;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">{% block preheader %}{% endblock %}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+<table role="presentation" class="page" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6fa;">
   <tr>
-    <td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+    <td align="center" style="padding:32px 12px;">
+      <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
         <tr>
-          <td align="center" style="padding:0 0 20px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;background-color:#4f46e5;border-radius:10px;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;letter-spacing:0.5px;">PG</td>
-                <td valign="middle" style="padding-left:10px;font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:700;color:#0b1220;">{{ brand }}</td>
-              </tr>
-            </table>
+          <td align="center" style="padding:0 0 20px 0;">
+            <a href="{{ site_url }}" style="text-decoration:none;"><img src="{{ logo_url }}" width="132" alt="PGLive" style="display:block;width:132px;height:auto;"></a>
           </td>
         </tr>
         <tr>
-          <td style="background-color:#ffffff;border:1px solid #e5e9f0;border-radius:16px;overflow:hidden;">
+          <td class="card" style="background-color:#ffffff;border:1px solid #e5e9f0;border-radius:16px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr><td style="height:4px;line-height:4px;font-size:0;background-color:#4f46e5;">&nbsp;</td></tr>
               <tr>
-                <td style="padding:36px 36px 32px;font-family:Arial,Helvetica,sans-serif;color:#0b1220;">
-                  {% block content %}{% endblock %}
+                <td class="px" style="padding:36px 40px 8px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans Telugu','Noto Sans',Helvetica,Arial,sans-serif;">
+                  <h1 class="ink" style="margin:0 0 16px 0;font-size:22px;line-height:30px;font-weight:700;color:#0b1220;">{% block heading %}{% endblock %}</h1>
+                  <div class="ink" style="font-size:15px;line-height:24px;color:#0b1220;">{% block content %}{% endblock %}</div>
+                </td>
+              </tr>
+{% if cta_url %}
+              <tr>
+                <td class="px" align="left" style="padding:20px 40px 8px 40px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="btn">
+                    <tr>
+                      <td align="center" style="border-radius:10px;background-color:#4f46e5;">
+                        <a href="{{ cta_url }}" style="display:inline-block;padding:13px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans Telugu','Noto Sans',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;line-height:20px;color:#ffffff;text-decoration:none;border-radius:10px;">{% block cta_label %}{% endblock %}</a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td class="px muted" style="padding:12px 40px 8px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans Telugu','Noto Sans',Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5a6779;">
+                  {% trans "If the button doesn't work, copy and paste this link into your browser:" %}<br>
+                  <a href="{{ cta_url }}" style="color:#4f46e5;word-break:break-all;">{{ cta_url }}</a>
+                </td>
+              </tr>
+{% endif %}
+              <tr>
+                <td class="px" style="padding:24px 40px 0 40px;">
+                  <div class="divider" style="border-top:1px solid #e5e9f0;font-size:0;line-height:0;">&nbsp;</div>
+                </td>
+              </tr>
+              <tr>
+                <td class="px muted" style="padding:16px 40px 32px 40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans Telugu','Noto Sans',Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5a6779;">
+                  {% block footnote %}{% endblock %}
                 </td>
               </tr>
             </table>
           </td>
         </tr>
         <tr>
-          <td align="center" style="padding:24px 16px 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#8a95a6;">
-            {% block footer %}{% blocktrans %}You received this email because of activity on your {{ brand }} account.{% endblocktrans %}{% endblock %}
+          <td align="center" class="px muted" style="padding:20px 24px 0 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans Telugu','Noto Sans',Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8a95a6;">
+            {% if support_email or support_phone %}{% trans "Need help?" %}
+            {% if support_email %}<a href="mailto:{{ support_email }}" style="color:#5a6779;">{{ support_email }}</a>{% endif %}{% if support_email and support_phone %} &middot; {% endif %}{% if support_phone %}{{ support_phone }}{% endif %}<br>{% endif %}
+            {% if company_name %}{{ company_name }}{% else %}PGLive{% endif %}{% if company_address %} &middot; {{ company_address }}{% endif %}
           </td>
         </tr>
       </table>

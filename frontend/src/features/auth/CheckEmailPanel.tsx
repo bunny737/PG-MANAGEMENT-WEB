@@ -4,21 +4,26 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { MailCheck } from "lucide-react";
+import { requestPasswordReset, resendVerification } from "@/lib/api";
 import { RESEND_COOLDOWN_S } from "./EmailCodeLogin";
-import { useVerificationResend } from "./useVerificationResend";
+import { useEmailRequest } from "./useEmailRequest";
 
 interface CheckEmailPanelProps {
   email: string;
   /** When the current link was sent (ms since epoch); the resend cooldown runs from here. */
   sentAt: number;
   showBackToLogin?: boolean;
+  /** Which email was requested: a verification link (default) or a password-reset link. */
+  kind?: "verification" | "reset";
 }
 
-/** Shown only after a verification email has actually been requested: "We sent a link to …",
- * with a resend that is held back for RESEND_COOLDOWN_S after each send. */
-export function CheckEmailPanel({ email, sentAt, showBackToLogin = true }: CheckEmailPanelProps) {
+/** Shown only after an email has actually been requested: "We sent a link to …", with a resend
+ * that is held back for RESEND_COOLDOWN_S after each send. The reset wording never says the
+ * address is registered. */
+export function CheckEmailPanel({ email, sentAt, showBackToLogin = true, kind = "verification" }: CheckEmailPanelProps) {
   const t = useTranslations("auth");
-  const { send, sending, error } = useVerificationResend();
+  const reset = kind === "reset";
+  const { send, sending, error } = useEmailRequest(reset ? requestPasswordReset : resendVerification);
   const [lastSentAt, setLastSentAt] = useState(sentAt);
   const [now, setNow] = useState(() => Date.now());
 
@@ -45,7 +50,9 @@ export function CheckEmailPanel({ email, sentAt, showBackToLogin = true }: Check
       </div>
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-ink">{t("checkEmail.title")}</h3>
-        <p className="text-xs text-ink-muted">{t("checkEmail.body", { email })}</p>
+        <p className="text-xs text-ink-muted">
+          {reset ? t("forgotPassword.sentBody", { email }) : t("checkEmail.body", { email })}
+        </p>
       </div>
       <p className="text-xs text-ink-muted">
         {t("checkEmail.noEmail")}{" "}

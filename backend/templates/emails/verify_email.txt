@@ -1,0 +1,10 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% trans "Verify your email address" %}{% endblock %}
+{% block content %}{% if name %}{% blocktrans trimmed %}Welcome, {{ name }}!{% endblocktrans %}{% else %}{% trans "Welcome!" %}{% endif %}
+
+{% blocktrans trimmed count hours=valid_hours %}Confirm your email address to activate your account. This link is valid for {{ hours }} hour.{% plural %}Confirm your email address to activate your account. This link is valid for {{ hours }} hours.{% endblocktrans %}
+{% endblock %}
+{% block cta_label %}{% trans "Verify email" %}{% endblock %}
+{% block footnote %}
+{% trans "If you didn't create a PGLive account, you can safely ignore this email." %}
+{% endblock %}

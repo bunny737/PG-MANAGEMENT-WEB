@@ -1,15 +1,4 @@
 {
-  "src/features/properties/PropertyMapPicker.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "i18next/no-literal-string": {
-      "count": 8
-    },
-    "react-hooks/set-state-in-effect": {
-      "count": 3
-    }
-  },
   "src/features/vacancies/VacanciesScreen.tsx": {
     "i18next/no-literal-string": {
       "count": 1

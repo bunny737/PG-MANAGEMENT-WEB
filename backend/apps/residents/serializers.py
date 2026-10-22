@@ -1,10 +1,13 @@
 from decimal import Decimal
 
+from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.core.roles import permissions_for_user
+from apps.core.uploads import sniff_upload
 from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
@@ -134,6 +137,49 @@ class ResidentSerializer(serializers.ModelSerializer):
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
         return value
+
+    @staticmethod
+    def _validate_kyc_document(upload, field):
+        """Aadhaar/PAN uploads sit behind a launch gate (settings.KYC_UPLOADS_ENABLED). Only a NEW
+        file is gated: clearing a stored document (None) is always allowed, and stored documents stay
+        readable. A file that is let through must really be a JPEG/PNG/WebP/PDF within the size cap."""
+        if upload is None:
+            return upload
+        if not settings.KYC_UPLOADS_ENABLED:
+            raise serializers.ValidationError(
+                _('Identity document uploads are not enabled yet.'), code='kyc_uploads_disabled'
+            )
+        try:
+            sniff_upload(
+                upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES, code_prefix='document',
+                allowed_types={'image/jpeg', 'image/png', 'application/pdf'},  # approved set; no WebP (plan rev 2)
+            )
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(exc.detail[field])
+        return upload
+
+    def validate_aadhaar_document(self, value):
+        return self._validate_kyc_document(value, 'aadhaar_document')
+
+    def validate_pan_document(self, value):
+        return self._validate_kyc_document(value, 'pan_document')
+
+    _KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
+
+    def update(self, instance, validated_data):
+        """Clearing or replacing a KYC file only repoints the FileField; Django never
+        deletes the old object from storage on its own. Capture it before `super().update()`
+        overwrites the reference, and only remove it once the row update has committed —
+        a failed save must not orphan-delete a file still referenced by the row."""
+        previous = [
+            (getattr(instance, field).storage, getattr(instance, field).name)
+            for field in self._KYC_FILE_FIELDS
+            if field in validated_data and getattr(instance, field)
+        ]
+        instance = super().update(instance, validated_data)
+        for storage, name in previous:
+            transaction.on_commit(lambda storage=storage, name=name: storage.delete(name))
+        return instance
 
 
 class ResidentStatusUpdateSerializer(serializers.ModelSerializer):

@@ -7,23 +7,15 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
-from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.core.idempotency import key_reused
+from apps.core.uploads import sniff_upload
 
 from .models import SYSTEM_CATEGORIES, Expense, ExpenseCategory
 
 ZERO = Decimal('0.00')
 AUDIT_FIELDS = ('property_id', 'category_id', 'amount', 'date', 'payment_mode', 'note')
-
-# Magic-byte sniffing (the client-sent Content-Type is not trusted).
-_SIGNATURES = (
-    (b'\xff\xd8\xff', 'image/jpeg'),
-    (b'\x89PNG\r\n\x1a\n', 'image/png'),
-    (b'%PDF-', 'application/pdf'),
-)
 
 
 def ensure_system_categories(tenant_id):
@@ -53,21 +45,8 @@ def snapshot(expense):
 
 def sniff_attachment(upload):
     """Validate size and real type; returns the detected content type."""
-    if upload.size > settings.EXPENSE_ATTACHMENT_MAX_BYTES:
-        raise ValidationError(
-            {'attachment': [_('The file is larger than %(mb)s MB.')
-                            % {'mb': settings.EXPENSE_ATTACHMENT_MAX_BYTES // (1024 * 1024)}]},
-            code='attachment_too_large',
-        )
-    head = upload.read(16)
-    upload.seek(0)
-    for signature, content_type in _SIGNATURES:
-        if head.startswith(signature):
-            return content_type
-    if head[:4] == b'RIFF' and head[8:12] == b'WEBP':
-        return 'image/webp'
-    raise ValidationError(
-        {'attachment': [_('Attach a JPEG, PNG, WebP or PDF file.')]}, code='attachment_type_not_allowed',
+    return sniff_upload(
+        upload, field='attachment', max_bytes=settings.EXPENSE_ATTACHMENT_MAX_BYTES, code_prefix='attachment',
     )
 
 

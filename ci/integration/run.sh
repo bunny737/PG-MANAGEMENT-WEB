@@ -35,6 +35,11 @@ psql_db -d pg_platform -f - < "$ROOT/infra/sql/roles-2-grants.sql" >/dev/null
 echo "--- servers"
 "${COMPOSE[@]}" up -d api edge-api web
 for _ in $(seq 1 60); do curl -fs "$WEB/api/health" >/dev/null 2>&1 && break; sleep 1; done
+# web's health route never touches Django by design (its docstring: "a Django outage never restarts
+# this service"), so it says nothing about gunicorn. start-api.sh now runs `manage.py check --deploy`
+# before gunicorn binds its port, which is slow enough that the checks below used to start racing it
+# and see 502s from edge-api. Wait for Django's own readiness through the edge before testing anything.
+for _ in $(seq 1 60); do curl -fs "$EDGE/health/ready/" >/dev/null 2>&1 && break; sleep 1; done
 
 status() { curl -s -o /dev/null -w '%{http_code}' -H "x-pglive-client-ip: $CLIENT_IP" "$@"; }
 

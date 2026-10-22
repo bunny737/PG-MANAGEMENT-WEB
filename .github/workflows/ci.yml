@@ -53,6 +53,19 @@ jobs:
           psql -d postgres -c "CREATE ROLE app_user LOGIN PASSWORD 'app_password' NOSUPERUSER CREATEDB"
           psql -d pg_platform -c "GRANT ALL ON SCHEMA public TO app_user"
       - run: python manage.py makemigrations --check --dry-run
+      # The same check the API container runs at start-up (backend/bin/start-api.sh), with production
+      # settings and keys that are valid in shape but not functional. Nothing is silenced: if the check
+      # started failing on these, a real deploy would fail too. No live secret is ever used here.
+      - name: Production deploy check
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
+          SECRET_KEY: ci-only-secret-key-ci-only-secret-key-ci-only-secret-key
+          JWT_SIGNING_KEY: ci-only-jwt-signing-key-ci-only-jwt-signing-key-xx
+          FRONTEND_BASE_URL: https://www.pglive.in
+          RAZORPAY_KEY_ID: rzp_live_CIonlyNotReal00
+          RAZORPAY_KEY_SECRET: ci-razorpay-secret-0123456789
+          RAZORPAY_WEBHOOK_SECRET: ci-razorpay-webhook-0123456789
+        run: python manage.py check --deploy --fail-level ERROR
       - run: python manage.py test --noinput --parallel 4
       - name: Pre-traffic smoke script
         run: python -m unittest scripts.test_smoke
@@ -152,6 +165,12 @@ jobs:
 
   secrets-scan:
     runs-on: ubuntu-latest
+    # On a pull_request event, gitleaks-action calls the GitHub API to list the PR's commits
+    # (ScanPullRequest); the workflow-level `contents: read` alone gets a 403
+    # ("Resource not accessible by integration") on that call.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:

@@ -29,6 +29,7 @@ const TOKEN_ISSUING_PATHS = new Set([
   "auth/token/refresh",
   "auth/otp/verify",
   "auth/otp/email/verify",
+  "auth/password/change",
 ]);
 
 export function isTokenIssuingPath(apiPath: string): boolean {
@@ -95,6 +96,7 @@ const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "accept-language", 
 
 /** Set by the load balancer on every request to this app, overwriting any client value. */
 const CLIENT_IP_HEADER = "x-pglive-client-ip";
+const EDGE_KEY_HEADER = "x-pglive-edge-key";
 
 /** The upstream request being prepared: the browser IP signature covers its method and URL. */
 export type UpstreamTarget = { method: string; url: string };
@@ -110,6 +112,11 @@ export function upstreamHeaders(request: NextRequest, accessToken: string | null
   // balancer wrote goes upstream signed instead (docs/deployment.md, WP7).
   const origin = originHeaders(request.headers.get(CLIENT_IP_HEADER), target.method, target.url);
   for (const [name, value] of Object.entries(origin)) headers.set(name, value);
+  // Proves to the nginx edge that this call comes from the BFF (so the browser IP above is believed for rate
+  // limiting). Taken from the environment only: nothing a browser sends can set it, and nginx strips it before
+  // the request reaches Django. See infra/edge/limits.conf.
+  const edgeKey = process.env.BFF_EDGE_KEY;
+  if (edgeKey) headers.set(EDGE_KEY_HEADER, edgeKey);
   if (accessToken) headers.set("authorization", `Bearer ${accessToken}`);
   return headers;
 }

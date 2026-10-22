@@ -158,10 +158,20 @@ page navigations, which never carry the `/api`-scoped cookies) and `app/api/[...
 else under `/api/v1/`). Behaviours worth knowing:
 
 - Login handlers return only the `/auth/me/` payload. The token-issuing endpoints
-  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`, `otp/email/verify`) are **404 through the
+  (`auth/login`, `login-phone`, `token/refresh`, `otp/verify`, `otp/email/verify`, `password/change`) are **404 through the
   generic proxy**, so a proxied call can never hand a token to page JS. Email-code login (2026-10-21) goes
   through its own handler, `login-email-otp`; its request step (`otp/email/request`) issues no tokens and uses
   the generic proxy. Phone OTP still needs its own handler when SMS delivery is built.
+- Change password (2026-10-21) has its own handler, `app/api/auth/change-password`, because Django ends every
+  session when a password changes and answers with a fresh token pair. The handler (`lib/server/authenticatedUpstream.ts`)
+  calls Django as the signed-in user with the same refresh rules as the proxy, installs the new pair in the
+  httpOnly cookies and returns a token-free `{ok: true}` (no follow-up `/auth/me/` that could fail and strand
+  the new session). A 400/429 leaves the session as it was; only a definitive 401 clears the cookies.
+- Forgot/reset password (2026-10-21): `/forgot-password` (always answers "if an account exists…") and
+  `/reset-password` (the emailed link carries `uid`+`token`, plus `invite=1` for staff, in the URL **fragment**,
+  stripped on load like `/verify-email`) go through the generic proxy; neither signs anyone in. The new-password
+  minimum (8) applies to signup, reset, invite and change only — sign-in accepts any non-empty password. `/login?view=staff|owner`
+  skips the role chooser (the landing spot after a staff invite).
 - Refresh is server-side. With no access cookie (it expired) the proxy refreshes **before** sending,
   so the request runs once; with an access cookie it is replayed only after the backend answered
   401 (which means it did not run). A request is therefore never executed twice — this matters for
@@ -463,9 +473,9 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | # | FE task | Status |
 |---|---------|--------|
 | FE-00 | Foundation | 🟨 (TanStack Query/Table, React Hook Form + Zod, Zustand, Recharts, Vitest + Testing Library, openapi-typescript all added 2026-10-17 — see Decisions) |
-| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; phone OTP/reset still future work — forgot-password is still a simulated form and there is no `/reset-password` page yet) |
+| FE-01 | Auth & shell | 🟨 (email/pw + staff phone/pw login wired to real JWT login; permission-matrix nav & route guards driven by GET /auth/me/ permissions; async session-purge coordinator (F7) added 2026-10-17; BFF proxy + httpOnly-cookie auth built 2026-10-19 (§3.1); optional email-code login in the Owner and Staff views 2026-10-21; `/signup` → check-email → `/verify-email` (token in the URL fragment, never signs in) + resend on `EMAIL_NOT_VERIFIED` login + profile verification badge 2026-10-21; real `/forgot-password` + `/reset-password` (also the staff-invite set-password page) and a real Settings → change-password (re-issues the session cookies) 2026-10-21; phone OTP still future work) |
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
-| FE-03 | Property settings | ⬜ |
+| FE-03 | Property settings | ⬜ (the `/properties/[id]/settings` page is still the mock `PropertySettingsForm`; Settings no longer links real properties to it, 2026-10-21) |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
 | FE-05 | Admissions | ⬜ |
 | FE-06 | Allocations | ⬜ |
@@ -656,3 +666,7 @@ Regenerate the QR with the `qrcode` npm package (v1.5.4, `QRCode.toString(url, {
    "English governs" statement.
 7. **Brand:** resolved 2026-10-20 — the signed-in app is now **PGLive** too (`messages/*/common.json`, root metadata,
    manifest, auth and PWA strings), matching the marketing site. (The Android app's header still says "PG Mate".)
+
+**Production pass 2026-10-21 (error pages, no fabricated data).** `app/error.tsx` and `app/global-error.tsx` replace Next's default crash screen. Both render the shared `components/shared/ErrorView`; `global-error` replaces the root layout, so it has its own `<html>/<body>`, no providers, and reads the five `messages/<locale>/errors.json` catalogs statically (`lib/errorCopy.ts`, locale from the `NEXT_LOCALE` cookie, then the browser language). `lib/api.ts` no longer falls back to a built-in feature catalog, an empty list or an invented custom feature when a request fails, and the `skyline`/`sunset` demo ids are gone: a non-UUID id is a 404 and nothing is fetched. Settings → Property Setup lists the tenant's real properties; the fake "Save portal" form, its other-brand defaults and the starter/mock files were removed.
+
+**Google Maps picker (2026-10-21).** `PropertyMapPicker` moved off the legacy `places.Autocomplete` and `google.maps.Marker` to `PlaceAutocompleteElement` (Places API New) and `AdvancedMarkerElement` (needs a Map ID), loaded through `importLibrary` (`lib/googleMaps.ts`). The key is only the build-time `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`: the "paste your key" box that saved it to `localStorage` is gone, and without a key the picker says "Map unavailable" while manual coordinates still work. Its strings are i18n'd and `alert()` is replaced by inline messages. **Verify with the real key on first run** (search selection event name, Map ID rendering): the unit tests use a fake Google object.

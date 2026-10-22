@@ -41,3 +41,9 @@ class VerificationEmailThrottle(EmailBodyThrottle):
     """Verification-email resend requests."""
 
     scope = 'resend_verification_email'
+
+
+class PasswordResetEmailThrottle(EmailBodyThrottle):
+    """Password-reset requests (not the confirm step)."""
+
+    scope = 'password_reset_request_email'

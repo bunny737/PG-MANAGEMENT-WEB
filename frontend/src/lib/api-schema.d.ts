@@ -277,26 +277,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/change-password/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Signed-in password change. Revokes every session (auth_version), including this one:
-         *     the client signs in again with the new password.
-         */
-        post: operations["v1_auth_change_password_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/login/": {
         parameters: {
             query?: never;
@@ -443,6 +423,27 @@ export interface paths {
         put?: never;
         /** @description Unauthenticated POST endpoint: validate serializer, run save(), reply 200. */
         post: operations["v1_auth_password_reset_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/change/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Signed-in user changes their own password. Returns a fresh token pair:
+         *     the change ends every session, including the caller's, so the web BFF
+         *     stores the new pair and the caller stays signed in.
+         */
+        post: operations["v1_auth_password_change_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3103,14 +3104,6 @@ export interface components {
          */
         Category530Enum: "electrical" | "plumbing" | "internet_wifi" | "housekeeping" | "security" | "furniture" | "other";
         /**
-         * @description The signed-in user changes their own password. The current password is required
-         *     even with a valid session, so a hijacked or left-open session can't lock the owner out.
-         */
-        ChangePassword: {
-            current_password: string;
-            new_password: string;
-        };
-        /**
          * @description * `email` - Email
          *     * `sms` - SMS
          *     * `whatsapp` - WhatsApp
@@ -3686,6 +3679,8 @@ export interface components {
             readonly email_verified: boolean;
             readonly tenant: components["schemas"]["Tenant"];
             readonly permissions: string[];
+            /** @description Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False. */
+            readonly kyc_uploads_enabled: boolean;
         };
         MeUpdate: {
             first_name: string;
@@ -3742,6 +3737,10 @@ export interface components {
         OtpVerify: {
             phone: string;
             code: string;
+        };
+        PasswordChange: {
+            current_password: string;
+            new_password: string;
         };
         PasswordResetConfirm: {
             uid: string;
@@ -5289,30 +5288,6 @@ export interface operations {
             };
         };
     };
-    v1_auth_change_password_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChangePassword"];
-                "application/x-www-form-urlencoded": components["schemas"]["ChangePassword"];
-                "multipart/form-data": components["schemas"]["ChangePassword"];
-            };
-        };
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     v1_auth_login_create: {
         parameters: {
             query?: never;
@@ -5553,6 +5528,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PasswordResetConfirm"];
+                };
+            };
+        };
+    };
+    v1_auth_password_change_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+                "application/x-www-form-urlencoded": components["schemas"]["PasswordChange"];
+                "multipart/form-data": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
                 };
             };
         };

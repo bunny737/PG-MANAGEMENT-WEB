@@ -344,6 +344,36 @@ export async function resendVerification(email: string) {
   });
 }
 
+/** Asks for a password-reset link. The reply is the same whether or not the address is
+ * registered, so success never means "registered". */
+export async function requestPasswordReset(email: string) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/password-reset/", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+    skipAuth: true,
+  });
+}
+
+/** Sets a new password from an emailed link (`uid` + `token`; also how staff invites set their
+ * first password). Never signs the user in. A 400 with a `token` field means the link is dead. */
+export async function confirmPasswordReset(payload: { uid: string; token: string; new_password: string }) {
+  await apiFetch<{ detail: string }>("/api/v1/auth/password-reset/confirm/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    skipAuth: true,
+  });
+}
+
+/** Changes the signed-in user's password. Django ends every session when it changes, so the
+ * route handler installs the replacement token pair in the httpOnly cookies; the caller stays
+ * signed in and never sees a token. */
+export async function changePassword(currentPassword: string, newPassword: string) {
+  await apiFetch<{ ok: boolean }>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
 export interface PropertyImage {
   id: string;
   image: string;
@@ -475,7 +505,7 @@ export function deletePropertyImage(propertyId: string, imageId: string) {
 }
 
 export function listBuildings(propertyId: string) {
-  if (!isUUID(propertyId)) return Promise.resolve([]);
+  if (!isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   return apiFetch<Building[] | { results: Building[] }>(`/api/v1/buildings/?property=${propertyId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -501,7 +531,7 @@ export function deleteBuilding(buildingId: string) {
 }
 
 export function listFloors(buildingId: string) {
-  if (!isUUID(buildingId)) return Promise.resolve([]);
+  if (!isUUID(buildingId)) return Promise.reject(new ApiError(404, { detail: "Building not found" }));
   return apiFetch<Floor[] | { results: Floor[] }>(`/api/v1/floors/?building=${buildingId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -583,7 +613,7 @@ export interface Bed {
 }
 
 export function listRooms(floorId: string) {
-  if (!isUUID(floorId)) return Promise.resolve([]);
+  if (!isUUID(floorId)) return Promise.reject(new ApiError(404, { detail: "Floor not found" }));
   return apiFetch<Room[] | { results: Room[] }>(`/api/v1/rooms/?floor=${floorId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -620,7 +650,7 @@ export function deleteRoom(roomId: string) {
 }
 
 export function listBeds(roomId: string) {
-  if (!isUUID(roomId)) return Promise.resolve([]);
+  if (!isUUID(roomId)) return Promise.reject(new ApiError(404, { detail: "Room not found" }));
   return apiFetch<Bed[] | { results: Bed[] }>(`/api/v1/beds/?room=${roomId}`).then((data) =>
     Array.isArray(data) ? data : data.results
   );
@@ -833,7 +863,7 @@ export interface Admission {
 }
 
 export function listResidents(propertyId?: string, status?: string, search?: string) {
-  if (propertyId && !isUUID(propertyId)) return Promise.resolve([]);
+  if (propertyId && !isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
   let url = "/api/v1/residents/";
   const params = new URLSearchParams();
   if (propertyId) params.append("property", propertyId);
@@ -1142,7 +1172,7 @@ export interface Complaint {
 }
 
 export function listComplaints(filters?: { resident?: string; status?: string; category?: string; priority?: string; property?: string }) {
-  if (filters?.resident && !isUUID(filters.resident)) return Promise.resolve([]);
+  if (filters?.resident && !isUUID(filters.resident)) return Promise.reject(new ApiError(404, { detail: "Resident not found" }));
   let url = "/api/v1/complaints/";
   const params = new URLSearchParams();
   if (filters) {
@@ -1220,6 +1250,8 @@ export interface CurrentUser {
   tenant?: TenantDetails;
   tenant_id?: string;
   permissions?: string[];
+  /** Launch gate for new Aadhaar/PAN uploads. Absent (an older cached profile) means off. */
+  kyc_uploads_enabled?: boolean;
 }
 
 export function getCurrentUser() {
@@ -1247,15 +1279,6 @@ export function updateTenantDefaultLanguage(default_language: string) {
 
 export function getCurrentTenant() {
   return apiFetch<TenantDetails>("/api/v1/tenants/current/");
-}
-
-/** Signed-in password change. The backend revokes every session on success (including this
- * one), so the caller must sign the user out and send them to /login. */
-export function changePassword(payload: { current_password: string; new_password: string }) {
-  return apiFetch<{ detail: string }>("/api/v1/auth/change-password/", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
 }
 
 export function updateTenantFiscalYearStart(fiscal_year_start_month: number) {
@@ -1941,14 +1964,15 @@ export interface FeatureRef {
 }
 
 export function listFeatureCatalog() {
-  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/")
-    .then((data) => (Array.isArray(data) ? data : data.results));
+  return apiFetch<FeatureCatalogItem[] | { results: FeatureCatalogItem[] }>("/api/v1/feature-catalog/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
 }
 
 export function listTenantFeatures() {
-  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/")
-    .then((data) => (Array.isArray(data) ? data : data.results))
-    .catch(() => []);
+  return apiFetch<TenantFeature[] | { results: TenantFeature[] }>("/api/v1/tenant-features/").then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
 }
 
 /** Idempotent: returns the existing feature when one with the same name already exists. */

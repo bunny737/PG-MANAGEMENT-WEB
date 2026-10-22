@@ -51,7 +51,24 @@ for name in api worker migrate bootstrap; do bind "$(sa sa-$name)" roles/cloudsq
 for name in api web worker migrate bootstrap scheduler export export-verify smoke; do bind "$(sa sa-$name)" roles/logging.logWriter; done
 bind "$(sa sa-worker)" roles/artifactregistry.reader
 bind "$(sa sa-deployer)" roles/artifactregistry.writer
-bind "$(sa sa-deployer)" roles/run.developer
+# What infra/deploy.sh and 30-services.sh actually do (docs/deployment.md, "Release pipeline"):
+#   run.admin             deploy services/jobs AND set the job IAM policy (run.developer cannot setIamPolicy)
+#   secretmanager.viewer  list secret versions before deploying (never reads a value)
+#   cloudscheduler.admin  create/update the scheduled jobs
+#   workflows.editor      deploy the weekly export workflow
+#   logging.viewer        read 5xx logs during the canary watch
+#   compute.viewer, iap.tunnelResourceAccessor, compute.osAdminLogin   ssh to the worker VM through IAP
+# It deliberately has no project IAM admin: the one runtime binding that needed it is made below.
+bind "$(sa sa-deployer)" roles/run.admin
+bind "$(sa sa-deployer)" roles/secretmanager.viewer
+bind "$(sa sa-deployer)" roles/cloudscheduler.admin
+bind "$(sa sa-deployer)" roles/workflows.editor
+bind "$(sa sa-deployer)" roles/logging.viewer
+bind "$(sa sa-deployer)" roles/compute.viewer
+bind "$(sa sa-deployer)" roles/iap.tunnelResourceAccessor
+bind "$(sa sa-deployer)" roles/compute.osAdminLogin
+# The weekly-export scheduler starts the export workflow (moved here from 30-services.sh).
+bind "$(sa sa-scheduler)" roles/workflows.invoker
 # FCM send via Application Default Credentials (WP8).
 bind "$(sa sa-api)" roles/firebasecloudmessaging.admin
 bind "$(sa sa-worker)" roles/firebasecloudmessaging.admin
@@ -78,8 +95,8 @@ echo "== Secret shells (values are added with: gcloud secrets versions add NAME 
 # REDIS_PASSWORD starts redis on the worker VM; REDIS_URL / REDIS_CACHE_URL are the full URLs (password
 # included, e.g. redis://:PASSWORD@10.20.0.10:6379/0 and .../1) because Django and Celery read URLs.
 for s in DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSWORD DB_MIGRATION_PASSWORD REDIS_PASSWORD REDIS_URL \
-         REDIS_CACHE_URL BFF_ORIGIN_SECRET RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET EMAIL_HOST_PASSWORD SENTRY_DSN \
-         APP_MAINTENANCE_BYPASS_TOKEN SMOKE_USER_CREDENTIALS; do
+         REDIS_CACHE_URL BFF_ORIGIN_SECRET BFF_EDGE_KEY RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET \
+         EMAIL_HOST_PASSWORD SENTRY_DSN APP_MAINTENANCE_BYPASS_TOKEN SMOKE_USER_CREDENTIALS; do
   secret_exists "$s" || g secrets create "$s" --replication-policy=user-managed --locations "$REGION"
 done
 # Per-secret access: nothing gets project-wide secretAccessor.
@@ -91,5 +108,8 @@ done
 allow DB_MIGRATION_PASSWORD migrate; allow DJANGO_SECRET_KEY migrate; allow JWT_SIGNING_KEY migrate
 allow DB_PASSWORD bootstrap; allow DJANGO_SECRET_KEY bootstrap; allow JWT_SIGNING_KEY bootstrap
 allow BFF_ORIGIN_SECRET web
+# BFF_EDGE_KEY: the web service sends it, the edge (nginx on the worker VM) checks it, so it can tell BFF traffic
+# from direct API clients for rate limiting (docs/deployment.md). Generate: openssl rand -hex 32
+allow BFF_EDGE_KEY web; allow BFF_EDGE_KEY worker
 allow SMOKE_USER_CREDENTIALS smoke
 echo "Done. Next: infra/20-data.sh $ENVIRONMENT"

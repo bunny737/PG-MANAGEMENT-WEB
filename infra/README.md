@@ -18,7 +18,10 @@ Idempotent `gcloud` scripts for the GCP deployment described in [docs/deployment
 | 4 | `worker/create-vm.sh <env>` | the worker VM; then copy `worker/{docker-compose.yml,deploy.sh}` to `/opt/pglive` |
 | 5 | `deploy.sh <env> <sha>` | build, push, (prod) backup, services + jobs, migrate, smoke, canary, worker VM |
 | 5a | first deploy only | run `30-services.sh` twice (the candidate hostname is derived from the service URL); after the first `migrate`, apply `sql/roles-2-grants.sql` once; run `pglive-bootstrap` per docs/deployment.md |
-| 6 | `40-edge.sh prod` | load balancer, certificates, Cloud Armor, IAP; prints the GoDaddy DNS records |
+| 6 | `edge/setup-edge.sh` on the worker VM | nginx + Let's Encrypt edge (owner decision 2026-10-21: no load balancer); prints the GoDaddy DNS records to enter |
+
+`40-edge.sh` (load balancer, Cloud Armor, IAP) is kept for the scale path but is **not used today** — see
+docs/deployment.md §1.
 
 `rotate-db-password.sh` and `dr/restore-drill.sh` are operational (docs/deployment.md, sections 7-8).
 `sql/roles-1-roles.sql` / `roles-2-grants.sql` define the database role model; CI and

@@ -2,43 +2,46 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Building,
   ArrowRight,
   ShieldCheck,
   CreditCard,
   Layers,
+  Home,
   Lock,
   Globe
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import {
   ApiError,
   changePassword,
-  clearSession,
   getCurrentUser,
   listProperties,
   updateTenantDefaultLanguage,
   updateTenantFiscalYearStart,
+  type Property,
 } from "@/lib/api";
-import { queryKeys } from "@/lib/queryKeys";
+import { isValidNewPassword } from "@/features/auth/validation";
 import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-export function GlobalSettings() {
+type SettingsTab = "property" | "security" | "subscription";
+type PropertyType = "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living";
+
+export function GlobalSettings({ initialTab }: { initialTab?: SettingsTab }) {
   const t = useTranslations("settings");
   const tProperties = useTranslations("properties");
-  const router = useRouter();
   const locale = useLocale();
   const monthLabel = (month: number) =>
     new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
-  const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "property");
 
-  const properties = useQuery({ queryKey: queryKeys.properties.list, queryFn: listProperties });
+  // The tenant's real properties (null until loaded).
+  const [properties, setProperties] = useState<Property[] | null>(null);
+  const [propertiesError, setPropertiesError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
@@ -58,10 +61,24 @@ export function GlobalSettings() {
       })
       .catch(() => {});
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    listProperties()
+      .then((list) => {
+        if (!cancelled) setProperties(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPropertiesError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const triggerSaveAlert = (type: string, message: string) => {
     setSaveAlert({ type, message });
@@ -74,7 +91,7 @@ export function GlobalSettings() {
 
     if (!currentPassword) errs.current = t("global.errCurrentRequired");
     if (!newPassword) errs.new = t("global.errNewRequired");
-    else if (newPassword.length < 8) errs.new = t("global.errNewMinLength");
+    else if (!isValidNewPassword(newPassword)) errs.new = t("global.errNewMinLength");
     if (newPassword !== confirmPassword) errs.confirm = t("global.errConfirmMatch");
 
     if (Object.keys(errs).length > 0) {
@@ -83,29 +100,31 @@ export function GlobalSettings() {
     }
 
     setPasswordErrors({});
-    setIsLoading(true);
+    setIsChangingPassword(true);
     try {
-      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      triggerSaveAlert("password", t("global.passwordSavedToast"));
     } catch (err) {
-      const apiError = err instanceof ApiError ? err : null;
-      const current = apiError?.fieldError("current_password");
-      const next = apiError?.fieldError("new_password");
-      if (current || next) {
-        setPasswordErrors({ ...(current ? { current } : {}), ...(next ? { new: next } : {}) });
+      if (!(err instanceof ApiError) || err.status === 0) {
+        setPasswordErrors({ form: t("global.errPasswordUnreachable") });
+      } else if (err.status === 429) {
+        setPasswordErrors({ form: t("global.errPasswordThrottled") });
       } else {
-        triggerSaveAlert("password", apiError?.message ?? t("global.passwordErrorToast"));
+        // The backend's messages arrive already translated (Accept-Language).
+        const current = err.fieldError("current_password");
+        const next = err.fieldError("new_password");
+        setPasswordErrors(
+          current || next
+            ? { ...(current ? { current } : {}), ...(next ? { new: next } : {}) }
+            : { form: t("global.errPasswordFailed") }
+        );
       }
-      setIsLoading(false);
-      return;
+    } finally {
+      setIsChangingPassword(false);
     }
-    // Success revokes every session, this one included: tell the user, then sign in again.
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    triggerSaveAlert("password", t("global.passwordSavedToast"));
-    await new Promise((resolve) => setTimeout(resolve, 1800));
-    await clearSession();
-    router.replace("/login");
   };
 
   const handleLanguageChange = async (e: React.FormEvent) => {
@@ -190,90 +209,72 @@ export function GlobalSettings() {
 
       {/* 1. Property Setup Tab */}
       {activeTab === "property" && (
-        <div className="animate-fade-in">
+        <div className="space-y-4 animate-fade-in">
           <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
               <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
             </div>
 
-            {properties.isPending && (
-              <p className="text-xs text-ink-muted">{t("global.propertiesLoading")}</p>
+            {properties === null && !propertiesError && (
+              <p role="status" className="text-xs text-ink-muted">{tProperties("list.loadingProperties")}</p>
             )}
-
-            {properties.isError && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-page/35 p-4 text-xs text-ink-muted">
-                <span>{t("global.propertiesLoadError")}</span>
-                <button
-                  type="button"
-                  onClick={() => properties.refetch()}
-                  className="font-semibold text-accent hover:text-accent-hover cursor-pointer"
-                >
-                  {t("global.propertiesRetry")}
-                </button>
+            {propertiesError && (
+              <p role="alert" className="text-xs text-status-critical">{t("global.profilesLoadFailed")}</p>
+            )}
+            {properties?.length === 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-ink">{tProperties("list.emptyTitle")}</p>
+                <p className="text-xs text-ink-muted">{tProperties("list.emptyDesc")}</p>
               </div>
             )}
 
-            {properties.isSuccess && properties.data.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
-                <p className="text-xs text-ink-muted">{t("global.propertiesEmpty")}</p>
-                <Link
-                  href="/properties/add"
-                  className="inline-flex rounded-xl bg-accent px-4 py-2 text-xs font-bold text-ink-inverse hover:bg-accent-hover transition-colors"
+            <div className="space-y-5">
+              {properties?.map((p) => (
+                <div
+                  key={p.id}
+                  className="border border-border rounded-2xl p-5 bg-surface-card shadow-sm space-y-4 hover:shadow-md transition-shadow"
                 >
-                  {t("global.propertiesAdd")}
-                </Link>
-              </div>
-            )}
-
-            {properties.isSuccess && properties.data.length > 0 && (
-              <div className="space-y-5">
-                {properties.data.map((p) => (
-                  <div
-                    key={p.id}
-                    className="border border-border rounded-2xl p-5 bg-surface-card shadow-sm space-y-4 hover:shadow-md transition-shadow"
-                  >
-                    {/* Property header */}
-                    <div className="flex items-center gap-3 pb-3 border-b border-border/55">
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted shrink-0">
-                        <Building className="size-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-ink">{p.name}</h4>
-                        <p className="text-[10px] text-ink-muted">
-                          {tProperties(`types.${p.property_type as "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living"}`)} · {p.city}, {p.state}
-                        </p>
-                      </div>
+                  {/* Property header */}
+                  <div className="flex items-center gap-3 pb-3 border-b border-border/55">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted shrink-0">
+                      <Building className="size-5" />
                     </div>
-
-                    {/* Dashboard links */}
-                    <div className="grid grid-cols-1 gap-2">
-                      <Link
-                        href={`/properties/${p.id}/settings`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <CreditCard className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.penaltiesPolicy")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
-
-                      <Link
-                        href={`/properties/${p.id}/buildings`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Layers className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.floorHierarchy")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
+                    <div>
+                      <h4 className="text-sm font-bold text-ink">{p.name}</h4>
+                      <p className="text-[10px] text-ink-muted">
+                        {tProperties(`types.${p.property_type as PropertyType}`)} · {p.city}, {p.state}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {/* Dashboard links */}
+                  <div className="grid grid-cols-1 gap-2">
+                    <Link
+                      href={`/properties/${p.id}/buildings`}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Layers className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
+                        <span className="font-semibold text-ink">{t("global.floorHierarchy")}</span>
+                      </div>
+                      <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+                    </Link>
+
+                    <Link
+                      href={`/properties/${p.id}`}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Home className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
+                        <span className="font-semibold text-ink">{t("global.roomsInventory")}</span>
+                      </div>
+                      <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -379,10 +380,11 @@ export function GlobalSettings() {
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.current ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.current && <p className="text-xs text-status-critical">{passwordErrors.current}</p>}
               </div>
@@ -397,10 +399,11 @@ export function GlobalSettings() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.new ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.new && <p className="text-xs text-status-critical">{passwordErrors.new}</p>}
               </div>
@@ -415,20 +418,25 @@ export function GlobalSettings() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.confirm ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.confirm && <p className="text-xs text-status-critical">{passwordErrors.confirm}</p>}
               </div>
 
+              {passwordErrors.form && (
+                <p role="alert" className="text-xs text-status-critical">{passwordErrors.form}</p>
+              )}
+
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isChangingPassword}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? t("global.savingCredentials") : t("global.updateCredentials")}
+                {isChangingPassword ? t("global.savingCredentials") : t("global.updateCredentials")}
               </button>
             </form>
           </div>

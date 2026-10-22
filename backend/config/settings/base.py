@@ -145,9 +145,13 @@ REST_FRAMEWORK = {
         'otp_email_request': '3/min',
         'otp_email_request_email': '5/hour',
         'otp_email_verify': '10/min',
-        'password_reset': '5/min',
-        # Signed-in password change; keyed per user, so it also bounds guessing the current password.
-        'change_password': '5/min',
+        # Reset request and confirm are separate scopes: a flood of requests
+        # must not use up the allowance of someone completing a real reset.
+        'password_reset_request': '5/min',
+        'password_reset_request_email': '5/hour',
+        'password_reset_confirm': '10/min',
+        # Authenticated: DRF keys this on the user, not the IP.
+        'password_change': '5/min',
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',
         'device_register_ip': '120/hour',
@@ -254,8 +258,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # Auth flow settings (technical tuning — plan limits live in PlatformConfig).
 FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:3000')
 EMAIL_VERIFICATION_TTL_SECONDS = 60 * 60 * 72  # 3 days
-# Product name shown in the header/footer of HTML emails (templates/emails/).
-EMAIL_BRAND_NAME = env('EMAIL_BRAND_NAME', default='PGLive')
+# Password-reset and staff-invite links (Django's default is 3 days).
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
 
@@ -267,6 +271,9 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@localhost')
+# Footer identity for transactional emails; the same variables the web app reads.
+COMPANY_NAME = env('COMPANY_NAME', default='')
+COMPANY_ADDRESS = env('COMPANY_ADDRESS', default='')
 
 from datetime import timedelta
 # A dedicated JWT key, so rotating SECRET_KEY (with SECRET_KEY_FALLBACKS) does
@@ -319,6 +326,13 @@ RAZORPAY_WEBHOOK_SECRET = env('RAZORPAY_WEBHOOK_SECRET', default='')
 # where an unverified payload could drive tenant status and platform payments.
 # dev.py flips this to True; base (prod) fails closed.
 RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = env.bool('RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS', default=False)
+# Dev/test run on a local stub client when no key is set (apps.subscriptions.razorpay_client). prod.py turns
+# that off so production can never invent `test_…` Razorpay ids.
+RAZORPAY_ALLOW_STUB_CLIENT = True
+# Whether apps.subscriptions.checks.check_razorpay_settings requires an rzp_live_… key. Only
+# meaningful under --deploy (prod.py defaults it True; a staging deploy sets it False to allow
+# staging's intentional rzp_test_… keys — infra/README.md).
+RAZORPAY_REQUIRE_LIVE_MODE = env.bool('RAZORPAY_REQUIRE_LIVE_MODE', default=False)
 
 # Storage
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -340,6 +354,12 @@ MEDIA_URL_TTL_SECONDS = env.int('MEDIA_URL_TTL_SECONDS', default=300)
 # plan limit.
 EXPENSE_ATTACHMENT_MAX_BYTES = env.int('EXPENSE_ATTACHMENT_MAX_BYTES', default=5 * 1024 * 1024)
 EXPENSE_ATTACHMENT_URL_TTL_SECONDS = env.int('EXPENSE_ATTACHMENT_URL_TTL_SECONDS', default=MEDIA_URL_TTL_SECONDS)
+
+# Resident Aadhaar/PAN uploads (Module 04). Launch gate (docs/deployment.md): production keeps new uploads
+# OFF until legal sign-off (prod.py defaults it to False). Clearing and reading a stored document stay
+# available either way. The size is a technical limit, not a plan limit.
+KYC_UPLOADS_ENABLED = env.bool('KYC_UPLOADS_ENABLED', default=True)
+KYC_DOCUMENT_MAX_BYTES = env.int('KYC_DOCUMENT_MAX_BYTES', default=5 * 1024 * 1024)
 
 # Google Cloud Storage (owner decision 2026-10-20: replaces AWS S3; see
 # docs/deployment.md). Falls back to local filesystem storage when no bucket

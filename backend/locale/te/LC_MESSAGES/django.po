@@ -2111,6 +2111,18 @@ msgstr "క్యూలో ఉంచిన ధృవీకరణ ఇమెయి
 msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
 msgstr "ధృవీకరించినట్లు గుర్తించినవి: %(verified)d. దాటవేసినవి — నిష్క్రియ: %(inactive)d, ఇమెయిల్ లేనివి: %(no_email)d, ఇప్పటికే ధృవీకరించినవి: %(already)d."
 
+#: apps/accounts/serializers.py
+msgid "Your current password is incorrect."
+msgstr "మీ ప్రస్తుత పాస్‌వర్డ్ తప్పు."
+
+#: apps/accounts/serializers.py
+msgid "The new password must be different from your current password."
+msgstr "కొత్త పాస్‌వర్డ్ మీ ప్రస్తుత పాస్‌వర్డ్‌కు భిన్నంగా ఉండాలి."
+
+#: apps/accounts/serializers.py
+msgid "Password changed. Please sign in again with your new password."
+msgstr "పాస్‌వర్డ్ మార్చబడింది. దయచేసి మీ కొత్త పాస్‌వర్డ్‌తో మళ్లీ సైన్ ఇన్ చేయండి."
+
 #: templates/emails/verify_email.html
 msgid "Confirm your email address to activate your account."
 msgstr "మీ ఖాతాను సక్రియం చేయడానికి మీ ఇమెయిల్ చిరునామాను నిర్ధారించండి."

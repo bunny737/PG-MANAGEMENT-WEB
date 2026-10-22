@@ -277,6 +277,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/change-password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Signed-in password change. Revokes every session (auth_version), including this one:
+         *     the client signs in again with the new password.
+         */
+        post: operations["v1_auth_change_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login/": {
         parameters: {
             query?: never;
@@ -3083,6 +3103,14 @@ export interface components {
          */
         Category530Enum: "electrical" | "plumbing" | "internet_wifi" | "housekeeping" | "security" | "furniture" | "other";
         /**
+         * @description The signed-in user changes their own password. The current password is required
+         *     even with a valid session, so a hijacked or left-open session can't lock the owner out.
+         */
+        ChangePassword: {
+            current_password: string;
+            new_password: string;
+        };
+        /**
          * @description * `email` - Email
          *     * `sms` - SMS
          *     * `whatsapp` - WhatsApp
@@ -5258,6 +5286,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuditLog"];
                 };
+            };
+        };
+    };
+    v1_auth_change_password_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePassword"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChangePassword"];
+                "multipart/form-data": components["schemas"]["ChangePassword"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

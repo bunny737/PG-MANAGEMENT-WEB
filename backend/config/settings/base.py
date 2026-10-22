@@ -146,6 +146,8 @@ REST_FRAMEWORK = {
         'otp_email_request_email': '5/hour',
         'otp_email_verify': '10/min',
         'password_reset': '5/min',
+        # Signed-in password change; keyed per user, so it also bounds guessing the current password.
+        'change_password': '5/min',
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',
         'device_register_ip': '120/hour',

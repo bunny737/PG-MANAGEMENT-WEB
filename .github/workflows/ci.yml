@@ -134,7 +134,7 @@ jobs:
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Build backend image
         run: docker build -f backend/Dockerfile.prod -t pglive-api:local backend
       - name: Build frontend image

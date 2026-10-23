@@ -15,7 +15,8 @@ g() { gcloud --project "$PROJECT" "$@"; }
 # gcloud's custom delimiter ";": "^;^K=v;K2=v2".
 SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION;DB_NAME=$DB_NAME"
 COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT"
-COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=$SITE_URL"
+# FIREBASE_PROJECT_ID: Firebase may live in its own project (prod: pglive-prod-e57a1); defaults to this one.
+COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-$PROJECT};FRONTEND_BASE_URL=$SITE_URL"
 COMMON_ENV+=";APP_RELEASE=${SHA:-unknown};SENTRY_ENVIRONMENT=$([[ $ENVIRONMENT == prod ]] && echo production || echo staging)"
 # Staging intentionally runs on Razorpay test keys (infra/README.md); only a prod deploy requires
 # a live key (apps.subscriptions.checks, backend/bin/start-api.sh).

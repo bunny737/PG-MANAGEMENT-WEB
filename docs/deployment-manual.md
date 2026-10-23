@@ -588,6 +588,11 @@ and deployment.md §8. An export you have never restored is not a backup.
 - **Firebase** (FCM only): add Firebase to the project, register a web app for `https://www.pglive.in`, create a
   VAPID key, restrict the web API key to referrer `https://www.pglive.in/*`; put the values in the web image build
   (section 3) and rebuild/redeploy `pglive-web`. The backend uses the service account (no key file).
+  Production's Firebase is its **own project, `pglive-prod-e57a1`**, not `pglive-prod`. The backend must send through
+  the project the browsers registered with, so: grant `sa-api` and `sa-worker` `roles/firebasecloudmessaging.admin`
+  **on `pglive-prod-e57a1`**; set `FIREBASE_PROJECT_ID=pglive-prod-e57a1` on `pglive-api` and the jobs (export it
+  before `30-services.sh`, which otherwise defaults to `$PROJECT`); and set VM metadata
+  `firebase-project-id=pglive-prod-e57a1`, which `worker/deploy.sh` reads.
 - **Google Maps**: new key restricted to HTTP referrer `https://www.pglive.in/*` and to **Maps JavaScript API,
   Places API (New) and Geocoding API** (the location picker uses all three; a key limited to Maps JavaScript only
   breaks address search and reverse geocoding), with a quota cap. Enable those three APIs on the project. Also

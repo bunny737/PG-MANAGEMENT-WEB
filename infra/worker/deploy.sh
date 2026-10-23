@@ -43,7 +43,9 @@ umask 077
     if [[ -n "$value" ]]; then echo "${pair%%=*}=$value"; fi
   done
   echo "FIREBASE_USE_ADC=True"
-  echo "FIREBASE_PROJECT_ID=$PROJECT"
+  # Firebase may live in its own project (prod: pglive-prod-e57a1); VM metadata firebase-project-id names it.
+  FIREBASE_PROJECT="$(opt firebase-project-id)"
+  echo "FIREBASE_PROJECT_ID=${FIREBASE_PROJECT:-$PROJECT}"
   echo "ALLOWED_HOSTS=api.pglive.in"
   echo "FRONTEND_BASE_URL=https://www.pglive.in"
   echo "REDIS_PASSWORD=$(secret REDIS_PASSWORD)"

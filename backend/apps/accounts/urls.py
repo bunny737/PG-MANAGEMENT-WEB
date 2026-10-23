@@ -15,5 +15,6 @@ urlpatterns = [
     path('otp/email/verify/', views.EmailOtpVerifyView.as_view(), name='auth-otp-email-verify'),
     path('password-reset/', views.PasswordResetRequestView.as_view(), name='auth-password-reset'),
     path('password-reset/confirm/', views.PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
+    path('password/change/', views.PasswordChangeView.as_view(), name='auth-password-change'),
     path('me/', views.MeView.as_view(), name='auth-me'),
 ]

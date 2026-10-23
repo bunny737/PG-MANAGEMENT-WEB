@@ -743,6 +743,10 @@ msgstr ""
 msgid "Attach a JPEG, PNG, WebP or PDF file."
 msgstr ""
 
+#: apps/core/uploads.py:43
+msgid "Attach a JPEG, PNG or PDF file."
+msgstr ""
+
 #: apps/expenses/views.py:96
 #, python-brace-format
 msgid "Use PUT /expenses/{id}/attachment/ to replace the file."
@@ -2062,4 +2066,141 @@ msgstr ""
 #: apps/accounts/admin.py
 #, python-format
 msgid "Marked verified: %(verified)d. Skipped — inactive: %(inactive)d, no email: %(no_email)d, already verified: %(already)d."
+msgstr ""
+
+#: templates/emails/base.html
+msgid "If the button doesn't work, copy and paste this link into your browser:"
+msgstr ""
+
+#: templates/emails/base.html templates/emails/base.txt
+msgid "Need help?"
+msgstr ""
+
+#: templates/emails/login_code.html
+msgid "Enter this code to sign in:"
+msgstr ""
+
+#: templates/emails/login_code.html templates/emails/login_code.txt
+#, python-format
+msgid "It expires in %(minutes)s minute."
+msgid_plural "It expires in %(minutes)s minutes."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+msgid "Your password was changed"
+msgstr ""
+
+#: templates/emails/password_changed.html
+msgid "The password for your PGLive account was just changed."
+msgstr ""
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+#, python-format
+msgid "Hi %(name)s,"
+msgstr ""
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Hello,"
+msgstr ""
+
+#: templates/emails/password_changed.html templates/emails/password_changed.txt
+msgid "The password for your PGLive account was just changed, and you were signed out of your other devices."
+msgstr ""
+
+#: templates/emails/password_changed.html
+#, python-format
+msgid "If this wasn't you, <a href=\"%(reset_url)s\" style=\"color:#4f46e5;\">reset your password</a> right away."
+msgstr ""
+
+#: templates/emails/password_changed.txt
+#, python-format
+msgid "If this wasn't you, reset your password right away: %(reset_url)s"
+msgstr ""
+
+#: templates/emails/password_reset.html
+msgid "Choose a new password for your PGLive account."
+msgstr ""
+
+#: templates/emails/password_reset.html
+#, python-format
+msgid "We received a request to reset the password for your account. Use the button below to choose a new one. The link works once and is valid for %(hours)s hour."
+msgid_plural "We received a request to reset the password for your account. Use the button below to choose a new one. The link works once and is valid for %(hours)s hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/password_reset.txt
+#, python-format
+msgid "We received a request to reset the password for your account. Use the link below to choose a new one. The link works once and is valid for %(hours)s hour."
+msgid_plural "We received a request to reset the password for your account. Use the link below to choose a new one. The link works once and is valid for %(hours)s hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+msgid "Reset password"
+msgstr ""
+
+#: templates/emails/password_reset.html templates/emails/password_reset.txt
+msgid "If you didn't request this, you can ignore this email. Your password will not change."
+msgstr ""
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Set your password to get started."
+msgstr ""
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+#, python-format
+msgid "An account was created for you at %(business)s."
+msgstr ""
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "Set your password"
+msgstr ""
+
+#: templates/emails/staff_invite.html templates/emails/staff_invite.txt
+msgid "If you weren't expecting this invitation, you can ignore this email."
+msgstr ""
+
+#: templates/emails/verify_email.html
+msgid "Confirm your email address to activate your PGLive account."
+msgstr ""
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+#, python-format
+msgid "Welcome, %(name)s!"
+msgstr ""
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "Welcome!"
+msgstr ""
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+#, python-format
+msgid "Confirm your email address to activate your account. This link is valid for %(hours)s hour."
+msgid_plural "Confirm your email address to activate your account. This link is valid for %(hours)s hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "Verify email"
+msgstr ""
+
+#: templates/emails/verify_email.html templates/emails/verify_email.txt
+msgid "If you didn't create a PGLive account, you can safely ignore this email."
+msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "Current password is incorrect."
+msgstr ""
+
+#: apps/accounts/serializers.py
+msgid "The new password must be different from the current one."
+msgstr ""
+
+#: apps/residents/serializers.py
+msgid "Identity document uploads are not enabled yet."
 msgstr ""

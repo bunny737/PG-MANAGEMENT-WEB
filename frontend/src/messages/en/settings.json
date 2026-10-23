@@ -27,19 +27,10 @@
   "global": {
     "profilesTitle": "Property Configuration Profiles",
     "profilesSub": "Select settings dashboards to configure setup and billing policies.",
-    "penaltiesPolicy": "Late Penalties & Billing Policy",
     "floorHierarchy": "Levels & Floor Hierarchy Setup",
     "roomsInventory": "Rooms Portfolio Inventory",
-    "portalSetup": "General Portal Setup",
-    "brandTitle": "System Brand Title",
-    "notificationEmail": "System Notification Email",
-    "baseCurrency": "Base Currency Symbol",
-    "privilegesWarning": "Modifying general configurations requires Owner privileges. Audited log checks are run daily.",
-    "savingSetup": "Saving Setup...",
-    "saveSetup": "Save Portal Setup",
-    "portalSavedToast": "General portal configurations updated successfully.",
     "changePassword": "Change Password",
-    "changePasswordSub": "Update your login credentials. Security logs record all password reset timelines.",
+    "changePasswordSub": "Update your login password. You stay signed in on this device; every other device is signed out.",
     "currentPassword": "Current Password",
     "newPassword": "New Password",
     "confirmPassword": "Confirm New Password",
@@ -47,13 +38,14 @@
     "updateCredentials": "Update Security Credentials",
     "passwordSavedToast": "Security credentials updated successfully.",
     "savedPrefix": "{type} Saved",
-    "currencyUSD": "USD ($) - US Dollar",
-    "currencyINR": "INR (₹) - Indian Rupee",
-    "currencyEUR": "EUR (€) - Euro",
     "errCurrentRequired": "Current Password is required",
     "errNewRequired": "New Password is required",
-    "errNewMinLength": "Password must be at least 6 characters",
-    "errConfirmMatch": "Passwords do not match"
+    "errNewMinLength": "Password must be at least 8 characters",
+    "errConfirmMatch": "Passwords do not match",
+    "errPasswordUnreachable": "Could not reach the server. Please try again.",
+    "errPasswordThrottled": "Too many attempts. Please wait a minute and try again.",
+    "errPasswordFailed": "Could not change your password. Please try again.",
+    "profilesLoadFailed": "Could not load your properties. Please try again."
   },
   "subscription": {
     "loading": "Loading your plan...",
@@ -136,7 +128,11 @@
     "errGraceDaysRange": "Grace days must be between 0 and 30 days.",
     "errPenaltyValueRequired": "Penalty value is required when late payment penalty is active.",
     "errPenaltyValuePositive": "Penalty value must be a positive number.",
-    "errPenaltyValuePercentCap": "Percentage penalty cannot exceed 100%."
+    "errPenaltyValuePercentCap": "Percentage penalty cannot exceed 100%.",
+    "loading": "Loading settings...",
+    "loadError": "We couldn't load this property's settings.",
+    "retry": "Try again",
+    "saveError": "We couldn't save the settings. Please try again."
   },
   "profile": {
     "title": "User Profile",
@@ -163,6 +159,8 @@
     "emailVerified": "Verified",
     "emailNotVerified": "Not verified",
     "sendVerification": "Send verification email",
-    "verificationSent": "Verification email sent. Check your inbox."
+    "verificationSent": "Verification email sent. Check your inbox.",
+    "passwordLabel": "Password",
+    "changePassword": "Change password"
   }
 }

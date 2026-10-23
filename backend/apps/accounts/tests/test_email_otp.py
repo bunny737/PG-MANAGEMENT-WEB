@@ -207,7 +207,7 @@ class SendLoginCodeTaskTests(EmailOtpTestCase):
         finally:
             send_login_code_task.pop_request()
 
-    @mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down'))
+    @mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down'))
     def test_async_smtp_failure_is_retried(self, _send):
         class Retried(Exception):
             pass
@@ -218,7 +218,7 @@ class SendLoginCodeTaskTests(EmailOtpTestCase):
         self.assertEqual(retry.call_args.kwargs['countdown'], 5)
         self.assertIsInstance(retry.call_args.kwargs['exc'], SMTPException)
 
-    @mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down'))
+    @mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down'))
     def test_exhausted_retries_log_without_code_or_address(self, _send):
         with mock.patch.object(send_login_code_task, 'retry') as retry, \
                 self.assertLogs('apps.accounts.tasks', 'ERROR') as logs:
@@ -229,7 +229,7 @@ class SendLoginCodeTaskTests(EmailOtpTestCase):
         code = CODE_RE.search(output)
         self.assertIsNone(code)
 
-    @mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down'))
+    @mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down'))
     def test_eager_smtp_failure_never_reaches_the_request(self, _send):
         # Real enqueue: dev/test settings run the task eagerly with propagation on.
         self.assertTrue(settings.CELERY_TASK_ALWAYS_EAGER)

@@ -1,0 +1,10 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% blocktrans trimmed %}You have been invited to {{ business }}{% endblocktrans %}{% endblock %}
+{% block content %}{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}
+
+{% blocktrans trimmed %}An account was created for you at {{ business }}.{% endblocktrans %} {% trans "Set your password to get started." %}
+{% endblock %}
+{% block cta_label %}{% trans "Set your password" %}{% endblock %}
+{% block footnote %}
+{% trans "If you weren't expecting this invitation, you can ignore this email." %}
+{% endblock %}

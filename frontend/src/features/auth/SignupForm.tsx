@@ -9,7 +9,7 @@ import { LOCALES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
 import { readLocaleCookie } from "@/i18n/locale";
 import { ApiError, signup } from "@/lib/api";
 import { CheckEmailPanel } from "./CheckEmailPanel";
-import { isValidEmail, normalizeInputPhone } from "./validation";
+import { isValidEmail, isValidNewPassword, normalizeInputPhone } from "./validation";
 
 const ACTIVE_LOCALES = LOCALES.filter((locale) => isActiveLocale(locale.code));
 
@@ -79,6 +79,7 @@ export function SignupForm() {
     else if (!isValidEmail(email.trim())) next.email = t("login.errEmailInvalid");
     if (phone.trim() && !normalizeInputPhone(phone)) next.phone = t("login.errPhoneInvalid");
     if (!password) next.password = t("login.errPasswordRequired");
+    else if (!isValidNewPassword(password)) next.password = t("login.errPasswordLength");
     if (password && confirmPassword !== password) next.confirm_password = t("signup.errPasswordMismatch");
     return next;
   };

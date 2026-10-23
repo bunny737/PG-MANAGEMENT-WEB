@@ -25,7 +25,6 @@ import { ResendVerificationPrompt } from "./ResendVerificationPrompt";
 import { isValidEmail, normalizeInputPhone } from "./validation";
 
 type LoginView = "choice" | "owner" | "staff";
-type FlowState = "login" | "forgot_password";
 /** Password is the default; the emailed code is the optional alternative in both views. */
 type AuthMethod = "password" | "email_code";
 
@@ -37,16 +36,17 @@ interface LoginFormProps {
   /** SIGNUP_ENABLED: only decides whether the "Start free trial" link shows (discovery only;
    * /signup itself stays reachable by URL). */
   signupEnabled?: boolean;
+  /** Skips the role chooser (`/login?view=staff`, the landing spot after a staff invite). */
+  initialView?: "owner" | "staff";
 }
 
-export function LoginForm({ signupEnabled = false }: LoginFormProps) {
+export function LoginForm({ signupEnabled = false, initialView }: LoginFormProps) {
   const router = useRouter();
   const t = useTranslations("auth");
   const tCommon = useTranslations("common");
 
   // Navigation & Flow
-  const [loginView, setLoginView] = useState<LoginView>("choice");
-  const [flowState, setFlowState] = useState<FlowState>("login");
+  const [loginView, setLoginView] = useState<LoginView>(initialView ?? "choice");
   const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
   // Lives here, not in EmailCodeLogin, so resend cooldowns survive switching views or methods.
   const [codeRequests, setCodeRequests] = useState<CodeRequests>({});
@@ -57,16 +57,11 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
 
   // Phone + Password Credentials
   const [phone, setPhone] = useState("");
   const [phonePassword, setPhonePassword] = useState("");
   const [showPhonePassword, setShowPhonePassword] = useState(false);
-
-  // Forgot Password Input
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotSuccess, setForgotSuccess] = useState(false);
 
   // Set when password login answered EMAIL_NOT_VERIFIED: offers a resend for this address.
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
@@ -88,10 +83,9 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
       newErrors.email = t("login.errEmailInvalid");
     }
 
+    // Presence only: an older account may hold a shorter password, and Django decides validity.
     if (!password) {
       newErrors.password = t("login.errPasswordRequired");
-    } else if (password.length < 6) {
-      newErrors.password = t("login.errPasswordLength");
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -202,116 +196,6 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
       {t("login.useEmailCode")}
     </button>
   );
-
-  const handleForgotSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!forgotEmail) {
-      setErrors({ forgotEmail: t("login.errEmailRequired") });
-      return;
-    } else if (!validateEmail(forgotEmail)) {
-      setErrors({ forgotEmail: t("login.errEmailInvalid") });
-      return;
-    }
-
-    setErrors({});
-    setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
-      setForgotSuccess(true);
-    }, 1500);
-  };
-
-  if (flowState === "forgot_password") {
-    return (
-      <div className="flex w-full flex-col justify-center px-4 sm:px-6 md:px-8 lg:w-1/2 xl:w-5/12">
-        <div className="mx-auto w-full max-w-md space-y-6">
-          <button
-            onClick={() => {
-              setFlowState("login");
-              setForgotSuccess(false);
-              setForgotEmail("");
-              setErrors({});
-            }}
-            className="group inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
-            {t("forgotPassword.backToLogin")}
-          </button>
-
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight text-ink">{t("forgotPassword.title")}</h2>
-            <p className="text-sm text-ink-muted">
-              {t("forgotPassword.subtitle")}
-            </p>
-          </div>
-
-          {forgotSuccess ? (
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-6 text-center space-y-4">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                <CheckCircle2 className="size-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-ink">{t("forgotPassword.sentTitle")}</h3>
-                <p className="text-xs text-ink-muted">
-                  {t("forgotPassword.sentSubtitle", { email: forgotEmail })}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setFlowState("login");
-                  setForgotSuccess(false);
-                  setForgotEmail("");
-                }}
-                className="w-full rounded-xl bg-accent py-2 text-xs font-semibold text-ink-inverse hover:bg-accent-hover transition-colors cursor-pointer"
-              >
-                {t("forgotPassword.backToLogin")}
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleForgotSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label htmlFor="forgot-email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("login.emailLabel")}
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
-                    <Mail className="size-4.5" />
-                  </span>
-                  <input
-                    id="forgot-email"
-                    type="email"
-                    placeholder={t("login.emailPlaceholder")}
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    className={`w-full rounded-xl border ${
-                      errors.forgotEmail ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
-                    } bg-surface-card py-2.5 pl-10 pr-4 text-sm text-ink outline-none transition-all focus:ring-4`}
-                    disabled={isLoading}
-                  />
-                </div>
-                {errors.forgotEmail && <p className="text-xs text-status-critical">{errors.forgotEmail}</p>}
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex w-full items-center justify-center rounded-xl bg-accent py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 size-4.5 animate-spin" /> {t("forgotPassword.sending")}
-                  </>
-                ) : (
-                  t("forgotPassword.submit")
-                )}
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex w-full flex-col justify-center px-4 py-12 sm:px-6 md:px-8 lg:w-1/2 xl:w-5/12">
@@ -449,13 +333,12 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
                   <label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
                     {t("login.passwordLabel")}
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setFlowState("forgot_password")}
-                    className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer"
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
                   >
                     {t("login.forgotPassword")}
-                  </button>
+                  </Link>
                 </div>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
@@ -481,20 +364,6 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
                   </button>
                 </div>
                 {errors.password && <p className="text-xs text-status-critical">{errors.password}</p>}
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="size-4 rounded border-border text-accent focus:ring-accent bg-surface-card"
-                  disabled={isLoading || isSuccess}
-                />
-                <label htmlFor="remember-me" className="ml-2.5 text-sm font-medium text-ink-muted select-none">
-                  {t("login.rememberMe")}
-                </label>
               </div>
 
               <button
@@ -584,9 +453,17 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="phone-password" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("login.passwordLabel")}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="phone-password" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                    {t("login.passwordLabel")}
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
+                  >
+                    {t("login.forgotPassword")}
+                  </Link>
+                </div>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-ink-faint">
                     <Lock className="size-4.5" />
@@ -611,20 +488,6 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
                   </button>
                 </div>
                 {errors.phonePassword && <p className="text-xs text-status-critical">{errors.phonePassword}</p>}
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  id="remember-me-phone"
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="size-4 rounded border-border text-accent focus:ring-accent bg-surface-card"
-                  disabled={isLoading || isSuccess}
-                />
-                <label htmlFor="remember-me-phone" className="ml-2.5 text-sm font-medium text-ink-muted select-none">
-                  {t("login.rememberMe")}
-                </label>
               </div>
 
               <button
@@ -663,17 +526,6 @@ export function LoginForm({ signupEnabled = false }: LoginFormProps) {
             </Link>
           </p>
         )}
-
-        {/* Demo Credentials Helper */}
-        <div className="rounded-xl border border-border bg-surface-card p-4 text-xs space-y-1">
-          <p className="font-semibold text-ink">{t("login.demoTitle")}</p>
-          <div className="grid grid-cols-[auto_1fr] gap-x-2 text-ink-muted">
-            <span className="font-medium text-ink-faint">{t("login.demoPasswordTab")}</span>
-            <span>{t("login.demoPasswordText")}</span>
-            <span className="font-medium text-ink-faint">{t("login.demoPhoneTab")}</span>
-            <span>{t("login.demoPhoneText")}</span>
-          </div>
-        </div>
 
       </div>
     </div>

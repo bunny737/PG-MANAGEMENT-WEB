@@ -5,4 +5,4 @@ class SubscriptionsConfig(AppConfig):
     name = 'apps.subscriptions'
 
     def ready(self):
-        from . import signals  # noqa: F401 — registers Bed post_save/post_delete receivers
+        from . import checks, signals  # noqa: F401 — signals: Bed post_save/post_delete receivers; checks: the Razorpay deploy check

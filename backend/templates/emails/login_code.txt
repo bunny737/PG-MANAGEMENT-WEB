@@ -1,0 +1,9 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% trans "Your sign-in code" %}{% endblock %}
+{% block content %}{% blocktrans trimmed %}Your sign-in code is {{ code }}.{% endblocktrans %}
+
+{% blocktrans trimmed count minutes=minutes %}It expires in {{ minutes }} minute.{% plural %}It expires in {{ minutes }} minutes.{% endblocktrans %}
+{% endblock %}
+{% block footnote %}
+{% trans "If you didn't ask for this code, you can ignore this email. Your password has not changed." %}
+{% endblock %}

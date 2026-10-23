@@ -3,27 +3,81 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Save, CheckCircle2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { mockProperties } from "./mock-properties";
+import {
+  ApiError,
+  getProperty,
+  getPropertySettings,
+  updatePropertySettings,
+  type Property,
+  type PropertySettings,
+} from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 
 export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
   const t = useTranslations("settings.propertySettings");
-  const tCommon = useTranslations("common");
-  const property = mockProperties.find((p) => p.id === propertyId) || mockProperties[0];
+  const propertyQuery = useQuery({
+    queryKey: queryKeys.properties.detail(propertyId),
+    queryFn: () => getProperty(propertyId),
+  });
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.properties.settings(propertyId),
+    queryFn: () => getPropertySettings(propertyId),
+  });
 
-  // Default state values from specs
-  const [rentTiming, setRentTiming] = useState<"next_billing_cycle" | "immediate">("next_billing_cycle");
-  const [penaltyType, setPenaltyType] = useState<"none" | "fixed" | "percentage">("none");
-  const [penaltyValue, setPenaltyValue] = useState("");
-  const [graceDays, setGraceDays] = useState(5);
-  const [appliesTo, setAppliesTo] = useState<"full_invoice" | "outstanding_balance">("full_invoice");
-  const [compounding, setCompounding] = useState<"one_time" | "monthly">("one_time");
+  if (settingsQuery.isError || propertyQuery.isError) {
+    return (
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-border bg-surface-card p-5 text-sm text-ink-muted">
+        <span>{t("loadError")}</span>
+        <button
+          type="button"
+          onClick={() => {
+            propertyQuery.refetch();
+            settingsQuery.refetch();
+          }}
+          className="font-semibold text-accent hover:text-accent-hover cursor-pointer"
+        >
+          {t("retry")}
+        </button>
+      </div>
+    );
+  }
+
+  if (!propertyQuery.data || !settingsQuery.data) {
+    return <p className="mx-auto max-w-3xl text-sm text-ink-muted">{t("loading")}</p>;
+  }
+
+  // The server lazily creates the settings row with the PRD defaults on first read, so the
+  // form is always seeded from a saved row.
+  return <SettingsFields propertyId={propertyId} property={propertyQuery.data} settings={settingsQuery.data} />;
+}
+
+function SettingsFields({
+  propertyId,
+  property,
+  settings,
+}: {
+  propertyId: string;
+  property: Property;
+  settings: PropertySettings;
+}) {
+  const t = useTranslations("settings.propertySettings");
+  const tCommon = useTranslations("common");
+  const queryClient = useQueryClient();
+
+  const [rentTiming, setRentTiming] = useState(settings.room_transfer_rent_timing);
+  const [penaltyType, setPenaltyType] = useState(settings.late_payment_penalty_type);
+  const [penaltyValue, setPenaltyValue] = useState(settings.penalty_value ? String(Number(settings.penalty_value)) : "");
+  const [graceDays, setGraceDays] = useState(settings.penalty_grace_days);
+  const [appliesTo, setAppliesTo] = useState(settings.penalty_applies_to);
+  const [compounding, setCompounding] = useState(settings.penalty_compounding);
 
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -53,12 +107,28 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
 
     setErrors({});
     setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const saved = await updatePropertySettings(propertyId, {
+        room_transfer_rent_timing: rentTiming,
+        late_payment_penalty_type: penaltyType,
+        penalty_value: penaltyType === "none" ? null : penaltyValue,
+        penalty_grace_days: graceDays,
+        penalty_applies_to: appliesTo,
+        penalty_compounding: compounding,
+      });
+      queryClient.setQueryData(queryKeys.properties.settings(propertyId), saved);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 4000);
-    }, 1200);
+    } catch (err) {
+      const apiError = err instanceof ApiError ? err : null;
+      setErrors({
+        penaltyValue: apiError?.fieldError("penalty_value") ?? "",
+        graceDays: apiError?.fieldError("penalty_grace_days") ?? "",
+        form: apiError ? apiError.message : t("saveError"),
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -217,7 +287,7 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             {penaltyType !== "none" && (
               <div className="space-y-1.5 animate-fade-in">
                 <label htmlFor="penaltyValue" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("penaltyRateLabel", { symbol: penaltyType === "fixed" ? "$" : "%" })}
+                  {t("penaltyRateLabel", { symbol: penaltyType === "fixed" ? "₹" : "%" })}
                 </label>
                 <input
                   id="penaltyValue"
@@ -271,6 +341,8 @@ export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
             )}
           </div>
         </div>
+
+        {errors.form && <p role="alert" className="text-xs text-status-critical">{errors.form}</p>}
 
         {/* Save button footer */}
         <div className="flex justify-end gap-3 pt-2">

@@ -429,6 +429,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password/change/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Signed-in user changes their own password. Returns a fresh token pair:
+         *     the change ends every session, including the caller's, so the web BFF
+         *     stores the new pair and the caller stays signed in.
+         */
+        post: operations["v1_auth_password_change_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/resend-verification/": {
         parameters: {
             query?: never;
@@ -3658,6 +3679,8 @@ export interface components {
             readonly email_verified: boolean;
             readonly tenant: components["schemas"]["Tenant"];
             readonly permissions: string[];
+            /** @description Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False. */
+            readonly kyc_uploads_enabled: boolean;
         };
         MeUpdate: {
             first_name: string;
@@ -3714,6 +3737,10 @@ export interface components {
         OtpVerify: {
             phone: string;
             code: string;
+        };
+        PasswordChange: {
+            current_password: string;
+            new_password: string;
         };
         PasswordResetConfirm: {
             uid: string;
@@ -5501,6 +5528,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PasswordResetConfirm"];
+                };
+            };
+        };
+    };
+    v1_auth_password_change_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+                "application/x-www-form-urlencoded": components["schemas"]["PasswordChange"];
+                "multipart/form-data": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
                 };
             };
         };

@@ -1,7 +1,9 @@
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -22,11 +24,13 @@ from apps.core.tasks import enqueue
 from apps.subscriptions.models import Subscription
 
 from . import otp as otp_service
-from .emails import send_password_reset_email, send_staff_invite_email
 from .models import Tenant, User
 from .normalization import normalize_email, normalize_phone
 from .tasks import (
     send_login_code_task,
+    send_password_changed_task,
+    send_password_reset_task,
+    send_staff_invite_task,
     send_verification_email_to_address_task,
     send_verification_email_to_user_task,
     send_welcome_email_task,
@@ -373,10 +377,18 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def save(self, **kwargs):
-        # Always succeed — never reveal whether an email is registered.
-        user = User.objects.filter(email__iexact=self.validated_data['email'], is_active=True).first()
-        if user:
-            send_password_reset_email(user)
+        # Always succeed and do the same work for every address — never reveal
+        # whether an email is registered. The worker picks the account.
+        email = self.validated_data['email']
+        transaction.on_commit(lambda: enqueue(send_password_reset_task, email))
+
+
+def _queue_password_changed_notice(user):
+    """After commit, so a broker or SMTP outage can never undo a password change."""
+    if not user.email:
+        return
+    user_id, expected_email = str(user.id), user.email
+    transaction.on_commit(lambda: enqueue(send_password_changed_task, user_id, expected_email))
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
@@ -384,24 +396,95 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     token = serializers.CharField()
     new_password = serializers.CharField(validators=[validate_password])
 
+    @staticmethod
+    def _invalid_token():
+        return serializers.ValidationError(
+            {'token': _('This reset link is invalid or has expired.')},
+            code='invalid_token',
+        )
+
     def validate(self, attrs):
+        # Cheap early rejection; save() repeats the check under a row lock.
         user_id = read_password_reset_uid(attrs['uid'])
         user = User.objects.filter(pk=user_id, is_active=True).first() if user_id else None
         if user is None or not check_password_reset_token(user, attrs['token']):
-            raise serializers.ValidationError(
-                {'token': _('This reset link is invalid or has expired.')},
-                code='invalid_token',
-            )
+            raise self._invalid_token()
         attrs['user'] = user
         return attrs
 
     def save(self, **kwargs):
-        user = self.validated_data['user']
-        user.set_password(self.validated_data['new_password'])
-        # Completing the flow proves email ownership (also finishes staff invites).
-        user.email_verified = True
-        user.save(update_fields=['password', 'email_verified', 'updated_at'])
+        # Two requests carrying the same token can both pass validate(). The
+        # token is bound to the password hash, so recheck it under the row lock
+        # immediately before changing the password: the second request then
+        # sees the first one's new hash and is rejected.
+        with transaction.atomic():
+            user = User.objects.select_for_update().filter(
+                pk=self.validated_data['user'].pk, is_active=True
+            ).first()
+            if user is None or not check_password_reset_token(user, self.validated_data['token']):
+                raise self._invalid_token()
+            version_before = user.auth_version
+            user.set_password(self.validated_data['new_password'])
+            # Completing the flow proves email ownership (also finishes staff invites).
+            user.email_verified = True
+            user.save(update_fields=['password', 'email_verified', 'updated_at'])
+            # Anonymous request: no actor, the user is the object.
+            audit_log.record(
+                action='user.password_reset',
+                actor=None,
+                tenant_id=user.tenant_id,
+                obj=user,
+                before={'auth_version': version_before},
+                after={'auth_version': user.auth_version},
+                request=self.context.get('request'),
+            )
+            _queue_password_changed_notice(user)
         return user
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def save(self, **kwargs):
+        """Returns the replacement token pair. Changing the password bumps
+        auth_version, which ends every session including this one, so the
+        caller gets a pair minted from the post-change row."""
+        request = self.context['request']
+        current = self.validated_data['current_password']
+        new = self.validated_data['new_password']
+        with transaction.atomic():
+            # The current password is checked on the locked row: two requests
+            # with the same old password can't both succeed.
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            if not user.check_password(current):
+                raise serializers.ValidationError(
+                    {'current_password': [_('Current password is incorrect.')]},
+                    code='invalid_password',
+                )
+            if new == current:
+                raise serializers.ValidationError(
+                    {'new_password': [_('The new password must be different from the current one.')]},
+                    code='password_unchanged',
+                )
+            try:
+                validate_password(new, user=user)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({'new_password': list(exc.messages)})
+            version_before = user.auth_version
+            user.set_password(new)
+            user.save(update_fields=['password', 'updated_at'])
+            audit_log.record(
+                action='user.password_changed',
+                actor=user,
+                obj=user,
+                before={'auth_version': version_before},
+                after={'auth_version': user.auth_version},
+                request=request,
+            )
+            _queue_password_changed_notice(user)
+        refresh = LoginSerializer.get_token(user)
+        return {'access': str(refresh.access_token), 'refresh': str(refresh)}
 
 
 class TenantSerializer(serializers.ModelSerializer):
@@ -420,17 +503,24 @@ class TenantUpdateSerializer(serializers.ModelSerializer):
 class MeSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer(read_only=True)
     permissions = serializers.SerializerMethodField()
+    kyc_uploads_enabled = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone', 'role',
-            'language_code', 'email_verified', 'tenant', 'permissions',
+            'language_code', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
         ]
-        read_only_fields = ['id', 'email', 'role', 'email_verified', 'tenant', 'permissions']
+        read_only_fields = [
+            'id', 'email', 'role', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
+        ]
 
     def get_permissions(self, obj) -> list[str]:
         return permissions_for_user(obj)
+
+    def get_kyc_uploads_enabled(self, obj) -> bool:
+        """Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False."""
+        return settings.KYC_UPLOADS_ENABLED
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -580,15 +670,11 @@ class StaffCreateSerializer(serializers.ModelSerializer):
             after={'email': user.email, 'phone': user.phone, 'role': user.role},
             request=request,
         )
-        if password:
-            if email:
-                # Queued after commit: an SMTP failure can't roll back the account.
-                user_id, expected_email = str(user.id), user.email
-                transaction.on_commit(
-                    lambda: enqueue(send_verification_email_to_user_task, user_id, expected_email)
-                )
-        else:
-            send_staff_invite_email(user, tenant)
+        # Queued after commit: an SMTP or broker failure can't roll back the account.
+        if email:
+            user_id, expected_email = str(user.id), user.email
+            task = send_verification_email_to_user_task if password else send_staff_invite_task
+            transaction.on_commit(lambda: enqueue(task, user_id, expected_email))
         return user
 
 

@@ -119,6 +119,90 @@ def send_verification_email_to_address_task(self, email):
         _deliver(self, _send_verification, user)
 
 
+def _send_password_reset(user):
+    from .emails import send_password_reset_email
+
+    send_password_reset_email(user)
+    return DeliveryResult.SENT
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_password_reset_task(self, email):
+    """Queued by the reset-request endpoint for every address alike, so the
+    response never reveals whether one is registered (and an SMTP outage can't
+    surface as an error for registered addresses only). Tenant users only:
+    Super Admins use Django admin behind IAP, and a suspended tenant's users
+    can't sign in anyway."""
+    from .models import User
+
+    user = User.objects.select_related('tenant').filter(email__iexact=email, is_active=True).first()
+    if (
+        user is None
+        or user.tenant_id is None
+        or user.tenant.status in BLOCKED_TENANT_STATUSES
+    ):
+        return
+    _deliver(self, _send_password_reset, user)
+
+
+def _send_staff_invite(user):
+    from .emails import send_staff_invite_email
+
+    send_staff_invite_email(user, user.tenant)
+    return DeliveryResult.SENT
+
+
+def _invite_target(user_id, expected_email):
+    """The staff account an invite is still for: active, in an eligible tenant,
+    still holding the address it was queued for, and with no password set yet
+    (an invite is how they set the first one)."""
+    from .models import User
+
+    if expected_email is None:
+        return None
+    user = User.objects.select_related('tenant').filter(pk=user_id).first()
+    if user is None or not user.is_active or not user.email or user.tenant_id is None:
+        return None
+    if user.tenant.status in BLOCKED_TENANT_STATUSES or user.has_usable_password():
+        return None
+    if normalize_email(user.email) != normalize_email(expected_email):
+        return None
+    return user
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_staff_invite_task(self, user_id, expected_email):
+    """Queued (on commit) when an owner creates staff without a password. Bound
+    to the account and address it was queued for, like the verification emails."""
+    user = _invite_target(user_id, expected_email)
+    if user is not None:
+        _deliver(self, _send_staff_invite, user)
+
+
+def _send_password_changed(user):
+    from .emails import send_password_changed_email
+
+    send_password_changed_email(user)
+    return DeliveryResult.SENT
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_password_changed_task(self, user_id, expected_email):
+    """Security notice after a reset or a change. Sent whatever the tenant's
+    state (the owner of the address should always hear about it), but only to
+    the address that was on the account when the password changed."""
+    from .models import User
+
+    if expected_email is None:
+        return
+    user = User.objects.filter(pk=user_id).first()
+    if user is None or not user.is_active or not user.email:
+        return
+    if normalize_email(user.email) != normalize_email(expected_email):
+        return
+    _deliver(self, _send_password_changed, user)
+
+
 def _can_use_email_login(user, email):
     """Email code login is for tenant users only: Super Admins (no tenant) sign
     in through Django admin behind IAP. Checked on the row `otp.issue` has

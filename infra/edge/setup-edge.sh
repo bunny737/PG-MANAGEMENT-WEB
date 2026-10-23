@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# On the pglive-worker VM:  sudo API_HOST=... WEB_HOST=... LE_EMAIL=... [HSTS_MAX_AGE=300] /opt/pglive/edge/setup-edge.sh
+# On the pglive-worker VM:  sudo API_HOST=... WEB_HOST=... LE_EMAIL=... [HSTS_MAX_AGE=300] \
+#                                BFF_EDGE_KEY="$(gcloud secrets versions access latest --secret BFF_EDGE_KEY)" \
+#                                [BFF_EDGE_KEY_PREVIOUS=...] /opt/pglive/edge/setup-edge.sh
+# BFF_EDGE_KEY: the secret the web service sends as X-PGLive-Edge-Key; nginx uses it to tell BFF traffic from direct
+# API clients for rate limiting (limits.conf). Rotation: add a new secret version, run this with the new value as
+# BFF_EDGE_KEY and the old one as BFF_EDGE_KEY_PREVIOUS, redeploy the web service, then run it once more without
+# the previous key. Omitted entirely, nothing is trusted as BFF (every caller is limited per peer IP).
 # Installs nginx + certbot, gets one Let's Encrypt certificate for pglive.in, www and api (HTTP-01, so the GoDaddy
 # A records must already point at this VM), and renders the edge config. Re-run it to change hosts or HSTS.
 # API_HOST / WEB_HOST: the Cloud Run hostnames, e.g. pglive-api-<project-number>.asia-south1.run.app.
@@ -23,6 +29,21 @@ if [[ ! -f /etc/nginx/pglive-admin-allow.conf ]]; then
     > /etc/nginx/pglive-admin-allow.conf
 fi
 
+# Edge key(s) for the BFF check. Exact-match values only: letters and digits, at least 32 of them, so nothing
+# here can inject nginx syntax. The file is root-only and never lives in the repository.
+umask 077
+{
+  echo "# Written by setup-edge.sh. Lines are matched exactly against X-PGLive-Edge-Key. Do not edit by hand."
+  for key in "${BFF_EDGE_KEY:-}" "${BFF_EDGE_KEY_PREVIOUS:-}"; do
+    [[ -z "$key" ]] && continue
+    [[ "$key" =~ ^[A-Za-z0-9]{32,}$ ]] || { echo "BFF_EDGE_KEY must be >= 32 letters/digits (openssl rand -hex 32)" >&2; exit 1; }
+    echo "\"$key\" 1;"
+  done
+} > /etc/nginx/pglive-edge-key.map
+chmod 600 /etc/nginx/pglive-edge-key.map
+umask 022
+cp "$HERE/limits.conf" /etc/nginx/conf.d/00-pglive-limits.conf
+
 cat > /etc/nginx/snippets/pglive-tls.conf <<EOF
 ssl_certificate     /etc/letsencrypt/live/pglive.in/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/pglive.in/privkey.pem;
@@ -41,6 +62,7 @@ proxy_set_header X-Forwarded-Host $host;
 proxy_set_header X-Forwarded-Proto https;
 proxy_set_header X-Forwarded-For $remote_addr;
 proxy_set_header X-PGLive-Client-IP $remote_addr;   # overwrites anything the client sent
+proxy_set_header X-PGLive-Edge-Key "";              # checked here (limits.conf); never forwarded to Cloud Run
 proxy_set_header Connection "";
 proxy_connect_timeout 10s;
 proxy_read_timeout 70s;                     # Cloud Run request timeout is 60 s

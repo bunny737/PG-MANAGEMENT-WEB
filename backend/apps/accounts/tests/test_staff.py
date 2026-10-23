@@ -28,7 +28,8 @@ class StaffManagementTests(AuthAPITestCase):
 
     def test_owner_creates_manager_with_invite_and_audit_log(self):
         self.authenticate(self.owner)
-        response = self.client.post(reverse('staff-list'), staff_payload())
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('staff-list'), staff_payload())
 
         self.assertEqual(response.status_code, 201)
         manager = User.objects.get(email='suresh@example.com')
@@ -43,8 +44,11 @@ class StaffManagementTests(AuthAPITestCase):
 
     def test_invite_flow_lets_staff_set_password_and_log_in(self):
         self.authenticate(self.owner)
-        self.client.post(reverse('staff-list'), staff_payload())
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('staff-list'), staff_payload())
         body = mail.outbox[0].body
+        self.assertIn('/reset-password#uid=', body)
+        self.assertIn('&invite=1', body)
 
         self.client.credentials()  # drop owner auth
         confirm = self.client.post(

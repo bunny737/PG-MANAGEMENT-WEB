@@ -169,8 +169,37 @@ lifecycle (`vacated`/`blacklisted`) instead.
   the requesting user lacks `manage_residents` (`permissions_for(user.role)`).
   This prevents financial terms from reaching the front desk even if the
   frontend tab is hidden.
+- [DECISION 2026-10-21] **Aadhaar/PAN upload launch gate.** `KYC_UPLOADS_ENABLED` (default `True` in dev,
+  `False` in `config/settings/prod.py`; set `KYC_UPLOADS_ENABLED=true` on the API service once legal signs
+  off, docs/deployment.md §9) refuses a NEW `aadhaar_document` / `pan_document` file on both create and
+  update with a 400 on that field (`kyc_uploads_disabled`). Gated per field in `ResidentSerializer`, not in
+  the view, so every write path is covered. **Clearing** a stored document (`null`) is always allowed
+  (data minimisation), and **stored documents stay readable** via their signed URLs, so an owner can still
+  see and delete what is already on file. When uploads are on, each file is checked with the shared
+  `apps/core/uploads.py` (`sniff_upload`: real type from the magic bytes, at most `KYC_DOCUMENT_MAX_BYTES`,
+  default 5 MB; codes `document_type_not_allowed` / `document_too_large`). **Only JPEG/PNG/PDF are
+  accepted for KYC** — the approved set (plan rev 2); `sniff_upload` takes an `allowed_types` argument so
+  WebP (which `apps/expenses` does accept, pre-existing on `dev`) isn't silently let through here too. The
+  expenses attachment check was refactored onto the same utility (its `attachment_*` codes are unchanged),
+  so residents do not import from expenses. `GET /auth/me/` exposes `kyc_uploads_enabled`; the web
+  resident profile hides the upload controls (and says why) when it is false or absent. Tests:
+  `apps/residents/tests/test_kyc_gate.py`, `apps/core/test_uploads.py`.
+- [DECISION 2026-10-22] **Clearing or replacing a KYC file deletes the old object from storage, not just
+  the database reference.** `FileField` never does this on its own — repointing it just orphans the
+  previous object in GCS/local storage, which defeats the clearing path's data-minimisation purpose.
+  `ResidentSerializer.update()` captures the prior `(storage, name)` for any KYC field present in
+  `validated_data` before `super().update()` repoints it, then deletes the old object with
+  `transaction.on_commit()` once the row update has actually committed — mirrors
+  `apps/expenses/services.py`'s `_delete_file_on_commit`. A failed update (e.g. a rejected replacement)
+  never reaches the deletion, so the still-referenced file is never orphan-deleted. Tests assert the file
+  is gone from storage after clearing/replacing, still there after an invalid replacement, and still there
+  until the transaction actually commits.
 
 ## Changelog
+- 2026-10-22  KYC file replace/clear now deletes the orphaned storage object; KYC uploads restricted to
+  JPEG/PNG/PDF (WebP no longer accepted here) — see Decisions.
+- 2026-10-21  KYC upload launch gate + shared upload validation (see Decisions); `/auth/me/` gains
+  `kyc_uploads_enabled`.
 - 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: `Resident` model (RLS) with exact PRD status-transition

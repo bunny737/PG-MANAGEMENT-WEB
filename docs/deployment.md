@@ -26,8 +26,9 @@ nginx on the worker VM (Let's Encrypt cert for all three names)
   pglive.in                → 301 → https://www.pglive.in
   www.pglive.in            → Cloud Run pglive-web   (Next.js standalone, BFF)
   api.pglive.in            → Cloud Run pglive-api   (gunicorn, Django/DRF)
-  api.pglive.in/admin/*    → same, only from /etc/nginx/pglive-admin-allow.conf
-  /api/auth/*, /api/v1/auth/* rate-limited per IP
+  api.pglive.in/admin/*,
+  api.pglive.in/api/schema|docs/* → same, only from /etc/nginx/pglive-admin-allow.conf
+  /api/auth/*, /api/v1/auth/* rate-limited (api.pglive.in splits direct clients vs the BFF — §3a)
 pglive-web → https://api.pglive.in (BFF; signed X-PGLive-Origin-*)      Razorpay webhook → api.pglive.in
 pglive-api → Cloud SQL (/cloudsql socket)                                pglive-api → worker VM :6379 (Direct VPC egress)
 Worker VM (e2-small, IAP-only SSH): nginx edge · redis · celery worker · celery beat (exactly one) · cloud-sql-proxy
@@ -75,6 +76,30 @@ One backend image (`backend/Dockerfile.prod`) serves the API, worker, beat and e
 
 Vectors shared by both test suites: `backend/apps/core/tests_fixtures/origin_signature_vectors.json`.
 
+## 3a. Edge rate limiting (`infra/edge/limits.conf`)
+
+`api.pglive.in/api/v1/auth/` sees two kinds of caller, and a single per-peer-IP limit fits only one of them:
+every browser request arrives through the BFF (Next.js on Cloud Run), so its peer address is Cloud Run's own
+egress IP, shared by every user — a per-peer limit there would throttle the whole site together. Direct
+clients (future mobile apps, scripts) are exactly what a peer-IP limit is for.
+
+- The web service sends `X-PGLive-Edge-Key` (the `BFF_EDGE_KEY` secret) on every call to the API. nginx checks
+  it against `/etc/nginx/pglive-edge-key.map` (exact match only) and strips the header before proxying —
+  Django never sees it.
+- A request with a **verified** key is limited per **browser** IP (`X-PGLive-Origin-IP`, zone
+  `pglive_auth_bff`, 600 r/min — refresh and `/auth/me/` ride this path). Anything else — no key, a wrong key,
+  or a forged key with spoofed origin headers — is limited per **peer** IP (zone `pglive_auth_direct`,
+  60 r/min), same as `www.pglive.in/api/auth/`. Spoofing the signature or origin-IP headers cannot move a
+  request into the generous zone; only the exact edge key does, and Django independently verifies the signed
+  origin on every request regardless of which zone counted it.
+- Rotation: add a new `BFF_EDGE_KEY` secret version, run `setup-edge.sh` with the new value as `BFF_EDGE_KEY`
+  and the old one as `BFF_EDGE_KEY_PREVIOUS` (both are accepted), redeploy `pglive-web`, then run it once more
+  without the previous key.
+- Test locally: `infra/edge/test-limits.sh` (needs Docker; builds the real `limits.conf` into a throwaway
+  nginx and bursts requests through each path).
+- The schema/docs routes (`/api/schema/`, `/api/docs/`) share the `/admin/` IP allowlist; Django itself also
+  requires an admin session for them (`prod.py`, `SPECTACULAR_SETTINGS`).
+
 ## 4. Database roles
 
 Two roles, created by `infra/sql/roles-1-roles.sql` (not with `gcloud sql users create`, which would add them to
@@ -119,6 +144,24 @@ Then, in Super Admin: PlatformConfig (trial days, grace days, caps — invariant
   forbids moving or deleting them; the `production` Environment accepts only `v*` tags and needs a reviewer.
 - Pipeline: build → on-demand Cloud SQL backup (wait for success) → `pglive-migrate` → candidate revision with
   `--no-traffic --tag candidate` → `pglive-smoke` (in-VPC) → 10 % → watch → 100 % → web → worker VM.
+- **Start-up deploy check.** The API image starts through `backend/bin/start-api.sh`, which runs
+  `manage.py check --deploy --fail-level ERROR` before gunicorn. A revision with blank, malformed or placeholder
+  Razorpay keys (`apps/subscriptions/checks.py`), an `http`/default `FRONTEND_BASE_URL` (`apps/core/checks.py`) or
+  unsigned webhooks allowed never becomes ready, so the deploy aborts before any traffic moves. Production
+  settings also forbid the Razorpay stub client. Jobs and the Celery worker override the command and are not
+  affected. CI runs the same check with production settings and placeholder keys that are valid in shape but not
+  functional (no live secret is used in CI).
+- `sa-deployer` (created by `infra/10-foundation.sh`) holds exactly what the pipeline does: Artifact Registry
+  writer, Cloud Run admin (it sets job IAM), Secret Manager viewer (lists versions only), Cloud Scheduler admin,
+  Workflows editor, Logging viewer, and compute viewer + IAP tunnel + OS Admin Login for the worker SSH. It has no
+  project IAM admin. The **Workload Identity Federation** pool/provider that `WIF_PROVIDER` names is not scripted
+  in `infra/`: create a pool and a GitHub OIDC provider restricted to this repository, allow the pool principal
+  to impersonate `sa-deployer` (`roles/iam.workloadIdentityUser`), and store the provider name and the deployer's
+  email as the `WIF_PROVIDER` / `DEPLOYER_SERVICE_ACCOUNT` Environment variables.
+- Staging: `deploy-staging.yml` is manual-only (the owner launches without a staging environment, and
+  `30-services.sh` still hard-codes the production API host for both environments).
+- Releases are labelled: `APP_RELEASE` (git sha) and `SENTRY_ENVIRONMENT` (`production`/`staging`) are set on the
+  API, the jobs and the worker, so errors carry the right environment and release.
 - Migrations are expand/contract so the previous revision keeps working; rollback is a traffic shift, never a
   database downgrade.
 - Rollback: `gcloud run services update-traffic SERVICE --to-revisions=PREVIOUS=100`; worker VM:
@@ -158,7 +201,9 @@ tests, and deletes the instance.
 ## 9. Launch gates and open items
 
 - **Aadhaar/PAN legal review** (lawful basis, consent text, purpose limitation, retention): until signed off,
-  ship with those uploads disabled.
+  ship with those uploads disabled. This is the `KYC_UPLOADS_ENABLED` setting, which defaults to **off in
+  production**: new Aadhaar/PAN files are refused (stored ones stay readable and can be cleared) until
+  `KYC_UPLOADS_ENABLED=true` is set on the API service.
 - **Razorpay live activation** (KYC, Subscriptions enabled) and **billing upgraded to a paid account before launch**.
 - **Stale webhook ordering** is an open decision — see [modules/13-subscription.md](modules/13-subscription.md).
 - Cost estimate must be an exported Pricing Calculator file before choosing the launch tier (the lean option leaves

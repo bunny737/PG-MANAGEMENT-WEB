@@ -177,7 +177,7 @@ class ResendEndpointTests(VerificationTestCase):
         self.assertEqual(self.verify(token).status_code, 200)
 
     def test_eager_smtp_failure_still_returns_200_and_logs_no_address(self):
-        with mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down')), \
+        with mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down')), \
                 self.assertLogs('apps.accounts.tasks', 'ERROR') as logs:
             response = self.resend(EMAIL)
         self.assertEqual(response.status_code, 200)
@@ -250,7 +250,7 @@ class WelcomeTaskTests(VerificationTestCase):
                 self.assertEqual(self.welcome_logs(), [])
 
     def test_a_failed_send_is_not_recorded_as_sent(self):
-        with mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down')), \
+        with mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down')), \
                 self.assertLogs('apps.accounts.tasks', 'ERROR') as logs:
             send_welcome_email_task.apply(args=[str(self.owner.id), EMAIL])
         self.assertEqual(self.welcome_logs(), [])
@@ -268,7 +268,7 @@ class WelcomeTaskTests(VerificationTestCase):
 
         send_welcome_email_task.push_request(is_eager=False, retries=0)
         try:
-            with mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down')), \
+            with mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down')), \
                     mock.patch.object(send_welcome_email_task, 'retry', return_value=Retried()) as retry, \
                     self.assertRaises(Retried):
                 send_welcome_email_task.run(str(self.owner.id), EMAIL)
@@ -292,7 +292,7 @@ class SignupAndStaffDeliveryTests(AuthAPITestCase):
         enqueue.assert_called_once_with(send_welcome_email_task, str(user.id), 'ramesh@example.com')
 
     def test_signup_survives_an_smtp_failure(self):
-        with mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down')), \
+        with mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down')), \
                 self.assertLogs('apps.accounts.tasks', 'ERROR') as logs, \
                 self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(reverse('auth-signup'), self.SIGNUP)
@@ -307,7 +307,7 @@ class SignupAndStaffDeliveryTests(AuthAPITestCase):
             'first_name': 'Desk', 'email': 'desk@example.com', 'phone': '9811100022',
             'role': Role.MANAGER, 'password': 'InitialPassword-999!',
         }
-        with mock.patch('apps.accounts.emails.send_mail', side_effect=SMTPException('down')), \
+        with mock.patch('apps.core.email.EmailMultiAlternatives.send', side_effect=SMTPException('down')), \
                 self.assertLogs('apps.accounts.tasks', 'ERROR'), \
                 self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(reverse('staff-list'), payload)

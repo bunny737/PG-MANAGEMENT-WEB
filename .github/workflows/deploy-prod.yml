@@ -47,7 +47,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
       - name: Release to production (backup -> migrate -> candidate -> smoke -> canary -> 100% -> worker)
         run: infra/deploy.sh prod "$GITHUB_SHA"
         env:

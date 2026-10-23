@@ -25,8 +25,10 @@ from django.db import connection
 # users — looked up during authentication before any tenant context exists (01);
 # subscriptions — read by the unauthenticated Razorpay webhook (13);
 # razorpay_webhook_events — written by that same webhook before the tenant is known, and readable only by
-# Super Admin in Django admin (13): an RLS policy would reject the insert.
-RLS_EXEMPT_TABLES = {'users', 'subscriptions', 'razorpay_webhook_events'}
+# Super Admin in Django admin (13): an RLS policy would reject the insert;
+# account_deletion_requests — read by the login/refresh lock check before any tenant context exists, and by the
+# nightly purge across tenants (22).
+RLS_EXEMPT_TABLES = {'users', 'subscriptions', 'razorpay_webhook_events', 'account_deletion_requests'}
 
 
 class Command(BaseCommand):

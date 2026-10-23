@@ -111,8 +111,10 @@ Two roles, created by `infra/sql/roles-1-roles.sql` (not with `gcloud sql users 
   `CREATE` in `public`, is `NOSUPERUSER NOBYPASSRLS`, and is a member of no other role.
 
 `manage.py check_db_roles --role app_user` fails the deploy if any of that stops being true, or if a table with a
-`tenant_id` column lacks *forced* RLS. Documented exceptions (`RLS_EXEMPT_TABLES`): `users` (module 01) and
-`subscriptions` and `razorpay_webhook_events` (module 13).
+`tenant_id` column lacks *forced* RLS. Documented exceptions (`RLS_EXEMPT_TABLES`): `users` (module 01),
+`subscriptions` and `razorpay_webhook_events` (module 13), and `account_deletion_requests` (module 22). A new
+table that is deliberately outside RLS must be added there in the same change, or the next release's
+`pglive-check-roles` job fails after `migrate` has already run.
 
 Order on a fresh instance: `roles-1-roles.sql` → `pglive-migrate` (as `migration_user`) → `roles-2-grants.sql` →
 `check_db_roles`. Part 2 is idempotent and is re-run after every restore. Local development still uses the single

@@ -12,7 +12,7 @@ firebase-admin==6.*
 Pillow==13.*
 # Uploaded files on Google Cloud Storage (owner decision 2026-10-20, replaces
 # S3). >=1.14.4 for GS_IAM_SIGN_BLOB (keyless URL signing on Cloud Run).
-django-storages[google]>=1.14.4,<1.15
+django-storages[google]>=1.14.6,<1.15
 # Direct pin, not relied on transitively via firebase-admin: verifies the IAP
 # JWT on /admin/ (apps.core.iap) and backs keyless GCS signing.
 google-auth==2.*

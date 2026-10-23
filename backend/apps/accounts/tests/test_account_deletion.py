@@ -5,6 +5,7 @@ from datetime import datetime, time, timedelta
 
 from django.core import mail
 from django.db import IntegrityError, transaction
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -27,6 +28,7 @@ def ist(year, month, day, hour=0, minute=0, second=0):
     return timezone.make_aware(datetime(year, month, day, hour, minute, second))
 
 
+@override_settings(RAZORPAY_KEY_ID='', RAZORPAY_KEY_SECRET='', RAZORPAY_WEBHOOK_SECRET='')
 class DeletionTestCase(AuthAPITestCase):
     def setUp(self):
         super().setUp()

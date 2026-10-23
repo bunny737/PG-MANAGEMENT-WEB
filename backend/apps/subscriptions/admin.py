@@ -163,6 +163,9 @@ class RazorpayWebhookEventAdmin(admin.ModelAdmin):
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = ['tenant', 'plan', 'razorpay_subscription_id']
     inlines = [SubscriptionPaymentInline]
+    # A free-text field, so an admin could type `deleted` and close billing without a purge. The
+    # hold is managed through the Tenant status (manual) and the deletion purge (deleted) only.
+    readonly_fields = ['status_hold']
 
     def has_change_permission(self, request, obj=None):
         # Module 22: a subscription whose billing is closed for account deletion is view-only.

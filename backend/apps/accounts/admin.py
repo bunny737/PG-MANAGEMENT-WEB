@@ -273,7 +273,20 @@ class TenantAdmin(admin.ModelAdmin):
             readonly.append('status')
         return readonly
 
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        # `deleted` is written only by the purge (apps.accounts.deletion, complete phase). Offering
+        # it here would let an admin mark a live tenant deleted without its data being purged or
+        # its billing closed.
+        if db_field.name == 'status':
+            kwargs['choices'] = [c for c in db_field.choices if c[0] != Tenant.Status.DELETED]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
+
     def save_model(self, request, obj, form, change):
+        if obj.status == Tenant.Status.DELETED and not (
+            change and Tenant.objects.filter(pk=obj.pk, status=Tenant.Status.DELETED).exists()
+        ):
+            messages.error(request, _('The deleted status is set only by the account-deletion purge.'))
+            return
         if change and 'status' in form.changed_data:
             from apps.subscriptions import services as subscription_services
             try:

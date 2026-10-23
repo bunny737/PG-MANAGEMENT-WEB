@@ -102,7 +102,7 @@ Tests: `apps/accounts/tests/test_account_deletion.py`, `test_account_deletion_pu
     `BedLedgerEntry`; their Razorpay payloads are redacted to an allow-list of scalars
     (`subscriptions.services.sanitized_payload`), including legacy invoice events stored with `tenant_id=NULL`.
 11. **Durability**: one claim (`deletion.claim`) for the beat task, admin and tests — a row lock + lease token,
-    reclaimed after 15 minutes without a heartbeat (files phase heartbeats every 100 objects / 60 s).
+    reclaimed after 15 minutes without a heartbeat. The files phase streams (lists one directory, deletes it, moves on — nothing larger than one listing is in memory) and heartbeats every 100 objects / 60 s **and around every directory listing**, so a slow listing can't outlast the lease and a worker that lost it stops at the next listing. `claim()` also clears `reason` atomically.
 12. **Retry pacing**: a failure sets `next_attempt_at` to the next midnight IST, the task works from a snapshot of
     ids, so a request is attempted once per run; after `account_deletion_max_attempts` nights it is `failed`
     (logged `account_deletion_failed`, Super Admins emailed, listed in admin).
@@ -113,7 +113,7 @@ Tests: `apps/accounts/tests/test_account_deletion.py`, `test_account_deletion_pu
     REPLACED/ABANDONED (cancelled by the existing 10-minute queue), sets `plan=None` and `status_hold='deleted'`.
     The hold is checked **before** non-current reconciliation, so a late charge is recorded (sanitized) and flagged
     for refund but can never promote a subscription, restore a plan or change the tenant. It is immutable: suspend,
-    reactivate, plan selection, limit overrides and the Tenant/Subscription admin all refuse it.
+    reactivate, plan selection, limit overrides and the Tenant/Subscription admin all refuse it. Neither `Tenant.status='deleted'` nor `status_hold='deleted'` can be entered by hand: the Tenant admin form doesn't offer `deleted` and refuses it on save, and `Subscription.status_hold` is read-only in admin.
 15. **Refunds** are `SubscriptionPayment.refund_status='pending'` on the retained row, not only an audit row.
     Invoice payments for an arrears invoice are ours to keep (no refund). `payment.failed` stores only a sanitized event.
 16. **Exit invoice**: new cycle invoices stop (no plan) but `process_invoice_issuing` is unchanged, so a final
@@ -131,7 +131,8 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
 - Two simultaneous requests / an Owner and a staff request: the partial unique indexes decide (409);
   pending staff requests are `superseded` by the tenant purge; a `processing` staff request is left to finish
   (both purges are idempotent — an already-gone user counts as done).
-- Tenant suspended *during* the grace period: the Owner can still sign in to view/cancel (rule 4).
+- Tenant suspended *during* the grace period: the Owner can still sign in to view/cancel (rule 4) — by password, by
+  emailed login code (`tasks._can_use_email_login` uses the same `active_deletion_for` exception) and by refresh.
 - Tenant already suspended: the Owner cannot sign in; `/delete-account` shows the support contacts and a Super Admin
   can create the request on their behalf.
 - Worker crash mid-phase: lease expiry → next run resumes at the first unstamped phase.
@@ -166,7 +167,7 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
 **Judgement calls**
 - `Tenant.Status.DELETED` is a new status (only the purge sets it); added to `BLOCKED_TENANT_STATUSES`.
 - The lock is a 403, not a 401, so the generic client/BFF do not treat it as a dead session and refresh-loop.
-- Staff `reason` and `last_error` hold no PII by construction (class + phase names) and `reason` is cleared on exit.
+- Staff `reason` and `last_error` hold no PII by construction (class + phase names) and `reason` is cleared the moment the purge claims the request (and on every other exit from pending).
 - `retry_now` is refused for a request still inside its grace period.
 - The nightly run logs open refund count and failed requests so neither stays invisible.
 - Platform-level audit `account.deleted` carries only the request id and scope.
@@ -185,3 +186,7 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
   purge with leases, retry pacing and a data inventory guard; Razorpay tombstone (`status_hold='deleted'`), structured
   refund obligation, payload sanitizing; Django admin queue and actions; web UI (profile card, pending screen, public
   `/delete-account` page, BFF handler); en + te strings.
+- 2026-10-23  Review fixes: `deleted` can no longer be set by hand in Django admin (Tenant status, `status_hold`);
+  the files purge streams and heartbeats during listing; `reason` cleared in `claim()`; emailed-code login honours the
+  active-deletion exception for a suspended tenant; the periodic-task seed looks the crontab up by timezone; the
+  deletion tests pin Razorpay to the local stub instead of relying on `.env`.

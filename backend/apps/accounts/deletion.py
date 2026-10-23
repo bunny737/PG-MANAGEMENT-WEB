@@ -331,7 +331,10 @@ def claim(request_id=None, *, now=None):
         row.status = Status.PROCESSING
         row.claim_token = uuid.uuid4()
         row.claimed_at = now
-        row.save(update_fields=['status', 'claim_token', 'claimed_at'])
+        # The free-text reason is only for whoever reads the pending request; once the purge has
+        # started it has no use, so it never survives into processing (or a later retry).
+        row.reason = ''
+        row.save(update_fields=['status', 'claim_token', 'claimed_at', 'reason'])
     return row
 
 
@@ -425,8 +428,7 @@ def _record_failure(request_id, token, phase, exc):
         else:
             row.status = Status.PENDING
             row.next_attempt_at = next_midnight_ist()
-        row.reason = '' if row.status == Status.FAILED else row.reason
-        row.save(update_fields=['attempts', 'last_error', 'claim_token', 'claimed_at', 'status', 'next_attempt_at', 'reason'])
+        row.save(update_fields=['attempts', 'last_error', 'claim_token', 'claimed_at', 'status', 'next_attempt_at'])
         failed = row.status == Status.FAILED
         error, attempts = row.last_error, row.attempts
     logger.warning('account deletion %s failed in %s (attempt %s): %s', request_id, phase, attempts, type(exc).__name__,
@@ -496,8 +498,9 @@ def _phase_files_purge(row, token):
     refreshed by time as well as by count: a slow listing or a few large objects can't outlast it."""
     state = {'since': timezone.now(), 'n': 0}
 
-    def heartbeat():
-        state['n'] += 1
+    def heartbeat(objects=1):
+        # `objects=0` is a pure time check, used around each directory listing.
+        state['n'] += objects
         if state['n'] >= HEARTBEAT_OBJECTS or (timezone.now() - state['since']).total_seconds() >= HEARTBEAT_SECONDS:
             _stamp(row.pk, token, claimed_at=timezone.now())
             state['since'], state['n'] = timezone.now(), 0
@@ -662,24 +665,30 @@ def _redact_tenant_billing(tenant_id):
         )
 
 
-def _iter_storage_files(prefix):
-    """Every object under `prefix` (works for local storage and GCS)."""
+def _iter_storage_files(prefix, heartbeat=lambda objects=1: None):
+    """Every object under `prefix` (works for local storage and GCS), one directory at a time so
+    nothing larger than a single listing is held in memory. `heartbeat(0)` runs before and after
+    each listing: a slow listing can't outlast the lease unnoticed, and a worker that lost the
+    lease stops here rather than after the whole prefix has been enumerated."""
+    heartbeat(0)
     try:
         directories, files = default_storage.listdir(prefix)
     except (FileNotFoundError, NotADirectoryError):
         return
+    heartbeat(0)
     for name in files:
         yield f'{prefix}/{name}'
     for directory in directories:
-        yield from _iter_storage_files(f'{prefix}/{directory}')
+        yield from _iter_storage_files(f'{prefix}/{directory}', heartbeat)
 
 
-def purge_tenant_files(tenant_id, *, heartbeat=lambda: None):
-    """Deletes a tenant's uploads. Idempotent: a prefix that is already empty is simply done."""
+def purge_tenant_files(tenant_id, *, heartbeat=lambda objects=1: None):
+    """Deletes a tenant's uploads, streaming list and delete together. Idempotent: a prefix that is
+    already empty is simply done."""
     deleted = 0
     for root in STORAGE_PREFIXES:
         prefix = f'{root}/{tenant_id}'
-        for path in list(_iter_storage_files(prefix)):
+        for path in _iter_storage_files(prefix, heartbeat):
             default_storage.delete(path)
             deleted += 1
             heartbeat()

@@ -39,7 +39,10 @@ PII_PAYLOAD = {
 }
 
 
+@override_settings(RAZORPAY_KEY_ID='', RAZORPAY_KEY_SECRET='', RAZORPAY_WEBHOOK_SECRET='')
 class PurgeTestCase(BillingAPITestCase):
+    """Razorpay is pinned to the local stub here, so results never depend on a developer's `.env`."""
+
     def setUp(self):
         super().setUp()
         self.media = tempfile.TemporaryDirectory()

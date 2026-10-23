@@ -10,9 +10,10 @@ def seed(apps, schema_editor):
     CrontabSchedule = apps.get_model('django_celery_beat', 'CrontabSchedule')
     PeriodicTask = apps.get_model('django_celery_beat', 'PeriodicTask')
 
+    # The timezone is part of the lookup: a midnight schedule that exists in UTC must not be reused.
     midnight, _ = CrontabSchedule.objects.get_or_create(
         minute='0', hour='0', day_of_month='*', month_of_year='*', day_of_week='*',
-        defaults={'timezone': 'Asia/Kolkata'},
+        timezone='Asia/Kolkata',
     )
     PeriodicTask.objects.get_or_create(
         name=TASK_NAME,

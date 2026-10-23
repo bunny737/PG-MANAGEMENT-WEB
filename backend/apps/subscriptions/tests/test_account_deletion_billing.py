@@ -10,7 +10,7 @@ from unittest import mock
 from django.apps import apps as django_apps
 from django.contrib import admin as django_admin
 from django.db import IntegrityError, transaction
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -44,6 +44,11 @@ def leaky(event, subscription_id, payment_id='pay_late'):
     }
 
 
+# Razorpay pinned to the local stub, so results never depend on a developer's `.env`.
+NO_RAZORPAY = override_settings(RAZORPAY_KEY_ID='', RAZORPAY_KEY_SECRET='', RAZORPAY_WEBHOOK_SECRET='')
+
+
+@NO_RAZORPAY
 class DeletedTenantCase(PlanChangeTestCase):
     """A tenant with a live Basic subscription and an unpaid Unlimited choice (a PENDING ledger
     row), then billing closed for deletion — with Razorpay cancellations failing, so the
@@ -249,6 +254,7 @@ class ImmutableHoldTests(DeletedTenantCase):
         self.assertEqual(services.process_payment_grace_periods(), [])
 
 
+@NO_RAZORPAY
 class RefundFieldTests(PlanChangeTestCase):
     def payment(self, **kwargs):
         with tenant_context(self.tenant.id):
@@ -313,6 +319,7 @@ class RefundFieldTests(PlanChangeTestCase):
                 SubscriptionPayment.objects.get(razorpay_payment_id='pay_flag').refund_status, Refund.PENDING)
 
 
+@NO_RAZORPAY
 class BackfillMigrationTests(PlanChangeTestCase):
     def test_legacy_audit_flags_become_pending_refunds(self):
         migration = importlib.import_module('apps.subscriptions.migrations.0015_payment_refund_obligation')
@@ -334,6 +341,7 @@ class BackfillMigrationTests(PlanChangeTestCase):
         self.assertEqual(unflagged.refund_status, Refund.NONE)
 
 
+@NO_RAZORPAY
 class ExitInvoiceSurvivesDeletionTests(PlanExitInvoicingTestCase):
     def test_a_failed_first_issue_is_still_sent_by_the_sweep_after_the_tenant_is_deleted(self):
         with mock.patch(CREATE_INVOICE, side_effect=RuntimeError('razorpay down')), mock.patch(CANCEL), \

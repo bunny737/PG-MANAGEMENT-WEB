@@ -12,8 +12,9 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts import deletion
-from apps.accounts.admin import AccountDeletionRequestAdmin, UserAdmin, create_deletion_request_on_behalf
+from apps.accounts.admin import AccountDeletionRequestAdmin, TenantAdmin, UserAdmin, create_deletion_request_on_behalf
 from apps.accounts.models import AccountDeletionRequest, Tenant, User
+from apps.accounts.tasks import _can_use_email_login
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.subscriptions.models import Plan, Subscription
@@ -190,3 +191,124 @@ class AdminActionTests(PurgeTestCase):
         self.assertFalse(self.deletion_admin.has_add_permission(request))
         self.assertFalse(self.deletion_admin.has_change_permission(request))
         self.assertFalse(self.deletion_admin.has_delete_permission(request))
+
+
+class StreamedFilesPurgeTests(PurgeTestCase):
+    """The file purge lists and deletes one directory at a time and keeps its lease alive while
+    listing, not only after each delete."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+
+    def test_each_directory_is_deleted_before_the_next_is_listed(self):
+        for name in ('a', 'b'):
+            default_storage.save(f'residents/{self.tenant.id}/{name}/f.txt', ContentFile(b'x'))
+        events = []
+        real_listdir, real_delete = default_storage.listdir, default_storage.delete
+        with mock.patch.object(
+            default_storage, 'listdir', side_effect=lambda p: (events.append(('list', p)), real_listdir(p))[1],
+        ), mock.patch.object(
+            default_storage, 'delete', side_effect=lambda p: (events.append(('delete', p)), real_delete(p))[1],
+        ):
+            self.assertEqual(deletion.purge_tenant_files(self.tenant.id), 2)
+        kinds = [kind for kind, path in events if path.startswith(f'residents/{self.tenant.id}/')]
+        # list root, list a, delete a/f.txt, list b, delete b/f.txt: never "list everything, then delete".
+        self.assertLess(kinds.index('delete'), len(kinds) - 1 - kinds[::-1].index('list'))
+
+    def test_lease_is_refreshed_during_a_slow_listing_with_no_objects(self):
+        row = self.request_for(self.owner)
+        claimed = deletion.claim(row.pk)
+        AccountDeletionRequest.objects.filter(pk=row.pk).update(claimed_at=timezone.now() - timedelta(minutes=10))
+        real_now = timezone.now()
+        ticks = [real_now] + [real_now + timedelta(seconds=61)] * 80
+        with mock.patch.object(deletion.timezone, 'now', side_effect=ticks):
+            deletion._phase_files_purge(AccountDeletionRequest.objects.get(pk=row.pk), claimed.claim_token)
+        self.assertGreater(AccountDeletionRequest.objects.get(pk=row.pk).claimed_at, real_now - timedelta(minutes=1))
+
+    def test_a_worker_that_lost_its_lease_stops_while_listing(self):
+        row = self.request_for(self.owner)
+        claimed = deletion.claim(row.pk)
+        AccountDeletionRequest.objects.filter(pk=row.pk).update(claim_token=uuid.uuid4())
+        with mock.patch.object(deletion, 'HEARTBEAT_SECONDS', 0), \
+                mock.patch.object(default_storage, 'delete') as delete:
+            with self.assertRaises(deletion.LeaseLost):
+                deletion._phase_files_purge(AccountDeletionRequest.objects.get(pk=row.pk), claimed.claim_token)
+        delete.assert_not_called()
+
+
+class ReasonScrubbedOnClaimTests(PurgeTestCase):
+    def test_the_reason_is_gone_as_soon_as_the_purge_starts(self):
+        tenant = self.create_tenant()
+        owner = self.create_owner(tenant)
+        row = self.request_for(owner, reason='moving abroad, call me on +919999999999')
+        claimed = deletion.claim(row.pk)
+        self.assertEqual(claimed.reason, '')
+        self.assertEqual(AccountDeletionRequest.objects.get(pk=row.pk).reason, '')
+
+    def test_it_stays_scrubbed_when_a_phase_fails_back_to_pending(self):
+        tenant = self.create_tenant()
+        owner = self.create_owner(tenant)
+        row = self.request_for(owner, reason='private words')
+        with mock.patch.object(deletion, 'purge_tenant_rows', side_effect=OSError('x')), \
+                mock.patch('apps.subscriptions.razorpay_client.cancel_razorpay_subscription'):
+            self.run_to_end(row)
+        row.refresh_from_db()
+        self.assertEqual((row.status, row.reason), (Status.PENDING, ''))
+
+
+class AdminCannotForgeDeletionTests(PurgeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.admin_user = self.create_super_admin()
+        self.factory = RequestFactory()
+        self.tenant_admin = TenantAdmin(Tenant, django_admin.site)
+
+    def request(self):
+        request = self.factory.post('/admin/')
+        request.user = self.admin_user
+        request.session = {}
+        request._messages = mock.MagicMock()
+        return request
+
+    def test_the_tenant_status_form_does_not_offer_deleted(self):
+        form = self.tenant_admin.get_form(self.request(), self.tenant)()
+        offered = {value for value, _label in form.fields['status'].choices}
+        self.assertNotIn(Tenant.Status.DELETED, offered)
+        self.assertIn(Tenant.Status.SUSPENDED, offered)
+
+    def test_saving_a_live_tenant_as_deleted_is_refused(self):
+        self.tenant.status = Tenant.Status.DELETED
+        form = mock.MagicMock(changed_data=['status'])
+        self.tenant_admin.save_model(self.request(), self.tenant, form, change=True)
+        self.assertEqual(Tenant.objects.get(pk=self.tenant.pk).status, Tenant.Status.TRIAL)
+        self.assertTrue(User.objects.filter(pk=self.owner.pk).exists())
+
+    def test_the_subscription_hold_is_not_editable_in_admin(self):
+        from apps.subscriptions.admin import SubscriptionAdmin
+
+        subscription_admin = SubscriptionAdmin(Subscription, django_admin.site)
+        self.assertIn('status_hold', subscription_admin.get_readonly_fields(self.request()))
+
+
+class EmailLoginDuringDeletionTests(PurgeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        Tenant.objects.filter(pk=self.tenant.pk).update(status=Tenant.Status.SUSPENDED)
+        self.owner.refresh_from_db()
+
+    def eligible(self):
+        locked = User.objects.select_related('tenant').get(pk=self.owner.pk)
+        return _can_use_email_login(locked, self.owner.email.lower())
+
+    def test_a_suspended_tenant_cannot_use_email_login(self):
+        self.assertFalse(self.eligible())
+
+    def test_it_can_when_the_user_has_an_active_deletion_request(self):
+        self.request_for(self.owner)
+        self.assertTrue(self.eligible())

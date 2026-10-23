@@ -14,7 +14,7 @@ from smtplib import SMTPException
 from celery import shared_task
 from django.conf import settings
 
-from apps.core.authentication import BLOCKED_TENANT_STATUSES
+from apps.core.authentication import BLOCKED_TENANT_STATUSES, active_deletion_for
 from apps.core.tenancy import tenant_context
 
 from .normalization import normalize_email
@@ -206,11 +206,14 @@ def send_password_changed_task(self, user_id, expected_email):
 def _can_use_email_login(user, email):
     """Email code login is for tenant users only: Super Admins (no tenant) sign
     in through Django admin behind IAP. Checked on the row `otp.issue` has
-    locked, so the answer can't go stale before the code is created."""
+    locked, so the answer can't go stale before the code is created.
+
+    Module 22: a blocked (suspended) tenant is still eligible when the user has an ACTIVE
+    deletion request, exactly as in password login and refresh, so they can reach the cancel screen."""
     return (
         user.is_active
         and user.tenant_id is not None
-        and user.tenant.status not in BLOCKED_TENANT_STATUSES
+        and (user.tenant.status not in BLOCKED_TENANT_STATUSES or active_deletion_for(user) is not None)
         and (user.email or '').lower() == email
     )
 

@@ -171,6 +171,8 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
 - `retry_now` is refused for a request still inside its grace period.
 - The nightly run logs open refund count and failed requests so neither stays invisible.
 - Platform-level audit `account.deleted` carries only the request id and scope.
+- `account_deletion_requests` has a `tenant_id` but no RLS (the login/refresh lock check and the nightly scan read it
+  with no tenant context), so it is listed in `RLS_EXEMPT_TABLES` (`check_db_roles`) next to `users`.
 
 **[OPEN] before this module is ✅**
 - **Flutter** must ship Settings → "Delete account" (at minimum opening the web flow); Play's in-app requirement is
@@ -190,3 +192,5 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
   the files purge streams and heartbeats during listing; `reason` cleared in `claim()`; emailed-code login honours the
   active-deletion exception for a suspended tenant; the periodic-task seed looks the crontab up by timezone; the
   deletion tests pin Razorpay to the local stub instead of relying on `.env`.
+- 2026-10-23  `account_deletion_requests` added to `RLS_EXEMPT_TABLES`; its omission failed the first production
+  `pglive-check-roles` run after `migrate`.

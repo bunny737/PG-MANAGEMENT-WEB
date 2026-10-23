@@ -19,7 +19,7 @@ google-auth==2.*
 razorpay==1.4.*
 # razorpay 1.4.x still imports the legacy pkg_resources API, which setuptools
 # >=81 dropped entirely (import breaks without this pin) — see Module 13 spec.
-setuptools<81
+setuptools<85
 # 70.x: fixes SSRF and arbitrary code execution via PostScript images (CVE-2025-68616,
 # CVE-2026-106443). Its own pydyf requirement replaces the pydyf==0.11 pin 62.x needed (Module 17).
 WeasyPrint==70.*

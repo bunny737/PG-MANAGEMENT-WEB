@@ -6,13 +6,13 @@
 # (src/instrumentation.ts), so they are build args here and runtime env on Cloud Run too.
 # None of these are secrets; BFF_ORIGIN_SECRET and friends arrive only at runtime.
 
-FROM node:24-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
 
-FROM node:24-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 ARG SITE_URL
 ARG SITE_ENV=production
@@ -43,7 +43,7 @@ COPY . .
 RUN npm run build
 
 
-FROM node:24-alpine
+FROM node:25-alpine
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080 HOSTNAME=0.0.0.0
 # The runtime is `node server.js` only: drop the npm/yarn CLIs the base image bundles. They are never used here

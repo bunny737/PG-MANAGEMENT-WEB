@@ -1,3 +1,5 @@
+import sys
+
 from .base import *
 
 DEBUG = True
@@ -6,16 +8,51 @@ MIDDLEWARE = ['corsheaders.middleware.CorsMiddleware'] + MIDDLEWARE
 MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
 INTERNAL_IPS = ['127.0.0.1']
 
-# Dev-only: the Next.js dev server calls Django directly from the browser
-# (no BFF proxy yet — see docs/frontend-plan.md §3.1, still to be built).
-# Not needed in prod, where the proxy makes API calls same-origin.
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000']
+# Dev-only: allow all origins for local Next.js, ngrok tunnels, and cloud preview tools.
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'https://handrail-outwit-craftwork.ngrok-free.dev',
+]
 
-# Auth emails (verification, OTP fallback, resets) print to the console in dev.
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# The Next.js container reaches Django as http://backend:8000 for server-side
+# fetches (marketing site: INTERNAL_API_URL).
+if 'backend' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('backend')
+
+if 'handrail-outwit-craftwork.ngrok-free.dev' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('handrail-outwit-craftwork.ngrok-free.dev')
+
+for origin in [
+    'https://handrail-outwit-craftwork.ngrok-free.dev',
+    'http://handrail-outwit-craftwork.ngrok-free.dev',
+]:
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
+
+# Auth emails (verification, sign-in codes, resets) print to the console in dev. To send real
+# mail through the EMAIL_* SMTP settings, set
+# EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend in .env.
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+
+# Single-process in dev, and `manage.py test` has no Redis — the shared Redis
+# cache (base.py, for cross-process throttle state) is a prod-only concern.
+CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
+# Dev/test posts fake webhook bodies without a real Razorpay HMAC signature.
+# Never set this in production (base.py defaults it to False → fail closed).
+RAZORPAY_ALLOW_UNSIGNED_WEBHOOKS = True
 
 # Module 14: run Celery tasks (notification emails) synchronously in dev/test
 # so `manage.py test` and local runs don't need a separate worker process.
 # prod.py does not set this — production requires the real `celery` worker.
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# `manage.py test` loads this module too. Never let the test suite reach the
+# real FCM project configured for local dev push (.env) — tests that need
+# Firebase patch `_get_firebase_app` explicitly.
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    FIREBASE_CREDENTIALS_PATH = ''
+    FIREBASE_CREDENTIALS_JSON = ''
+    FIREBASE_USE_ADC = False

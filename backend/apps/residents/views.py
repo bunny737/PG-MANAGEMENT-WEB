@@ -1,3 +1,5 @@
+import django_filters
+from drf_spectacular.utils import extend_schema
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -8,14 +10,19 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
+from apps.billing.filters import resident_search
 from apps.core.permissions import require_permission
+from apps.core.redaction import Redactor
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 from apps.subscriptions.services import check_resident_limit
 
 from . import services
+from .finance import resident_finance
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
+from .schema import ResidentDetailResponseSerializer
 from .serializers import (
+    bed_admits,
     AbscondedRecordCreateSerializer,
     AbscondedRecordSerializer,
     AdmissionSerializer,
@@ -27,10 +34,37 @@ from .serializers import (
     ResidentStatusUpdateSerializer,
     TransferCreateSerializer,
     TransferSerializer,
+    VacateCancelSerializer,
     VacateFinalizeSerializer,
     VacateGiveNoticeSerializer,
     VacateSerializer,
 )
+
+
+class ResidentFilter(django_filters.FilterSet):
+    """D3: ?property=&status=&search=. `status` takes a comma-separated list
+    (e.g. active,notice_period); `search` matches name or phone."""
+
+    property = django_filters.UUIDFilter(field_name='property_id')
+    status = django_filters.CharFilter(method='filter_status')
+    search = django_filters.CharFilter(method='filter_search')
+
+    class Meta:
+        model = Resident
+        fields = ['property', 'status', 'search']
+
+    def filter_status(self, queryset, name, value):
+        values = [v.strip() for v in value.split(',') if v.strip()]
+        unknown = [v for v in values if v not in Resident.Status.values]
+        if unknown:
+            raise ValidationError(
+                {'status': [_('Unknown status: %(values)s.') % {'values': ', '.join(unknown)}]},
+                code='invalid_status',
+            )
+        return queryset.filter(status__in=values) if values else queryset
+
+    def filter_search(self, queryset, name, value):
+        return resident_search(queryset, '', value)
 
 
 class ResidentViewSet(viewsets.ModelViewSet):
@@ -42,20 +76,39 @@ class ResidentViewSet(viewsets.ModelViewSet):
 
     serializer_class = ResidentSerializer
     http_method_names = ['get', 'post', 'patch']
-    filterset_fields = ['property', 'status']
+    filterset_class = ResidentFilter
+
+    @extend_schema(responses=ResidentDetailResponseSerializer)
+    def retrieve(self, request, *args, **kwargs):
+        """Detail adds the D6 `finance` block (needs view_finance; null and
+        listed in `redacted` otherwise). Lists stay lean — no per-row money."""
+        resident = self.get_object()
+        data = dict(self.get_serializer(resident).data)
+        redactor = Redactor(request.user)
+        data['finance'] = redactor.group('finance', ['view_finance'], lambda: resident_finance(resident))
+        data['redacted'] = redactor.redacted
+        return Response(data)
 
     def get_permissions(self):
         if self.action in ('create', 'update', 'partial_update', 'change_status'):
             return [IsAuthenticated(), require_permission('manage_residents')()]
         if self.action == 'timeline':
-            return [IsAuthenticated(), require_permission('view_activity_timeline')()]
+            # The timeline is resident data *and* invoice/payment amounts, so it
+            # needs both the Tenants and the Finance side of module access.
+            return [
+                IsAuthenticated(),
+                require_permission('view_resident_profile')(),
+                require_permission('view_activity_timeline')(),
+            ]
         return [IsAuthenticated(), require_permission('view_resident_profile')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Resident.objects.none()
         ids = visible_property_ids(self.request.user)
-        return Resident.objects.filter(property_id__in=ids).select_related('property')
+        return Resident.objects.filter(property_id__in=ids).select_related(
+            'property', 'admission', 'allocation__allocated_bed__room__floor__building',
+        )
 
     def perform_create(self, serializer):
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
@@ -71,24 +124,47 @@ class ResidentViewSet(viewsets.ModelViewSet):
     # exception handling for the whole viewset.
     @action(detail=True, methods=['patch'], url_path='status', url_name='status')
     def change_status(self, request, pk=None):
-        resident = self.get_object()
-        before_status = resident.status
-        serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        new_status = serializer.validated_data['status']
-        # Plan limit (Module 13) — only re-check when this transition is what
-        # would newly count the resident (e.g. Reserved -> Active bypassing
-        # Admission's own check); Active <-> Notice Period never changes the count.
-        if (new_status in Resident.COUNTS_TOWARD_PLAN_LIMIT
-                and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
-            check_resident_limit(resident.property)
-        instance = serializer.save()
-        audit_log.record(
-            action='resident.status_changed', actor=request.user, obj=instance,
-            before={'status': before_status}, after={'status': instance.status},
-            request=request,
-        )
-        return Response(ResidentSerializer(instance).data)
+        with transaction.atomic():
+            # get_object() for the 404 / property scoping / permission checks,
+            # then re-read under a row lock — get_object() locks nothing, and
+            # select_for_update() on this viewset's queryset would fail anyway:
+            # it select_relateds the nullable admission/allocation joins and
+            # PostgreSQL refuses FOR UPDATE on the nullable side of an outer
+            # join. Same lock as services.lock_resident, so a bare status flip
+            # can't interleave with the vacate/absconded workflows.
+            resident = services.lock_resident(self.get_object())
+            before_status = resident.status
+            serializer = ResidentStatusUpdateSerializer(resident, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            new_status = serializer.validated_data['status']
+            # Notice Period -> Active exists so a resident can withdraw their
+            # notice, but that has to go through /vacates/{id}/cancel/ so the
+            # Vacate row is actually closed. A bare flip here would leave an
+            # open vacate attached to an Active resident, which the give-notice
+            # check then reads as "already has a vacate record". Allowed when
+            # there is no open vacate (a data-fix path).
+            if (before_status == Resident.Status.NOTICE_PERIOD
+                    and new_status == Resident.Status.ACTIVE
+                    and resident.open_vacate is not None):
+                raise ValidationError(
+                    {'status': _('Cancel the notice via the vacate record instead.')},
+                    code='open_vacate_exists',
+                )
+            # Plan limit (Module 13) — only re-check when this transition is what
+            # would newly count the resident (e.g. Reserved -> Active bypassing
+            # Admission's own check); Active <-> Notice Period never changes the
+            # count. Inside the transaction so check_resident_limit can row-lock
+            # the subscription and the count-then-save can't race a parallel one.
+            if (new_status in Resident.COUNTS_TOWARD_PLAN_LIMIT
+                    and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
+                check_resident_limit(resident.property)
+            instance = serializer.save()
+            audit_log.record(
+                action='resident.status_changed', actor=request.user, obj=instance,
+                before={'status': before_status}, after={'status': instance.status},
+                request=request,
+            )
+        return Response(ResidentSerializer(instance, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=['get'])
     def timeline(self, request, pk=None):
@@ -100,6 +176,15 @@ class ResidentViewSet(viewsets.ModelViewSet):
         return Response(services.build_activity_timeline(resident))
 
 
+class AdmissionFilter(django_filters.FilterSet):
+    # An admission belongs to a property through its bed (dashboard property scoping).
+    property = django_filters.UUIDFilter(field_name='bed__room__floor__building__property_id')
+
+    class Meta:
+        model = Admission
+        fields = ['resident', 'bed', 'property']
+
+
 class AdmissionViewSet(viewsets.ModelViewSet):
     """Admission = Check-In (PRD Module 6): create-and-read only, no update/
     delete — contracted terms are snapshotted once and never change.
@@ -109,7 +194,7 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     serializer_class = AdmissionSerializer
     permission_classes = [IsAuthenticated, require_permission('manage_admissions')]
     http_method_names = ['get', 'post']
-    filterset_fields = ['resident', 'bed']
+    filterset_class = AdmissionFilter
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -122,8 +207,43 @@ class AdmissionViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         bed = serializer.validated_data['bed']
-        resident = serializer.validated_data['resident']
         with_food = serializer.validated_data['food_preference'] == Admission.FoodPreference.WITH_FOOD
+
+        # Lock order is Resident -> Bed -> Subscription, the same as every other
+        # workflow that writes Resident.status (services.lock_resident). The
+        # resident goes FIRST: change_status takes Resident then Subscription,
+        # so locking Bed -> Subscription here and only touching the resident at
+        # the end let the two deadlock (PATCH holds Resident and waits for
+        # Subscription; this holds Subscription and waits to update Resident).
+        # PostgreSQL aborts one of them with an untranslated error: a 500.
+        #
+        # Re-check the status under the lock too. The serializer's
+        # `resident_not_ready_for_checkin` check ran outside any lock, so a
+        # concurrent PATCH /status/ could activate the resident in between and
+        # both requests would then report success.
+        resident = services.lock_resident(serializer.validated_data['resident'])
+        if not resident.can_transition_to(Resident.Status.ACTIVE):
+            raise ValidationError(
+                {'resident': _(
+                    'This resident is not ready for check-in — they must be Reserved first.'
+                )},
+                code='resident_not_ready_for_checkin',
+            )
+
+        # Lock the bed row for the rest of the check-in. The serializer already
+        # checked `bed.status == AVAILABLE`, but that read is not held under a
+        # lock — two concurrent admissions targeting the same available bed
+        # would both pass validation and both occupy it (double-booking). Re-read
+        # and re-check the status now that the row is locked.
+        bed = (
+            Bed.objects.select_for_update(of=('self',))
+            .select_related('room__floor__building__property')
+            .get(pk=bed.pk)
+        )
+        if not bed_admits(bed, resident):
+            raise ValidationError(
+                {'bed': _('This bed is not available.')}, code='bed_not_available'
+            )
 
         # Plan limit (PRD §4: checked per property) — Module 13's concern;
         # fail-open when no plan is configured. Checked before any side
@@ -139,6 +259,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
         )
 
         bed.status = Bed.Status.OCCUPIED
+        bed.reserved_for = None  # a hold ends when the bed is taken (D9)
+        bed.reserved_until = None
         bed.save()  # also syncs the room's status (Module 02)
 
         before_status = resident.status
@@ -249,16 +371,41 @@ class VacateViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def finalize(self, request, pk=None):
         vacate = self.get_object()
-        if vacate.is_settled:
-            raise ValidationError(
-                {'detail': _('This vacate has already been settled.')}, code='already_settled'
-            )
+        self._reject_unless_open(vacate)
         serializer = VacateFinalizeSerializer(data=request.data, context={'vacate': vacate})
         serializer.is_valid(raise_exception=True)
         vacate = services.finalize_vacate(
             vacate=vacate, actor=request.user, request=request, **serializer.validated_data
         )
         return Response(VacateSerializer(vacate).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Withdraw the notice — Notice Period -> Active (owner request
+        2026-10-07). The bed, allocation and contracted rent are untouched;
+        see services.cancel_notice."""
+        vacate = self.get_object()
+        self._reject_unless_open(vacate)
+        serializer = VacateCancelSerializer(data=request.data, context={'vacate': vacate})
+        serializer.is_valid(raise_exception=True)
+        vacate = services.cancel_notice(
+            vacate=vacate, actor=request.user, request=request, **serializer.validated_data
+        )
+        return Response(VacateSerializer(vacate).data)
+
+    @staticmethod
+    def _reject_unless_open(vacate):
+        """Fail fast on a closed notice before any payload validation. Both
+        services re-check under a row lock — this is only so the caller gets a
+        400 that names the reason rather than a validation error about dates."""
+        if vacate.is_settled:
+            raise ValidationError(
+                {'detail': _('This vacate has already been settled.')}, code='already_settled'
+            )
+        if vacate.is_cancelled:
+            raise ValidationError(
+                {'detail': _('This notice has already been cancelled.')}, code='already_cancelled'
+            )
 
 
 class AbscondedRecordViewSet(viewsets.ModelViewSet):

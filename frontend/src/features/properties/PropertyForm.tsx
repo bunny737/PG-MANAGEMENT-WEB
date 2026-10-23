@@ -7,19 +7,36 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ApiError,
+  FEATURE_DRAFT_PREFIX,
   createProperty,
+  createTenantFeature,
   deletePropertyImage,
   getProperty,
+  listFeatureCatalog,
+  listTenantFeatures,
+  replacePropertyFeatures,
   updateProperty,
   uploadPropertyImage,
+  type FeatureCatalogItem,
   type PropertyImage,
+  type PropertyPayload,
+  type TenantFeature,
 } from "@/lib/api";
+import { FeaturePicker, toFeatureRefs, type FeatureSelection } from "./FeaturePicker";
+import { PropertyMapPicker } from "./PropertyMapPicker";
 
 const PROPERTY_TYPES = [
   { value: "pg", key: "pg" },
   { value: "boys_hostel", key: "boys_hostel" },
   { value: "girls_hostel", key: "girls_hostel" },
+  { value: "hostel", key: "hostel" },
   { value: "co_living", key: "co_living" },
+];
+
+const GENDER_PREFERENCES = [
+  { value: "unisex", key: "unisex" },
+  { value: "male", key: "male" },
+  { value: "female", key: "female" },
 ];
 
 interface PendingImage {
@@ -40,11 +57,15 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
 
   const [name, setName] = useState("");
   const [propertyType, setPropertyType] = useState(PROPERTY_TYPES[0].value);
+  const [genderPreference, setGenderPreference] = useState(GENDER_PREFERENCES[0].value);
   const [addressLine, setAddressLine] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [pincode, setPincode] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [images, setImages] = useState<PendingImage[]>([]);
   const [existingImages, setExistingImages] = useState<PropertyImage[]>([]);
   const [removingImageId, setRemovingImageId] = useState<string | null>(null);
@@ -56,6 +77,35 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
   const [imageWarning, setImageWarning] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Features offered (create mode only — editing happens on the Features page).
+  const [catalog, setCatalog] = useState<FeatureCatalogItem[]>([]);
+  const [customFeatures, setCustomFeatures] = useState<TenantFeature[]>([]);
+  const [features, setFeatures] = useState<FeatureSelection>({});
+  const [featuresWarning, setFeaturesWarning] = useState("");
+  const [savedPropertyId, setSavedPropertyId] = useState(propertyId ?? "");
+
+  useEffect(() => {
+    if (isEditMode) return;
+    let cancelled = false;
+    // Optional section: if the lists can't load, the form simply goes without it.
+    Promise.all([listFeatureCatalog(), listTenantFeatures()])
+      .then(([catalogData, customData]) => {
+        if (cancelled) return;
+        setCatalog(catalogData);
+        setCustomFeatures(customData);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode]);
+
+  const handleCreateCustomFeature = async (label: string) => {
+    const feature = await createTenantFeature(label);
+    setCustomFeatures((prev) => (prev.some((f) => f.id === feature.id) ? prev : [...prev, feature]));
+    return feature;
+  };
+
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
@@ -64,11 +114,23 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         if (cancelled) return;
         setName(property.name);
         setPropertyType(property.property_type);
+        setGenderPreference(property.gender_preference || GENDER_PREFERENCES[0].value);
         setAddressLine(property.address_line);
         setCity(property.city);
         setState(property.state);
+        setPincode(property.pincode || "");
         setContactNumber(property.contact_number);
         setContactEmail(property.contact_email ?? "");
+        setLatitude(
+          property.latitude !== null && property.latitude !== undefined
+            ? Number(property.latitude)
+            : null
+        );
+        setLongitude(
+          property.longitude !== null && property.longitude !== undefined
+            ? Number(property.longitude)
+            : null
+        );
         setExistingImages(property.images);
         setIsLoadingProperty(false);
       })
@@ -117,6 +179,12 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
     if (!city) newErrors.city = t("form.errCityRequired");
     if (!state) newErrors.state = t("form.errStateRequired");
     if (!contactNumber) newErrors.contactNumber = t("form.errContactRequired");
+    if (pincode && !/^[1-9]\d{5}$/.test(pincode.trim())) {
+      newErrors.pincode = t("form.errPincodeInvalid");
+    }
+    if ((latitude === null && longitude !== null) || (latitude !== null && longitude === null)) {
+      newErrors.coordinates = t("form.errCoordinatesBoth");
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -125,17 +193,22 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
 
     setErrors({});
     setImageWarning("");
+    setFeaturesWarning("");
     setIsLoading(true);
 
     try {
-      const payload = {
+      const payload: PropertyPayload = {
         name,
         property_type: propertyType,
+        gender_preference: genderPreference,
         address_line: addressLine,
         city,
         state,
+        pincode: pincode.trim() || undefined,
         contact_number: contactNumber,
         contact_email: contactEmail || undefined,
+        latitude: latitude !== null ? Number(latitude.toFixed(6)) : null,
+        longitude: longitude !== null ? Number(longitude.toFixed(6)) : null,
       };
 
       const property = isEditMode && propertyId
@@ -152,6 +225,17 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
         );
       }
 
+      setSavedPropertyId(property.id);
+      if (!isEditMode && Object.keys(features).length > 0) {
+        try {
+          await replacePropertyFeatures(property.id, { building: null, items: toFeatureRefs(features) });
+        } catch {
+          // The PG exists; keep the selection so the Features page can pick it up.
+          sessionStorage.setItem(FEATURE_DRAFT_PREFIX + property.id, JSON.stringify(features));
+          setFeaturesWarning(t("features.createPartialWarning"));
+        }
+      }
+
       setIsLoading(false);
       setShowSuccess(true);
     } catch (err) {
@@ -162,6 +246,8 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
           address: err.fieldError("address_line") ?? "",
           city: err.fieldError("city") ?? "",
           state: err.fieldError("state") ?? "",
+          pincode: err.fieldError("pincode") ?? "",
+          coordinates: err.fieldError("latitude") ?? err.fieldError("longitude") ?? "",
           contactNumber: err.fieldError("contact_number") ?? "",
           contactEmail: err.fieldError("contact_email") ?? "",
           form: err.fieldError("detail") ?? "",
@@ -216,6 +302,14 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
             </p>
             {imageWarning && (
               <p className="text-xs text-status-critical mb-6 leading-relaxed">{imageWarning}</p>
+            )}
+            {featuresWarning && (
+              <p className="text-xs text-status-critical mb-2 leading-relaxed">
+                {featuresWarning}{" "}
+                <Link href={`/properties/${savedPropertyId}/features`} className="font-semibold underline">
+                  {t("features.setUpNow")}
+                </Link>
+              </p>
             )}
             <button
               onClick={handleCloseModal}
@@ -282,24 +376,45 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               {errors.name && <p className="text-xs text-status-critical">{errors.name}</p>}
             </div>
 
-            {/* Property Type */}
-            <div className="space-y-1.5">
-              <label htmlFor="type" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                {t("form.propertyTypeLabel")}
-              </label>
-              <select
-                id="type"
-                value={propertyType}
-                onChange={(e) => setPropertyType(e.target.value)}
-                className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                disabled={isLoading}
-              >
-                {PROPERTY_TYPES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {t(`types.${option.key as "pg" | "boys_hostel" | "girls_hostel" | "co_living"}`)}
-                  </option>
-                ))}
-              </select>
+            {/* Property Type & Gender Preference grid */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor="type" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("form.propertyTypeLabel")}
+                </label>
+                <select
+                  id="type"
+                  value={propertyType}
+                  onChange={(e) => setPropertyType(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                  disabled={isLoading}
+                >
+                  {PROPERTY_TYPES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {t(`types.${option.key as "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living"}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="genderPreference" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("form.genderPreferenceLabel")}
+                </label>
+                <select
+                  id="genderPreference"
+                  value={genderPreference}
+                  onChange={(e) => setGenderPreference(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-sm text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                  disabled={isLoading}
+                >
+                  {GENDER_PREFERENCES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {t(`genders.${option.key as "unisex" | "male" | "female"}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Address */}
@@ -321,8 +436,8 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               {errors.address && <p className="text-xs text-status-critical">{errors.address}</p>}
             </div>
 
-            {/* City / State grid */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* City / State / Pincode grid */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <label htmlFor="city" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
                   {t("form.cityLabel")}
@@ -357,6 +472,25 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
                   disabled={isLoading}
                 />
                 {errors.state && <p className="text-xs text-status-critical">{errors.state}</p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="pincode" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("form.pincodeLabel")} <span className="normal-case text-ink-faint">{t("form.optionalText")}</span>
+                </label>
+                <input
+                  id="pincode"
+                  type="text"
+                  maxLength={6}
+                  placeholder={t("form.pincodePlaceholder")}
+                  value={pincode}
+                  onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className={`w-full rounded-xl border ${
+                    errors.pincode ? "border-status-critical focus:ring-status-critical/10" : "border-border focus:ring-accent/15 focus:border-accent"
+                  } bg-surface-card px-4 py-2.5 text-sm text-ink outline-none transition-all focus:ring-4`}
+                  disabled={isLoading}
+                />
+                {errors.pincode && <p className="text-xs text-status-critical">{errors.pincode}</p>}
               </div>
             </div>
 
@@ -399,6 +533,76 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
               </div>
             </div>
           </div>
+
+          {/* Location & Map Pin Card */}
+          <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm">
+            <PropertyMapPicker
+              latitude={latitude}
+              longitude={longitude}
+              onChange={({ latitude: newLat, longitude: newLng }) => {
+                setLatitude(newLat);
+                setLongitude(newLng);
+                if (errors.coordinates) {
+                  setErrors((prev) => ({ ...prev, coordinates: "" }));
+                }
+              }}
+              onAddressSelect={
+                isEditMode
+                  ? undefined
+                  : (details) => {
+                      if (details.address) setAddressLine(details.address);
+                      if (details.city) setCity(details.city);
+                      if (details.state) setState(details.state);
+                      if (details.pincode) setPincode(details.pincode);
+                      setErrors((prev) => ({
+                        ...prev,
+                        address: "",
+                        city: "",
+                        state: "",
+                        pincode: "",
+                      }));
+                    }
+              }
+              disabled={isLoading}
+              error={errors.coordinates}
+            />
+          </div>
+
+          {isEditMode && propertyId ? (
+            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-ink-faint">{t("features.createSectionTitle")}</h2>
+                <p className="text-xs text-ink-muted mt-1">{t("features.manageFromPageHint")}</p>
+              </div>
+              <Link
+                href={`/properties/${propertyId}/features`}
+                className="rounded-xl border border-border bg-surface-page px-4 py-2 text-xs font-bold text-ink hover:bg-surface-card transition-colors"
+              >
+                {t("features.manageFromPage")}
+              </Link>
+            </div>
+          ) : (
+            catalog.length > 0 && (
+              <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="border-b border-border pb-2.5">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-ink-faint">
+                    {t("features.createSectionTitle")}{" "}
+                    <span className="normal-case text-ink-faint font-normal">{t("form.optionalText")}</span>
+                  </h2>
+                  <p className="text-xs text-ink-muted mt-1">{t("features.createSectionHint")}</p>
+                </div>
+                <FeaturePicker
+                  catalog={catalog}
+                  customFeatures={customFeatures}
+                  value={features}
+                  onChange={setFeatures}
+                  onCreateCustom={handleCreateCustomFeature}
+                  disabled={isLoading}
+                  variant="compact"
+                />
+              </div>
+            )
+          )}
         </div>
 
         {/* Right Column: Image uploads */}

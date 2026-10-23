@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE } from './config';
 export const MODULES = [
   'common',
   'auth',
+  'staff',
   'settings',
   'properties',
   'residents',
@@ -14,34 +15,43 @@ export const MODULES = [
   'payments',
   'complaints',
   'dashboard',
-  'financials',
+  'expenses',
+  'reports',
   'status',
+  'visitors',
+  'pwa',
+  'vacancies',
+  'errors',
+  // Account deletion (Module 22): profile card, confirm dialog and the pending screen.
+  'accountDeletion',
+  // Public pglive.in site (server-rendered; see app/(marketing)).
+  'marketing',
 ];
 
 async function loadMessages(locale: string) {
-  const messages: Record<string, Record<string, unknown>> = {};
-
-  for (const mod of MODULES) {
-    let enModule: Record<string, unknown> = {};
-    try {
-      enModule = (await import(`../messages/en/${mod}.json`)).default;
-    } catch {
-      enModule = {};
-    }
-
-    let targetModule: Record<string, unknown> = {};
-    if (locale !== 'en') {
+  const moduleEntries = await Promise.all(
+    MODULES.map(async (mod) => {
+      let enModule: Record<string, unknown> = {};
       try {
-        targetModule = (await import(`../messages/${locale}/${mod}.json`)).default;
+        enModule = (await import(`../messages/en/${mod}.json`)).default;
       } catch {
-        targetModule = {};
+        enModule = {};
       }
-    }
 
-    messages[mod] = { ...enModule, ...targetModule };
-  }
+      let targetModule: Record<string, unknown> = {};
+      if (locale !== 'en') {
+        try {
+          targetModule = (await import(`../messages/${locale}/${mod}.json`)).default;
+        } catch {
+          targetModule = {};
+        }
+      }
 
-  return messages;
+      return [mod, { ...enModule, ...targetModule }] as const;
+    })
+  );
+
+  return Object.fromEntries(moduleEntries);
 }
 
 export default getRequestConfig(async () => {

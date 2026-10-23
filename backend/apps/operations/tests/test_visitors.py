@@ -137,6 +137,23 @@ class VisitorConfirmTests(OperationsAPITestCase):
         with tenant_context(self.tenant.id):
             self.assertTrue(AuditLog.objects.filter(action='visitor.confirmed').exists())
 
+    def test_receptionist_cannot_confirm_visitor(self):
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        response = self.client.post(visitor_url('confirm', self.visitor))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_confirm_visitor(self):
+        manager = self.create_manager(self.tenant)
+        self.assign_staff(manager, self.property)
+        self.authenticate(manager)
+
+        response = self.client.post(visitor_url('confirm', self.visitor))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(str(response.data['approved_by']), str(manager.id))
+
 
 class VisitorScopingTests(OperationsAPITestCase):
     def setUp(self):

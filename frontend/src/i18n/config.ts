@@ -59,6 +59,11 @@ export function isActiveLocale(code: string): boolean {
   return lang ? lang.status === 'active' : false;
 }
 
+export function getLocaleDirection(locale: string): 'ltr' | 'rtl' {
+  const rtlLocales = ['ar', 'he', 'fa', 'ur', 'dv', 'ps', 'sd', 'yi'];
+  return rtlLocales.includes(locale.toLowerCase()) ? 'rtl' : 'ltr';
+}
+
 export function getLanguageSelectLabel(lang: LanguageOption): string {
   if (lang.code === 'en') {
     return lang.name;

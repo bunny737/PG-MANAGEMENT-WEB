@@ -4,32 +4,44 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building,
-  Settings,
-  ShieldAlert,
   ArrowRight,
   ShieldCheck,
   CreditCard,
   Layers,
   Home,
   Lock,
-  Globe,
-  Award,
-  Zap,
-  Download
+  Globe
 } from "lucide-react";
-import { useTranslations } from "next-intl";
-import { mockProperties } from "./mock-properties";
+import { useLocale, useTranslations } from "next-intl";
 import { SUPPORTED_LANGUAGES, getLanguageSelectLabel, isActiveLocale } from "@/i18n/config";
-import { getCurrentUser, updateTenantDefaultLanguage } from "@/lib/api";
+import {
+  ApiError,
+  changePassword,
+  getCurrentUser,
+  listProperties,
+  updateTenantDefaultLanguage,
+  updateTenantFiscalYearStart,
+  type Property,
+} from "@/lib/api";
+import { isValidNewPassword } from "@/features/auth/validation";
+import { SubscriptionPanel } from "@/features/subscription/SubscriptionPanel";
 
-export function GlobalSettings() {
+const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+type SettingsTab = "property" | "security" | "subscription";
+type PropertyType = "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living";
+
+export function GlobalSettings({ initialTab }: { initialTab?: SettingsTab }) {
   const t = useTranslations("settings");
-  const [activeTab, setActiveTab] = useState<"property" | "security" | "subscription">("property");
+  const tProperties = useTranslations("properties");
+  const locale = useLocale();
+  const monthLabel = (month: number) =>
+    new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date(2000, month - 1, 1));
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "property");
 
-  // Portal setup states
-  const [portalName, setPortalName] = useState("StaysManager Premium");
-  const [notificationEmail, setNotificationEmail] = useState("support@staysmanager.in");
-  const [currency, setCurrency] = useState("INR");
+  // The tenant's real properties (null until loaded).
+  const [properties, setProperties] = useState<Property[] | null>(null);
+  const [propertiesError, setPropertiesError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [saveAlert, setSaveAlert] = useState<{ type: string; message: string } | null>(null);
 
@@ -37,39 +49,49 @@ export function GlobalSettings() {
   // accounts, not this browser's own UI locale, so it's seeded from the
   // tenant record, never from the locale cookie.
   const [language, setLanguage] = useState("en");
+  // Fiscal year start month (1-12, default April/4) drives analytics' YTD
+  // window (D0/D1) — a tenant setting, never hardcoded (invariant 10).
+  const [fiscalYearStartMonth, setFiscalYearStartMonth] = useState(4);
+  const [isSavingFiscalYear, setIsSavingFiscalYear] = useState(false);
   useEffect(() => {
     getCurrentUser()
       .then((user) => {
         if (user.tenant?.default_language) setLanguage(user.tenant.default_language);
+        if (user.tenant?.fiscal_year_start_month) setFiscalYearStartMonth(user.tenant.fiscal_year_start_month);
       })
       .catch(() => {});
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    listProperties()
+      .then((list) => {
+        if (!cancelled) setProperties(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPropertiesError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const triggerSaveAlert = (type: string, message: string) => {
     setSaveAlert({ type, message });
     setTimeout(() => setSaveAlert(null), 4000);
   };
 
-  const handleSavePortal = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      triggerSaveAlert("portal", t("global.portalSavedToast"));
-    }, 1000);
-  };
-
-  const handleSaveSecurity = (e: React.FormEvent) => {
+  const handleSaveSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
 
     if (!currentPassword) errs.current = t("global.errCurrentRequired");
     if (!newPassword) errs.new = t("global.errNewRequired");
-    else if (newPassword.length < 6) errs.new = t("global.errNewMinLength");
+    else if (!isValidNewPassword(newPassword)) errs.new = t("global.errNewMinLength");
     if (newPassword !== confirmPassword) errs.confirm = t("global.errConfirmMatch");
 
     if (Object.keys(errs).length > 0) {
@@ -78,14 +100,31 @@ export function GlobalSettings() {
     }
 
     setPasswordErrors({});
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    setIsChangingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       triggerSaveAlert("password", t("global.passwordSavedToast"));
-    }, 1500);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status === 0) {
+        setPasswordErrors({ form: t("global.errPasswordUnreachable") });
+      } else if (err.status === 429) {
+        setPasswordErrors({ form: t("global.errPasswordThrottled") });
+      } else {
+        // The backend's messages arrive already translated (Accept-Language).
+        const current = err.fieldError("current_password");
+        const next = err.fieldError("new_password");
+        setPasswordErrors(
+          current || next
+            ? { ...(current ? { current } : {}), ...(next ? { new: next } : {}) }
+            : { form: t("global.errPasswordFailed") }
+        );
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleLanguageChange = async (e: React.FormEvent) => {
@@ -101,6 +140,19 @@ export function GlobalSettings() {
       triggerSaveAlert("language", t("tenantLanguage.errorToast"));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleFiscalYearChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingFiscalYear(true);
+    try {
+      await updateTenantFiscalYearStart(fiscalYearStartMonth);
+      triggerSaveAlert("fiscalYear", t("fiscalYear.successToast"));
+    } catch {
+      triggerSaveAlert("fiscalYear", t("fiscalYear.errorToast"));
+    } finally {
+      setIsSavingFiscalYear(false);
     }
   };
 
@@ -157,141 +209,72 @@ export function GlobalSettings() {
 
       {/* 1. Property Setup Tab */}
       {activeTab === "property" && (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 items-start animate-fade-in">
-          {/* Left Column: Property Configuration Profiles */}
-          <div className="md:col-span-7 space-y-6">
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
-                <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
+        <div className="space-y-4 animate-fade-in">
+          <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-ink">{t("global.profilesTitle")}</h2>
+              <p className="text-xs text-ink-muted mt-0.5">{t("global.profilesSub")}</p>
+            </div>
+
+            {properties === null && !propertiesError && (
+              <p role="status" className="text-xs text-ink-muted">{tProperties("list.loadingProperties")}</p>
+            )}
+            {propertiesError && (
+              <p role="alert" className="text-xs text-status-critical">{t("global.profilesLoadFailed")}</p>
+            )}
+            {properties?.length === 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-ink">{tProperties("list.emptyTitle")}</p>
+                <p className="text-xs text-ink-muted">{tProperties("list.emptyDesc")}</p>
               </div>
+            )}
 
-              <div className="space-y-5">
-                {mockProperties.map((p) => (
-                  <div
-                    key={p.id}
-                    className="border border-border rounded-2xl p-5 bg-surface-card shadow-sm space-y-4 hover:shadow-md transition-shadow"
-                  >
-                    {/* Property header */}
-                    <div className="flex items-center gap-3 pb-3 border-b border-border/55">
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted shrink-0">
-                        <Building className="size-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-ink">{p.name}</h4>
-                        <p className="text-[10px] text-ink-muted">{p.type} · {p.city}, {p.state}</p>
-                      </div>
+            <div className="space-y-5">
+              {properties?.map((p) => (
+                <div
+                  key={p.id}
+                  className="border border-border rounded-2xl p-5 bg-surface-card shadow-sm space-y-4 hover:shadow-md transition-shadow"
+                >
+                  {/* Property header */}
+                  <div className="flex items-center gap-3 pb-3 border-b border-border/55">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-surface-page border border-border text-ink-muted shrink-0">
+                      <Building className="size-5" />
                     </div>
-
-                    {/* Dashboard links */}
-                    <div className="grid grid-cols-1 gap-2">
-                      <Link
-                        href={`/properties/${p.id}/settings`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <CreditCard className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.penaltiesPolicy")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
-
-                      <Link
-                        href={`/properties/${p.id}/buildings`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Layers className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.floorHierarchy")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
-
-                      <Link
-                        href={`/properties/${p.id}/floors/${p.id === "skyline" ? "4" : "1"}/rooms`}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Home className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
-                          <span className="font-semibold text-ink">{t("global.roomsInventory")}</span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                      </Link>
+                    <div>
+                      <h4 className="text-sm font-bold text-ink">{p.name}</h4>
+                      <p className="text-[10px] text-ink-muted">
+                        {tProperties(`types.${p.property_type as PropertyType}`)} · {p.city}, {p.state}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  {/* Dashboard links */}
+                  <div className="grid grid-cols-1 gap-2">
+                    <Link
+                      href={`/properties/${p.id}/buildings`}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Layers className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
+                        <span className="font-semibold text-ink">{t("global.floorHierarchy")}</span>
+                      </div>
+                      <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+                    </Link>
+
+                    <Link
+                      href={`/properties/${p.id}`}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-surface-page/35 hover:bg-surface-page hover:border-accent/30 transition-all text-xs group"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Home className="size-4 text-ink-muted group-hover:text-accent transition-colors" />
+                        <span className="font-semibold text-ink">{t("global.roomsInventory")}</span>
+                      </div>
+                      <ArrowRight className="size-3.5 text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-
-          {/* Right Column: General Setup */}
-          <div className="md:col-span-5 space-y-6">
-            <form onSubmit={handleSavePortal} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
-                <Settings className="size-4.5 text-ink-muted" />
-                {t("global.portalSetup")}
-              </h2>
-
-              <div className="space-y-1.5">
-                <label htmlFor="portalName" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.brandTitle")}
-                </label>
-                <input
-                  id="portalName"
-                  type="text"
-                  value={portalName}
-                  onChange={(e) => setPortalName(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.notificationEmail")}
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={notificationEmail}
-                  onChange={(e) => setNotificationEmail(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="currency" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {t("global.baseCurrency")}
-                </label>
-                <select
-                  id="currency"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
-                  disabled={isLoading}
-                >
-                  <option value="USD">{t("global.currencyUSD")}</option>
-                  <option value="INR">{t("global.currencyINR")}</option>
-                  <option value="EUR">{t("global.currencyEUR")}</option>
-                </select>
-              </div>
-
-              <div className="bg-slate-50 border border-border/80 p-3 rounded-xl flex gap-2 text-[10px] text-ink-muted">
-                <ShieldAlert className="size-4.5 text-amber-500 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
-                  {t("global.privilegesWarning")}
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
-              >
-                {isLoading ? t("global.savingSetup") : t("global.saveSetup")}
-              </button>
-            </form>
           </div>
         </div>
       )}
@@ -337,6 +320,43 @@ export function GlobalSettings() {
                 {isLoading ? t("tenantLanguage.saving") : t("tenantLanguage.button")}
               </button>
             </form>
+
+            <form onSubmit={handleFiscalYearChange} className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
+                <Layers className="size-4.5 text-ink-muted" />
+                {t("fiscalYear.title")}
+              </h2>
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                {t("fiscalYear.subtitle")}
+              </p>
+
+              <div className="space-y-1.5">
+                <label htmlFor="fiscalYearStartMonth" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("fiscalYear.label")}
+                </label>
+                <select
+                  id="fiscalYearStartMonth"
+                  value={fiscalYearStartMonth}
+                  onChange={(e) => setFiscalYearStartMonth(Number(e.target.value))}
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-xs text-ink-muted outline-none transition-all focus:ring-4 focus:ring-accent/15 focus:border-accent"
+                  disabled={isSavingFiscalYear}
+                >
+                  {MONTH_NUMBERS.map((month) => (
+                    <option key={month} value={month}>
+                      {monthLabel(month)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSavingFiscalYear}
+                className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
+              >
+                {isSavingFiscalYear ? t("fiscalYear.saving") : t("fiscalYear.button")}
+              </button>
+            </form>
           </div>
 
           {/* Right Column: Password Change Form */}
@@ -360,10 +380,11 @@ export function GlobalSettings() {
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.current ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.current && <p className="text-xs text-status-critical">{passwordErrors.current}</p>}
               </div>
@@ -378,10 +399,11 @@ export function GlobalSettings() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.new ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.new && <p className="text-xs text-status-critical">{passwordErrors.new}</p>}
               </div>
@@ -396,20 +418,25 @@ export function GlobalSettings() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
                   className={`w-full rounded-xl border ${
                     passwordErrors.confirm ? "border-status-critical" : "border-border"
                   } bg-surface-card px-4 py-2.5 text-xs text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
-                  disabled={isLoading}
+                  disabled={isChangingPassword}
                 />
                 {passwordErrors.confirm && <p className="text-xs text-status-critical">{passwordErrors.confirm}</p>}
               </div>
 
+              {passwordErrors.form && (
+                <p role="alert" className="text-xs text-status-critical">{passwordErrors.form}</p>
+              )}
+
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isChangingPassword}
                 className="w-full bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-bold py-2.5 rounded-xl cursor-pointer transition-colors shadow-sm disabled:opacity-50"
               >
-                {isLoading ? t("global.savingCredentials") : t("global.updateCredentials")}
+                {isChangingPassword ? t("global.savingCredentials") : t("global.updateCredentials")}
               </button>
             </form>
           </div>
@@ -417,138 +444,7 @@ export function GlobalSettings() {
       )}
 
       {/* 3. Plan & Subscription Tab */}
-      {activeTab === "subscription" && (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-12 items-start animate-fade-in">
-          {/* Left Column: Plan summary details */}
-          <div className="md:col-span-7 space-y-6">
-            {/* Current plan card */}
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex justify-between items-start border-b border-border pb-3">
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-accent border border-accent/25 bg-accent-soft px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                    {t("subscription.premiumTag")}
-                  </span>
-                  <h3 className="text-lg font-bold text-ink">{t("subscription.proTitle")}</h3>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-extrabold text-ink">₹49.00</p>
-                  <p className="text-[10px] text-ink-muted">{t("subscription.perMonth")}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-ink-muted">{t("subscription.paymentMethod")}</span>
-                  <p className="font-semibold text-ink">{t("subscription.mastercardEnding")}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-ink-muted">{t("subscription.renewalDate")}</span>
-                  <p className="font-semibold text-ink">{t("subscription.renewalDateValue")}</p>
-                </div>
-              </div>
-
-              {/* Usage stats bar */}
-              <div className="space-y-1.5 pt-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-ink-muted">{t("subscription.activeAllocations")}</span>
-                  <span className="font-bold text-ink">{t("subscription.bedsUsed", { used: 348, total: 500 })}</span>
-                </div>
-                <div className="h-2 w-full bg-surface-page rounded-full overflow-hidden border border-border">
-                  <div className="h-full bg-accent rounded-full" style={{ width: "70%" }} />
-                </div>
-              </div>
-
-              {/* Upgrade Plan button */}
-              <button className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-xs font-bold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 transition-all cursor-pointer">
-                <Zap className="size-3.5" /> {t("subscription.upgradeCapacity")}
-              </button>
-            </div>
-
-            {/* Invoices List */}
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink border-b border-border pb-3">{t("subscription.invoicesTitle")}</h3>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                      <th className="px-4 py-2.5">{t("subscription.billingPeriod")}</th>
-                      <th className="px-4 py-2.5">{t("subscription.invoiceNumber")}</th>
-                      <th className="px-4 py-2.5">{t("subscription.amount")}</th>
-                      <th className="px-4 py-2.5 text-right font-medium">{t("subscription.download")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-ink">
-                    <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{t("subscription.periodAug")}</td>
-                      <td className="px-4 py-3 font-mono">{t("subscription.invSub842")}</td>
-                      <td className="px-4 py-3 font-semibold">₹49.00</td>
-                      <td className="px-4 py-3 text-right">
-                        <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3">{t("subscription.periodJul")}</td>
-                      <td className="px-4 py-3 font-mono">{t("subscription.invSub710")}</td>
-                      <td className="px-4 py-3 font-semibold">₹49.00</td>
-                      <td className="px-4 py-3 text-right">
-                        <button className="p-1 rounded text-ink-muted hover:text-accent cursor-pointer"><Download className="size-4 inline" /></button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Upgrade Plan lists */}
-          <div className="md:col-span-5 space-y-6">
-            <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5 flex items-center gap-1.5">
-                <Award className="size-4.5 text-ink-muted" />
-                {t("subscription.availablePlans")}
-              </h3>
-
-              <div className="space-y-3.5">
-                {/* Plan 1 */}
-                <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.starterPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.starterPrice")}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.starterSub")}
-                  </p>
-                </div>
-
-                {/* Plan 2 */}
-                <div className="border-2 border-accent rounded-xl p-3.5 bg-accent-soft/10 space-y-2 relative">
-                  <span className="absolute -top-2.5 right-4 bg-accent text-ink-inverse text-[8px] font-extrabold uppercase px-2 py-0.5 rounded-full tracking-wider shadow-sm">
-                    {t("subscription.currentPlanBadge")}
-                  </span>
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.proPlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.proPrice")}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.proSub")}
-                  </p>
-                </div>
-
-                {/* Plan 3 */}
-                <div className="border border-border rounded-xl p-3.5 hover:border-accent/40 transition-colors space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-ink">{t("subscription.enterprisePlan")}</h4>
-                    <span className="font-mono text-xs font-semibold text-ink">{t("subscription.enterprisePrice")}</span>
-                  </div>
-                  <p className="text-[10px] text-ink-muted leading-relaxed">
-                    {t("subscription.enterpriseSub")}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {activeTab === "subscription" && <SubscriptionPanel />}
     </div>
   );
 }

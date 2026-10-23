@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Home, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { getFloor, listFloors, createRoom, createBed, type Floor, type Room, ApiError } from "@/lib/api";
+import { getFloor, listFloors, createRoom, type Floor, type Room, ApiError } from "@/lib/api";
 
 export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floorId: string }) {
   const router = useRouter();
@@ -90,6 +90,8 @@ export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floor
     const capacity = capacityMap[sharingType] || 2;
 
     try {
+      // The server creates the room and its beds in one transaction, so a plan
+      // bed limit can never leave a room with only some of its beds.
       const room = await createRoom({
         floor: selectedFloor,
         room_number: roomNumber.trim(),
@@ -97,30 +99,11 @@ export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floor
         category: category as "ac" | "non_ac",
         rack_rate_with_food: parseFloat(rentWithFood).toFixed(2),
         rack_rate_without_food: parseFloat(rentWithoutFood).toFixed(2),
+        auto_create_beds: true,
       });
 
-      // Automatically create beds for the room
-      const bedLabels = ["A", "B", "C", "D", "E", "F", "G", "H"];
-      const bedPromises = [];
-      const generatedNames: string[] = [];
-
-      for (let i = 0; i < capacity; i++) {
-        const suffix = capacity === 1 ? "A" : bedLabels[i];
-        const bedName = `${room.room_number}-${suffix}`;
-        generatedNames.push(bedName);
-
-        bedPromises.push(
-          createBed({
-            room: room.id,
-            bed_number: bedName,
-          })
-        );
-      }
-
-      await Promise.all(bedPromises);
-
       setCreatedRoom(room);
-      setGeneratedBeds(generatedNames);
+      setGeneratedBeds((room.beds ?? []).map((bed) => bed.bed_number));
       setIsLoading(false);
       setShowSuccess(true);
     } catch (err) {

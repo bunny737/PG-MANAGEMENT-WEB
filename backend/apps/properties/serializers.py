@@ -3,10 +3,24 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from apps.core.roles import STAFF_ROLES
+from apps.core.exceptions import Conflict
+from apps.core.roles import STAFF_ROLES, permissions_for_user
 
-from . import services
-from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from . import feature_services, services
+from .feature_catalog import CUSTOM_CATEGORY_LABEL, label_for
+from .models import (
+    Bed,
+    Building,
+    FeatureCatalog,
+    Floor,
+    Property,
+    PropertyFeature,
+    PropertyImage,
+    PropertySettings,
+    PropertyStaffAssignment,
+    Room,
+    TenantFeature,
+)
 
 
 def _ordinal_floor_name(index):
@@ -36,12 +50,26 @@ class PropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = [
-            'id', 'name', 'property_type', 'address_line', 'city', 'state', 'country',
-            'contact_number', 'contact_email', 'status',
+            'id', 'name', 'property_type', 'gender_preference',
+            'address_line', 'city', 'state', 'pincode', 'country',
+            'contact_number', 'contact_email', 'latitude', 'longitude', 'status',
             'buildings_count', 'floors_count', 'rooms_count', 'beds_count', 'occupancy_percent',
             'images', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        # Merge with the stored row so a PATCH carrying one coordinate is
+        # judged against what the row would end up holding.
+        latitude = attrs.get('latitude', getattr(self.instance, 'latitude', None))
+        longitude = attrs.get('longitude', getattr(self.instance, 'longitude', None))
+        if (latitude is None) != (longitude is None):
+            missing = 'latitude' if latitude is None else 'longitude'
+            raise serializers.ValidationError(
+                {missing: _('Latitude and longitude must be set together.')},
+                code='coordinates_incomplete',
+            )
+        return attrs
 
     def get_buildings_count(self, obj) -> int:
         return obj.buildings.count()
@@ -181,6 +209,7 @@ class BedSerializer(serializers.ModelSerializer):
     effective_rate_without_food = serializers.SerializerMethodField()
     current_occupant = serializers.SerializerMethodField()
     history = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Bed
@@ -188,9 +217,54 @@ class BedSerializer(serializers.ModelSerializer):
             'id', 'room', 'bed_number',
             'rack_rate_with_food_override', 'rack_rate_without_food_override',
             'effective_rate_with_food', 'effective_rate_without_food',
-            'status', 'current_occupant', 'history', 'created_at', 'updated_at',
+            'status', 'allowed_transitions', 'reserved_for', 'reserved_until',
+            'current_occupant', 'history', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def _get_request(self):
+        request = self.context.get('request')
+        if not request and hasattr(self, 'parent') and self.parent:
+            request = getattr(self.parent, 'context', {}).get('request')
+            if not request and hasattr(self.parent, 'parent') and self.parent.parent:
+                request = getattr(self.parent.parent, 'context', {}).get('request')
+        return request
+
+    def _permissions(self):
+        """The requesting user's resolved permissions, or None when there is no
+        authenticated request context (internal use) — which stays unrestricted."""
+        request = self._get_request()
+        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
+            return set(permissions_for_user(request.user))
+        return None
+
+    def _can_view_financials(self) -> bool:
+        # Rent is a billing figure: the Finance module governs it.
+        perms = self._permissions()
+        return True if perms is None else 'view_finance' in perms
+
+    def _can_view_occupant(self) -> bool:
+        perms = self._permissions()
+        return True if perms is None else 'view_resident_profile' in perms
+
+    def _can_view_history(self) -> bool:
+        # History carries resident names *and* invoice/payment amounts, so it needs both.
+        perms = self._permissions()
+        return True if perms is None else {'view_activity_timeline', 'view_resident_profile'} <= perms
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if not self._can_view_occupant():
+            ret['current_occupant'] = None
+        if not self._can_view_history():
+            ret.pop('history', None)
+        if not self._can_view_financials():
+            if ret.get('current_occupant') and 'rent' in ret['current_occupant']:
+                ret['current_occupant'].pop('rent', None)
+        return ret
+
+    def get_allowed_transitions(self, obj) -> list:
+        return obj.allowed_transitions()
 
     def get_effective_rate_with_food(self, obj) -> str:
         return str(obj.rack_rate(with_food=True))
@@ -205,7 +279,7 @@ class BedSerializer(serializers.ModelSerializer):
         ).first()
         if allocation and allocation.resident:
             res = allocation.resident
-            return {
+            data = {
                 'id': str(res.id),
                 'first_name': res.first_name,
                 'last_name': res.last_name,
@@ -214,42 +288,61 @@ class BedSerializer(serializers.ModelSerializer):
                 'phone': res.phone,
                 'status': res.status,
                 'joining_date': res.admission.joining_date.strftime('%Y-%m-%d') if hasattr(res, 'admission') else None,
-                'rent': str(allocation.contracted_rent),
                 'initials': f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper(),
             }
+            if self._can_view_financials():
+                data['rent'] = str(allocation.contracted_rent)
+            return data
         return None
 
     def get_history(self, obj):
-        from apps.residents.models import Admission
-        admissions = obj.admissions.select_related('resident__vacate').order_by('-joining_date')
+        if not self._can_view_history():
+            return []
+        from apps.residents.models import vacate_prefetch
+        # A resident can have several vacates (a cancelled notice stays in
+        # history), so this prefetches them all into `prefetched_vacates` —
+        # which the Resident accessors below read, keeping this one query
+        # instead of one per admission.
+        admissions = (
+            obj.admissions
+            .select_related('resident')
+            .prefetch_related(vacate_prefetch('resident__vacates'))
+            .order_by('-joining_date')
+        )
         history_list = []
         for adm in admissions:
             res = adm.resident
             initials = f"{res.first_name[0] if res.first_name else ''}{res.last_name[0] if res.last_name else ''}".upper()
-            
-            # Resolve moveOut date/status
+
+            # Resolve moveOut date/status. Picked by STATE, not position: the
+            # latest row may be a cancelled notice, whose dates must never be
+            # shown as a move-out.
             move_out = 'Active'
             if res.status == 'vacated':
-                if hasattr(res, 'vacate') and res.vacate.actual_vacate_date:
-                    move_out = res.vacate.actual_vacate_date.strftime('%m/%d/%y')
+                settled = res.latest_settled_vacate
+                if settled is not None:
+                    move_out = settled.actual_vacate_date.strftime('%m/%d/%y')
                 else:
                     move_out = 'Vacated'
             elif res.status == 'notice_period':
-                if hasattr(res, 'vacate'):
-                    move_out = f"Notice (Exp: {res.vacate.expected_vacate_date.strftime('%m/%d/%y')})"
+                open_vacate = res.open_vacate
+                if open_vacate is not None:
+                    move_out = f"Notice (Exp: {open_vacate.expected_vacate_date.strftime('%m/%d/%y')})"
                 else:
                     move_out = 'Notice Period'
             elif res.status != 'active':
                 move_out = res.status.title()
 
-            history_list.append({
+            entry = {
                 'resident': f"{res.first_name} {res.last_name}".strip(),
                 'term': f"Admission - {adm.billing_mode.replace('_', ' ').title()}",
                 'moveIn': adm.joining_date.strftime('%m/%d/%y'),
                 'moveOut': move_out,
-                'rate': f"₹{int(adm.contracted_rent)}",
                 'initials': initials,
-            })
+            }
+            if self._can_view_financials():
+                entry['rate'] = f"₹{int(adm.contracted_rent)}"
+            history_list.append(entry)
         return history_list
 
     def validate_room(self, value):
@@ -269,20 +362,91 @@ class BedSerializer(serializers.ModelSerializer):
                     {'room': _('This room already has its full sharing-type capacity of beds.')},
                     code='bed_capacity_exceeded',
                 )
+        if self.instance is not None and 'room' in attrs and attrs['room'] != self.instance.room:
+            raise serializers.ValidationError(
+                {'room': _('A bed cannot be moved to another room.')}, code='bed_room_immutable',
+            )
+        self._validate_status(attrs)
+        self._validate_reservation(attrs, room)
         return attrs
+
+    def _validate_status(self, attrs):
+        """D9: only the MANUAL_TRANSITIONS are allowed here; anything into or
+        out of `occupied` goes through its workflow. 409, not 400 — the body
+        is valid, the bed's current state forbids it."""
+        if 'status' not in attrs:
+            return
+        new = attrs['status']
+        if self.instance is None:
+            if new not in Bed.CREATABLE_STATUSES:
+                raise serializers.ValidationError(
+                    {'status': _('A new bed cannot start as occupied — admit a resident instead.')},
+                    code='bed_status_not_allowed',
+                )
+            return
+        current = self.instance.status
+        if new != current and (current, new) not in Bed.MANUAL_TRANSITIONS:
+            if current == Bed.Status.OCCUPIED:
+                message = _('An occupied bed changes only through transfer, vacate or absconded.')
+            elif new == Bed.Status.OCCUPIED:
+                message = _('A bed becomes occupied only through admission or transfer.')
+            else:
+                message = _('This bed status change is not allowed.')
+            raise Conflict(message, code='bed_transition_not_allowed')
+
+    def _validate_reservation(self, attrs, room):
+        """reserved_for / reserved_until only make sense on a reserved bed;
+        leaving `reserved` clears them (in update())."""
+        status = attrs.get('status', getattr(self.instance, 'status', Bed.Status.AVAILABLE))
+        touched = {'reserved_for', 'reserved_until'} & set(attrs)
+        if status != Bed.Status.RESERVED:
+            if any(attrs.get(field) for field in touched):
+                raise serializers.ValidationError(
+                    {'reserved_for': _('Only a reserved bed can be held for someone.')},
+                    code='bed_not_reserved',
+                )
+            return
+        resident = attrs.get('reserved_for')
+        if resident is not None:
+            from apps.residents.models import Resident
+            if room is None or resident.property_id != room.floor.building.property_id:
+                raise serializers.ValidationError(
+                    {'reserved_for': _('This resident belongs to another property.')},
+                    code='reserved_for_property_mismatch',
+                )
+            if resident.status not in (Resident.Status.INQUIRY, Resident.Status.RESERVED):
+                raise serializers.ValidationError(
+                    {'reserved_for': _('A bed can only be held for an inquiry or reserved resident.')},
+                    code='reserved_for_not_eligible',
+                )
+
+    def update(self, instance, validated_data):
+        if validated_data.get('status', instance.status) != Bed.Status.RESERVED:
+            validated_data['reserved_for'] = None
+            validated_data['reserved_until'] = None
+        return super().update(instance, validated_data)
 
 
 class RoomSerializer(serializers.ModelSerializer):
     current_occupancy = serializers.SerializerMethodField()
     bed_capacity = serializers.SerializerMethodField()
     beds = BedSerializer(many=True, read_only=True)
+    # Write-only convenience: creates `sharing_type` beds ("201-A", "201-B", ...)
+    # in the same transaction. Off by default so existing callers that add
+    # beds one by one are unaffected.
+    auto_create_beds = serializers.BooleanField(write_only=True, required=False, default=False)
+    # Read-only ancestry so a room list (?property=) renders and links
+    # without walking floor -> building -> property client-side.
+    building = serializers.UUIDField(source='floor.building_id', read_only=True)
+    property = serializers.UUIDField(source='floor.building.property_id', read_only=True)
 
     class Meta:
         model = Room
         fields = [
-            'id', 'floor', 'room_number', 'sharing_type', 'category',
+            'id', 'property', 'building', 'floor', 'room_number', 'sharing_type', 'category',
             'rack_rate_with_food', 'rack_rate_without_food', 'status',
-            'current_occupancy', 'bed_capacity', 'beds', 'created_at', 'updated_at',
+            'auto_create_beds', 'current_occupancy', 'bed_capacity', 'beds',
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -299,6 +463,52 @@ class RoomSerializer(serializers.ModelSerializer):
                 _('You are not assigned to this property.'), code='property_not_assigned'
             )
         return value
+
+    def validate(self, attrs):
+        # Bed.bed_number is max 20 chars: "<room_number>-<letter>".
+        bed_max = Bed._meta.get_field('bed_number').max_length
+        if (
+            self.instance is None and attrs.get('auto_create_beds')
+            and len(attrs['room_number']) + 2 > bed_max
+        ):
+            raise serializers.ValidationError(
+                {'room_number': _('Room number is too long to auto-create beds.')},
+                code='room_number_too_long',
+            )
+        # The sharing type is the room's bed capacity: it can't drop below
+        # the beds that exist (remove a vacant bed first). That also keeps it
+        # at or above the occupied + reserved beds the roadmap requires (D9).
+        if (
+            self.instance is not None and 'sharing_type' in attrs
+            and attrs['sharing_type'] < self.instance.beds.count()
+        ):
+            raise serializers.ValidationError(
+                {'sharing_type': _('This room has more beds than that. Remove a vacant bed first.')},
+                code='room_capacity_below_beds',
+            )
+        if self.instance is not None and 'floor' in attrs and attrs['floor'] != self.instance.floor:
+            if attrs['floor'].building.property_id != self.instance.floor.building.property_id:
+                raise serializers.ValidationError(
+                    {'floor': _('A room cannot be moved to another property.')},
+                    code='room_property_immutable',
+                )
+        return attrs
+
+    def create(self, validated_data):
+        auto_create_beds = validated_data.pop('auto_create_beds', False)
+        with transaction.atomic():
+            room = super().create(validated_data)
+            if auto_create_beds:
+                for i in range(room.sharing_type):
+                    Bed.objects.create(
+                        tenant_id=room.tenant_id, room=room,
+                        bed_number=f'{room.room_number}-{chr(ord("A") + i)}',
+                    )
+        return room
+
+    def update(self, instance, validated_data):
+        validated_data.pop('auto_create_beds', None)
+        return super().update(instance, validated_data)
 
 
 class PropertyStaffAssignmentSerializer(serializers.ModelSerializer):
@@ -357,3 +567,84 @@ class PropertySettingsSerializer(serializers.ModelSerializer):
                 code='invalid_percentage',
             )
         return attrs
+
+
+class FeatureCatalogSerializer(serializers.ModelSerializer):
+    label = serializers.SerializerMethodField()
+    category_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FeatureCatalog
+        fields = ['id', 'code', 'category', 'category_label', 'label', 'display_order', 'is_popular', 'is_active']
+
+    def get_label(self, obj) -> str:
+        return str(label_for(obj.code))
+
+    def get_category_label(self, obj) -> str:
+        return str(FeatureCatalog.Category(obj.category).label)
+
+
+class TenantFeatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantFeature
+        fields = ['id', 'label', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class PropertyFeatureSerializer(serializers.ModelSerializer):
+    """Read shape for one selected feature. `source` says which scope the
+    row lives at — 'property' rows are inherited when viewing a building."""
+
+    source = serializers.SerializerMethodField()
+    feature_type = serializers.SerializerMethodField()
+    code = serializers.SerializerMethodField()
+    label = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
+    category_label = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PropertyFeature
+        fields = [
+            'id', 'source', 'building', 'feature_type', 'code', 'tenant_feature',
+            'label', 'category', 'category_label', 'is_paid', 'is_active',
+        ]
+
+    def get_source(self, obj) -> str:
+        return 'building' if obj.building_id else 'property'
+
+    def get_feature_type(self, obj) -> str:
+        return 'catalog' if obj.catalog_feature_id else 'custom'
+
+    def get_code(self, obj) -> str | None:
+        return obj.catalog_feature.code if obj.catalog_feature_id else None
+
+    def get_label(self, obj) -> str:
+        if obj.catalog_feature_id:
+            return str(label_for(obj.catalog_feature.code))
+        return obj.tenant_feature.label
+
+    def get_category(self, obj) -> str:
+        return feature_services.category_of(obj)
+
+    def get_category_label(self, obj) -> str:
+        if obj.catalog_feature_id:
+            return str(FeatureCatalog.Category(obj.catalog_feature.category).label)
+        return str(CUSTOM_CATEGORY_LABEL)
+
+    def get_is_active(self, obj) -> bool:
+        return (obj.catalog_feature or obj.tenant_feature).is_active
+
+
+class _FeatureRefSerializer(serializers.Serializer):
+    code = serializers.CharField(required=False, allow_blank=True)
+    tenant_feature = serializers.UUIDField(required=False, allow_null=True)
+    is_paid = serializers.BooleanField(required=False, default=False)
+
+
+class PropertyFeaturesWriteSerializer(serializers.Serializer):
+    """Bulk replace of one scope — see feature_services.replace_features."""
+
+    building = serializers.UUIDField(required=False, allow_null=True)
+    items = _FeatureRefSerializer(many=True, required=False)
+    excluded = _FeatureRefSerializer(many=True, required=False)

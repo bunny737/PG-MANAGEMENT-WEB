@@ -9,13 +9,16 @@
 billing/penalty fields deferred to Module 03), Module 3 (Room Management),
 Module 4 (Bed Management), PRD §6 (Property Assignment Rules)
 **Depends on:** 01
-**Blocks:** 03, 04, 13
+**Blocks:** 03, 04, 13, 18
 
 ## Purpose
 Owner builds the Property → Building → Floor → Room → Bed hierarchy for each
 of their PGs/hostels, and assigns Manager/Receptionist staff to the specific
 properties they're allowed to work on. Every later module (residents,
 admissions, allocations, billing) hangs off this hierarchy.
+
+Client-side how-to for the Flutter app (property-staff assignment endpoints,
+Receptionist data minimization): [../auth-staff-flutter-integration.md](../auth-staff-flutter-integration.md).
 
 ## Data model (as-built)
 
@@ -24,9 +27,14 @@ Table: properties                   (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
   name              varchar(200)
-  property_type     boys_hostel | girls_hostel | pg | co_living
+  property_type     boys_hostel | girls_hostel | hostel | pg | co_living
+  gender_preference unisex | male | female   (default unisex)
   address_line / city / state / country
+  pincode           varchar(6)      blank-allowed; ^[1-9]\d{5}$ when written
   contact_number    varchar(15)     contact_email  blank-allowed
+  latitude          decimal(9,6) null   -90..90    map pin, geocoded on the client
+  longitude         decimal(9,6) null   -180..180
+                    -- CHECK property_coordinates_both_or_neither: both set or both NULL
   status            active | inactive
   created_at / updated_at
   -- buildings_count / floors_count / rooms_count / beds_count are computed
@@ -36,8 +44,8 @@ Table: property_images              (RLS enforced)
   id                uuid PK
   tenant_id         uuid            (RLS)
   property          FK -> properties (related_name='images')
-  image             ImageField      (local MEDIA_ROOT in dev, S3 when
-                                     AWS_STORAGE_BUCKET_NAME is set — same
+  image             ImageField      (local MEDIA_ROOT in dev, GCS when
+                                     GS_BUCKET_NAME is set — same
                                      storage abstraction as resident documents)
   order             positive smallint  (default 0, set to current count on
                                      upload — display order)
@@ -99,19 +107,23 @@ Table: property_staff_assignments   (RLS enforced)
 ## API endpoints
 ```
 GET|POST    /api/v1/properties/                          list/create        manage_properties (write) / owner+manager+receptionist (read, scoped)
-GET|PATCH   /api/v1/properties/{id}/                      detail/update      same (no DELETE — deactivate via status)
+GET|PATCH   /api/v1/properties/{id}/                      detail/update      PATCH: edit_properties (Manager: assigned properties only;
+                                                            changing `status` needs manage_properties). No DELETE — deactivate via status.
+                                                            PATCH is partial: an omitted key is left unchanged.
+                                                            `{"latitude": null, "longitude": null}` clears the pin.
 POST        /api/v1/properties/{id}/images/                upload one image   manage_properties (multipart, field `image`)
-DELETE      /api/v1/properties/{id}/images/{image_id}/     delete one image   manage_properties
-GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds
+GET|POST    /api/v1/buildings/                            list (filter ?property=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
                                                             (create accepts write-only `number_of_floors` to
                                                             auto-generate that many named Floors — see Decisions)
-GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds
-GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds
-GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds
-GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds
-GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds
+GET|PATCH|DELETE /api/v1/buildings/{id}/                  detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/floors/                               list (filter ?building=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/floors/{id}/                     detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/rooms/                                list (filter ?floor=)/create   manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+                                                            (create accepts write-only `auto_create_beds` to
+                                                            generate `sharing_type` beds — see Decisions)
+GET|PATCH|DELETE /api/v1/rooms/{id}/                      detail/update/delete (only if empty)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|POST    /api/v1/beds/                                 list (filter ?room=)/create    manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
+GET|PATCH|DELETE /api/v1/beds/{id}/                       detail/update/delete (blocked if occupied/reserved)  manage_rooms_beds (write) / owner+manager+receptionist (read, scoped)
 GET|POST    /api/v1/staff-property-assignments/           list/create        assign_staff_to_properties
 DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  assign_staff_to_properties
 ```
@@ -123,8 +135,10 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
    see only properties they've been explicitly assigned (PRD §6). Enforced
    both by role gate (`CanViewProperties`) and queryset scoping
    (`services.visible_property_ids`).
-3. `manage_rooms_beds` (buildings/floors/rooms/beds CRUD) excludes
-   Receptionist entirely, per the PRD permission matrix.
+3. `manage_rooms_beds` (buildings/floors/rooms/beds mutations: create, update,
+   delete) excludes Receptionist, per the PRD permission matrix. Safe methods
+   (GET list/detail) allow Receptionist read access scoped to assigned
+   properties via `CanViewProperties` (see Decisions, 2026-10-11).
 4. Creating a Building/Floor/Room/Bed under a property the requesting
    Manager isn't assigned to is rejected (`property_not_assigned`), even
    though the property is in the same tenant and would otherwise pass RLS —
@@ -155,13 +169,36 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
     (0–100, default 0) and auto-creates that many Floors in the same
     request, named "Ground Floor", "1st Floor", "2nd Floor", ... — so an
     owner adding a second block doesn't have to add each floor by hand.
+14. `RoomSerializer.create()` accepts a write-only boolean `auto_create_beds`
+    (default false). When true it creates exactly `sharing_type` beds in the
+    same transaction, named "<room_number>-A", "-B", ... with no per-bed
+    rate overrides (they inherit the room's rates). Room number must be
+    <= 18 chars when used. A free "number of beds" field was rejected: it
+    would duplicate `sharing_type` (= bed capacity) and could contradict it.
+15. `latitude` and `longitude` are both set or both null. On PATCH the rule
+    is checked against the stored row merged with the request, so sending one
+    coordinate, or nulling one half of an existing pin, is a 400
+    (`coordinates_incomplete`). Out-of-range values and more than 6 decimal
+    places are field-level 400s. A DB CHECK constraint backs the pair rule.
+16. `pincode` is validated (`^[1-9]\d{5}$`) only when it is written. Rows
+    created before the field existed hold `''` and still accept unrelated edits.
+17. A Manager can PATCH a property they are assigned to (an unassigned one is
+    a 404, same as reading it) but cannot change its `status` (403). A
+    Receptionist cannot PATCH at all (403). Create and image upload/delete
+    stay Owner/Super Admin only.
+18. The `property.updated` audit entry snapshots every editable field
+    (before/after), not just name and status.
 
 ## Permissions
-- `manage_properties` (Super Admin, Owner): create/update properties.
-- Read access to `/properties/`: Super Admin, Owner, Manager, Receptionist
-  (role gate), further scoped to assigned properties for Manager/Receptionist.
-- `manage_rooms_beds` (Super Admin, Owner, Manager): full CRUD on
-  floors/rooms/beds, scoped to assigned properties for Manager.
+- `manage_properties` (Super Admin, Owner): create properties, change
+  `status`, upload/delete images.
+- `edit_properties` (Super Admin, Owner, Manager): PATCH a property's
+  details, scoped to assigned properties for Manager.
+- Read access to `/properties/`, `/buildings/`, `/floors/`, `/rooms/`, `/beds/`:
+  Super Admin, Owner, Manager, Receptionist (`CanViewProperties` role gate on safe methods),
+  further scoped to assigned properties for Manager/Receptionist (`visible_property_ids`).
+- `manage_rooms_beds` (Super Admin, Owner, Manager): mutations (create, update, delete) on
+  floors/rooms/beds/buildings, scoped to assigned properties for Manager. Receptionist is 403-denied.
 - `assign_staff_to_properties` (Super Admin, Owner): manage
   `PropertyStaffAssignment` rows.
 
@@ -214,11 +251,11 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   Uploaded via plain multipart POST straight to Django (`ModelViewSet`
   action + `ImageField`), matching the precedent already set by
   `Resident.aadhaar_document`/`pan_document` and `Complaint.attachment`
-  — not the S3-presigned-direct-upload flow `docs/frontend-plan.md`
+  — not the presigned-direct-upload flow `docs/frontend-plan.md`
   aspirationally lists as a Module 04 prerequisite (that flow was never
   actually built; this module follows what's actually in the codebase).
   Storage is the existing project-wide abstraction (local `MEDIA_ROOT` in
-  dev, S3 when `AWS_STORAGE_BUCKET_NAME` is set) — no new S3 code.
+  dev, GCS when `GS_BUCKET_NAME` is set; S3 was replaced 2026-10-20, see docs/deployment.md) — no per-module storage code.
 - [DECISION 2026-07-05] `PropertyViewSet.http_method_names` now includes
   `'delete'` (previously excluded it as the mechanism blocking hard
   delete) so the nested `images/{id}/` DELETE route can dispatch. The "no
@@ -231,7 +268,7 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   uploaded files 404'd in local dev regardless of app (this predates this
   module's changes and also affected resident documents). Added the
   standard `if settings.DEBUG: urlpatterns += static(...)` — no effect in
-  prod, where S3 serves media directly.
+  prod, where files are served as signed GCS URLs.
 - [DECISION 2026-07-05] The frontend `AddPropertyForm` calls Django
   directly from the browser with a JWT in `localStorage`
   (`frontend/src/lib/api.ts`), not the httpOnly-cookie BFF proxy
@@ -242,6 +279,9 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   still needs to be built (FE-01) and this client swapped out before the
   app is exposed beyond a developer's machine. Tracked in
   `docs/frontend-plan.md` Decisions as well.
+  **Resolved 2026-10-19:** the BFF proxy now exists (`frontend/src/app/api`),
+  `lib/api.ts` is same-origin with JWTs only in httpOnly cookies, and the
+  dev-only CORS allowance is no longer used by the web app.
 - [DECISION 2026-07-05] Inserted a `Building` model between Property and
   Floor (`Property → Building → Floor → Room → Bed`) to support PGs that
   span multiple physical buildings/blocks (e.g. "Block A", "Block B") —
@@ -281,6 +321,48 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   were left exactly where they were — they don't depend on Building and
   are still mock-data-only (never wired to the real API), so there was
   nothing to migrate there.
+- [DECISION 2026-10-11] **Receptionist read-only hierarchy access**:
+  Safe HTTP methods (`GET` list and retrieve) on `/buildings/`, `/floors/`,
+  `/rooms/`, and `/beds/` use `CanViewProperties` (Super Admin, Owner, Manager,
+  Receptionist), scoped to assigned properties via `services.visible_property_ids`.
+  This allows Receptionists to view layout, rooms, and bed statuses at the desk
+  (and renders the frontend "Manage Layout" screen read-only) without receiving
+  403 errors. All mutation methods (`POST`, `PATCH`, `DELETE`) remain strictly
+  gated by `manage_rooms_beds` (Owner, Manager, Super Admin only).
+- [DECISION 2026-10-11] **Financial data minimization in BedSerializer & RoomSerializer**:
+  When Receptionists (or any user lacking `manage_residents`) access read-only rooms or beds,
+  `BedSerializer` strips contracted resident financial data (`current_occupant.rent` and
+  `history[].rate`) to maintain strict parity with `ResidentSerializer` restrictions.
+  Furthermore, users lacking `view_activity_timeline` (such as Receptionists) have bed
+  `history` omitted entirely, avoiding exposure of admission timeline details and preventing
+  unnecessary historical queries during room listing. Published rack rates
+  (`effective_rate_with_food`, `effective_rate_without_food`, and room rack rates) remain
+  visible to Receptionists as standard property catalog/inventory pricing required for desk
+  inquiries and room allocation walkthroughs.
+- [DECISION 2026-10-09] Map location + app edit screen (Flutter branch
+  `feature/property-map-location`). Added `latitude`/`longitude` as
+  `decimal(9,6)` — the app rounds to 6 places, so a different precision here
+  would need its `coordinate_converter.dart` changed to match. Geocoding is
+  done on the device; the backend holds no maps key. Three points the app's
+  spec assumed that the backend didn't have, each confirmed with the owner:
+  1. **`pincode` and `gender_preference` are new columns.** The app was
+     already sending both and DRF was silently dropping them. Existing
+     `boys_hostel`/`girls_hostel` rows are backfilled to `male`/`female` in
+     migration `0008`; everything else defaults to `unisex`. The app's
+     client-side fallback value `both` is **not** a backend value.
+  2. **`hostel` is added as a fifth `property_type`**, alongside (not
+     replacing) `boys_hostel`/`girls_hostel`, which the web form still uses.
+     The two are not kept in sync: nothing stops `boys_hostel` +
+     `gender_preference=female`. Collapsing the gendered types into
+     `hostel` + `gender_preference` is the cleaner end state but needs the
+     web form changed too — deferred.
+  3. **Manager may edit assigned properties** via a new `edit_properties`
+     permission. This is not in the PRD §6 matrix (which gives Manager no
+     property write). `status` is deliberately excluded so a Manager can't
+     deactivate a property.
+- [OPEN] The web `PropertyForm` does not yet expose `pincode`,
+  `gender_preference`, `hostel` or the map pin; it only gained the `hostel`
+  label so a property created from the app renders in the web list.
 
 ## Bugs found and fixed
 - **2026-07-03 (during Module 04):** `services.can_view_property()` chained
@@ -298,6 +380,7 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   where the bug lived.
 
 ## Changelog
+- 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: Property/Floor/Room/Bed/PropertyStaffAssignment models
   (all RLS-enforced), property-visibility scoping service, full CRUD API,
@@ -330,3 +413,68 @@ DELETE      /api/v1/staff-property-assignments/{id}/      revoke assignment  ass
   Building tests + existing Floor tests updated (51 tests in this app's
   suite; 424 across the whole backend, all passing). Regenerated
   `docs/erd.png`.
+- 2026-10-06  Module 18 (PG Features) hangs `property_features` rows off Property and,
+  optionally, Building. Deleting a Building cascades its own feature rows; they never
+  block the delete (the `building_not_empty` guard still counts floors only). Removed
+  the mock-only room `amenities` field from `frontend/.../mock-properties.ts` — what a
+  PG offers is now real data, see `18-pg-features.md`.
+- 2026-10-12  Staff↔property assignment ("PG access") moved from the Staff directory modal onto the
+  per-staff Team Management screen (`(owner)/staff/[id]`, same `/staff-property-assignments/` API).
+  `BedSerializer` now follows module access (Module 01 `[DECISION 2026-10-12]`): `current_occupant`
+  is null without `view_resident_profile`, `history` needs `view_activity_timeline` **and**
+  `view_resident_profile`, occupant `rent` needs `view_finance` (was `manage_residents`). Property /
+  building / floor / room / bed GETs deliberately stay role-based for assigned staff.
+- 2026-10-09  Map location and app edit support: `latitude`/`longitude`,
+  `pincode`, `gender_preference` and a `hostel` property type (migration
+  `0008_property_location_pincode_gender`, with a gender backfill and a
+  both-or-neither CHECK on the coordinates). New `edit_properties`
+  permission lets a Manager PATCH assigned properties (not `status`).
+  `property.updated` audit entries now snapshot every editable field.
+  13 new tests. Regenerated `docs/erd.png`.
+- 2026-10-16  UX roadmap D2/D3/D9 (see also Module 21):
+  - `GET /properties/{id}/layout/?period=` — whole bed grid in one call
+    (`apps/properties/layout.py`; entry: view_property_features OR
+    manage_rooms_beds OR manage_admissions OR manage_allocations; resident /
+    payment / finance groups redacted per permission).
+  - `beds.reserved_for` (FK residents, SET_NULL) + `beds.reserved_until`
+    (migration `0009`). Only meaningful while `status = reserved`
+    (`bed_not_reserved`); the resident must be Inquiry/Reserved in the same
+    property (`reserved_for_not_eligible`, `reserved_for_property_mismatch`);
+    leaving `reserved` clears both.
+  - **Bed transitions (D9).** `PATCH /beds/{id}/` allows only available ↔
+    maintenance, available ↔ reserved, reserved ↔ maintenance; anything into or
+    out of `occupied` is 409 `BED_TRANSITION_NOT_ALLOWED` (admission / transfer /
+    vacate / absconded set it). A new bed can't start `occupied`
+    (`bed_status_not_allowed`). A bed can't be moved to another room
+    (`bed_room_immutable`). Status changes are audit-logged
+    (`bed.status_changed`).
+  - Deleting a bed with resident history (admission/allocation/transfer rows,
+    all PROTECT) is now 409 `BED_HAS_HISTORY` instead of an unhandled
+    ProtectedError (500); a successful delete is audit-logged (`bed.deleted`).
+  - `PATCH /rooms/{id}/` can't lower `sharing_type` below the room's bed count
+    (`room_capacity_below_beds`) — which keeps it ≥ occupied + reserved — nor
+    move the room to another property (`room_property_immutable`).
+  - Filters: `/rooms/?property=&building=`, `/beds/?property=&availability=`
+    (`availability` = multi-value alias of `status`). Rooms carry read-only
+    `property` and `building` ids.
+  - Tests: `properties/tests/test_layout.py`, `test_bed_transitions.py`.
+  - [DECISION 2026-10-16] Bed delete is refused whenever any resident history
+    exists (the plan said "in the open period"): the PROTECT FKs make that the
+    only safe rule, and history is the billing record. Mark the bed
+    `maintenance` instead.
+  - [DECISION 2026-10-16] Room capacity is checked against the bed count, not
+    just occupied + reserved — a room never has more beds than its sharing
+    type (the existing `bed_capacity_exceeded` rule), so remove a vacant bed
+    first.
+- 2026-10-17  UX roadmap web-client follow-up (S0b): both `BedSerializer`
+  and the layout's bed objects now carry a read-only `allowed_transitions`
+  (`Bed.allowed_transitions()`) — the status values a plain `PATCH
+  /beds/{id}/` may move *this* bed to right now, derived from
+  `MANUAL_TRANSITIONS`; `[]` for an occupied bed. One client (frontend-plan.md
+  F8: "the frontend never invents transitions") needs this because nothing in
+  the response otherwise says which of the four statuses a PATCH would
+  accept — the client would have to hardcode a copy of `MANUAL_TRANSITIONS`
+  and the two would drift. `test_bed_transitions.py::
+  test_allowed_transitions_matches_what_patch_accepts` asserts every value in
+  it actually succeeds via PATCH and every other value is rejected, for every
+  starting status — so the two can't drift silently.

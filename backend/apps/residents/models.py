@@ -1,3 +1,4 @@
+import builtins
 import uuid
 from decimal import Decimal
 
@@ -36,12 +37,14 @@ class Resident(TenantModelMixin):
     # PRD Module 5 status-lifecycle diagram — exact edges (invariant 8).
     # Inquiry -> Reserved -> Active -> Notice Period -> Vacated
     #                                ↘ Blacklisted (from Notice Period)
+    #                                ↘ Active (notice cancelled — owner
+    #                                  request 2026-10-07, see Module 10)
     #                      Active -> Absconded -> Blacklisted
     TRANSITIONS = {
         Status.INQUIRY: {Status.RESERVED},
         Status.RESERVED: {Status.ACTIVE},
         Status.ACTIVE: {Status.NOTICE_PERIOD, Status.ABSCONDED},
-        Status.NOTICE_PERIOD: {Status.VACATED, Status.BLACKLISTED},
+        Status.NOTICE_PERIOD: {Status.VACATED, Status.BLACKLISTED, Status.ACTIVE},
         Status.ABSCONDED: {Status.BLACKLISTED},
         Status.VACATED: set(),
         Status.BLACKLISTED: set(),
@@ -92,6 +95,38 @@ class Resident(TenantModelMixin):
     def can_transition_to(self, new_status):
         return new_status in self.TRANSITIONS.get(self.status, set())
 
+    def _vacate_rows(self):
+        """Vacates oldest-first. Reads the `prefetched_vacates` attribute when a
+        caller supplied it via Prefetch(to_attr=...) — see vacate_prefetch() — so
+        list endpoints don't issue a query per resident."""
+        prefetched = getattr(self, 'prefetched_vacates', None)
+        if prefetched is not None:
+            return prefetched
+        return list(self.vacates.order_by('notice_given_date', 'created_at'))
+
+    # NB: the `property` builtin is shadowed inside this class body by the
+    # `property` ForeignKey field above, hence builtins.property here.
+    @builtins.property
+    def open_vacate(self):
+        """The one vacate that is neither cancelled nor settled, or None.
+        `unique_open_vacate_per_resident` guarantees there is at most one."""
+        return next((vacate for vacate in self._vacate_rows() if vacate.is_open), None)
+
+    @builtins.property
+    def latest_vacate(self):
+        """The most recent vacate of any state (open, cancelled or settled)."""
+        rows = self._vacate_rows()
+        return rows[-1] if rows else None
+
+    @builtins.property
+    def latest_settled_vacate(self):
+        """The most recent *settled* vacate — what a Vacated resident's move-out
+        date comes from. Deliberately not `latest_vacate`, which for a resident
+        who cancelled a later notice would be a cancelled row."""
+        return next(
+            (vacate for vacate in reversed(self._vacate_rows()) if vacate.is_settled), None
+        )
+
 
 class Admission(TenantModelMixin):
     """The admission event (PRD Module 6): captures the deal terms agreed
@@ -130,12 +165,20 @@ class Admission(TenantModelMixin):
     food_preference = models.CharField(max_length=15, choices=FoodPreference.choices)
     contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
 
+    # Advance = rent paid upfront for the first billing period (e.g. 30 days
+    # on a monthly contract). Billing applies it as a payment against the
+    # resident's first issued invoice (billing.services.apply_advance_to_first_invoice).
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
-    # Added by Module 10 (Security Deposit & Advance Management) — advance_amount
-    # already existed (snapshotted at admission); these two siblings complete the
-    # PRD's `advance_amount`/`advance_collected_date`/`advance_mode` trio.
     advance_collected_date = models.DateField(null=True, blank=True)
     advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
+    # Portion of the advance actually paid against the first invoice. Any
+    # remainder (e.g. 2 months paid upfront) is refunded at vacate.
+    advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # Security deposit: separate from rent, never invoiced. Refunded on vacate
+    # (minus any maintenance deduction) or forfeited against dues on absconded.
+    security_deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    security_deposit_collected_date = models.DateField(null=True, blank=True)
+    security_deposit_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
     # Partial first-month adjustment set manually by management (PRD: "amount
     # set manually") — null means bill the first month at the normal
     # contracted_rent; Module 08 (Billing) is what actually reads this.
@@ -160,6 +203,11 @@ class Admission(TenantModelMixin):
 
     def __str__(self):
         return f'Admission: {self.resident}'
+
+    @property
+    def advance_refundable(self):
+        """Advance not consumed by the first invoice — refunded at vacate."""
+        return self.advance_amount - self.advance_applied_amount
 
 
 class Allocation(TenantModelMixin):
@@ -238,12 +286,20 @@ class Transfer(TenantModelMixin):
 
 class Vacate(TenantModelMixin):
     """Notice-to-vacate + move-out settlement (PRD Module 11 'Vacating
-    Workflow'). One row per resident: created when notice is given
-    (Active -> Notice Period), then completed at move-out
-    (Notice Period -> Vacated) with the maintenance deduction and advance
-    refund. `refund_amount` is computed from the admission's advance_amount,
-    never stored, so it can't drift if the deduction is corrected before
-    settlement."""
+    Workflow'). Created when notice is given (Active -> Notice Period), then
+    closed either by the move-out settlement (Notice Period -> Vacated, with
+    the maintenance deduction and security deposit refund) or by cancelling
+    the notice (Notice Period -> Active, owner request 2026-10-07).
+
+    Several rows per resident: a resident who cancels a notice and gives
+    another one later gets a second row, so the first notice stays in history
+    (append-only, like the rest of this module). Only one may be *open* at a
+    time — `unique_open_vacate_per_resident` enforces that in the database,
+    not just in the give-notice check.
+
+    `refund_amount` is computed from the admission's security_deposit_amount
+    (minus the deduction) plus any unapplied advance, never stored, so it
+    can't drift if the deduction is corrected before settlement."""
 
     class RefundMode(models.TextChoices):
         UPI = 'upi', _('UPI')
@@ -251,7 +307,7 @@ class Vacate(TenantModelMixin):
         BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='vacate')
+    resident = models.ForeignKey(Resident, on_delete=models.PROTECT, related_name='vacates')
 
     notice_given_date = models.DateField()
     # notice_given_date + 1 month (PRD 'Standard notice period: 1 month').
@@ -265,12 +321,43 @@ class Vacate(TenantModelMixin):
     refund_mode = models.CharField(max_length=15, choices=RefundMode.choices, blank=True)
     refund_note = models.TextField(blank=True)
 
+    # Notice cancelled — the resident stays on. Mutually exclusive with
+    # actual_vacate_date (a notice cannot both be withdrawn and settled);
+    # enforced by `vacate_not_both_cancelled_and_settled`.
+    cancelled_date = models.DateField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='vacates_cancelled',
+    )
+
     settled_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='vacates_settled'
     )
 
     class Meta:
         db_table = 'vacates'
+        # Oldest-first, so Resident.latest_vacate is simply the last row and a
+        # resident's notice history reads chronologically.
+        ordering = ['notice_given_date', 'created_at']
+        constraints = [
+            # At most one open notice per resident. The give-notice check
+            # (`vacate_already_exists`) races without this backstop — two
+            # concurrent "give notice" calls would both pass it.
+            models.UniqueConstraint(
+                fields=['resident'],
+                condition=models.Q(cancelled_date__isnull=True, actual_vacate_date__isnull=True),
+                name='unique_open_vacate_per_resident',
+            ),
+            # A notice is withdrawn or settled, never both. The services
+            # enforce this too, but admin/scripts bypass them.
+            models.CheckConstraint(
+                condition=~models.Q(
+                    cancelled_date__isnull=False, actual_vacate_date__isnull=False
+                ),
+                name='vacate_not_both_cancelled_and_settled',
+            ),
+        ]
 
     def __str__(self):
         return f'Vacate: {self.resident}'
@@ -280,18 +367,29 @@ class Vacate(TenantModelMixin):
         return self.actual_vacate_date is not None
 
     @property
+    def is_cancelled(self):
+        return self.cancelled_date is not None
+
+    @property
+    def is_open(self):
+        """Still running: neither settled nor cancelled. The only state from
+        which finalize or cancel may act."""
+        return not self.is_settled and not self.is_cancelled
+
+    @property
     def refund_amount(self):
         if self.maintenance_deduction is None:
             return None
-        return self.resident.admission.advance_amount - self.maintenance_deduction
+        admission = self.resident.admission
+        return admission.security_deposit_amount - self.maintenance_deduction + admission.advance_refundable
 
 
 class AbscondedRecord(TenantModelMixin):
     """A resident who left without notice, without settling dues, and without
     returning access (PRD Module 11 'Absconded Resident Workflow') — distinct
     from a normal vacate. The bed is freed immediately on marking (not on a
-    future vacate date), and the advance is forfeited and applied against
-    outstanding dues rather than refunded. `advance_applied_to_dues` and
+    future vacate date), and the security deposit is forfeited and applied against
+    outstanding dues rather than refunded. `deposit_applied_to_dues` and
     `remaining_dues` are snapshotted at marking time — a settled financial
     event, not recomputed later even if the resident's invoices change."""
 
@@ -307,11 +405,11 @@ class AbscondedRecord(TenantModelMixin):
     last_seen_date = models.DateField(null=True, blank=True)
     absconded_note = models.TextField(blank=True)
 
-    # The advance is always forfeited per the PRD workflow (no partial-forfeit
+    # The deposit is always forfeited per the PRD workflow (no partial-forfeit
     # option is described) — the field is kept for parity with the PRD's
     # explicit field list and to make the outcome an explicit, queryable fact.
-    advance_forfeited = models.BooleanField(default=True)
-    advance_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
+    deposit_forfeited = models.BooleanField(default=True)
+    deposit_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
     remaining_dues = models.DecimalField(max_digits=12, decimal_places=2)
 
     dues_recovery_status = models.CharField(
@@ -353,3 +451,18 @@ class BlacklistEntry(TenantModelMixin):
 
     def __str__(self):
         return f'Blacklisted: {self.phone}'
+
+
+def vacate_prefetch(lookup='vacates'):
+    """Prefetch a resident's vacates into the `prefetched_vacates` attribute
+    that Resident.open_vacate / latest_vacate / latest_settled_vacate read, so
+    a list endpoint resolves them without a query per row.
+
+    `lookup` is the path to the reverse relation from whatever the queryset is
+    rooted at — 'vacates' from Resident, 'resident__vacates' from Admission.
+    """
+    return models.Prefetch(
+        lookup,
+        queryset=Vacate.objects.order_by('notice_given_date', 'created_at'),
+        to_attr='prefetched_vacates',
+    )

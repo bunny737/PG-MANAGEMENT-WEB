@@ -1,27 +1,43 @@
+from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from apps.core.throttles import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.audit import log as audit_log
-from apps.core.permissions import require_permission
-from apps.core.roles import STAFF_ROLES
+from django.shortcuts import get_object_or_404
 
+from apps.audit import log as audit_log
+from apps.core.modules import describe_access, effective_levels, storage_value
+from apps.core.tasks import enqueue
+from apps.core.permissions import require_permission
+from apps.core.roles import Role, STAFF_ROLES
+
+from . import deletion as account_deletion
 from .models import User
 from .serializers import (
+    AccountDeletionCreateSerializer,
+    AccountDeletionSerializer,
+    EmailOtpRequestSerializer,
+    EmailOtpVerifySerializer,
     EmailVerificationSerializer,
     LoginSerializer,
     MeSerializer,
     MeUpdateSerializer,
+    ModuleAccessWriteSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    PhoneLoginSerializer,
     RefreshSerializer,
     ResendVerificationSerializer,
     SignupSerializer,
@@ -32,6 +48,9 @@ from .serializers import (
     TenantUpdateSerializer,
     TokenPairSerializer,
 )
+from .staff_access import locked_staff
+from .tasks import send_account_deletion_code_task
+from .throttles import OtpEmailThrottle, PasswordResetEmailThrottle, VerificationEmailThrottle
 
 
 class _AnonPostView(APIView):
@@ -69,6 +88,7 @@ class VerifyEmailView(_AnonPostView):
 
 class ResendVerificationView(_AnonPostView):
     serializer_class = ResendVerificationSerializer
+    throttle_classes = [ScopedRateThrottle, VerificationEmailThrottle]
     throttle_scope = 'resend_verification'
     success_message = _('If that email is registered, a verification link has been sent.')
 
@@ -77,6 +97,23 @@ class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
+
+
+class PhoneLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def get_authenticate_header(self, request):
+        # Makes failed logins 401 instead of DRF's 403 fallback.
+        return 'Bearer realm="api"'
+
+    @extend_schema(request=PhoneLoginSerializer, responses=TokenPairSerializer)
+    def post(self, request):
+        serializer = PhoneLoginSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
 
 
 class RefreshView(TokenRefreshView):
@@ -106,16 +143,57 @@ class OtpVerifyView(APIView):
         return Response(serializer.validated_data)
 
 
+class EmailOtpRequestView(_AnonPostView):
+    serializer_class = EmailOtpRequestSerializer
+    throttle_classes = [ScopedRateThrottle, OtpEmailThrottle]
+    throttle_scope = 'otp_email_request'
+    success_message = _('If that email can sign in with a code, a code has been sent.')
+
+
+class EmailOtpVerifyView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp_email_verify'
+
+    def get_authenticate_header(self, request):
+        # Makes failed code logins 401 (like /login/) instead of DRF's 403 fallback.
+        return 'Bearer realm="api"'
+
+    @extend_schema(request=EmailOtpVerifySerializer, responses=TokenPairSerializer)
+    def post(self, request):
+        serializer = EmailOtpVerifySerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
+
+
 class PasswordResetRequestView(_AnonPostView):
     serializer_class = PasswordResetRequestSerializer
-    throttle_scope = 'password_reset'
+    throttle_classes = [ScopedRateThrottle, PasswordResetEmailThrottle]
+    throttle_scope = 'password_reset_request'
     success_message = _('If that email is registered, a reset link has been sent.')
 
 
 class PasswordResetConfirmView(_AnonPostView):
     serializer_class = PasswordResetConfirmSerializer
-    throttle_scope = 'password_reset'
+    throttle_scope = 'password_reset_confirm'
     success_message = _('Password updated. You can log in now.')
+
+
+class PasswordChangeView(APIView):
+    """Signed-in user changes their own password. Returns a fresh token pair:
+    the change ends every session, including the caller's, so the web BFF
+    stores the new pair and the caller stays signed in."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'password_change'
+
+    @extend_schema(request=PasswordChangeSerializer, responses=TokenPairSerializer)
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.save())
 
 
 class MeView(RetrieveUpdateAPIView):
@@ -164,11 +242,103 @@ class StaffViewSet(viewsets.ModelViewSet):
         return Response(StaffSerializer(user).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        # Row-locked read-modify-write: a concurrent module-access PUT (or another
+        # PATCH) can't interleave with a role change on a stale object.
+        with locked_staff(kwargs[self.lookup_field], request.user.tenant) as instance:
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
         return Response(StaffSerializer(instance).data)
+
+    @action(detail=True, methods=['post'], url_path='set-password')
+    def set_password(self, request, pk=None):
+        instance = self.get_object()
+        if not instance.is_active:
+            return Response(
+                {'detail': _('Cannot reset password for an inactive staff account.')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        password = request.data.get('password')
+        if not password:
+            return Response(
+                {'password': [_('This field is required.')]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_password(password, user=instance)
+        except Exception as exc:
+            raise serializers.ValidationError({'password': list(exc.messages)})
+
+        with transaction.atomic():
+            before_usable = instance.has_usable_password()
+            instance.set_password(password)
+            instance.save(update_fields=['password', 'updated_at'])
+            audit_log.record(
+                action='staff.password_reset',
+                actor=request.user,
+                obj=instance,
+                before={'password_usable': before_usable},
+                after={'password_usable': True},
+                request=request,
+            )
+        return Response({'detail': _('Password updated successfully.')})
+
+
+class StaffModuleAccessView(APIView):
+    """Owner-only: read / replace / reset one staff member's module access
+    (apps/core/modules.py). A separate view rather than a StaffViewSet action so
+    enabling PUT/DELETE here doesn't also enable them on the staff detail route
+    (which would expose ModelViewSet's update/destroy)."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_staff_accounts')]
+
+    def get(self, request, pk):
+        staff = get_object_or_404(
+            User.objects.filter(tenant=request.user.tenant, role__in=STAFF_ROLES), pk=pk
+        )
+        return Response(describe_access(staff))
+
+    def put(self, request, pk):
+        serializer = ModuleAccessWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.validated_data['role']
+        levels = serializer.validated_data['levels']
+        with locked_staff(pk, request.user.tenant) as staff:
+            if staff.role != role:
+                return Response(
+                    {
+                        'code': 'ROLE_CHANGED',
+                        'detail': _("This staff member's role changed. Reload to see their current access."),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            before = self._snapshot(staff)
+            staff.module_access = storage_value(staff.role, levels)
+            staff.save(update_fields=['module_access', 'updated_at'])
+            self._audit(request, staff, before)
+        return Response(describe_access(staff))
+
+    def delete(self, request, pk):
+        with locked_staff(pk, request.user.tenant) as staff:
+            before = self._snapshot(staff)
+            staff.module_access = None
+            staff.save(update_fields=['module_access', 'updated_at'])
+            self._audit(request, staff, before)
+        return Response(describe_access(staff))
+
+    @staticmethod
+    def _snapshot(staff):
+        return {'levels': effective_levels(staff), 'customized': staff.module_access is not None}
+
+    def _audit(self, request, staff, before):
+        audit_log.record(
+            action='staff.module_access_updated',
+            actor=request.user,
+            obj=staff,
+            before=before,
+            after=self._snapshot(staff),
+            request=request,
+        )
 
 
 class CurrentTenantView(RetrieveUpdateAPIView):
@@ -183,19 +353,102 @@ class CurrentTenantView(RetrieveUpdateAPIView):
 
     def partial_update(self, request, *args, **kwargs):
         tenant = self.get_object()
-        old_lang = tenant.default_language
+        audited = TenantUpdateSerializer.Meta.fields
+        old = {field: getattr(tenant, field) for field in audited}
         serializer = self.get_serializer(tenant, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        new_lang = tenant.default_language
-        if old_lang != new_lang:
+        changed = [field for field in audited if getattr(tenant, field) != old[field]]
+        if changed:
             audit_log.record(
                 action='tenant.updated',
                 actor=request.user,
                 obj=tenant,
-                before={'default_language': old_lang},
-                after={'default_language': new_lang},
+                before={field: old[field] for field in changed},
+                after={field: getattr(tenant, field) for field in changed},
                 request=request,
             )
         return Response(TenantSerializer(tenant).data)
 
+
+class AccountDeletionView(APIView):
+    """Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+    locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+    DELETE cancels it while still pending. While a request is active these are among the only
+    routes the account can still reach (apps.core.authentication)."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'account_deletion'
+
+    def get_throttles(self):
+        # Only requesting is throttled: looking at, or cancelling, a request must always work.
+        return super().get_throttles() if self.request.method == 'POST' else []
+
+    def _active(self, request):
+        deletion = account_deletion.active_request_for(request.user)
+        if deletion is None:
+            raise NotFound(_('There is no active deletion request.'), code='no_deletion_request')
+        return deletion
+
+    @extend_schema(responses=AccountDeletionSerializer)
+    def get(self, request):
+        return Response(AccountDeletionSerializer(self._active(request), context={'request': request}).data)
+
+    @extend_schema(request=AccountDeletionCreateSerializer, responses={201: AccountDeletionSerializer})
+    def post(self, request):
+        if not account_deletion.can_request_deletion(request.user):
+            raise PermissionDenied(_('This account cannot be deleted from here.'), code='deletion_not_allowed')
+        serializer = AccountDeletionCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        created = account_deletion.create_request(
+            request.user, reason=serializer.validated_data.get('reason', ''), request=request,
+        )
+        # Requesting ended every session, this one included: hand back a pair minted from the
+        # post-request row so the caller stays signed in long enough to see (and cancel) it.
+        user = User.objects.get(pk=request.user.pk)
+        refresh = LoginSerializer.get_token(user)
+        return Response(
+            {
+                'deletion': AccountDeletionSerializer(created, context={'request': request}).data,
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(responses={204: None})
+    def delete(self, request):
+        deletion = self._active(request)
+        user = request.user
+        allowed = (
+            user.role == Role.OWNER and user.tenant_id == deletion.tenant_id
+            if deletion.scope == account_deletion.Scope.TENANT
+            else deletion.user_id == user.pk
+        )
+        if not allowed:
+            raise PermissionDenied(_('Only the account owner can cancel this deletion.'), code='deletion_cancel_forbidden')
+        account_deletion.cancel_request(deletion, actor=user, request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AccountDeletionOtpView(APIView):
+    """Emails a deletion-purpose code to the signed-in user (they pick this or their password to
+    confirm). Phone codes are refused while no SMS backend exists."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'account_deletion_otp'
+
+    @extend_schema(request=None, responses={202: None})
+    def post(self, request):
+        user = request.user
+        if not account_deletion.can_request_deletion(user):
+            raise PermissionDenied(_('This account cannot be deleted from here.'), code='deletion_not_allowed')
+        if 'otp_email' not in account_deletion.confirm_methods(user):
+            raise serializers.ValidationError(
+                {'detail': [_('A code cannot be sent to this account. Confirm with your password instead.')]},
+                code='otp_channel_unavailable',
+            )
+        enqueue(send_account_deletion_code_task, str(user.pk))
+        return Response({'detail': _('A code has been sent to your email address.')}, status=status.HTTP_202_ACCEPTED)

@@ -26,8 +26,22 @@ from apps.subscriptions.models import Subscription
 class Command(BaseCommand):
     help = 'Idempotently seeds test data (users, tenant, properties, residents, complaints, financials, etc.)'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--noinput', '--no-input',
+            action='store_true',
+            help='Do not prompt for confirmation or user input.',
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
+        noinput = options.get('noinput', False)
+        if not noinput and hasattr(self.stdin, 'isatty') and self.stdin.isatty():
+            confirm = input('Are you sure you want to seed test data? (y/N): ')
+            if confirm.lower() != 'y':
+                self.stdout.write(self.style.WARNING('Seeding cancelled.'))
+                return
+
         self.stdout.write(self.style.MIGRATE_HEADING('Starting idempotent test data seeding...'))
 
         # 1. Platform Config & Admin User
@@ -97,6 +111,7 @@ class Command(BaseCommand):
             defaults={
                 'first_name': 'Rajesh',
                 'last_name': 'Kumar',
+                'phone': '9876543211',
                 'role': Role.MANAGER,
                 'tenant': tenant,
                 'is_staff': False,
@@ -107,6 +122,7 @@ class Command(BaseCommand):
         )
         manager.set_password('Test@123')
         manager.role = Role.MANAGER
+        manager.phone = '9876543211'
         manager.tenant = tenant
         manager.email_verified = True
         manager.is_active = True
@@ -120,6 +136,7 @@ class Command(BaseCommand):
             defaults={
                 'first_name': 'Sunita',
                 'last_name': 'Verma',
+                'phone': '9876543212',
                 'role': Role.RECEPTIONIST,
                 'tenant': tenant,
                 'is_staff': False,
@@ -130,6 +147,7 @@ class Command(BaseCommand):
         )
         receptionist.set_password('Test@123')
         receptionist.role = Role.RECEPTIONIST
+        receptionist.phone = '9876543212'
         receptionist.tenant = tenant
         receptionist.email_verified = True
         receptionist.is_active = True
@@ -319,6 +337,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('10000.00'),
                     'advance_collected_date': thirty_days_ago,
                     'advance_mode': Admission.AdvanceMode.UPI,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': thirty_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -373,6 +394,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('12000.00'),
                     'advance_collected_date': fortyfive_days_ago,
                     'advance_mode': Admission.AdvanceMode.BANK_TRANSFER,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': fortyfive_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -427,6 +451,9 @@ class Command(BaseCommand):
                     'advance_amount': Decimal('8500.00'),
                     'advance_collected_date': sixty_days_ago,
                     'advance_mode': Admission.AdvanceMode.CASH,
+                    'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_collected_date': sixty_days_ago,
+                    'security_deposit_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': manager,
                 },
             )

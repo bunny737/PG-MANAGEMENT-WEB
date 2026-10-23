@@ -60,6 +60,18 @@ POST             /api/v1/invoices/bulk-generate/         generate drafts for a p
 POST             /api/v1/invoices/{id}/line-items/       add an ad-hoc line (draft only)  manage_invoices
 PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (draft only) manage_invoices
 ```
+List filters (2026-10-16, UX roadmap D3): `?property=&resident=&billing_mode=
+&period=YYYY-MM&search=&status=` where `status` is a comma list of stored
+statuses (draft, issued, partially_paid, paid) or one of the derived aliases
+`outstanding` (issued/partially-paid with balance > 0 — the same definition
+as `/invoices/outstanding/` and the analytics `outstanding_total`) or
+`overdue` (outstanding past its due date). Unknown values → 400
+`INVALID_STATUS`; `period` must be `YYYY-MM`. Rows now also carry
+`resident_name, property, property_name, room_number, bed_number` and
+`capped_allocated` = min(amount_paid, max(total, 0)) — the per-invoice
+contribution to analytics `period_collected`. Money figures for filters and
+analytics come from `apps/billing/selectors.py` (DB annotations), so a list
+and the summary that drills into it share one definition.
 
 ## Business rules (each maps to a test)
 1. Generation creates a draft invoice with an **accommodation** line whose
@@ -155,6 +167,13 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - [DECISION 2026-07-04] Module 14 hooked the "Invoice generated notification
   to resident" (PRD Module 18) onto the `issue` action, not `create` — a
   draft has no obligation for the resident to be told about.
+- [DECISION 2026-09-10] **`unique_invoice_per_resident_period` DB constraint
+  added** (`Invoice(resident, period_start)`). The generate / bulk-generate
+  `.exists()` pre-checks race — two concurrent "generate" requests would bill
+  the resident twice. `generate_invoice` now creates the row in a savepoint
+  and maps the resulting `IntegrityError` to the existing `duplicate_invoice`
+  validation error; `bulk_generate` swallows it and skips. Mirrors
+  `SubscriptionInvoice.unique_invoice_per_cycle` (Module 13).
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -166,3 +185,33 @@ PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (d
 - 2026-07-04  Module 14 added an email-notification dispatch (via
   `transaction.on_commit` + Celery) to the `issue` action — no other change
   to invoice issuance itself.
+- 2026-10-04  `issue` now applies the resident's advance
+  (`apply_advance_to_first_invoice`): when the FIRST issued invoice for a
+  resident is issued, a Payment of `min(advance_amount, balance_due)` is
+  recorded (mode/date from the admission, reference "Advance collected at
+  admission") via `record_payment`, so the invoice becomes paid/partially_paid
+  and a receipt email is sent. `Admission.advance_applied_amount` records the
+  amount; any surplus stays refundable at vacate (Module 10). Later invoices
+  get nothing. Decision: only the first issued invoice qualifies; an advance of
+  0 does nothing.
+- 2026-10-04  Review fixes for the advance application: it now row-locks the
+  Admission and re-checks `advance_applied_amount` so two concurrent `issue`
+  calls can't both apply it, and `advance_applied_amount` accumulates instead
+  of being overwritten. Deleting the advance Payment (identified by
+  `ADVANCE_PAYMENT_REFERENCE`) subtracts it from `advance_applied_amount`, so
+  `advance_refundable` stays correct for the vacate refund.
+- 2026-10-06  Note for Module 18: `property_features.is_paid` is informational
+  ("Included" vs "Extra cost") and is never read by the invoice engine. Chargeable
+  add-ons still go through invoice line items / the reserved `addons` JSON (invariant 6).
+- 2026-10-12  Discount/Invoice viewsets use `require_permission_by_method('view_finance', 'manage_*')`:
+  `GET`/`HEAD`/`OPTIONS` (incl. `outstanding`) need `view_finance`, every write (incl. `issue`,
+  `bulk-generate`, line items) needs the `manage_*` code. Role defaults are unchanged (Owner/Manager
+  have both). See Module 01 `[DECISION 2026-10-12]`.
+- 2026-10-16  UX roadmap D3: `InvoiceFilter` (`apps/billing/filters.py`) with
+  property / period / search / status incl. derived `outstanding` and
+  `overdue` aliases; `/invoices/outstanding/` now uses the same DB-side
+  definition (`apps/billing/selectors.py`) and honours the list filters;
+  invoice rows gained resident/property/room/bed context and
+  `capped_allocated`; `is_overdue` uses the product-timezone date
+  (`core.periods.local_today`) instead of the container clock. Tests:
+  `billing/tests/test_list_filters.py`.

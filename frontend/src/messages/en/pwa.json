@@ -1,0 +1,38 @@
+{
+  "offline": {
+    "banner": "You're offline. Showing saved data — changes can't be made until you reconnect.",
+    "title": "You're offline",
+    "body": "This page isn't saved on your device yet. Reconnect to the internet and try again.",
+    "retry": "Try again"
+  },
+  "update": {
+    "available": "A new version is available.",
+    "reload": "Reload"
+  },
+  "install": {
+    "title": "Install the app",
+    "description": "Add PGLive to your home screen to open it like an app.",
+    "action": "Install",
+    "dismiss": "Not now",
+    "ios": {
+      "title": "Install on iPhone",
+      "step1": "Tap the Share button in Safari's toolbar.",
+      "step2": "Choose “Add to Home Screen”.",
+      "step3": "Tap Add. PGLive now opens from your home screen.",
+      "openInSafari": "Open this page in Safari to install the app. Browsers inside other apps, like WhatsApp or Instagram, can't add it to your home screen.",
+      "done": "Got it"
+    }
+  },
+  "push": {
+    "title": "Notifications",
+    "description": "Get alerts for invoices, payments and plan reminders on this device.",
+    "enable": "Turn on",
+    "onTitle": "Notifications are on",
+    "onDescription": "This device will receive alerts.",
+    "disable": "Turn off",
+    "needsInstall": "Install the app to turn on notifications on iPhone.",
+    "blocked": "Notifications are blocked. Allow them in your browser or phone settings, then come back.",
+    "failed": "Couldn't update notifications. Check your connection and try again.",
+    "close": "Close"
+  }
+}

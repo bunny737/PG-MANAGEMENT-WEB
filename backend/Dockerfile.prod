@@ -1,0 +1,54 @@
+# Production image (docs/deployment.md, WP1). One image for every backend
+# process: the API (gunicorn, default CMD), the Celery worker and beat on the
+# worker VM, and the Cloud Run Jobs (migrate, bootstrap, scheduled commands)
+# — each just overrides the command. The dev image is ./Dockerfile.
+
+FROM python:3.12-slim-bookworm AS deps
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements/ /tmp/requirements/
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r /tmp/requirements/prod.txt
+
+
+FROM python:3.12-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:$PATH \
+    DJANGO_SETTINGS_MODULE=config.settings.prod \
+    PORT=8080 \
+    # The non-root user has no home; give fontconfig (WeasyPrint) a writable cache.
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+
+# WeasyPrint (receipts, exports) needs Pango/HarfBuzz/fontconfig at runtime.
+# fonts-noto-core carries Noto Sans + Noto Sans Telugu, the faces the receipt
+# template asks for; the build fails here if Telugu coverage is missing.
+# gettext compiles the .po catalogues below (invariant 7).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libharfbuzz-subset0 \
+        libfontconfig1 shared-mime-info fonts-noto-core fonts-dejavu-core gettext \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f \
+    && fc-list :lang=te family | grep -qi "Noto Sans Telugu" \
+    && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+
+COPY --from=deps /opt/venv /opt/venv
+WORKDIR /app
+COPY --chown=app:app . .
+
+# Build-time only: prod settings refuse to load without real keys, and neither
+# step touches the database. Nothing here ends up in the runtime environment.
+RUN SECRET_KEY=build-only-not-a-secret-build-only-not-a-secret-xx \
+    JWT_SIGNING_KEY=build-only-not-a-secret-build-only-not-a-secret-xx \
+    python manage.py compilemessages --ignore=.venv \
+    && SECRET_KEY=build-only-not-a-secret-build-only-not-a-secret-xx \
+    JWT_SIGNING_KEY=build-only-not-a-secret-build-only-not-a-secret-xx \
+    python manage.py collectstatic --noinput \
+    && chown -R app:app /app/locale /app/staticfiles
+
+USER app
+EXPOSE 8080
+CMD ["sh", "bin/start-api.sh"]

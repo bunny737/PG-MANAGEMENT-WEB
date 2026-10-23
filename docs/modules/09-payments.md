@@ -29,7 +29,12 @@ Table: payments                                 (RLS enforced, app: apps.billing
   payment_mode      upi | cash | bank_transfer | card | cheque
   reference         varchar(255), blank   (txn ref / note, optional)
   recorded_by       FK -> users, null (SET_NULL)
+  receipt_number    varchar(20), null  UNIQUE (tenant_id, receipt_number)
+  idempotency_key   varchar(100), null UNIQUE (tenant_id, key) WHERE NOT NULL
   created_at / updated_at
+
+Table: receipt_counters                         (RLS enforced, 2026-10-16)
+  id, tenant_id (UNIQUE), last_number
 ```
 Also added this module — computed (never stored) helpers on `Invoice`:
 - `amount_paid` — sum of `payments` (Decimal).
@@ -43,9 +48,18 @@ Also added this module — computed (never stored) helpers on `Invoice`:
 ```
 GET|POST         /api/v1/payments/                record / list payments        manage_payments
 GET|DELETE       /api/v1/payments/{id}/            detail / delete (correction)  manage_payments
-GET              /api/v1/payments/{id}/receipt/    receipt for one payment       manage_payments
-GET              /api/v1/invoices/outstanding/     invoices with balance > 0     manage_invoices
+GET              /api/v1/payments/{id}/receipt/    receipt JSON; ?filetype=pdf   view_finance
+GET              /api/v1/invoices/outstanding/     invoices with balance > 0     view_finance
+GET              /api/v1/cash-movements/           payments (+) for a range      view_finance
 ```
+`/payments/` list filters (2026-10-16, D3): `?invoice=&resident=&property=
+&payment_mode=&month=YYYY-MM&from=&to=&search=` (`invoice__resident` kept for
+existing clients). Rows carry `receipt_number, resident, resident_name,
+property, property_name, room_number, bed_number, invoice_period_start/end,
+recorded_by_name`. `POST /payments/` accepts an `Idempotency-Key` header.
+`/cash-movements/?property=&month=|from=&to=` returns `{from, to,
+gross_receipts, refunds_paid, total, count, results[]}` — the drill-down of
+the analytics `cash_collected` figure (Module 21).
 No `PATCH` on payments — a financial record is corrected by deleting and
 re-recording, matching the "issued invoice is immutable" discipline from
 Module 08.
@@ -75,6 +89,21 @@ Module 08.
 10. `manage_payments` (Super Admin, Owner, Manager) gates everything;
     Receptionist/Resident get 403. Scoped to the actor's assigned properties.
 11. `payments` is RLS-enforced (isolation proven).
+12. (2026-10-16) Two concurrent payments that each fit the balance but together
+    exceed it: exactly one succeeds (`ConcurrentOverpaymentTests`).
+13. (2026-10-16) `Idempotency-Key`: a retry with the same key returns the
+    original payment (200, `Idempotent-Replayed: true`) even if the invoice is
+    now fully paid; the same key with any different persisted input (invoice,
+    amount, payment date, mode or reference) is 409 `IDEMPOTENCY_KEY_REUSED`
+    (2026-10-17: previously only invoice/amount were compared). Keys are
+    unique per tenant (`unique_payment_idempotency_key`).
+14. (2026-10-16) Every new payment gets a per-tenant sequential
+    `receipt_number` (`RCT-000001`…) under the `receipt_counters` row lock;
+    numbers are never reused, even after a payment is deleted. Existing
+    payments were backfilled in recorded order (`billing.0006`).
+15. (2026-10-16) `/receipt/?filetype=pdf` renders a translated A5 PDF
+    (WeasyPrint, `billing/receipt.html`); the JSON gained `receipt_number`,
+    property/room/bed, `invoice_paid`, `recorded_by_name`, `created_at`.
 
 ## Permissions
 - `manage_payments` (Super Admin, Owner, Manager): all endpoints, scoped to
@@ -118,6 +147,31 @@ Module 08.
   receipt action above) — fires from `services.record_payment`, after the
   payment row and audit log are written, deferred via `transaction.on_commit`
   + Celery.
+- [DECISION 2026-09-10] **Overpayment/status checks are authoritative in the
+  service under a row lock, not just the serializer.** The serializer keeps a
+  friendly pre-check, but two concurrent payments each within `balance_due`
+  could together overpay it (and flip status to `paid`) because that read was
+  not held under a lock. `record_payment` and `delete_payment` now
+  `select_for_update()` the invoice and re-check draft/fully-paid/overpayment
+  before writing, so the balance check and the payment insert are atomic.
+- [DECISION 2026-10-16] **Idempotency key lives on the payment row** (partial
+  unique index on `tenant_id, idempotency_key`) rather than a separate key
+  store: the guarantee is transactional with the insert and needs no expiry.
+  The replay check runs both before validation (so a retry of a payment that
+  fully paid the invoice isn't rejected) and again under the invoice lock.
+- [DECISION 2026-10-16] **Receipt stays JSON by default; PDF via
+  `?filetype=pdf`** — the JSON contract already had consumers. The original
+  "PDF is Module 14/17's concern" decision is superseded: the PDF reuses the
+  Module 17 WeasyPrint renderer.
+- [DECISION 2026-10-16] Receipt number format `RCT-` + 6 digits, per tenant,
+  not per property or financial year — simplest unique, human-quotable id.
+- [DECISION 2026-10-17] **Schema annotations for the web client.**
+  `/cash-movements/` and `GET /payments/{id}/receipt/` build a plain dict by
+  hand, so `/api/schema/` described them as an untyped `{}`. Both now carry
+  `@extend_schema(responses=...)` pointing at schema-only serializers in the
+  new `apps/billing/schema.py` (never instantiated for a real response) —
+  see Module 21's 2026-10-17 decision for the full list and the test that
+  guards it.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -131,3 +185,12 @@ Module 08.
   isolation); full suite (216) green. Spec written to as-built.
 - 2026-07-04  Build-order Module 14 added an email-receipt dispatch to
   `services.record_payment` — no other change to payment recording itself.
+- 2026-10-04  The admission advance now appears as an auto-recorded Payment on
+  the resident's first issued invoice (see Module 08 changelog); security
+  deposits are never payments.
+- 2026-10-12  Payment viewset split the same way: reads (incl. `receipt`) need `view_finance`,
+  writes `manage_payments`. See Module 01 `[DECISION 2026-10-12]`.
+- 2026-10-16  UX roadmap D3/D4: list filters + resident context columns,
+  `/cash-movements/`, `Idempotency-Key`, `receipt_number` + `ReceiptCounter`
+  (RLS) + backfill migration, PDF receipt, concurrency test. Tests:
+  `billing/tests/test_list_filters.py`, `test_payment_integrity.py`.

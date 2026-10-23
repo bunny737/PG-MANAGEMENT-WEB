@@ -1,9 +1,7 @@
-import { FinancialsDashboard } from "@/features/financials/FinancialsDashboard";
+import { redirect } from "next/navigation";
 
-export default function FinancialsPage() {
-  return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-8 md:px-8">
-      <FinancialsDashboard />
-    </main>
-  );
+// /billing replaces this mock-driven page (UX roadmap S2) — see
+// docs/frontend-plan.md's route map and Decisions.
+export default function FinancialsRedirect() {
+  redirect("/billing");
 }

@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate "Home" %}</a> &rsaquo;
+  <a href="{% url 'admin:devices_appinstallation_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a> &rsaquo;
+  {% translate "Adoption report" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<p>{% blocktranslate %}Active installs = seen in the last {{ window_days }} days.{% endblocktranslate %}</p>
+
+<h2>{% translate "Against the version policy" %}</h2>
+<table>
+  <thead><tr>
+    <th>{% translate "Platform" %}</th><th>{% translate "Flavor" %}</th>
+    <th>{% translate "Min build" %}</th><th>{% translate "Latest build" %}</th>
+    <th>{% translate "Active" %}</th><th>{% translate "Below latest" %}</th><th>{% translate "Below min" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in summary %}
+    <tr>
+      <td>{{ row.policy.platform }}</td><td>{{ row.policy.flavor }}</td>
+      <td>{{ row.policy.min_build }}</td><td>{{ row.policy.latest_build }}</td>
+      <td>{{ row.active }}</td><td>{{ row.below_latest }}</td><td>{{ row.below_min }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="7">{% translate "No version policies yet." %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>{% translate "Active installs by build" %}</h2>
+<table>
+  <thead><tr><th>{% translate "Platform" %}</th><th>{% translate "Flavor" %}</th><th>{% translate "Build" %}</th><th>{% translate "Installs" %}</th></tr></thead>
+  <tbody>
+  {% for row in by_build %}
+    <tr><td>{{ row.platform }}</td><td>{{ row.flavor }}</td><td>{{ row.build_number }}</td><td>{{ row.count }}</td></tr>
+  {% empty %}
+    <tr><td colspan="4">{% translate "No active installs." %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>{% translate "Top device models" %}</h2>
+<table>
+  <thead><tr><th>{% translate "Manufacturer" %}</th><th>{% translate "Model" %}</th><th>{% translate "Installs" %}</th></tr></thead>
+  <tbody>
+  {% for row in top_models %}
+    <tr><td>{{ row.device_manufacturer }}</td><td>{{ row.device_model }}</td><td>{{ row.count }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>{% translate "Top OS versions" %}</h2>
+<table>
+  <thead><tr><th>{% translate "OS" %}</th><th>{% translate "Version" %}</th><th>{% translate "Installs" %}</th></tr></thead>
+  <tbody>
+  {% for row in top_os %}
+    <tr><td>{{ row.os_name }}</td><td>{{ row.os_version }}</td><td>{{ row.count }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% load i18n %}{% autoescape off %}{% block heading %}{% endblock %}
+
+{% block content %}{% endblock %}
+{% if cta_url %}
+{% block cta_label %}{% endblock %}:
+{{ cta_url }}
+{% endif %}{% block footnote %}{% endblock %}
+
+--
+{% if company_name %}{{ company_name }}{% else %}PGLive{% endif %}{% if company_address %}, {{ company_address }}{% endif %}
+{% if support_email or support_phone %}{% trans "Need help?" %} {% if support_email %}{{ support_email }}{% endif %}{% if support_email and support_phone %} | {% endif %}{% if support_phone %}{{ support_phone }}{% endif %}
+{% endif %}{% endautoescape %}

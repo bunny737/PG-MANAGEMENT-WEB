@@ -23,7 +23,9 @@
     "title": "Financial Summary",
     "monthlyRevenue": "Monthly Revenue",
     "outstandingDues": "Outstanding Dues",
-    "securityDeposits": "Security Deposits"
+    "securityDeposits": "Security Deposits",
+    "viewBilling": "View Billing",
+    "thisMonth": "this month"
   },
   "issues": {
     "title": "Active Issues",
@@ -33,14 +35,30 @@
     "issue": "Issue",
     "status": "Status",
     "noIssues": "No active issues right now.",
-    "viewAllComplaints": "View All Complaints →"
+    "viewAllComplaints": "View All Complaints →",
+    "highShort": "{count} high"
   },
   "quickActions": {
     "addResident": "Add Resident",
-    "generateInvoices": "Generate Invoices"
+    "generateInvoices": "Generate Invoices",
+    "vacancies": "Vacancies",
+    "billing": "Billing",
+    "expenses": "Expenses"
   },
   "activity": {
     "title": "Today's Activity",
-    "noActivity": "No activity logged today."
+    "noActivity": "No activity logged today.",
+    "residentFallback": "Resident",
+    "roomFallback": "Room",
+    "checkedIn": "New resident {name} checked into {room}.",
+    "paymentReceived": "Rent payment received for {room} ({amount}).",
+    "complaintLogged": "New complaint logged for {room} ({category})."
+  },
+  "phone": {
+    "welcomeBack": "Welcome back,",
+    "activityEmpty": "No activity today.",
+    "occupancyTitle": "Occupancy",
+    "financialsTitle": "Financials",
+    "viewDetails": "View Details"
   }
 }

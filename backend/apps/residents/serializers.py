@@ -1,8 +1,13 @@
 from decimal import Decimal
 
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.core.roles import permissions_for_user
+from apps.core.uploads import sniff_upload
 from apps.properties.models import Bed
 from apps.properties.services import can_view_property
 
@@ -18,9 +23,37 @@ from .models import (
 
 
 class ResidentSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False):
+            # Finance module (view_finance) governs the billing money fields; the
+            # deposit-settlement figures are also visible to Tenants->Full
+            # (manage_deposits) because the move-out workflow needs them.
+            user_permissions = set(permissions_for_user(request.user))
+            hidden = []
+            if 'view_finance' not in user_permissions:
+                hidden += ['contracted_rent', 'billing_mode']
+            if not user_permissions & {'view_finance', 'manage_deposits'}:
+                hidden += ['security_deposit_amount', 'advance_amount', 'advance_refundable']
+            for field in hidden:
+                self.fields.pop(field, None)
+
     unit = serializers.SerializerMethodField()
     block = serializers.SerializerMethodField()
     move_in_date = serializers.SerializerMethodField()
+    # Read-only snapshot of the resident's admission + current allocation;
+    # all null until the resident is admitted. contracted_rent comes from the
+    # allocation (not the admission) so it reflects a permanent transfer.
+    contracted_rent = serializers.SerializerMethodField()
+    food_preference = serializers.SerializerMethodField()
+    billing_mode = serializers.SerializerMethodField()
+    joining_date = serializers.SerializerMethodField()
+    security_deposit_amount = serializers.SerializerMethodField()
+    advance_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
+    room_number = serializers.SerializerMethodField()
+    bed_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Resident
@@ -32,9 +65,55 @@ class ResidentSerializer(serializers.ModelSerializer):
             'aadhaar_number', 'aadhaar_document', 'pan_number', 'pan_document',
             'passport_number', 'employee_id', 'student_id',
             'unit', 'block', 'move_in_date',
+            'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
+            'security_deposit_amount', 'advance_amount', 'advance_refundable',
+            'room_number', 'bed_number',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+
+    @staticmethod
+    def _related(obj, name):
+        # Reverse one-to-one access raises RelatedObjectDoesNotExist when absent.
+        return getattr(obj, name, None)
+
+    def _admission_value(self, obj, field, as_str=False):
+        admission = self._related(obj, 'admission')
+        if admission is None:
+            return None
+        value = getattr(admission, field)
+        return str(value) if as_str else value
+
+    def get_contracted_rent(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return str(allocation.contracted_rent) if allocation else None
+
+    def get_food_preference(self, obj) -> str | None:
+        return self._admission_value(obj, 'food_preference')
+
+    def get_billing_mode(self, obj) -> str | None:
+        return self._admission_value(obj, 'billing_mode')
+
+    def get_joining_date(self, obj) -> str | None:
+        value = self._admission_value(obj, 'joining_date')
+        return value.isoformat() if value else None
+
+    def get_security_deposit_amount(self, obj) -> str | None:
+        return self._admission_value(obj, 'security_deposit_amount', as_str=True)
+
+    def get_advance_amount(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_amount', as_str=True)
+
+    def get_advance_refundable(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_refundable', as_str=True)
+
+    def get_room_number(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return allocation.allocated_bed.room.room_number if allocation else None
+
+    def get_bed_number(self, obj) -> str | None:
+        allocation = self._related(obj, 'allocation')
+        return allocation.allocated_bed.bed_number if allocation else None
 
     def get_unit(self, obj) -> str:
         if hasattr(obj, 'allocation') and obj.allocation:
@@ -59,6 +138,49 @@ class ResidentSerializer(serializers.ModelSerializer):
             )
         return value
 
+    @staticmethod
+    def _validate_kyc_document(upload, field):
+        """Aadhaar/PAN uploads sit behind a launch gate (settings.KYC_UPLOADS_ENABLED). Only a NEW
+        file is gated: clearing a stored document (None) is always allowed, and stored documents stay
+        readable. A file that is let through must really be a JPEG/PNG/WebP/PDF within the size cap."""
+        if upload is None:
+            return upload
+        if not settings.KYC_UPLOADS_ENABLED:
+            raise serializers.ValidationError(
+                _('Identity document uploads are not enabled yet.'), code='kyc_uploads_disabled'
+            )
+        try:
+            sniff_upload(
+                upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES, code_prefix='document',
+                allowed_types={'image/jpeg', 'image/png', 'application/pdf'},  # approved set; no WebP (plan rev 2)
+            )
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(exc.detail[field])
+        return upload
+
+    def validate_aadhaar_document(self, value):
+        return self._validate_kyc_document(value, 'aadhaar_document')
+
+    def validate_pan_document(self, value):
+        return self._validate_kyc_document(value, 'pan_document')
+
+    _KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
+
+    def update(self, instance, validated_data):
+        """Clearing or replacing a KYC file only repoints the FileField; Django never
+        deletes the old object from storage on its own. Capture it before `super().update()`
+        overwrites the reference, and only remove it once the row update has committed —
+        a failed save must not orphan-delete a file still referenced by the row."""
+        previous = [
+            (getattr(instance, field).storage, getattr(instance, field).name)
+            for field in self._KYC_FILE_FIELDS
+            if field in validated_data and getattr(instance, field)
+        ]
+        instance = super().update(instance, validated_data)
+        for storage, name in previous:
+            transaction.on_commit(lambda storage=storage, name=name: storage.delete(name))
+        return instance
+
 
 class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -77,22 +199,40 @@ class ResidentStatusUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
+def bed_admits(bed, resident):
+    """Can `resident` be checked in to `bed`? An available bed, or a reserved
+    bed held for this resident or for nobody in particular (D9, owner
+    decision 2026-10-16). Reserved -> occupied happens only here."""
+    if bed.status == Bed.Status.AVAILABLE:
+        return True
+    return bed.status == Bed.Status.RESERVED and bed.reserved_for_id in (None, resident.pk)
+
+
 class AdmissionSerializer(serializers.ModelSerializer):
+    advance_refundable = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
     class Meta:
         model = Admission
         fields = [
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
             'advance_amount', 'advance_collected_date', 'advance_mode',
+            'security_deposit_amount', 'security_deposit_collected_date', 'security_deposit_mode',
             'first_month_billing_amount', 'first_month_billing_note',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
         # contracted_* fields are snapshotted server-side in the view
         # (invariant 2/3) — never accepted as client input.
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
+            'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
         ]
+        extra_kwargs = {
+            'advance_amount': {'min_value': Decimal('0.00')},
+            'security_deposit_amount': {'min_value': Decimal('0.00')},
+        }
 
     def validate(self, attrs):
         resident = attrs['resident']
@@ -110,7 +250,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 {'bed': _('This bed is not in the same property as the resident.')},
                 code='bed_property_mismatch',
             )
-        if bed.status != Bed.Status.AVAILABLE:
+        if not bed_admits(bed, resident):
             raise serializers.ValidationError(
                 {'bed': _('This bed is not available.')},
                 code='bed_not_available',
@@ -122,6 +262,17 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 {'resident': _('You are not assigned to this property.')},
                 code='property_not_assigned',
             )
+
+        # A collected amount needs its date and mode (the advance is recorded
+        # as a payment against the first invoice, which requires both).
+        for prefix in ('advance', 'security_deposit'):
+            if attrs.get(f'{prefix}_amount', Decimal('0.00')) > 0:
+                for suffix in ('collected_date', 'mode'):
+                    if not attrs.get(f'{prefix}_{suffix}'):
+                        raise serializers.ValidationError(
+                            {f'{prefix}_{suffix}': _('This field is required when an amount is collected.')},
+                            code='required',
+                        )
         return attrs
 
 
@@ -214,6 +365,11 @@ class TransferCreateSerializer(serializers.Serializer):
 class VacateSerializer(serializers.ModelSerializer):
     refund_amount = serializers.SerializerMethodField()
     is_settled = serializers.BooleanField(read_only=True)
+    is_cancelled = serializers.BooleanField(read_only=True)
+    is_open = serializers.BooleanField(read_only=True)
+    # Breakdown of refund_amount: deposit - deduction + unapplied advance.
+    security_deposit_amount = serializers.SerializerMethodField()
+    advance_refundable = serializers.SerializerMethodField()
 
     class Meta:
         model = Vacate
@@ -221,9 +377,17 @@ class VacateSerializer(serializers.ModelSerializer):
             'id', 'resident', 'notice_given_date', 'expected_vacate_date', 'actual_vacate_date',
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
+            'security_deposit_amount', 'advance_refundable',
+            'cancelled_date', 'cancellation_reason', 'cancelled_by', 'is_cancelled', 'is_open',
             'settled_by', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_security_deposit_amount(self, obj) -> str:
+        return str(obj.resident.admission.security_deposit_amount)
+
+    def get_advance_refundable(self, obj) -> str:
+        return str(obj.resident.admission.advance_refundable)
 
     def get_refund_amount(self, obj) -> str | None:
         amount = obj.refund_amount
@@ -248,7 +412,13 @@ class VacateGiveNoticeSerializer(serializers.Serializer):
                 {'resident': _('Only an active resident can give notice to vacate.')},
                 code='resident_not_active',
             )
-        if Vacate.objects.filter(resident=resident).exists():
+        # Only an *open* notice blocks a new one. A resident whose previous
+        # notice was cancelled (or settled, though they'd be Vacated and caught
+        # above) may give notice again — that's the whole point of allowing
+        # several Vacate rows. Re-checked under a row lock in give_notice.
+        if Vacate.objects.filter(
+            resident=resident, cancelled_date__isnull=True, actual_vacate_date__isnull=True,
+        ).exists():
             raise serializers.ValidationError(
                 {'resident': _('This resident already has a vacate record.')},
                 code='vacate_already_exists',
@@ -258,7 +428,7 @@ class VacateGiveNoticeSerializer(serializers.Serializer):
 
 class VacateFinalizeSerializer(serializers.Serializer):
     """Step 2 of the vacating workflow (PRD Module 11): the move-out
-    settlement — maintenance deduction and advance refund."""
+    settlement — maintenance deduction and security deposit refund."""
 
     actual_vacate_date = serializers.DateField()
     maintenance_deduction = serializers.DecimalField(
@@ -278,13 +448,49 @@ class VacateFinalizeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         vacate = self.context['vacate']
-        advance = vacate.resident.admission.advance_amount
-        if attrs['maintenance_deduction'] > advance:
+        deposit = vacate.resident.admission.security_deposit_amount
+        if attrs['maintenance_deduction'] > deposit:
             raise serializers.ValidationError(
                 {'maintenance_deduction': _(
-                    'Deduction cannot exceed the advance amount of %(advance)s.'
-                ) % {'advance': advance}},
-                code='deduction_exceeds_advance',
+                    'Deduction cannot exceed the security deposit of %(deposit)s.'
+                ) % {'deposit': deposit}},
+                code='deduction_exceeds_deposit',
+            )
+        return attrs
+
+
+class VacateCancelSerializer(serializers.Serializer):
+    """Withdraw a notice to vacate (Notice Period -> Active, owner request
+    2026-10-07). `cancelled_date` is caller-supplied, matching every other date
+    in this module (notice_given_date, actual_vacate_date, absconded_date,
+    refund_date), and defaults to today. Backdating is open to any
+    `manage_deposits` user — the same latitude finalize gives on
+    `actual_vacate_date`. All of this is re-validated in cancel_notice()."""
+
+    cancellation_reason = serializers.CharField(allow_blank=False)
+    cancelled_date = serializers.DateField(required=False)
+
+    def validate_cancelled_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError(
+                _('Cancellation date cannot be in the future.'), code='cancelled_date_in_future',
+            )
+        return value
+
+    def validate_cancellation_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError(
+                _('A reason is required to cancel notice.'), code='reason_required',
+            )
+        return value
+
+    def validate(self, attrs):
+        vacate = self.context['vacate']
+        attrs.setdefault('cancelled_date', timezone.localdate())
+        if attrs['cancelled_date'] < vacate.notice_given_date:
+            raise serializers.ValidationError(
+                {'cancelled_date': _('Cancellation cannot predate the notice.')},
+                code='cancelled_before_notice',
             )
         return attrs
 
@@ -294,7 +500,7 @@ class AbscondedRecordSerializer(serializers.ModelSerializer):
         model = AbscondedRecord
         fields = [
             'id', 'resident', 'absconded_date', 'last_seen_date', 'absconded_note',
-            'advance_forfeited', 'advance_applied_to_dues', 'remaining_dues',
+            'deposit_forfeited', 'deposit_applied_to_dues', 'remaining_dues',
             'dues_recovery_status', 'dues_written_off_by', 'dues_written_off_note',
             'marked_by', 'created_at', 'updated_at',
         ]

@@ -4,12 +4,16 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, MapPin, Building, ChevronRight, LoaderCircle, AlertTriangle, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { ApiError, listProperties, type Property } from "@/lib/api";
+import { PropertiesPhoneList } from "./PropertiesPhoneList";
 
 export function PropertyList() {
   const t = useTranslations("properties");
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [error, setError] = useState("");
+
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,10 +28,20 @@ export function PropertyList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
   return (
-    <div className="space-y-6">
+    <>
+    <PropertiesPhoneList
+      properties={properties}
+      error={error}
+      onRetry={() => {
+        setError("");
+        setProperties(null);
+        setAttempt((n) => n + 1);
+      }}
+    />
+    <div className="hidden space-y-6 md:block">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -36,13 +50,15 @@ export function PropertyList() {
             {t("list.portfolioSubtitle")}
           </p>
         </div>
-        <Link
-          href="/properties/add"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="size-4.5" />
-          {t("list.addProperty")}
-        </Link>
+        <PermissionGate permission="manage_properties">
+          <Link
+            href="/properties/add"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="size-4.5" />
+            {t("list.addProperty")}
+          </Link>
+        </PermissionGate>
       </div>
 
       {error && (
@@ -93,28 +109,31 @@ export function PropertyList() {
               {/* Type pill overlay */}
               <div className="absolute top-4 left-4 z-10">
                 <span className="bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                  {t(`types.${property.property_type as "pg" | "boys_hostel" | "girls_hostel" | "co_living"}`) ?? property.property_type}
+                  {t(`types.${property.property_type as "pg" | "boys_hostel" | "girls_hostel" | "hostel" | "co_living"}`) ?? property.property_type}
                 </span>
               </div>
               {/* Edit action overlay */}
-              <Link
-                href={`/properties/${property.id}/edit`}
-                className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-slate-950/70 transition-colors cursor-pointer"
-              >
-                <Pencil className="size-3" />
-                {t("list.edit")}
-              </Link>
+              <PermissionGate permission="manage_properties">
+                <Link
+                  href={`/properties/${property.id}/edit`}
+                  className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 bg-slate-950/50 backdrop-blur-md text-white border border-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-slate-950/70 transition-colors cursor-pointer"
+                >
+                  <Pencil className="size-3" />
+                  {t("list.edit")}
+                </Link>
+              </PermissionGate>
             </div>
 
             {/* Property details */}
             <div className="p-5 space-y-4">
               <div>
                 <h3 className="text-lg font-bold text-ink hover:text-accent transition-colors">
-                  <Link href={`/properties/${property.id}/buildings`}>{property.name}</Link>
+                  <Link href={`/properties/${property.id}`}>{property.name}</Link>
                 </h3>
                 <p className="text-xs text-ink-muted mt-1 flex items-center gap-1.5">
                   <MapPin className="size-3.5 text-ink-faint shrink-0" />
                   {property.address_line}, {property.city}, {property.state}
+                  {property.pincode ? ` - ${property.pincode}` : ""}
                 </p>
               </div>
 
@@ -150,5 +169,6 @@ export function PropertyList() {
       </div>
       )}
     </div>
+    </>
   );
 }

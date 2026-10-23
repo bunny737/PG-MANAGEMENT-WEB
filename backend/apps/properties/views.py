@@ -1,28 +1,51 @@
+import django_filters
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from django.db import transaction
+from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
-from apps.core.permissions import require_permission
-from apps.core.roles import Role
-from apps.subscriptions.services import check_property_limit
+from apps.core.exceptions import Conflict
+from apps.core.periods import local_today, month_start, parse_month
+from apps.core.permissions import require_any_permission, require_permission
+from apps.core.roles import Role, permissions_for
+from apps.subscriptions.services import check_bed_limit, check_property_limit
 
-from . import services
-from .models import Bed, Building, Floor, Property, PropertyImage, PropertySettings, PropertyStaffAssignment, Room
+from . import feature_services, services
+from .layout import build_layout
+from .schema import PropertyLayoutResponseSerializer
+from .models import (
+    Bed,
+    Building,
+    FeatureCatalog,
+    Floor,
+    Property,
+    PropertyImage,
+    PropertySettings,
+    PropertyStaffAssignment,
+    Room,
+    TenantFeature,
+)
 from .serializers import (
     BedSerializer,
     BuildingSerializer,
+    FeatureCatalogSerializer,
     FloorSerializer,
+    PropertyFeatureSerializer,
+    PropertyFeaturesWriteSerializer,
     PropertyImageSerializer,
     PropertySerializer,
     PropertySettingsSerializer,
     PropertyStaffAssignmentSerializer,
     RoomSerializer,
+    TenantFeatureSerializer,
 )
 
 # manage_properties (PRD §6) only covers Owner/Super Admin, but Manager and
@@ -31,6 +54,24 @@ from .serializers import (
 # scoping (services.visible_property_ids) enforces the assignment itself.
 _PROPERTY_VIEW_ROLES = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST)
 
+LAYOUT_ENTRY_PERMISSIONS = (
+    'view_property_features', 'manage_rooms_beds', 'manage_admissions', 'manage_allocations',
+)
+
+
+_PROPERTY_AUDIT_FIELDS = (
+    'name', 'property_type', 'gender_preference', 'address_line', 'city', 'state',
+    'pincode', 'contact_number', 'contact_email', 'latitude', 'longitude', 'status',
+)
+
+
+def _audit_snapshot(prop):
+    """Editable Property fields as JSON-safe values (coordinates are Decimal)."""
+    return {
+        field: None if getattr(prop, field) is None else str(getattr(prop, field))
+        for field in _PROPERTY_AUDIT_FIELDS
+    }
+
 
 class CanViewProperties(BasePermission):
     message = _('You do not have access to properties.')
@@ -38,6 +79,26 @@ class CanViewProperties(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         return bool(user and user.is_authenticated and user.role in _PROPERTY_VIEW_ROLES)
+
+
+class HasTenantContext(BasePermission):
+    """Tenant-owned endpoints need a tenant. A Super Admin has none (users with
+    that role must have tenant=NULL), so they get a clear 403 instead of a
+    NULL tenant_id reaching a NOT NULL column."""
+
+    message = _('This action needs a tenant account. Platform administrators have none.')
+    code = 'tenant_context_required'
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.tenant_id)
+
+
+def _features_permission(request):
+    """Module 18: read is wider than write (a Receptionist answers "do you
+    have parking?" but doesn't decide what the PG offers)."""
+    return require_permission(
+        'view_property_features' if request.method in SAFE_METHODS else 'manage_property_features'
+    )
 
 
 class PropertyViewSet(viewsets.ModelViewSet):
@@ -54,10 +115,18 @@ class PropertyViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'property_type']
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'upload_image', 'delete_image'):
+        if self.action in ('create', 'upload_image', 'delete_image'):
             return [IsAuthenticated(), require_permission('manage_properties')()]
+        if self.action in ('update', 'partial_update'):
+            return [IsAuthenticated(), require_permission('edit_properties')()]
         if self.action == 'property_settings':
             return [IsAuthenticated(), require_permission('manage_property_settings')()]
+        if self.action == 'property_features':
+            return [IsAuthenticated(), _features_permission(self.request)()]
+        if self.action == 'layout':
+            # D2 entry rule: every screen that renders the bed grid (property
+            # detail, admission bed picker, transfer dialog) can open it.
+            return [IsAuthenticated(), require_any_permission(*LAYOUT_ENTRY_PERMISSIONS)()]
         return [CanViewProperties()]
 
     def get_queryset(self):
@@ -66,9 +135,12 @@ class PropertyViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Property.objects.filter(id__in=ids).order_by('name')
 
+    @transaction.atomic
     def perform_create(self, serializer):
         # Plan limit (PRD §4: "Hard block when either limit is reached") —
-        # Module 13's concern; fail-open when no plan is configured.
+        # Module 13's concern; fail-open when no plan is configured. Inside the
+        # transaction so check_property_limit can row-lock the subscription and
+        # two concurrent creates can't both slip past the cap.
         check_property_limit(self.request.user.tenant_id)
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
         # Every Property always has at least one Building (see docs/modules/
@@ -84,9 +156,17 @@ class PropertyViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        before = {'name': serializer.instance.name, 'status': serializer.instance.status}
+        # edit_properties lets a Manager edit an assigned property's details;
+        # deactivating it stays with whoever can manage properties.
+        new_status = serializer.validated_data.get('status', serializer.instance.status)
+        if (
+            new_status != serializer.instance.status
+            and 'manage_properties' not in permissions_for(self.request.user.role)
+        ):
+            raise PermissionDenied(_('Only the owner can change a property\'s status.'))
+        before = _audit_snapshot(serializer.instance)
         instance = serializer.save()
-        after = {'name': instance.name, 'status': instance.status}
+        after = _audit_snapshot(instance)
         if before != after:
             audit_log.record(
                 action='property.updated', actor=self.request.user, obj=instance,
@@ -147,12 +227,115 @@ class PropertyViewSet(viewsets.ModelViewSet):
             )
         return Response(after)
 
+    @extend_schema(
+        parameters=[OpenApiParameter('period', str, description='YYYY-MM; default is the current month.')],
+        responses=PropertyLayoutResponseSerializer,
+    )
+    @action(detail=True, methods=['get'], url_path='layout', url_name='layout')
+    def layout(self, request, pk=None):
+        """D2 — the whole bed grid in one call: buildings -> floors -> rooms
+        -> beds with counts, the current occupant and their payment state for
+        ?period=YYYY-MM (default: this month). See apps/properties/layout.py."""
+        prop = self.get_object()  # property scope: 404 when not assigned
+        period = parse_month(request.query_params.get('period'), param='period',
+                             default=month_start(local_today()))
+        return Response(build_layout(prop, request.user, period))
+
+    @action(detail=True, methods=['get', 'post'], url_path='features', url_name='features')
+    def property_features(self, request, pk=None):
+        """Module 18 — what this PG offers. GET returns every row of the PG,
+        or with ?building=<id> the effective set for that building. POST
+        replaces the whole set at one scope (PUT semantics; this app doesn't
+        route PUT)."""
+        prop = self.get_object()
+        if request.method == 'GET':
+            building = feature_services.get_building(prop, request.query_params.get('building'))
+        else:
+            payload = PropertyFeaturesWriteSerializer(data=request.data)
+            payload.is_valid(raise_exception=True)
+            building = feature_services.replace_features(
+                prop=prop,
+                building_id=payload.validated_data.get('building'),
+                items=payload.validated_data.get('items', []),
+                excluded=payload.validated_data.get('excluded', []),
+                actor=request.user, request=request,
+            )
+        items, excluded, derived = feature_services.feature_state(prop, building)
+        return Response({
+            'property': str(prop.id),
+            'building': str(building.id) if building else None,
+            'items': PropertyFeatureSerializer(items, many=True).data,
+            'excluded': PropertyFeatureSerializer(excluded, many=True).data,
+            'derived': derived,
+        })
+
+
+class FeatureCatalogViewSet(viewsets.ReadOnlyModelViewSet):
+    """The platform's list of features a PG can offer. Not tenant data —
+    managed through Django admin and seed migrations only."""
+
+    serializer_class = FeatureCatalogSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    filterset_fields = ['category', 'is_active']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return FeatureCatalog.objects.none()
+        if self.request.user.role == Role.SUPER_ADMIN:
+            return FeatureCatalog.objects.all()
+        return FeatureCatalog.objects.filter(is_active=True)
+
+
+class TenantFeatureViewSet(viewsets.ModelViewSet):
+    """Features the owner added themselves, reusable across all of the
+    tenant's properties."""
+
+    serializer_class = TenantFeatureSerializer
+    http_method_names = ['get', 'post', 'patch', 'delete']
+    pagination_class = None
+
+    def get_permissions(self):
+        return [IsAuthenticated(), HasTenantContext(), _features_permission(self.request)()]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return TenantFeature.objects.none()
+        return TenantFeature.objects.filter(tenant_id=self.request.user.tenant_id)
+
+    def create(self, request, *args, **kwargs):
+        # 200 (not 201) when the feature already existed: type-to-add is
+        # idempotent so a double-click or stale list can't create a duplicate.
+        feature, created = feature_services.create_tenant_feature(
+            tenant_id=request.user.tenant_id, label=request.data.get('label'),
+            actor=request.user, request=request,
+        )
+        return Response(self.get_serializer(feature).data, status=201 if created else 200)
+
+    def partial_update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        feature = feature_services.update_tenant_feature(
+            serializer.instance,
+            label=serializer.validated_data.get('label'),
+            is_active=serializer.validated_data.get('is_active'),
+            actor=request.user, request=request,
+        )
+        return Response(self.get_serializer(feature).data)
+
+    def perform_destroy(self, instance):
+        feature_services.delete_tenant_feature(instance, actor=self.request.user, request=self.request)
+
 
 class BuildingViewSet(viewsets.ModelViewSet):
     serializer_class = BuildingSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['property']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -179,9 +362,13 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
 class FloorViewSet(viewsets.ModelViewSet):
     serializer_class = FloorSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
     filterset_fields = ['building']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -201,19 +388,46 @@ class FloorViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+class RoomFilter(django_filters.FilterSet):
+    property = django_filters.UUIDFilter(field_name='floor__building__property_id')
+    building = django_filters.UUIDFilter(field_name='floor__building_id')
+
+    class Meta:
+        model = Room
+        fields = ['property', 'building', 'floor', 'category', 'status']
+
+
+class BedFilter(django_filters.FilterSet):
+    property = django_filters.UUIDFilter(field_name='room__floor__building__property_id')
+    # `availability` is the roadmap's name for the bed status (D3); `status`
+    # stays for existing clients.
+    availability = django_filters.MultipleChoiceFilter(field_name='status', choices=Bed.Status.choices)
+
+    class Meta:
+        model = Bed
+        fields = ['property', 'room', 'status', 'availability']
+
+
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
-    filterset_fields = ['floor', 'category', 'status']
+    filterset_class = RoomFilter
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Room.objects.none()
         ids = services.visible_property_ids(self.request.user)
-        return Room.objects.filter(floor__building__property_id__in=ids).select_related('floor')
+        return Room.objects.filter(floor__building__property_id__in=ids).select_related('floor__building')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        if serializer.validated_data.get('auto_create_beds'):
+            check_bed_limit(self.request.user.tenant_id, adding=serializer.validated_data['sharing_type'])
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):
@@ -227,9 +441,13 @@ class RoomViewSet(viewsets.ModelViewSet):
 
 class BedViewSet(viewsets.ModelViewSet):
     serializer_class = BedSerializer
-    permission_classes = [IsAuthenticated, require_permission('manage_rooms_beds')]
     http_method_names = ['get', 'post', 'patch', 'delete']
-    filterset_fields = ['room', 'status']
+    filterset_class = BedFilter
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [CanViewProperties()]
+        return [IsAuthenticated(), require_permission('manage_rooms_beds')()]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -237,7 +455,9 @@ class BedViewSet(viewsets.ModelViewSet):
         ids = services.visible_property_ids(self.request.user)
         return Bed.objects.filter(room__floor__building__property_id__in=ids).select_related('room')
 
+    @transaction.atomic
     def perform_create(self, serializer):
+        check_bed_limit(self.request.user.tenant_id)
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):
@@ -246,7 +466,37 @@ class BedViewSet(viewsets.ModelViewSet):
                 {'detail': _('Cannot delete a bed that is occupied or reserved.')},
                 code='bed_not_vacant',
             )
-        instance.delete()
+        bed_id = instance.pk
+        try:
+            with transaction.atomic():
+                instance.delete()
+        except ProtectedError:
+            # Admissions, allocations and transfers reference the bed (PROTECT)
+            # — that history is the resident and billing record, so a bed
+            # anyone ever lived in is kept (mark it maintenance instead).
+            raise Conflict(
+                _('This bed has resident history and cannot be deleted. Mark it as under maintenance instead.'),
+                code='bed_has_history',
+            )
+        instance.pk = bed_id  # Model.delete() clears it; the log needs the id
+        audit_log.record(
+            action='bed.deleted', actor=self.request.user, obj=instance,
+            before={'bed_number': instance.bed_number, 'room': str(instance.room_id)},
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        before = {
+            'status': serializer.instance.status,
+            'reserved_for': str(serializer.instance.reserved_for_id or ''),
+        }
+        instance = serializer.save()
+        after = {'status': instance.status, 'reserved_for': str(instance.reserved_for_id or '')}
+        if before != after:
+            audit_log.record(
+                action='bed.status_changed', actor=self.request.user, obj=instance,
+                before=before, after=after, request=self.request,
+            )
 
 
 class PropertyStaffAssignmentViewSet(viewsets.ModelViewSet):
@@ -269,16 +519,18 @@ class PropertyStaffAssignmentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(tenant_id=self.request.user.tenant_id)
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.created', actor=self.request.user, obj=instance,
-            after={'staff': instance.staff.email, 'property': instance.property.name},
+            after={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
 
     def perform_destroy(self, instance):
+        staff_id = instance.staff.email or instance.staff.phone or str(instance.staff.id)
         audit_log.record(
             action='property_staff_assignment.removed', actor=self.request.user, obj=instance,
-            before={'staff': instance.staff.email, 'property': instance.property.name},
+            before={'staff': staff_id, 'property': instance.property.name},
             request=self.request,
         )
         instance.delete()

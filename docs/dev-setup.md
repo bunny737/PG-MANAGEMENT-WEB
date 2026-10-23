@@ -53,3 +53,32 @@ Commit the updated `docs/erd.png` in the same commit as the model change —
 see the CLAUDE.md checklist.
 
 Current diagram: [erd.png](erd.png).
+
+## 3. Frontend PWA, BFF and push — local testing
+
+- **API calls.** The browser only talks to the Next.js app (`/api/v1/...`); its route handlers call
+  Django server-side at `INTERNAL_API_URL` (`http://backend:8000` in compose). `ALLOWED_HOSTS` in `.env`
+  must include `backend` (see `.env.example`). After pulling this change, recreate the frontend
+  container so it picks up the new env **and the new dependencies** (Serwist, Firebase):
+  `docker compose up -d --build -V frontend`. The `-V` matters — `node_modules` lives in an anonymous
+  volume, so without it the container keeps the old packages and crash-loops with
+  `Cannot find module '@serwist/next'`. The image now runs Node 24 (Firebase 13 requires
+  Node >= 24.12; the previous Node 20 image printed EBADENGINE warnings).
+- **Service worker is production-only.** `npm run dev` neither builds nor registers it (and unregisters
+  one left by an earlier production run on the same origin). To test offline, install and push:
+  `npm run build && npm start` in `frontend/`, then open it in a browser. The build uses
+  `next build --webpack`.
+- **Push needs** the `NEXT_PUBLIC_FIREBASE_*` variables and VAPID key (`frontend/.env.local`), and a
+  production build. Turn it on from **More -> Notifications**. Firebase setup:
+  [push-notifications-integration.md](push-notifications-integration.md) §2.
+- **Opening the dev server from a phone or tunnel:** add the host to `ALLOWED_DEV_ORIGINS` in `.env` (see
+  `.env.example`), e.g. `ALLOWED_DEV_ORIGINS=my-tunnel.ngrok-free.dev,192.168.1.4`, then
+  `docker compose up -d frontend`. Without it Next 16 blocks the HMR socket from that host and the
+  page renders but never becomes interactive (the Owner/Staff login buttons do nothing).
+- **Upload size limit.** The BFF proxy rejects request bodies over `BFF_MAX_BODY_BYTES` (default
+  10485760 = 10 MB) with a 413. Set it in `.env` (declared in `.env.example`; Compose passes it
+  to the frontend container), then `docker compose up -d frontend`.
+- **iPhone testing** needs HTTPS (an ngrok tunnel or staging) and iOS 16.4+. In Safari use Share ->
+  Add to Home Screen, then open the installed app; push is only offered from the installed app.
+- **Icons** are the owner-supplied PGLive brand files in `frontend/public/icons/` (PWA, Apple touch),
+  `frontend/src/app/favicon.ico` + `icon.png` (browser tab), and `frontend/public/brand/` (in-app mark).

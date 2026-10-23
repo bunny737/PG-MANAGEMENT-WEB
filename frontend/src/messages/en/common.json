@@ -1,16 +1,25 @@
 {
-  "appName": "PropManager",
-  "brandName": "PropManager",
-  "portalTitle": "StaysManager Premium",
+  "appName": "PGLive",
+  "brandName": "PGLive",
   "authCheck": "Checking authentication...",
   "nav": {
     "dashboard": "Dashboard",
     "properties": "Properties",
     "residents": "Residents",
+    "visitors": "Visitors",
+    "staff": "Staff",
     "complaints": "Complaints",
     "financials": "Financials",
+    "billing": "Billing",
+    "expenses": "Expenses",
+    "reports": "Reports",
     "settings": "Settings",
     "more": "More"
+  },
+  "roles": {
+    "owner": "Owner",
+    "manager": "Manager",
+    "receptionist": "Receptionist"
   },
   "sideNav": {
     "ownerPortal": "Owner Portal",
@@ -27,7 +36,8 @@
     "filter": "Filter",
     "search": "Search",
     "export": "Export",
-    "submit": "Submit"
+    "submit": "Submit",
+    "retry": "Retry"
   },
   "labels": {
     "yes": "Yes",
@@ -44,6 +54,24 @@
   "emptyState": {
     "noData": "No items found",
     "noDataSub": "There are no entries to display at this time."
+  },
+  "propertyFilter": {
+    "all": "All properties",
+    "accessRevoked": "Your access to the previously selected property was removed — showing All properties."
+  },
+  "sectionState": {
+    "error": "Couldn't load this.",
+    "retry": "Retry"
+  },
+  "contactActions": {
+    "group": "Contact",
+    "call": "Call",
+    "whatsapp": "WhatsApp",
+    "sms": "SMS"
+  },
+  "phone": {
+    "back": "Back",
+    "propertyPicker": "Property",
+    "navigation": "Main navigation"
   }
 }
-

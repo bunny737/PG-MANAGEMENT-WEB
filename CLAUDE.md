@@ -10,17 +10,26 @@ residents, billing, and operations through a single system.
 - Backend: Python 3.12, Django 5.x, Django REST Framework
 - DB: PostgreSQL 16 with Row-Level Security (RLS)
 - Queue: Celery + Redis
-- Storage: AWS S3
+- Storage: Google Cloud Storage (owner decision 2026-10-20, superseding AWS S3) —
+  private bucket, files only ever served as short-lived IAM-signed URLs.
+- Hosting: Google Cloud Platform, asia-south1 (owner decision 2026-10-20): Cloud Run
+  (Next.js + Django), Cloud SQL PostgreSQL 16, one Compute Engine VM for Celery
+  worker/beat/Redis and, since 2026-10-21, the nginx + Let's Encrypt edge (no load
+  balancer; GoDaddy points at the VM). Runbook and rationale: docs/deployment.md.
 - Payments: Razorpay — platform subscription billing ONLY, never resident rent
 - Web Frontend: Next.js 15 (App Router) + TypeScript + Tailwind CSS, installable PWA
   Confirmed by owner 2026-07-02. All frontend work follows docs/frontend-plan.md
   (route map, invariants F1–F8, FE build order, PWA strategy).
-- Mobile: build order is Web/PWA -> native Android -> native iOS.
-  Android: Kotlin + Jetpack Compose (Retrofit + OkHttp). iOS: Swift + SwiftUI
-  (later still; only start once Android ships). The PWA covers the mobile
-  resident experience until Android exists. All clients (web, Android, iOS)
+- Mobile: build order is Web/PWA -> Flutter (Android + iOS together).
+  Flutter (Dart) with a single codebase targeting both platforms — owner
+  decision 2026-09-17, superseding the earlier native-Android-then-native-iOS
+  plan (Kotlin/Compose, Swift/SwiftUI). The PWA covers the mobile experience
+  until the Flutter app exists — the resident experience, and since 2026-10-19 the
+  installable staff app (Owner/Manager/Receptionist) for iPhone users until the
+  Flutter iOS build ships. All clients (web, Flutter)
   consume the same Django REST API — no per-client API — see
-  docs/frontend-plan.md §3.1a for how non-browser clients authenticate.
+  docs/frontend-plan.md §3.1a and docs/push-notifications-integration.md
+  for how non-browser clients authenticate and integrate push.
 
 ## 10 Non-negotiable invariants
 
@@ -62,6 +71,8 @@ residents, billing, and operations through a single system.
 → 05 admissions → 06 allocations → 07 discounts → 08 billing → 09 payments
 → 10 deposits-exit → 11 complaints → 12 visitors → 13 subscription
 → 14 notifications → 15 audit-logs → 16 activity-timeline → 17 export
+→ 18 pg-features (owner request 2026-10-06, not in PRD v2; depends on 02 only)
+→ 22 account-deletion (Google Play requirement 2026-10-23, not in PRD v2; deps 01/13/14/15/19; spec: docs/modules/22-account-deletion.md)
 
 ## Per-task workflow
 1. Read this file + the relevant docs/modules/<nn>.md spec

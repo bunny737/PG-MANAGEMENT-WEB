@@ -1,4 +1,13 @@
+import uuid
+
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+SUPPORT_NUMBER_VALIDATOR = RegexValidator(
+    r'^[0-9]{8,15}$',
+    _('Enter digits only, including the country code (for example 919876543210).'),
+)
 
 
 class TenantQuerySet(models.QuerySet):
@@ -37,7 +46,7 @@ class PlatformConfig(models.Model):
     Per-plan caps (properties, residents) are added by Module 13 on the Plan model.
     """
 
-    trial_days = models.PositiveIntegerField(default=60)
+    trial_days = models.PositiveIntegerField(default=30)
     payment_grace_days = models.PositiveIntegerField(default=5)
     # Module 14: how many days before trial_ends_at to send each reminder
     # (PRD example: Day 45/55 of a 60-day trial == 15/5 days before expiry).
@@ -45,6 +54,27 @@ class PlatformConfig(models.Model):
     # reminder schedule keeps working if a Super Admin edits trial_days.
     trial_reminder_first_days_before = models.PositiveIntegerField(default=15)
     trial_reminder_second_days_before = models.PositiveIntegerField(default=5)
+    # Below this, a PER_BED_MONTHLY cycle is issued as a ₹0 invoice and never
+    # sent to Razorpay at all (invariant 10 — Razorpay's minimum chargeable
+    # amount is a platform config value, not a literal in services.py).
+    min_billable_amount = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    # Property layout (D2): an unpaid invoice whose due date is at most this
+    # many days away (or already passed but not yet overdue) shows as "due"
+    # rather than "upcoming" on the bed grid.
+    payment_due_soon_days = models.PositiveIntegerField(default=7)
+    # Platform support contacts shown to every client (GET /support/). Blank =
+    # channel not offered. Phone/WhatsApp are digits with country code, no '+'
+    # (wa.me form), so 1800 toll-free numbers are allowed too.
+    support_email = models.EmailField(blank=True, default='')
+    support_phone = models.CharField(max_length=15, blank=True, default='', validators=[SUPPORT_NUMBER_VALIDATOR])
+    support_whatsapp = models.CharField(max_length=15, blank=True, default='', validators=[SUPPORT_NUMBER_VALIDATOR])
+    support_website = models.URLField(blank=True, default='')
+    support_hours = models.CharField(max_length=120, blank=True, default='')
+    # Module 22 (account deletion): full days between a request and the first
+    # 00:00 IST purge run, and how many separate nightly runs a failing purge
+    # gets before it is parked as `failed` for a Super Admin.
+    account_deletion_grace_days = models.PositiveIntegerField(default=7, validators=[MinValueValidator(1)])
+    account_deletion_max_attempts = models.PositiveIntegerField(default=5, validators=[MinValueValidator(1)])
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -58,3 +88,39 @@ class PlatformConfig(models.Model):
     def get(cls):
         config, _ = cls.objects.get_or_create(pk=1)
         return config
+
+
+class ContactMessage(models.Model):
+    """A message sent from the public website's contact form (POST /public/contact/).
+
+    Platform-level and deliberately NOT tenant-scoped (no `tenant_id`, no RLS):
+    the sender is an anonymous prospect, not a tenant user — same class as
+    `PlatformConfig` / `AppVersionPolicy`. Only a Super Admin reads it, in the
+    Django admin (read-only content; the status is the one thing they change).
+    Holds personal data (name, email, phone, free text, IP), so it is listed in
+    the privacy policy; there is no purge job yet (see module 01 spec, [OPEN]).
+    """
+
+    class Status(models.TextChoices):
+        NEW = 'new', _('New')
+        HANDLED = 'handled', _('Handled')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20, blank=True, default='')
+    message = models.TextField(max_length=2000)
+    # Active UI language at submission (Accept-Language), so replies can match it.
+    language = models.CharField(max_length=8, blank=True, default='')
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.NEW)
+    handled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'contact_messages'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', '-created_at'], name='contact_msg_status_idx')]
+
+    def __str__(self):
+        return f'{self.name} <{self.email}>'

@@ -2,9 +2,18 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Wrench, CheckCircle, User, Calendar, CheckCircle2, LoaderCircle, AlertTriangle } from "lucide-react";
+import { ChevronRight, Wrench, CheckCircle, User, Calendar, CheckCircle2, LoaderCircle, AlertTriangle, BedSingle, Lock } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { getProperty, getFloor, getRoom, getBed, updateBed, type Property, type Floor, type Room, type Bed, ApiError } from "@/lib/api";
+import { PermissionGate } from "@/components/shared/PermissionGate";
+import { formatDate } from "@/lib/date";
+import { getProperty, getFloor, getRoom, getBed, updateBed, type Property, type Floor, type Room, type Bed, type BedAvailability, ApiError } from "@/lib/api";
+
+const TRANSITION_ICONS: Record<BedAvailability, typeof CheckCircle> = {
+  available: CheckCircle,
+  maintenance: Wrench,
+  reserved: Lock,
+  occupied: BedSingle,
+};
 
 export function BedDetails({
   propertyId,
@@ -19,6 +28,7 @@ export function BedDetails({
 }) {
   const t = useTranslations("properties.beds");
   const tCommon = useTranslations("common");
+  const tStatus = useTranslations("status");
   const [property, setProperty] = useState<Property | null>(null);
   const [floor, setFloor] = useState<Floor | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
@@ -68,33 +78,20 @@ export function BedDetails({
     };
   }, [propertyId, floorId, roomId, bedId, t]);
 
-  const handleResolveMaintenance = async () => {
+  // F8/D9: the only targets offered are whatever the backend's
+  // `allowed_transitions` lists for this bed right now — never a
+  // client-side guess at what PATCH would accept.
+  const handleTransition = async (target: BedAvailability) => {
     setIsUpdating(true);
     try {
-      const updated = await updateBed(bedId, { status: "available" });
+      const updated = await updateBed(bedId, { status: target });
       setBed(updated);
       setBedStatus(updated.status);
-      setSuccessMsg(t("toastResolvedMsg"));
+      setSuccessMsg(t("toastTransitioned", { status: tStatus(target) }));
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
       console.error(err);
-      alert(t("toastErrResolve") + (err instanceof ApiError ? err.message : "Error"));
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetMaintenance = async () => {
-    setIsUpdating(true);
-    try {
-      const updated = await updateBed(bedId, { status: "maintenance" });
-      setBed(updated);
-      setBedStatus(updated.status);
-      setSuccessMsg(t("toastFlaggedMsg"));
-      setTimeout(() => setSuccessMsg(null), 4000);
-    } catch (err) {
-      console.error(err);
-      alert(t("toastErrFlag") + (err instanceof ApiError ? err.message : "Error"));
+      alert(t("toastErrTransition") + (err instanceof ApiError ? err.message : "Error"));
     } finally {
       setIsUpdating(false);
     }
@@ -177,28 +174,32 @@ export function BedDetails({
           <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">{t("title", { number: bed.bed_number })}</h1>
         </div>
 
-        {/* Resolve maintenance actions */}
-        <div className="flex gap-2">
-          {bedStatus === "maintenance" ? (
-            <button
-              onClick={handleResolveMaintenance}
-              disabled={isUpdating}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page cursor-pointer shadow-sm transition-colors disabled:opacity-50"
-            >
-              <CheckCircle className="size-3.5 text-emerald-600" />
-              {t("resolveMaintenance")}
-            </button>
-          ) : (
-            <button
-              onClick={handleSetMaintenance}
-              disabled={isUpdating}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse cursor-pointer transition-all disabled:opacity-50"
-            >
-              <Wrench className="size-3.5" />
-              {t("flagMaintenance")}
-            </button>
-          )}
-        </div>
+        {/* D9/F8: only the statuses allowed_transitions lists */}
+        {bed.allowed_transitions.length > 0 && (
+          <PermissionGate permission="manage_rooms_beds">
+            <div className="flex gap-2">
+              {bed.allowed_transitions.map((target) => {
+                const Icon = TRANSITION_ICONS[target];
+                const isDestructive = target === "maintenance";
+                return (
+                  <button
+                    key={target}
+                    onClick={() => handleTransition(target)}
+                    disabled={isUpdating}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold cursor-pointer transition-all disabled:opacity-50 ${
+                      isDestructive
+                        ? "border border-status-critical/30 bg-status-critical-soft text-status-critical hover:bg-status-critical hover:text-ink-inverse"
+                        : "border border-border bg-surface-card text-ink hover:bg-surface-page shadow-sm"
+                    }`}
+                  >
+                    <Icon className="size-3.5" />
+                    {t("transitionTo", { status: tStatus(target) })}
+                  </button>
+                );
+              })}
+            </div>
+          </PermissionGate>
+        )}
       </div>
 
       {/* Bed Selector Switcher */}
@@ -251,8 +252,10 @@ export function BedDetails({
               </div>
               <div className="flex flex-col text-xs text-left sm:text-right space-y-0.5">
                 <span className="font-semibold text-ink">{t("moveInDateLabel")}</span>
-                <span className="font-mono text-ink-muted">{bed.current_occupant.joining_date}</span>
-                <span className="font-bold text-emerald-600 mt-1">{t("contractRentLabel", { amount: parseFloat(bed.current_occupant.rent).toFixed(2) })}</span>
+                <span className="font-mono text-ink-muted">{formatDate(bed.current_occupant.joining_date)}</span>
+                {bed.current_occupant.rent && (
+                  <span className="font-bold text-emerald-600 mt-1">{t("contractRentLabel", { amount: parseFloat(bed.current_occupant.rent).toFixed(2) })}</span>
+                )}
               </div>
             </div>
           ) : (
@@ -326,46 +329,48 @@ export function BedDetails({
         )}
 
         {/* Bottom Card 2: Occupant History table */}
-        <div className="lg:col-span-12 bg-surface-card border border-border rounded-2xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-border flex justify-between items-center">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("historyTitle")}</h3>
-          </div>
-          <div className="overflow-x-auto text-xs">
-            {bed.history && bed.history.length > 0 ? (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                    <th className="px-5 py-2.5">{t("tableResident")}</th>
-                    <th className="px-5 py-2.5">{t("tableLeaseTerm")}</th>
-                    <th className="px-5 py-2.5">{t("tableMoveIn")}</th>
-                    <th className="px-5 py-2.5">{t("tableMoveOut")}</th>
-                    <th className="px-5 py-2.5 text-right">{t("tableContractedRate")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border text-ink">
-                  {bed.history.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-surface-page/35">
-                      <td className="px-5 py-3 flex items-center gap-2.5">
-                        <div className="size-6 rounded-full bg-slate-100 border border-border text-[9px] font-bold text-slate-800 flex items-center justify-center shrink-0">
-                          {row.initials}
-                        </div>
-                        <span className="font-semibold">{row.resident}</span>
-                      </td>
-                      <td className="px-5 py-3 text-ink-muted">{row.term}</td>
-                      <td className="px-5 py-3 font-mono text-ink-muted">{row.moveIn}</td>
-                      <td className="px-5 py-3 font-mono text-ink-muted">{row.moveOut}</td>
-                      <td className="px-5 py-3 font-mono text-right font-semibold">{row.rate}</td>
+        {bed.history !== undefined && (
+          <div className="lg:col-span-12 bg-surface-card border border-border rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("historyTitle")}</h3>
+            </div>
+            <div className="overflow-x-auto text-xs">
+              {bed.history && bed.history.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
+                      <th className="px-5 py-2.5">{t("tableResident")}</th>
+                      <th className="px-5 py-2.5">{t("tableLeaseTerm")}</th>
+                      <th className="px-5 py-2.5">{t("tableMoveIn")}</th>
+                      <th className="px-5 py-2.5">{t("tableMoveOut")}</th>
+                      <th className="px-5 py-2.5 text-right">{t("tableContractedRate")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="p-8 text-center text-ink-muted">
-                {t("noHistory")}
-              </div>
-            )}
+                  </thead>
+                  <tbody className="divide-y divide-border text-ink">
+                    {bed.history.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-surface-page/35">
+                        <td className="px-5 py-3 flex items-center gap-2.5">
+                          <div className="size-6 rounded-full bg-slate-100 border border-border text-[9px] font-bold text-slate-800 flex items-center justify-center shrink-0">
+                            {row.initials}
+                          </div>
+                          <span className="font-semibold">{row.resident}</span>
+                        </td>
+                        <td className="px-5 py-3 text-ink-muted">{row.term}</td>
+                        <td className="px-5 py-3 font-mono text-ink-muted">{row.moveIn}</td>
+                        <td className="px-5 py-3 font-mono text-ink-muted">{row.moveOut}</td>
+                        <td className="px-5 py-3 font-mono text-right font-semibold">{row.rate || "--"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-8 text-center text-ink-muted">
+                  {t("noHistory")}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

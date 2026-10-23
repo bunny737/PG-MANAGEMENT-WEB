@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Landmark } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { MoneyRow, MoneyStat } from "@/components/shared/MoneyStat";
@@ -33,11 +34,13 @@ export function FinancialsCard({ data }: { data: FinancialsSummary }) {
       </div>
 
       <div className="relative space-y-2 border-t border-white/10 pt-3.5">
-        <MoneyRow
-          label={t("outstandingDues")}
-          amount={data.outstandingDues}
-          attention
-        />
+        <Link href="/billing?status=outstanding" className="block rounded-lg">
+          <MoneyRow
+            label={t("outstandingDues")}
+            amount={data.outstandingDues}
+            attention
+          />
+        </Link>
         <MoneyRow
           label={t("securityDeposits")}
           amount={data.securityDeposits}

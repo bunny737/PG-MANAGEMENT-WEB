@@ -28,6 +28,18 @@ class TenantEndpointTests(AuthAPITestCase):
             self.assertEqual(log.before, {'default_language': 'en'})
             self.assertEqual(log.after, {'default_language': 'hi'})
 
+    def test_owner_can_set_the_fiscal_year_start(self):
+        self.authenticate(self.owner)
+        url = reverse('tenant-current')
+        self.assertEqual(self.client.get(url).data['fiscal_year_start_month'], 4)  # Indian FY default
+        response = self.client.patch(url, {'fiscal_year_start_month': 1})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['fiscal_year_start_month'], 1)
+        self.assertEqual(self.client.patch(url, {'fiscal_year_start_month': 13}).status_code, 400)
+        with tenant_context(self.tenant.id):
+            log = AuditLog.objects.get(action='tenant.updated')
+        self.assertEqual((log.before, log.after), ({'fiscal_year_start_month': 4}, {'fiscal_year_start_month': 1}))
+
     def test_receptionist_cannot_update_tenant_default_language(self):
         receptionist = self.create_user(self.tenant, Role.RECEPTIONIST, 'reception@example.com')
         self.authenticate(receptionist)
@@ -47,7 +59,7 @@ class TenantEndpointTests(AuthAPITestCase):
         # translated language (owner decision 2026-08-11) with a compiled
         # catalog, proving translation actually happened, not just that the
         # header was accepted.
-        self.create_user(self.tenant, Role.OWNER, 'taken@example.com')
+        self.create_user(self.create_tenant('Other Biz'), Role.OWNER, 'taken@example.com')
 
         url = reverse('auth-signup')
         response = self.client.post(

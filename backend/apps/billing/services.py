@@ -7,13 +7,24 @@ by a temporary allocation), then the active discount as its own negative line
 as more line items. Management has full manual control while the invoice is a
 draft.
 """
-from django.db import transaction
+from decimal import Decimal
+
+from django.db import IntegrityError, transaction
+from django.utils.translation import gettext_lazy as _
+from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
+from apps.core.idempotency import key_reused
+from apps.core.tasks import enqueue
 from apps.notifications.tasks import send_payment_receipt_email_task
 from apps.residents.models import Admission
 
-from .models import Invoice, InvoiceLineItem, Payment
+from .models import Invoice, InvoiceLineItem, Payment, ReceiptCounter
+
+
+# Marks the Payment created from the admission advance, so deleting it can
+# release the advance again (see delete_payment).
+ADVANCE_PAYMENT_REFERENCE = 'Advance collected at admission'
 
 
 def active_discount(resident, on_date):
@@ -52,12 +63,21 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
         base_amount = allocation.contracted_rent
         partial_note = ''
 
-    invoice = Invoice.objects.create(
-        tenant_id=resident.tenant_id, resident=resident,
-        period_start=period_start, period_end=period_end,
-        billing_mode=billing_mode, due_date=due_date,
-        status=Invoice.Status.DRAFT, created_by=actor,
-    )
+    try:
+        with transaction.atomic():
+            invoice = Invoice.objects.create(
+                tenant_id=resident.tenant_id, resident=resident,
+                period_start=period_start, period_end=period_end,
+                billing_mode=billing_mode, due_date=due_date,
+                status=Invoice.Status.DRAFT, created_by=actor,
+            )
+    except IntegrityError:
+        # unique_invoice_per_resident_period — another request generated this
+        # period's invoice first (the serializer's .exists() pre-check raced).
+        raise ValidationError(
+            {'period_start': _('This resident already has an invoice for this period.')},
+            code='duplicate_invoice',
+        )
 
     with_food = admission.food_preference == Admission.FoodPreference.WITH_FOOD
     InvoiceLineItem.objects.create(
@@ -87,30 +107,167 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     return invoice
 
 
+@transaction.atomic
+def apply_advance_to_first_invoice(*, invoice, actor, request=None):
+    """The advance is rent paid upfront for the first period, so when a
+    resident's first invoice is issued it is recorded as a payment against
+    that invoice (capped at the invoice total; the surplus is refunded at vacate). Only the first issued invoice
+    qualifies — an earlier issued invoice means the advance was already used.
+    Returns the Payment, or None when nothing applies."""
+    # Serialize per admission: two concurrent `issue` calls on different draft
+    # invoices of the same resident each see the other as still draft (the
+    # status flips are uncommitted), so the "first issued invoice" check alone
+    # can't stop a double application. Take the row lock first, then re-read.
+    admission = Admission.objects.select_for_update().get(resident=invoice.resident)
+    if admission.advance_amount <= 0 or admission.advance_applied_amount > 0:
+        return None
+    other_issued = (
+        Invoice.objects.filter(resident=invoice.resident).exclude(pk=invoice.pk)
+        .exclude(status=Invoice.Status.DRAFT).exists()
+    )
+    if other_issued:
+        return None
+    amount = min(admission.advance_amount - admission.advance_applied_amount, invoice.balance_due)
+    if amount <= 0:
+        return None
+    payment = record_payment(
+        invoice=invoice, amount=amount, payment_date=admission.advance_collected_date,
+        payment_mode=admission.advance_mode, reference=ADVANCE_PAYMENT_REFERENCE,
+        actor=actor, request=request,
+    )
+    # Anything beyond the invoice (e.g. 2 months paid upfront) stays on the
+    # admission as advance_refundable and is refunded at vacate.
+    admission.advance_applied_amount += amount
+    admission.save(update_fields=['advance_applied_amount', 'updated_at'])
+    return payment
+
+
 def resident_has_invoice_for_period(resident, period_start):
     return resident.invoices.filter(period_start=period_start).exists()
 
 
+def next_receipt_number(tenant_id):
+    """Allocate the tenant's next receipt number under the counter row lock.
+    Must run inside the caller's transaction so the number is released with
+    it on rollback (a gap is possible only if the payment insert itself fails
+    after this, which the caller's atomic block also rolls back)."""
+    counter = ReceiptCounter.objects.select_for_update().filter(tenant_id=tenant_id).first()
+    if counter is None:
+        try:
+            with transaction.atomic():
+                counter = ReceiptCounter.objects.create(tenant_id=tenant_id)
+        except IntegrityError:
+            pass  # a concurrent first payment created it — lock that row instead
+        counter = ReceiptCounter.objects.select_for_update().get(tenant_id=tenant_id)
+    counter.last_number += 1
+    counter.save(update_fields=['last_number', 'updated_at'])
+    return ReceiptCounter.format(counter.last_number)
+
+
+def payment_matches(existing, *, invoice_id, amount, payment_date, payment_mode, reference):
+    """True when a request carries exactly the inputs `existing` persisted."""
+    return (
+        str(existing.invoice_id) == str(invoice_id)
+        and existing.amount == amount
+        and existing.payment_date == payment_date
+        and existing.payment_mode == payment_mode
+        and existing.reference == reference
+    )
+
+
+def find_replayed_payment(*, tenant_id, idempotency_key, invoice_id, amount,
+                          payment_date, payment_mode, reference):
+    """The payment an earlier request with this key created, or None. A key
+    reused with any different persisted input is a client bug: 409."""
+    existing = Payment.objects.filter(tenant_id=tenant_id, idempotency_key=idempotency_key).first()
+    if existing is None:
+        return None
+    if not payment_matches(
+        existing, invoice_id=invoice_id, amount=amount, payment_date=payment_date,
+        payment_mode=payment_mode, reference=reference,
+    ):
+        raise key_reused()
+    return existing
+
+
 @transaction.atomic
 def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
-                   actor, request=None):
+                   actor, request=None, idempotency_key=None):
     """Record a manual payment (PRD Module 10) and recompute the invoice status
-    (issued -> partially_paid -> paid). Validation (draft/overpayment) is the
-    serializer's job."""
-    payment = Payment.objects.create(
-        tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
-        payment_date=payment_date, payment_mode=payment_mode,
-        reference=reference, recorded_by=actor,
-    )
+    (issued -> partially_paid -> paid).
+
+    The serializer pre-checks draft/fully-paid/overpayment for a friendly error,
+    but that check is not held under a lock — two concurrent payments each
+    within the balance can together overpay. Lock the invoice row here and
+    re-check the balance authoritatively before inserting.
+
+    With an `idempotency_key`, a retry of a request that already succeeded
+    returns the original payment (with `replayed = True`) instead of failing
+    the balance check or recording it twice. The check runs after the
+    invoice lock, so two concurrent retries serialize on it."""
+    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
+    if idempotency_key:
+        existing = find_replayed_payment(
+            tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
+        )
+        if existing is not None:
+            existing.replayed = True
+            return existing
+
+    if invoice.status == Invoice.Status.DRAFT:
+        raise ValidationError(
+            {'invoice': _('Payments can only be recorded against an issued invoice.')},
+            code='invoice_not_issued',
+        )
+    balance = invoice.balance_due
+    if balance <= 0:
+        raise ValidationError(
+            {'invoice': _('This invoice is already fully paid.')}, code='invoice_fully_paid',
+        )
+    if amount > balance:
+        raise ValidationError(
+            {'amount': _('Payment exceeds the outstanding balance of %(balance)s.')
+             % {'balance': balance}},
+            code='overpayment',
+        )
+
+    try:
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                tenant_id=invoice.tenant_id, invoice=invoice, amount=amount,
+                payment_date=payment_date, payment_mode=payment_mode,
+                reference=reference, recorded_by=actor,
+                receipt_number=next_receipt_number(invoice.tenant_id),
+                idempotency_key=idempotency_key,
+            )
+    except IntegrityError:
+        # unique_payment_idempotency_key: a concurrent request with the same
+        # key on a *different* invoice (so it held a different lock) won.
+        if not idempotency_key:
+            raise
+        existing = find_replayed_payment(
+            tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
+            invoice_id=invoice.pk, amount=amount, payment_date=payment_date,
+            payment_mode=payment_mode, reference=reference,
+        )
+        if existing is None:
+            raise
+        existing.replayed = True
+        return existing
+    payment.replayed = False
     invoice.recompute_status()
     audit_log.record(
         action='payment.recorded', actor=actor, obj=payment,
         after={'invoice': str(invoice.id), 'amount': str(amount),
-               'mode': payment_mode, 'invoice_status': invoice.status},
+               'mode': payment_mode, 'invoice_status': invoice.status,
+               'receipt_number': payment.receipt_number},
         request=request,
     )
     # Module 14: "Payment receipt to resident" (PRD).
-    transaction.on_commit(lambda: send_payment_receipt_email_task.delay(str(payment.id)))
+    transaction.on_commit(lambda: enqueue(send_payment_receipt_email_task, str(payment.id)))
     return payment
 
 
@@ -118,7 +275,17 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
 def delete_payment(*, payment, actor, request=None):
     """Delete a payment (a correction) and recompute the invoice status back
     down (paid -> partially_paid -> issued)."""
-    invoice = payment.invoice
+    # Lock the invoice so a concurrent record_payment / delete_payment can't
+    # recompute status off a stale payment set (lost update).
+    invoice = Invoice.objects.select_for_update().get(pk=payment.invoice_id)
+    if payment.reference == ADVANCE_PAYMENT_REFERENCE:
+        # Deleting the advance payment un-applies the advance, otherwise
+        # advance_refundable stays understated and the vacate refund is short.
+        admission = Admission.objects.select_for_update().get(resident_id=invoice.resident_id)
+        admission.advance_applied_amount = max(
+            admission.advance_applied_amount - payment.amount, Decimal('0.00')
+        )
+        admission.save(update_fields=['advance_applied_amount', 'updated_at'])
     audit_log.record(
         action='payment.deleted', actor=actor, obj=payment,
         before={'invoice': str(invoice.id), 'amount': str(payment.amount),

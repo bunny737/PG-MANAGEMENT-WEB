@@ -1,8 +1,10 @@
 import uuid
 
 from django.conf import settings
-from django.core.validators import MaxValueValidator
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
@@ -14,8 +16,16 @@ class Property(TenantModelMixin):
     class PropertyType(models.TextChoices):
         BOYS_HOSTEL = 'boys_hostel', _('Boys Hostel')
         GIRLS_HOSTEL = 'girls_hostel', _('Girls Hostel')
+        # Gender-neutral type sent by the Flutter app, which carries gender in
+        # `gender_preference` instead (see Decisions, 2026-10-09).
+        HOSTEL = 'hostel', _('Hostel')
         PG = 'pg', _('PG')
         CO_LIVING = 'co_living', _('Co-Living Space')
+
+    class GenderPreference(models.TextChoices):
+        UNISEX = 'unisex', _('Unisex')
+        MALE = 'male', _('Male')
+        FEMALE = 'female', _('Female')
 
     class Status(models.TextChoices):
         ACTIVE = 'active', _('Active')
@@ -24,16 +34,43 @@ class Property(TenantModelMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     property_type = models.CharField(max_length=20, choices=PropertyType.choices)
+    gender_preference = models.CharField(
+        max_length=10, choices=GenderPreference.choices, default=GenderPreference.UNISEX,
+    )
     address_line = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
+    # Blank for properties created before the field existed; validated only
+    # when written, so an old row never blocks an unrelated edit.
+    pincode = models.CharField(
+        max_length=6, blank=True,
+        validators=[RegexValidator(r'^[1-9]\d{5}$', _('Enter a valid 6-digit pincode.'))],
+    )
     country = models.CharField(max_length=100, default='India')
     contact_number = models.CharField(max_length=15)
     contact_email = models.EmailField(blank=True)
+    # Map pin, geocoded on the client. Both set or both NULL.
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
+    )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
 
     class Meta:
         db_table = 'properties'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(latitude__isnull=True, longitude__isnull=True)
+                    | Q(latitude__isnull=False, longitude__isnull=False)
+                ),
+                name='property_coordinates_both_or_neither',
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -186,6 +223,25 @@ class Bed(TenantModelMixin):
         max_digits=12, decimal_places=2, null=True, blank=True
     )
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.AVAILABLE)
+    # Set only while status == reserved (D9). Who the bed is held for, and
+    # until when — informational except that admission accepts a reserved bed
+    # only for this resident (or for anyone when it is blank).
+    reserved_for = models.ForeignKey(
+        'residents.Resident', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='reserved_beds',
+    )
+    reserved_until = models.DateField(null=True, blank=True)
+
+    # Availability changes a plain PATCH may make (D9). Everything touching
+    # `occupied` belongs to the admission / transfer / vacate / absconded
+    # workflows, which set the status directly, never through the API field.
+    MANUAL_TRANSITIONS = {
+        (Status.AVAILABLE, Status.MAINTENANCE), (Status.MAINTENANCE, Status.AVAILABLE),
+        (Status.AVAILABLE, Status.RESERVED), (Status.RESERVED, Status.AVAILABLE),
+        (Status.RESERVED, Status.MAINTENANCE), (Status.MAINTENANCE, Status.RESERVED),
+    }
+    # A new bed may start in any state a workflow didn't create.
+    CREATABLE_STATUSES = (Status.AVAILABLE, Status.RESERVED, Status.MAINTENANCE)
 
     class Meta:
         db_table = 'beds'
@@ -196,6 +252,15 @@ class Bed(TenantModelMixin):
 
     def __str__(self):
         return f'{self.room.room_number} - {self.bed_number}'
+
+    def allowed_transitions(self):
+        """Status values a plain PATCH may move this bed to from here (D9).
+        Empty for `occupied` — those changes only happen through the
+        admission / transfer / vacate / absconded workflows. Both
+        BedSerializer and the property layout (D2) call this, so the two
+        can never serialize a transition PATCH would then reject."""
+        targets = {to for frm, to in self.MANUAL_TRANSITIONS if frm == self.status}
+        return [choice for choice, _label in self.Status.choices if choice in targets]
 
     def rack_rate(self, with_food):
         if with_food:
@@ -231,7 +296,8 @@ class PropertyStaffAssignment(TenantModelMixin):
         ]
 
     def __str__(self):
-        return f'{self.staff.email} -> {self.property.name}'
+        staff_identifier = self.staff.email or self.staff.phone or str(self.staff_id)
+        return f'{staff_identifier} -> {self.property.name}'
 
 
 class PropertySettings(TenantModelMixin):
@@ -284,3 +350,135 @@ class PropertySettings(TenantModelMixin):
 
     def __str__(self):
         return f'Settings for {self.property.name}'
+
+
+class FeatureCatalog(models.Model):
+    """Platform-curated list of features a PG can offer (Module 18). Global
+    (no RLS), same shape as NotificationTemplate — every tenant sees the same
+    catalogue. Retire a feature with is_active=False; never delete (rows are
+    referenced). Display labels live in `feature_catalog.FEATURE_LABELS`,
+    keyed by `code`. Tenant-specific additions live in TenantFeature."""
+
+    class Category(models.TextChoices):
+        ROOMS = 'rooms', _('Rooms & Furnishing')
+        FOOD = 'food', _('Food & Kitchen')
+        HOUSEKEEPING = 'housekeeping', _('Housekeeping & Laundry')
+        CONNECTIVITY = 'connectivity', _('Internet & Entertainment')
+        UTILITIES = 'utilities', _('Utilities & Comfort')
+        SAFETY = 'safety', _('Safety & Security')
+        RECREATION = 'recreation', _('Recreation & Common Areas')
+        PARKING = 'parking', _('Parking & Transport')
+        SERVICES = 'services', _('Services & Support')
+        ACCESSIBILITY = 'accessibility', _('Accessibility')
+        POLICIES = 'policies', _('Stay Policies')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.SlugField(max_length=50, unique=True)
+    category = models.CharField(max_length=20, choices=Category.choices, db_index=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    # Shortlist shown first in the create-property form.
+    is_popular = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'feature_catalog'
+        ordering = ['category', 'display_order', 'code']
+
+    def __str__(self):
+        return f'{self.code} ({self.category})'
+
+
+class TenantFeature(TenantModelMixin):
+    """A feature the owner typed because it wasn't in FeatureCatalog.
+    Tenant-wide, so it appears as an option on every property of that tenant.
+    `label` is stored as typed — invariant 7 governs UI chrome, not
+    owner-entered data."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    label = models.CharField(max_length=60)
+    # Dedupe key: feature_catalog.normalise(label). Deliberately not a
+    # SlugField/slugify() — slugify(allow_unicode=True) strips Indic vowel
+    # signs, so distinct Telugu labels would collide.
+    slug = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'tenant_features'
+        ordering = ['label']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant_id', 'slug'], name='unique_tenant_feature_slug'),
+        ]
+
+    def __str__(self):
+        return self.label
+
+
+class PropertyFeature(TenantModelMixin):
+    """One selected feature, for the whole PG (building NULL) or for one of
+    its buildings. Exactly one of catalog_feature/tenant_feature is set.
+    All writes go through `feature_services` — the DB can't check that the
+    building belongs to the property or that every FK shares the tenant."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='features')
+    building = models.ForeignKey(
+        Building, on_delete=models.CASCADE, null=True, blank=True, related_name='features',
+    )
+    catalog_feature = models.ForeignKey(
+        FeatureCatalog, on_delete=models.PROTECT, null=True, blank=True, related_name='property_features',
+    )
+    tenant_feature = models.ForeignKey(
+        TenantFeature, on_delete=models.CASCADE, null=True, blank=True, related_name='property_features',
+    )
+    # False only on a building row, where it suppresses the feature inherited
+    # from the property ("Wi-Fi everywhere except Block B").
+    is_available = models.BooleanField(default=True)
+    # Informational only ("Included" vs "Available at extra cost") — never
+    # read by billing; chargeable add-ons go through Admission.addons
+    # (invariant 6).
+    is_paid = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'property_features'
+        ordering = ['created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(catalog_feature__isnull=False, tenant_feature__isnull=True)
+                    | Q(catalog_feature__isnull=True, tenant_feature__isnull=False)
+                ),
+                name='property_feature_catalog_xor_tenant',
+            ),
+            models.CheckConstraint(
+                condition=Q(is_available=True) | Q(building__isnull=False),
+                name='property_feature_suppression_requires_building',
+            ),
+            # nulls_distinct=False so rows with building NULL (and the unused
+            # feature FK NULL) still dedupe — needs Postgres 15+.
+            models.UniqueConstraint(
+                fields=['property', 'building', 'catalog_feature', 'tenant_feature'],
+                nulls_distinct=False,
+                name='unique_property_feature_assignment',
+            ),
+        ]
+
+    def __str__(self):
+        feature = self.catalog_feature.code if self.catalog_feature_id else str(self.tenant_feature)
+        return f'{self.property.name}: {feature}'
+
+    def clean(self):
+        super().clean()
+        if self.building_id and self.building.property_id != self.property_id:
+            raise ValidationError(
+                {'building': _('This building does not belong to the property.')},
+                code='building_not_in_property',
+            )
+        tenant_ids = {self.property.tenant_id}
+        if self.building_id:
+            tenant_ids.add(self.building.tenant_id)
+        if self.tenant_feature_id:
+            tenant_ids.add(self.tenant_feature.tenant_id)
+        if tenant_ids != {self.tenant_id}:
+            raise ValidationError(_('All related records must belong to the same tenant.'))

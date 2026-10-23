@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from .views import PlanViewSet, RazorpayWebhookView, SubscriptionViewSet
+from .views import PlanViewSet, PublicPlanCatalogView, RazorpayWebhookView, SubscriptionViewSet
 
 router = SimpleRouter()
 router.register('plans', PlanViewSet, basename='plan')
@@ -12,4 +12,5 @@ router.register('subscriptions', SubscriptionViewSet, basename='subscription')
 # `subscriptions/webhook/` first (tenant_id='webhook') and 401s.
 urlpatterns = [
     path('subscriptions/webhook/', RazorpayWebhookView.as_view(), name='razorpay-webhook'),
+    path('public/plans/', PublicPlanCatalogView.as_view(), name='public-plan-catalog'),
 ] + router.urls

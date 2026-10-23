@@ -63,12 +63,17 @@ lifecycle (`vacated`/`blacklisted`) instead.
 1. Creating a resident defaults `status=inquiry`; profile PATCH cannot
    change `status` (it's read-only on `ResidentSerializer` by design —
    must go through `/status/`).
-2. Status transitions follow the PRD Module 5 diagram exactly
-   (invariant 8) — `Resident.TRANSITIONS`:
+2. Status transitions follow the PRD Module 5 diagram, plus one owner-added
+   edge (invariant 8) — `Resident.TRANSITIONS`:
    `inquiry→reserved→active→{notice_period, absconded}`,
-   `notice_period→{vacated, blacklisted}`, `absconded→blacklisted`.
+   `notice_period→{vacated, blacklisted, active}`, `absconded→blacklisted`.
    Any other transition (including skipping stages) is rejected with
    `invalid_status_transition`. `vacated`/`blacklisted` are terminal.
+   `notice_period→active` is the cancel-notice edge (owner request
+   2026-10-07, Module 10); on this generic endpoint it is **rejected**
+   (`open_vacate_exists`) while the resident has an open `Vacate`, so the
+   withdrawal goes through `POST /vacates/{id}/cancel/` and the row is
+   actually closed. Allowed here only when there is no open vacate to close.
 3. Only `active` and `notice_period` residents count toward a tenant's
    plan resident limit (invariant 8) — `Resident.COUNTS_TOWARD_PLAN_LIMIT`.
    Nothing enforces the cap itself yet; that's Module 13 (no Plan model
@@ -84,7 +89,7 @@ lifecycle (`vacated`/`blacklisted`) instead.
    (`resident.created`, `resident.status_changed` with before/after).
 7. `residents` is RLS-enforced; isolation proven the same way as
    `properties`/`core`.
-8. Aadhaar/PAN uploads are optional `FileField`s; storage backend is S3 in
+8. Aadhaar/PAN uploads are optional `FileField`s; storage backend is GCS in
    production, local filesystem in dev/test (see Decisions) — no field is
    required to exist for a resident to be created.
 
@@ -106,6 +111,15 @@ lifecycle (`vacated`/`blacklisted`) instead.
   transition, including back to `active`.
 - `notice_period → blacklisted` is a valid shortcut (misconduct during
   notice) distinct from the normal `notice_period → vacated` exit.
+- `notice_period → active` (cancel notice) re-checks no plan limit: both
+  statuses are in `COUNTS_TOWARD_PLAN_LIMIT`, so the round trip never changes
+  the tally.
+- `change_status` now takes a `select_for_update(of=('self',))` row lock on the
+  resident (via `residents.services.lock_resident`) so a bare status flip can't
+  interleave with the Module 10 exit workflows. It re-queries by pk after
+  `get_object()` rather than locking this viewset's queryset, which
+  `select_related`s nullable admission/allocation joins — PostgreSQL refuses
+  `FOR UPDATE` on the nullable side of an outer join.
 
 ## Open questions / Decisions
 - [DECISION 2026-07-03] **Confirmed with the product owner:** Resident
@@ -118,6 +132,10 @@ lifecycle (`vacated`/`blacklisted`) instead.
   nullable) — even at the Inquiry stage a lead is inquiring about one
   specific property, and Manager/Receptionist property-assignment scoping
   needs it to filter on from day one.
+- [DECISION 2026-10-20] Storage moved from S3 to Google Cloud Storage (owner decision, GCP
+  hosting): `django-storages[google]`, `GS_BUCKET_NAME`, private bucket, IAM-signed 5-minute URLs
+  (`apps/core/storage.py`, `GS_IAM_SIGN_BLOB`); `boto3` removed. Aadhaar/PAN upload stays gated on the
+  legal review (docs/deployment.md, Phase 0). The 2026-07-03 entry below is historical.
 - [DECISION 2026-07-03] Wired `STORAGES`/`AWS_*` in `config/settings/base.py`
   (conditionally — falls back to local filesystem storage when
   `AWS_STORAGE_BUCKET_NAME` is unset) so Aadhaar/PAN uploads have
@@ -141,8 +159,48 @@ lifecycle (`vacated`/`blacklisted`) instead.
   closes the "bare status flip bypasses Admission's own check" gap called
   out below, specifically for the plan-limit case (judged consequential
   enough to guard, unlike other workflow gaps left as accepted debt).
+- [DECISION 2026-10-11] Receptionist resident financial field carve-out:
+  Receptionist holds `view_resident_profile` so front-desk staff can look up
+  residents, verify identity, and check unit/bed allocations, but
+  `ResidentSerializer` previously exposed `contracted_rent`, `billing_mode`,
+  `security_deposit_amount`, `advance_amount`, and `advance_refundable`.
+  To prevent data disclosure while keeping a single `GET /residents/` API,
+  `ResidentSerializer.__init__` pops these five fields dynamically whenever
+  the requesting user lacks `manage_residents` (`permissions_for(user.role)`).
+  This prevents financial terms from reaching the front desk even if the
+  frontend tab is hidden.
+- [DECISION 2026-10-21] **Aadhaar/PAN upload launch gate.** `KYC_UPLOADS_ENABLED` (default `True` in dev,
+  `False` in `config/settings/prod.py`; set `KYC_UPLOADS_ENABLED=true` on the API service once legal signs
+  off, docs/deployment.md §9) refuses a NEW `aadhaar_document` / `pan_document` file on both create and
+  update with a 400 on that field (`kyc_uploads_disabled`). Gated per field in `ResidentSerializer`, not in
+  the view, so every write path is covered. **Clearing** a stored document (`null`) is always allowed
+  (data minimisation), and **stored documents stay readable** via their signed URLs, so an owner can still
+  see and delete what is already on file. When uploads are on, each file is checked with the shared
+  `apps/core/uploads.py` (`sniff_upload`: real type from the magic bytes, at most `KYC_DOCUMENT_MAX_BYTES`,
+  default 5 MB; codes `document_type_not_allowed` / `document_too_large`). **Only JPEG/PNG/PDF are
+  accepted for KYC** — the approved set (plan rev 2); `sniff_upload` takes an `allowed_types` argument so
+  WebP (which `apps/expenses` does accept, pre-existing on `dev`) isn't silently let through here too. The
+  expenses attachment check was refactored onto the same utility (its `attachment_*` codes are unchanged),
+  so residents do not import from expenses. `GET /auth/me/` exposes `kyc_uploads_enabled`; the web
+  resident profile hides the upload controls (and says why) when it is false or absent. Tests:
+  `apps/residents/tests/test_kyc_gate.py`, `apps/core/test_uploads.py`.
+- [DECISION 2026-10-22] **Clearing or replacing a KYC file deletes the old object from storage, not just
+  the database reference.** `FileField` never does this on its own — repointing it just orphans the
+  previous object in GCS/local storage, which defeats the clearing path's data-minimisation purpose.
+  `ResidentSerializer.update()` captures the prior `(storage, name)` for any KYC field present in
+  `validated_data` before `super().update()` repoints it, then deletes the old object with
+  `transaction.on_commit()` once the row update has actually committed — mirrors
+  `apps/expenses/services.py`'s `_delete_file_on_commit`. A failed update (e.g. a rejected replacement)
+  never reaches the deletion, so the still-referenced file is never orphan-deleted. Tests assert the file
+  is gone from storage after clearing/replacing, still there after an invalid replacement, and still there
+  until the transaction actually commits.
 
 ## Changelog
+- 2026-10-22  KYC file replace/clear now deletes the orphaned storage object; KYC uploads restricted to
+  JPEG/PNG/PDF (WebP no longer accepted here) — see Decisions.
+- 2026-10-21  KYC upload launch gate + shared upload validation (see Decisions); `/auth/me/` gains
+  `kyc_uploads_enabled`.
+- 2026-10-20  Storage S3 → GCS (signed URLs via `apps.core.storage`); see Decisions.
 - 2026-06-xx  Created stub.
 - 2026-07-03  Built: `Resident` model (RLS) with exact PRD status-transition
   graph, profile CRUD + dedicated status-change endpoint, permission
@@ -156,3 +214,37 @@ lifecycle (`vacated`/`blacklisted`) instead.
 - 2026-07-04  Module 16 added a `timeline` action + `view_activity_timeline`
   permission to `ResidentViewSet` (see Permissions) — no other change to
   this viewset.
+- 2026-10-04  `ResidentSerializer` gained read-only admission/allocation
+  fields for the mobile app: `contracted_rent` (from the current Allocation, so
+  it follows a permanent transfer), `food_preference`, `billing_mode`,
+  `joining_date`, `security_deposit_amount`, `advance_amount`,
+  `advance_refundable`, `room_number`, `bed_number`. All null for a resident
+  with no admission. The queryset `select_related`s admission/allocation so
+  the list adds no per-row queries.
+- 2026-10-07  Module 10 added the `notice_period -> active` edge (cancel
+  notice, owner request), a row lock on `change_status` via
+  `residents.services.lock_resident`, and a guard rejecting that transition on
+  this generic endpoint while the resident has an open `Vacate` — see that
+  module's 2026-10-07 update for the reasoning and the lock order, which
+  admission (Module 05) now follows too.
+- 2026-10-12  Per-staff module access (Module 01 `[DECISION 2026-10-12]`): `ResidentSerializer`
+  hides `contracted_rent`/`billing_mode` without `view_finance`, and the deposit figures
+  (`security_deposit_amount`, `advance_amount`, `advance_refundable`) without `view_finance` or
+  `manage_deposits` (previously both groups keyed on `manage_residents`; role defaults unchanged).
+  The `timeline` action now requires `view_resident_profile` **and** `view_activity_timeline`.
+- 2026-10-16  UX roadmap D6: `GET /residents/{id}/` (detail only) adds a
+  `finance` block — `apps/residents/finance.py:resident_finance()` — covering
+  the property-timezone current month's invoice(s), `outstanding_total`,
+  `overdue_total`, `prior_outstanding` and `last_payment_date`. Needs
+  `view_finance`; otherwise `finance` is `null` and `"finance"` is listed in
+  the response's top-level `redacted`. Full shape and the card-state mapping
+  are documented with Module 21 (the single home for the roadmap's
+  authorization model and response shapes). Test: `test_resident_finance.py`.
+- 2026-10-17  Web-client follow-up (S0b): the detail response's `finance` +
+  `redacted` fields build a plain dict by hand (as above), so `/api/schema/`
+  described them as untyped. `retrieve()` now carries
+  `@extend_schema(responses=ResidentDetailResponseSerializer)` — a
+  schema-only subclass of `ResidentSerializer` adding those two fields, in
+  the new `apps/residents/schema.py` (never instantiated for a real
+  response). See Module 21's 2026-10-17 decision for the full list and the
+  test that guards it.

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Trash2, Edit, Building2, Settings, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { PermissionGate } from "@/components/shared/PermissionGate";
 import { getProperty, getBuilding, listFloors, deleteFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
 
 export function FloorList({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
@@ -130,20 +131,24 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
         </div>
 
         <div className="flex gap-2.5 self-start sm:self-auto">
-          <Link
-            href={`/properties/${property.id}/settings`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <Settings className="size-4" />
-            {t("billingSettings")}
-          </Link>
-          <Link
-            href={`/properties/${property.id}/buildings/${building.id}/floors/add`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <Plus className="size-4.5" />
-            {t("addFloor")}
-          </Link>
+          <PermissionGate permission="manage_property_settings">
+            <Link
+              href={`/properties/${property.id}/settings`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Settings className="size-4" />
+              {t("billingSettings")}
+            </Link>
+          </PermissionGate>
+          <PermissionGate permission="manage_rooms_beds">
+            <Link
+              href={`/properties/${property.id}/buildings/${building.id}/floors/add`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink-inverse hover:bg-accent-hover hover:shadow-lg hover:shadow-blue-500/10 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Plus className="size-4.5" />
+              {t("addFloor")}
+            </Link>
+          </PermissionGate>
         </div>
       </div>
 
@@ -226,19 +231,21 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
 
                 {/* Actions */}
                 <div className="col-span-1 md:col-span-2 flex justify-end gap-2.5 pt-3.5 md:pt-0 border-t md:border-none border-border/40">
-                  <button
-                    aria-label="Edit Floor"
-                    className="p-1.5 text-ink-muted hover:text-accent hover:bg-surface-page rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Edit className="size-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteFloor(floor.id, floor.name)}
-                    aria-label="Delete Floor"
-                    className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical-soft rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                  <PermissionGate permission="manage_rooms_beds">
+                    <button
+                      aria-label="Edit Floor"
+                      className="p-1.5 text-ink-muted hover:text-accent hover:bg-surface-page rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Edit className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteFloor(floor.id, floor.name)}
+                      aria-label="Delete Floor"
+                      className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical-soft rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </PermissionGate>
                 </div>
               </div>
             ))}

@@ -13,6 +13,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
@@ -46,8 +47,24 @@ def default_new_rent(new_bed, resident):
 def perform_transfer(*, allocation, new_bed, transfer_date, is_temporary, reason,
                      new_rent, expected_move_date, temporary_note, actor, request=None):
     resident = allocation.resident
-    previous_bed = allocation.allocated_bed
     previous_rent = allocation.contracted_rent
+
+    # Lock both beds before touching them. The serializer checked
+    # `new_bed.status == AVAILABLE`, but without a lock two concurrent transfers
+    # (or a transfer racing a check-in) could both take the same bed. Lock in a
+    # deterministic order (by id) to avoid deadlocks, then re-check.
+    bed_ids = {allocation.allocated_bed_id, new_bed.id}
+    locked_beds = {
+        bed.id: bed
+        for bed in Bed.objects.select_for_update(of=('self',))
+        .filter(pk__in=bed_ids).order_by('id')
+    }
+    previous_bed = locked_beds[allocation.allocated_bed_id]
+    new_bed = locked_beds[new_bed.id]
+    if new_bed.status != Bed.Status.AVAILABLE:
+        raise ValidationError(
+            {'new_bed': _('This bed is not available.')}, code='bed_not_available'
+        )
 
     # Free the vacated bed and occupy the new one; each save() cascades to the
     # room-status sync built in Module 02.
@@ -133,10 +150,53 @@ def add_one_month(d):
     return date(year, month, min(d.day, last_day))
 
 
+def lock_resident(resident):
+    """Re-read a resident under a row lock, for the exit/status workflows.
+
+    Lock order for every workflow that writes `Resident.status` is
+    **Resident -> Vacate -> Bed -> Subscription**: take this first, validate the
+    re-read `status` inside the lock, then touch the vacate, then the bed, and
+    let check_resident_limit take the Subscription last. Everything that mutates
+    `Resident.status` uses it, so two of them can't interleave on the same
+    resident (e.g. cancel-notice racing finalize, or mark-absconded landing on
+    a resident someone else just reactivated).
+
+    `of=('self',)`: lock only the residents row. The callers' querysets
+    select_related nullable admission/allocation joins, and PostgreSQL refuses
+    FOR UPDATE on the nullable side of an outer join — the same reason
+    subscriptions.services._subscription_for_limit_check locks a join-free row.
+
+    Used by the services in this module, ResidentViewSet.change_status and
+    AdmissionViewSet.perform_create. Admission once locked Bed -> Subscription
+    and only touched the resident at the end, which deadlocked against
+    change_status (Resident -> Subscription); see test_lock_ordering.py and the
+    Module 10 spec. Any new code that writes Resident.status must start here.
+    """
+    return (
+        Resident.objects.select_for_update(of=('self',)).get(pk=resident.pk)
+    )
+
+
 @transaction.atomic
 def give_notice(*, resident, notice_given_date, actor, request=None):
     """Step 1 of the vacating workflow (PRD Module 11): Active -> Notice
     Period, expected_vacate_date auto-calculated as notice + 1 month."""
+    # Re-check under the lock: the serializer's checks ran unlocked, so two
+    # concurrent give-notice calls could both pass them and race the
+    # `unique_open_vacate_per_resident` constraint into an IntegrityError (a
+    # 500) instead of a clean validation error.
+    resident = lock_resident(resident)
+    if not resident.can_transition_to(Resident.Status.NOTICE_PERIOD):
+        raise ValidationError(
+            {'resident': _('Only an active resident can give notice to vacate.')},
+            code='resident_not_active',
+        )
+    if resident.open_vacate is not None:
+        raise ValidationError(
+            {'resident': _('This resident already has a vacate record.')},
+            code='vacate_already_exists',
+        )
+
     before_status = resident.status
     vacate = Vacate.objects.create(
         tenant_id=resident.tenant_id, resident=resident,
@@ -165,8 +225,32 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
                     refund_date, refund_mode, refund_note, actor, request=None):
     """Step 2 of the vacating workflow (PRD Module 11): move-out settlement —
     Notice Period -> Vacated, bed freed immediately, refund computed from the
-    admission's advance minus the maintenance deduction."""
-    resident = vacate.resident
+    admission's security deposit minus the maintenance deduction."""
+    # Resident -> Vacate lock order (see lock_resident). Re-check everything
+    # inside the locks: the view's guards run unlocked, so two concurrent
+    # finalize calls could both pass them and double-run the settlement (double
+    # refund audit, double bed-free), and a finalize racing a cancel-notice
+    # could settle a notice that was just withdrawn.
+    resident = lock_resident(vacate.resident)
+    vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
+    if vacate.is_settled:
+        raise ValidationError(
+            {'detail': _('This vacate has already been settled.')}, code='already_settled'
+        )
+    if vacate.is_cancelled:
+        raise ValidationError(
+            {'detail': _('This notice was cancelled and cannot be settled.')},
+            code='already_cancelled',
+        )
+    # Without this the resident's status is set to Vacated unconditionally,
+    # which would drive an out-of-graph transition (e.g. Active -> Vacated) for
+    # any resident who is no longer in their notice period.
+    if not resident.can_transition_to(Resident.Status.VACATED):
+        raise ValidationError(
+            {'detail': _('Only a resident in their notice period can be settled.')},
+            code='resident_not_in_notice_period',
+        )
+
     before_status = resident.status
 
     vacate.actual_vacate_date = actual_vacate_date
@@ -200,6 +284,89 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     return vacate
 
 
+@transaction.atomic
+def cancel_notice(*, vacate, cancelled_date, cancellation_reason, actor, request=None):
+    """Withdraw a notice to vacate: Notice Period -> Active (owner request
+    2026-10-07). The resident changed their mind and stays on.
+
+    Deliberately touches nothing but the vacate row and the resident's status:
+
+    - The **bed** was never released (give_notice doesn't touch it; only
+      finalize_vacate does), so there is nothing to re-occupy.
+    - The **Allocation** — and with it `contracted_rent` — is untouched.
+      Invariant 2: the contracted rent stays as snapshotted at admission and is
+      never re-derived from the room's current rack rate.
+    - **Billing** already treats Notice Period exactly like Active, so no
+      invoice, proration or plan-limit work is needed either way.
+    - The **deposit/advance** are only paid out at finalize, so nothing to
+      reverse.
+
+    The row is kept as history rather than deleted; a later notice creates a
+    new Vacate (`unique_open_vacate_per_resident` allows it once this one is
+    closed).
+    """
+    # Resident -> Vacate lock order (see lock_resident).
+    resident = lock_resident(vacate.resident)
+    vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
+    if vacate.is_settled:
+        raise ValidationError(
+            {'detail': _('This vacate has already been settled.')}, code='already_settled'
+        )
+    if vacate.is_cancelled:
+        raise ValidationError(
+            {'detail': _('This notice has already been cancelled.')}, code='already_cancelled'
+        )
+    if resident.status != Resident.Status.NOTICE_PERIOD:
+        raise ValidationError(
+            {'detail': _('Only a resident in their notice period can cancel notice.')},
+            code='resident_not_in_notice_period',
+        )
+    # Re-validated here, not just in the serializer, so a direct service call
+    # (seed scripts, management commands) can't record an impossible date.
+    if cancelled_date < vacate.notice_given_date:
+        raise ValidationError(
+            {'cancelled_date': _('Cancellation cannot predate the notice.')},
+            code='cancelled_before_notice',
+        )
+    if cancelled_date > timezone.localdate():
+        raise ValidationError(
+            {'cancelled_date': _('Cancellation date cannot be in the future.')},
+            code='cancelled_date_in_future',
+        )
+    if not (cancellation_reason or '').strip():
+        raise ValidationError(
+            {'cancellation_reason': _('A reason is required to cancel notice.')},
+            code='reason_required',
+        )
+
+    before_status = resident.status
+
+    vacate.cancelled_date = cancelled_date
+    vacate.cancellation_reason = cancellation_reason
+    vacate.cancelled_by = actor
+    vacate.save(update_fields=[
+        'cancelled_date', 'cancellation_reason', 'cancelled_by', 'updated_at',
+    ])
+
+    resident.status = Resident.Status.ACTIVE
+    resident.save(update_fields=['status', 'updated_at'])
+
+    audit_log.record(
+        action='resident.notice_cancelled', actor=actor, obj=vacate,
+        before={'notice_given_date': vacate.notice_given_date.isoformat(),
+                'expected_vacate_date': vacate.expected_vacate_date.isoformat()},
+        after={'cancelled_date': cancelled_date.isoformat(),
+               'cancellation_reason': cancellation_reason},
+        request=request,
+    )
+    audit_log.record(
+        action='resident.status_changed', actor=actor, obj=resident,
+        before={'status': before_status}, after={'status': resident.status},
+        request=request,
+    )
+    return vacate
+
+
 def outstanding_dues_for(resident):
     """Sum of balance_due across the resident's issued/partially_paid invoices
     (Module 08/09). Deferred import: apps.billing imports apps.residents at
@@ -215,18 +382,30 @@ def outstanding_dues_for(resident):
 @transaction.atomic
 def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, actor, request=None):
     """PRD Module 11 'Absconded Resident Workflow': bed freed immediately (no
-    notice period), advance forfeited and applied against outstanding dues,
+    notice period), security deposit forfeited and applied against outstanding dues,
     any remainder recorded as outstanding (owner can write it off later)."""
+    # Resident lock (see lock_resident) + re-check: Active is now reachable by
+    # cancelling a notice, so an unlocked read here could mark a resident
+    # absconded off a status another request had just changed.
+    resident = lock_resident(resident)
+    if not resident.can_transition_to(Resident.Status.ABSCONDED):
+        raise ValidationError(
+            {'resident': _('Only an active resident can be marked absconded.')},
+            code='resident_not_active',
+        )
+
     before_status = resident.status
-    advance = resident.admission.advance_amount
+    admission = resident.admission
+    # An unapplied advance surplus is forfeited together with the deposit.
+    deposit = admission.security_deposit_amount + admission.advance_refundable
     outstanding = outstanding_dues_for(resident)
-    applied = min(advance, outstanding)
+    applied = min(deposit, outstanding)
     remaining = outstanding - applied
 
     record = AbscondedRecord.objects.create(
         tenant_id=resident.tenant_id, resident=resident,
         absconded_date=absconded_date, last_seen_date=last_seen_date, absconded_note=absconded_note,
-        advance_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
+        deposit_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
     )
 
     bed = resident.allocation.allocated_bed
@@ -238,7 +417,7 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     audit_log.record(
         action='resident.absconded', actor=actor, obj=record,
-        after={'absconded_date': absconded_date.isoformat(), 'advance_applied_to_dues': str(applied),
+        after={'absconded_date': absconded_date.isoformat(), 'deposit_applied_to_dues': str(applied),
                'remaining_dues': str(remaining)},
         request=request,
     )
@@ -274,6 +453,16 @@ def confirm_blacklist(*, resident, reason, actor, request=None):
     explicitly confirms. Phone/Aadhaar are snapshotted into a tenant-wide
     BlacklistEntry so a future registration anywhere in the tenant can warn,
     even from a property the confirming actor isn't otherwise scoped to."""
+    # Resident lock (see lock_resident) + re-check, so a blacklist can't land on
+    # a status another request changed under it (e.g. a notice just cancelled,
+    # which takes the resident out of the Notice Period -> Blacklisted edge).
+    resident = lock_resident(resident)
+    if not resident.can_transition_to(Resident.Status.BLACKLISTED):
+        raise ValidationError(
+            {'resident': _('This resident cannot be blacklisted from their current status.')},
+            code='invalid_status_transition',
+        )
+
     before_status = resident.status
     entry = BlacklistEntry.objects.create(
         tenant_id=resident.tenant_id, resident=resident, phone=resident.phone,
@@ -305,7 +494,13 @@ def build_activity_timeline(resident):
 
     Same-day events are ordered by a fixed per-kind weight (the `add()` calls
     below, in narrative order), not insertion order, so a day with several
-    events (e.g. Absconded + Advance Forfeited) always reads sensibly."""
+    events (e.g. Absconded + Advance Forfeited) always reads sensibly — note
+    Notice Given/Cancelled can legitimately fall on the same day.
+
+    The notice sequence can repeat: cancelling a notice returns the resident to
+    Active, so a resident may have several Vacate rows and the feed shows each
+    Notice Given (-> Notice Cancelled) pair before whichever notice finally
+    settles."""
     events = []
 
     def add(event_date, weight, label, detail=''):
@@ -368,18 +563,24 @@ def build_activity_timeline(resident):
     for complaint in resident.complaints.all():
         add(timezone.localtime(complaint.created_at).date(), 7, _('Complaint Raised'), complaint.get_category_display())
 
-    vacate = getattr(resident, 'vacate', None)
-    if vacate is not None:
+    # Every notice, oldest-first: a resident may have cancelled one notice and
+    # given another later, so this is a list, not a single row.
+    for vacate in resident.vacates.all():
         add(
             vacate.notice_given_date, 8, _('Notice Given'),
             _('Expected vacate %(date)s') % {'date': vacate.expected_vacate_date.isoformat()},
         )
+        if vacate.is_cancelled:
+            add(
+                vacate.cancelled_date, 9, _('Notice Cancelled'),
+                vacate.cancellation_reason,
+            )
         if vacate.is_settled:
             detail = (
                 _('Refund ₹%(amount)s') % {'amount': vacate.refund_amount}
                 if vacate.refund_amount is not None else ''
             )
-            add(vacate.actual_vacate_date, 9, _('Vacated'), detail)
+            add(vacate.actual_vacate_date, 10, _('Vacated'), detail)
 
     absconded = getattr(resident, 'absconded_record', None)
     if absconded is not None:
@@ -387,22 +588,22 @@ def build_activity_timeline(resident):
         if absconded.last_seen_date:
             seen = _('Last seen %(date)s') % {'date': absconded.last_seen_date.isoformat()}
             note = f'{seen} — {note}' if note else seen
-        add(absconded.absconded_date, 10, _('Marked Absconded'), note)
-        if absconded.advance_applied_to_dues > 0:
+        add(absconded.absconded_date, 11, _('Marked Absconded'), note)
+        if absconded.deposit_applied_to_dues > 0:
             add(
-                absconded.absconded_date, 11, _('Advance Forfeited'),
-                _('₹%(amount)s applied against dues') % {'amount': absconded.advance_applied_to_dues},
+                absconded.absconded_date, 12, _('Security Deposit Forfeited'),
+                _('₹%(amount)s applied against dues') % {'amount': absconded.deposit_applied_to_dues},
             )
         if absconded.dues_recovery_status == AbscondedRecord.DuesRecoveryStatus.WRITTEN_OFF:
             add(
-                timezone.localtime(absconded.updated_at).date(), 12, _('Dues Written Off'),
+                timezone.localtime(absconded.updated_at).date(), 13, _('Dues Written Off'),
                 _('₹%(amount)s — %(note)s')
                 % {'amount': absconded.remaining_dues, 'note': absconded.dues_written_off_note},
             )
 
     blacklist_entry = getattr(resident, 'blacklist_entry', None)
     if blacklist_entry is not None:
-        add(timezone.localtime(blacklist_entry.created_at).date(), 13, _('Blacklisted'), blacklist_entry.reason)
+        add(timezone.localtime(blacklist_entry.created_at).date(), 14, _('Blacklisted'), blacklist_entry.reason)
 
     events.sort(key=lambda e: (e['date'], e['_weight']))
     for event in events:

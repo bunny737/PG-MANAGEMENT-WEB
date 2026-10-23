@@ -35,11 +35,18 @@ Table: discounts                                (RLS enforced, app: apps.billing
 
 ## API endpoints
 ```
-GET|POST   /api/v1/discounts/          list (filter ?resident= ?reason= ?discount_type=) / create   manage_discounts
-GET|PATCH  /api/v1/discounts/{id}/     detail / update                                              manage_discounts
+GET|POST   /api/v1/discounts/          list (filter ?resident= ?property= ?reason= ?discount_type=) / create   manage_discounts
+GET|PATCH  /api/v1/discounts/{id}/     detail / update                                                          manage_discounts
 ```
 No DELETE — end a discount by PATCHing `valid_until` (consistent with the
 platform's no-hard-delete stance for financial records).
+
+**Report columns (UX roadmap S0b, 2026-10-17):** every row also carries
+`resident_name, property, property_name, room_number, bed_number` — the same
+`ResidentContextMixin` invoices and payments already use (apps/billing/
+serializers.py), so the web discount report renders without a second
+lookup. `?property=` filters by the resident's property (`DiscountFilter`
+in apps/billing/filters.py).
 
 ## Business rules (each maps to a test)
 1. Discount attaches to a **resident** (== allocation level, since
@@ -88,6 +95,11 @@ platform's no-hard-delete stance for financial records).
   non-overlapping windows keeps Module 08's per-period discount selection
   deterministic. Not raised with the product owner as it's the clear PRD
   reading; revisit in Module 08 if genuine stacking is ever required.
+  [2026-09-10] The overlap check is serializer-only (no DB exclusion
+  constraint), so it raced: `DiscountViewSet.create`/`partial_update` now
+  wrap the request in a transaction and `select_for_update()` the resident
+  row first, serializing all discount writes for that resident so the check
+  is reliable.
 - [DECISION 2026-07-03] **`Discount` lives in `apps.billing`** (its first
   model), not `apps.residents`. It's a money modifier consumed by billing,
   and this keeps the dependency direction clean (billing → residents).
@@ -107,6 +119,17 @@ platform's no-hard-delete stance for financial records).
   on discount, breakdown by reason) are **not** built here. "Total given
   this month" needs invoices (Module 08); the rest are simple aggregations
   best placed with dashboards / Module 17 (Data Export). Deferred.
+- [DECISION 2026-10-17] **Web client follow-up to the UX roadmap**: the
+  discount *list* (not the aggregated report above, which stays open) needed
+  resident/property/room/bed columns so the web report renders without a
+  second lookup, matching invoices and payments. `ResidentContextMixin`
+  moved above `DiscountSerializer` in apps/billing/serializers.py (it was
+  defined after; no behaviour change, just declaration order) and
+  `DiscountSerializer` now mixes it in with `_resident(obj) = obj.resident`.
+  A `?property=` filter (`DiscountFilter`) and `select_related` on the
+  queryset (`resident__property`, `resident__allocation__allocated_bed__room`)
+  went with it so the extra columns don't add N+1 queries — see
+  test_discounts.py's `DiscountReportTests`.
 - [OPEN] A discount can currently be created for a resident who isn't yet
   admitted (no `contracted_rent`). That's intentional (the PRD reason
   "Negotiated at admission" implies it can be recorded around admission),

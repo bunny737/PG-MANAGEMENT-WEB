@@ -21,15 +21,44 @@ import {
   X
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { ContactActions } from "@/components/shared/ContactActions";
+import { MoneyText } from "@/components/shared/MoneyText";
+import { PermissionGate } from "@/components/shared/PermissionGate";
+import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
-import { getResident, updateResident, type Resident, ApiError } from "@/lib/api";
+import {
+  getResident,
+  listComplaints,
+  updateResident,
+  uploadResidentDocument,
+  type Complaint,
+  type Resident,
+  type ResidentDocumentField,
+  ApiError,
+} from "@/lib/api";
+import { formatDate } from "@/lib/date";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { FinanceCard } from "./FinanceCard";
+import { TransferRoomDialog } from "./TransferRoomDialog";
+
+/** The two KYC files the backend stores on a resident. */
+const DOCUMENT_SLOTS = [
+  { field: "aadhaar_document", titleKey: "documents.aadhaarDoc", numberKey: "overview.aadhaar", number: "aadhaar_number" },
+  { field: "pan_document", titleKey: "documents.panDoc", numberKey: "overview.pan", number: "pan_number" },
+] as const;
 
 export function ResidentProfile({ id }: { id: string }) {
   const t = useTranslations("residents.profile");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("status");
   const [resident, setResident] = useState<Resident | null>(null);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const { can, user } = useSession();
+  // New Aadhaar/PAN uploads are behind a launch gate; stored documents stay viewable either way.
+  const kycUploadsEnabled = user?.kyc_uploads_enabled === true;
+  // Billing figures belong to the Finance module: without view_finance the API omits
+  // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
+  const canSeeFinance = can("view_finance");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -60,6 +89,12 @@ export function ResidentProfile({ id }: { id: string }) {
   });
   const [formError, setFormError] = useState("");
 
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  // KYC document upload
+  const [uploadingField, setUploadingField] = useState<ResidentDocumentField | null>(null);
+  const [uploadError, setUploadError] = useState("");
+
   useEffect(() => {
     let cancelled = false;
     getResident(id)
@@ -74,6 +109,11 @@ export function ResidentProfile({ id }: { id: string }) {
         setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
         setIsLoading(false);
       });
+    listComplaints({ resident: id }).then((data) => {
+      if (!cancelled) setComplaints(data);
+    }).catch(() => {
+      // Non-fatal: the Maintenance tab just shows its empty state.
+    });
     return () => {
       cancelled = true;
     };
@@ -103,11 +143,13 @@ export function ResidentProfile({ id }: { id: string }) {
       return;
     }
 
-    const msg =
-      type === "transfer"
-        ? "Room transfer request initiated."
-        : "Vacate checkout procedure initialized.";
-    setActionAlert({ type, message: msg });
+    if (type === "transfer") {
+      setIsTransferring(true);
+      return;
+    }
+
+    // Vacate is still a placeholder: the real notice/settlement flow is not built on the web yet.
+    setActionAlert({ type, message: "Vacate checkout procedure initialized." });
     setTimeout(() => setActionAlert(null), 4000);
   };
 
@@ -127,6 +169,26 @@ export function ResidentProfile({ id }: { id: string }) {
       setFormError(err instanceof ApiError ? err.message : "Failed to update profile.");
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleDocumentSelected = async (field: ResidentDocumentField, file: File | undefined) => {
+    if (!file) return;
+    setUploadingField(field);
+    setUploadError("");
+    try {
+      const updated = await uploadResidentDocument(id, field, file);
+      // PATCH responses omit the detail-only `finance` block, so merge instead of replacing.
+      setResident((prev) => (prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated));
+      setActionAlert({ type: "document", message: t("documents.uploadedToast") });
+      setTimeout(() => setActionAlert(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setUploadError(
+        err instanceof ApiError ? (err.fieldError(field) ?? err.message) : t("documents.errUploadFailed")
+      );
+    } finally {
+      setUploadingField(null);
     }
   };
 
@@ -197,27 +259,35 @@ export function ResidentProfile({ id }: { id: string }) {
 
         {/* Action Buttons Toolbar */}
         <div className="flex flex-wrap gap-2.5">
-          <button
-            onClick={() => handleAction("edit")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <Edit className="size-3.5" />
-            {t("editProfile")}
-          </button>
-          <button
-            onClick={() => handleAction("transfer")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <ArrowRightLeft className="size-3.5 text-accent" />
-            {t("transferRoom")}
-          </button>
-          <button
-            onClick={() => handleAction("vacate")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse active:scale-[0.98] transition-all cursor-pointer shadow-sm"
-          >
-            <LogOut className="size-3.5" />
-            {t("vacateResident")}
-          </button>
+          <PermissionGate permission="manage_residents">
+            <button
+              onClick={() => handleAction("edit")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Edit className="size-3.5" />
+              {t("editProfile")}
+            </button>
+          </PermissionGate>
+          {(resident.status === "active" || resident.status === "notice_period") && (
+          <PermissionGate permission="manage_allocations">
+            <button
+              onClick={() => handleAction("transfer")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface-card px-4 py-2.5 text-xs font-bold text-ink hover:bg-surface-page active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <ArrowRightLeft className="size-3.5 text-accent" />
+              {t("transferRoom")}
+            </button>
+          </PermissionGate>
+          )}
+          <PermissionGate permission="manage_deposits">
+            <button
+              onClick={() => handleAction("vacate")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-status-critical/30 bg-status-critical-soft px-4 py-2.5 text-xs font-bold text-status-critical hover:bg-status-critical hover:text-ink-inverse active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <LogOut className="size-3.5" />
+              {t("vacateResident")}
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -235,7 +305,7 @@ export function ResidentProfile({ id }: { id: string }) {
                 tone={getStatusTone(resident.status)}
               />
             </div>
-            <p className="text-xs text-ink-muted flex items-center gap-3 flex-wrap pt-0.5">
+            <div className="text-xs text-ink-muted flex items-center gap-3 flex-wrap pt-0.5">
               <span className="flex items-center gap-1">
                 <Building className="size-3.5 text-ink-faint" />
                 {resident.unit || t("overview.unassigned")} ({resident.block || t("overview.mainBuilding")})
@@ -250,14 +320,19 @@ export function ResidentProfile({ id }: { id: string }) {
                 <Mail className="size-3.5 text-ink-faint" />
                 {resident.email}
               </span>
-            </p>
+              <ContactActions phone={resident.phone} />
+            </div>
           </div>
         </div>
 
         <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto border-t md:border-t-0 border-border pt-4 md:pt-0 text-xs text-ink-muted space-y-1">
-          <span className="font-semibold text-ink">{t("overview.contractedRent")}</span>
-          <span className="font-mono text-base font-extrabold text-accent">{t("financials.rentAmount")}: {tCommon("labels.rupeeSymbol")}{parseFloat(resident.rent ?? "0").toFixed(2)}</span>
-          <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {resident.joining_date || resident.move_in_date || "--"}</span>
+          {canSeeFinance && resident.contracted_rent != null && (
+            <>
+              <span className="font-semibold text-ink">{t("overview.contractedRent")}</span>
+              <MoneyText value={resident.contracted_rent} className="text-base font-extrabold text-accent" />
+            </>
+          )}
+          <span className="text-[10px] text-ink-faint">{t("overview.joiningDate")}: {formatDate(resident.joining_date || resident.move_in_date)}</span>
         </div>
       </div>
 
@@ -265,7 +340,7 @@ export function ResidentProfile({ id }: { id: string }) {
       <div className="flex border-b border-border bg-surface-card rounded-xl p-1 shadow-sm overflow-x-auto">
         {[
           { id: "overview", label: t("tabs.overview"), icon: UserCheck },
-          { id: "financials", label: t("tabs.financials"), icon: CreditCard },
+          ...(canSeeFinance ? [{ id: "financials", label: t("tabs.financials"), icon: CreditCard }] : []),
           { id: "documents", label: t("tabs.documents"), icon: FileText },
           { id: "maintenance", label: t("tabs.maintenance"), icon: Wrench },
         ].map((tab) => {
@@ -304,7 +379,7 @@ export function ResidentProfile({ id }: { id: string }) {
                 </div>
                 <div>
                   <span className="text-ink-muted">{t("overview.joiningDate")}</span>
-                  <p className="font-semibold text-ink mt-0.5">{resident.joining_date || resident.move_in_date || "--"}</p>
+                  <p className="font-semibold text-ink mt-0.5">{formatDate(resident.joining_date || resident.move_in_date)}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-ink-muted">{t("overview.permanentAddress")}</span>
@@ -355,16 +430,20 @@ export function ResidentProfile({ id }: { id: string }) {
                   <span className="text-ink-muted">{t("overview.propertyBuilding")}</span>
                   <span className="font-semibold text-ink">{resident.block || t("overview.mainBuilding")}</span>
                 </div>
-                <div className="flex justify-between items-center pb-2 border-b border-border/40">
-                  <span className="text-ink-muted">{t("overview.securityDeposit")}</span>
-                  <span className="font-mono font-semibold text-ink">{tCommon("labels.rupeeSymbol")}{parseFloat(resident.deposit ?? "0").toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-ink-muted">{t("overview.rentType")}</span>
-                  <span className="font-semibold text-ink">
-                    {resident.rent_type === "with_food" ? t("overview.withFood") : t("overview.withoutFood")}
-                  </span>
-                </div>
+                {resident.security_deposit_amount != null && (
+                  <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                    <span className="text-ink-muted">{t("overview.securityDeposit")}</span>
+                    <MoneyText value={resident.security_deposit_amount} className="font-semibold text-ink" />
+                  </div>
+                )}
+                {resident.food_preference && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-ink-muted">{t("overview.rentType")}</span>
+                    <span className="font-semibold text-ink">
+                      {resident.food_preference === "with_food" ? t("overview.withFood") : t("overview.withoutFood")}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -400,93 +479,87 @@ export function ResidentProfile({ id }: { id: string }) {
         </div>
       )}
 
-      {/* Tab 2: Financials & Rent History */}
-      {activeTab === "financials" && (
-        <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-3">
-            {t("financials.heading")}
-          </h3>
-          <div className="overflow-x-auto text-xs">
-            {resident.invoices && resident.invoices.length > 0 ? (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
-                    <th className="px-4 py-2.5">{t("financials.tableInvoice")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tablePeriod")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tableAmount")}</th>
-                    <th className="px-4 py-2.5">{t("financials.tableStatus")}</th>
-                    <th className="px-4 py-2.5 text-right">{t("financials.tablePaymentMode")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border text-ink">
-                  {resident.invoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-surface-page/35">
-                      <td className="px-4 py-3 font-mono font-semibold text-accent">{inv.invoice_number || inv.id}</td>
-                      <td className="px-4 py-3 text-ink-muted">{inv.billing_period_start} - {inv.billing_period_end}</td>
-                      <td className="px-4 py-3 font-mono font-semibold">{tCommon("labels.rupeeSymbol")}{parseFloat(inv.total_amount ?? "0").toFixed(2)}</td>
-                      <td className="px-4 py-3">
-                        <StatusPill
-                          label={tStatus(inv.status as "draft" | "issued" | "paid" | "partially_paid" | "void") ?? inv.status}
-                          tone={getStatusTone(inv.status)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right uppercase text-[10px] font-bold text-ink-muted">
-                        {inv.payment_mode || t("financials.onlineMode")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="p-8 text-center text-ink-muted">
-                {t("financials.noInvoices")}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Tab 2: Finance (D6) */}
+      {activeTab === "financials" && canSeeFinance && <FinanceCard resident={resident} />}
 
       {/* Tab 3: Documents & KYC */}
       {activeTab === "documents" && (
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
-          <div className="flex justify-between items-center border-b border-border pb-3">
+          <div className="border-b border-border pb-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("documents.heading")}</h3>
-            <button className="rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer inline-flex items-center gap-1.5">
-              <FileCheck2 className="size-3.5" />
-              {t("documents.uploadNew")}
-            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <h4 className="font-bold text-ink">{t("documents.idProof")}</h4>
-                  <p className="text-[10px] text-ink-muted">{t("overview.aadhaar")}: {resident.aadhaar_number || t("documents.uploaded")}</p>
-                </div>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold">
-                  <CheckCircle className="size-3" /> {t("documents.verified")}
-                </span>
-              </div>
-              <button className="text-accent text-[11px] font-bold hover:underline self-start cursor-pointer pt-2">
-                {t("documents.download")} ›
-              </button>
+          {uploadError && (
+            <div role="alert" className="p-3 rounded-xl bg-status-critical-soft border border-status-critical/20 text-status-critical text-xs font-semibold">
+              {uploadError}
             </div>
+          )}
 
-            <div className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <h4 className="font-bold text-ink">{t("documents.leaseContract")}</h4>
-                  <p className="text-[10px] text-ink-muted">{t("documents.signedOn", { date: resident.joining_date || resident.move_in_date || "--" })}</p>
+          {!kycUploadsEnabled && (
+            <p role="status" className="text-[11px] text-ink-muted leading-relaxed">{t("documents.uploadsDisabled")}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            {DOCUMENT_SLOTS.map(({ field, titleKey, numberKey, number }) => {
+              const url = resident[field];
+              const isUploading = uploadingField === field;
+              return (
+                <div key={field} className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <h4 className="font-bold text-ink">{t(titleKey)}</h4>
+                      <p className="text-[10px] text-ink-muted">{t(numberKey)}: {resident[number] || "--"}</p>
+                    </div>
+                    <span
+                      className={
+                        url
+                          ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold"
+                          : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-page text-ink-muted border border-border text-[9px] font-bold"
+                      }
+                    >
+                      {url && <CheckCircle className="size-3" />} {url ? t("documents.uploaded") : t("documents.notUploaded")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    {url ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent text-[11px] font-bold hover:underline cursor-pointer"
+                      >
+                        {t("documents.download")} ›
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-ink-faint">{t("documents.noDocs")}</span>
+                    )}
+                    <PermissionGate permission="manage_residents">
+                      {kycUploadsEnabled && (
+                      <label
+                        className={`rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors inline-flex items-center gap-1.5 ${
+                          uploadingField ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                        }`}
+                      >
+                        {isUploading ? <LoaderCircle className="size-3.5 animate-spin" /> : <FileCheck2 className="size-3.5" />}
+                        {url ? t("documents.replace") : t("documents.uploadNew")}
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="sr-only"
+                          disabled={uploadingField !== null}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = ""; // allow re-selecting the same file after a failure
+                            void handleDocumentSelected(field, file);
+                          }}
+                        />
+                      </label>
+                      )}
+                    </PermissionGate>
+                  </div>
                 </div>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold">
-                  <CheckCircle className="size-3" /> {t("documents.verified")}
-                </span>
-              </div>
-              <button className="text-accent text-[11px] font-bold hover:underline self-start cursor-pointer pt-2">
-                {t("documents.download")} ›
-              </button>
-            </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -498,7 +571,7 @@ export function ResidentProfile({ id }: { id: string }) {
             {t("maintenance.heading")}
           </h3>
           <div className="overflow-x-auto text-xs">
-            {resident.complaints && resident.complaints.length > 0 ? (
+            {complaints.length > 0 ? (
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-page font-semibold text-ink-muted border-b border-border">
@@ -510,7 +583,7 @@ export function ResidentProfile({ id }: { id: string }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border text-ink">
-                  {resident.complaints.map((c) => (
+                  {complaints.map((c) => (
                     <tr key={c.id} className="hover:bg-surface-page/35">
                       <td className="px-4 py-3 font-mono font-semibold text-accent">#{c.id.substring(0, 6)}</td>
                       <td className="px-4 py-3 font-semibold">{c.description}</td>
@@ -521,7 +594,7 @@ export function ResidentProfile({ id }: { id: string }) {
                           tone={getStatusTone(c.status)}
                         />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-ink-muted">{c.created_at?.split("T")[0]}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-muted">{formatDate(c.created_at, "")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -533,6 +606,19 @@ export function ResidentProfile({ id }: { id: string }) {
             )}
           </div>
         </div>
+      )}
+
+      {isTransferring && (
+        <TransferRoomDialog
+          resident={resident}
+          onClose={() => setIsTransferring(false)}
+          onTransferred={() => {
+            // The transfer response has no resident fields, so re-read the detail (bed, rent, finance).
+            getResident(id).then(setResident).catch(() => {});
+            setActionAlert({ type: "transfer", message: t("transferDone") });
+            setTimeout(() => setActionAlert(null), 4000);
+          }}
+        />
       )}
 
       {/* Edit Resident Profile Modal */}

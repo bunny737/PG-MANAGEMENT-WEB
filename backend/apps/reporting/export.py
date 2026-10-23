@@ -8,7 +8,6 @@ from io import BytesIO, StringIO
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from openpyxl import Workbook
-from weasyprint import HTML
 
 FORMATS = ('csv', 'xlsx', 'pdf')
 
@@ -24,13 +23,13 @@ def _csv_response(filename, columns, rows):
 
 
 def _xlsx_response(filename, columns, rows):
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.append(columns)
+    wb = Workbook()
+    ws = wb.active
+    ws.append(columns)
     for row in rows:
-        sheet.append(row)
+        ws.append(row)
     buffer = BytesIO()
-    workbook.save(buffer)
+    wb.save(buffer)
     response = HttpResponse(
         buffer.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -40,6 +39,7 @@ def _xlsx_response(filename, columns, rows):
 
 
 def _pdf_response(filename, title, columns, rows):
+    from weasyprint import HTML
     html = render_to_string('reporting/export.html', {'title': title, 'columns': columns, 'rows': rows})
     response = HttpResponse(HTML(string=html).write_pdf(), content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{filename}.pdf"'

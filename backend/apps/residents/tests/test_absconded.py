@@ -22,7 +22,7 @@ class AbscondedRecordTests(ResidentAPITestCase):
         self.room = self.create_room(self.floor)
         self.bed = self.create_bed(self.room, bed_number='101-A')
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(self.resident, self.bed, advance_amount=Decimal('1500.00'))
+        self.check_in(self.resident, self.bed, security_deposit_amount=Decimal('1500.00'))
         self.authenticate(self.owner)
 
     def _issue_invoice(self, amount=Decimal('8000.00')):
@@ -53,27 +53,27 @@ class AbscondedRecordTests(ResidentAPITestCase):
         self.assertEqual(self.resident.status, Resident.Status.ABSCONDED)
         self.assertEqual(self.bed.status, Bed.Status.AVAILABLE)
 
-    def test_advance_forfeited_and_applied_against_outstanding_dues(self):
+    def test_deposit_forfeited_and_applied_against_outstanding_dues(self):
         self._issue_invoice(amount=Decimal('8000.00'))
 
         response = self._mark_absconded()
 
-        self.assertEqual(response.data['advance_forfeited'], True)
-        self.assertEqual(response.data['advance_applied_to_dues'], '1500.00')
+        self.assertEqual(response.data['deposit_forfeited'], True)
+        self.assertEqual(response.data['deposit_applied_to_dues'], '1500.00')
         self.assertEqual(response.data['remaining_dues'], '6500.00')
 
-    def test_advance_covers_dues_fully_when_dues_are_small(self):
+    def test_deposit_covers_dues_fully_when_dues_are_small(self):
         self._issue_invoice(amount=Decimal('1000.00'))
 
         response = self._mark_absconded()
 
-        self.assertEqual(response.data['advance_applied_to_dues'], '1000.00')
+        self.assertEqual(response.data['deposit_applied_to_dues'], '1000.00')
         self.assertEqual(response.data['remaining_dues'], '0.00')
 
     def test_no_outstanding_invoices_means_no_dues(self):
         response = self._mark_absconded()
 
-        self.assertEqual(response.data['advance_applied_to_dues'], '0.00')
+        self.assertEqual(response.data['deposit_applied_to_dues'], '0.00')
         self.assertEqual(response.data['remaining_dues'], '0.00')
 
     def test_cannot_mark_non_active_resident_absconded(self):
@@ -106,7 +106,7 @@ class AbscondedWriteOffTests(ResidentAPITestCase):
         self.room = self.create_room(self.floor)
         self.bed = self.create_bed(self.room, bed_number='101-A')
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
-        self.check_in(self.resident, self.bed, advance_amount=Decimal('1500.00'))
+        self.check_in(self.resident, self.bed, security_deposit_amount=Decimal('1500.00'))
         self.authenticate(self.owner)
         self.record = self.client.post(reverse('absconded-record-list'), {
             'resident': str(self.resident.id), 'absconded_date': '2026-07-01',

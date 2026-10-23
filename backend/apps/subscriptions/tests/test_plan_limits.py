@@ -89,7 +89,7 @@ class ResidentLimitTests(SubscriptionAPITestCase):
         resident = self.create_resident(self.property, phone=phone, status=Resident.Status.RESERVED)
         return self.client.post(reverse('admission-list'), {
             'resident': str(resident.id), 'bed': str(bed.id), 'joining_date': '2026-07-01',
-            'billing_mode': 'monthly', 'food_preference': 'with_food', 'advance_amount': '1500.00',
+            'billing_mode': 'monthly', 'food_preference': 'with_food',
         }), resident
 
     def test_hard_block_when_resident_limit_reached(self):
@@ -118,7 +118,7 @@ class ResidentLimitTests(SubscriptionAPITestCase):
         # Different property, same tenant — its own count starts at 0.
         second = self.client.post(reverse('admission-list'), {
             'resident': str(other_resident.id), 'bed': str(other_bed.id), 'joining_date': '2026-07-01',
-            'billing_mode': 'monthly', 'food_preference': 'with_food', 'advance_amount': '1500.00',
+            'billing_mode': 'monthly', 'food_preference': 'with_food',
         })
         self.assertEqual(second.status_code, 201, second.data)
 

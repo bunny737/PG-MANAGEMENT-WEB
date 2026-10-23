@@ -4,29 +4,48 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen:api": "openapi-typescript http://backend:8000/api/schema/ -o src/lib/api-schema.d.ts"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.9.1",
+    "@serwist/next": "^9.5.13",
+    "@tanstack/react-query": "^5.62.7",
+    "@tanstack/react-table": "^8.20.5",
     "clsx": "^2.1.1",
     "eslint-plugin-i18next": "^6.1.5",
+    "firebase": "^13.0.0",
     "lucide-react": "^1.23.0",
-    "next": "16.2.10",
+    "next": "16.3.8",
     "next-intl": "^4.13.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "^3.6.0"
+    "react-hook-form": "^7.54.2",
+    "recharts": "^2.13.3",
+    "serwist": "^9.5.13",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^3.24.1",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.3.8",
+    "jsdom": "^25.0.1",
+    "openapi-typescript": "^7.4.4",
     "playwright": "^1.61.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.8"
   }
 }

@@ -25,6 +25,10 @@ PERMISSION_MATRIX = {
     'manage_tenant_settings': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_subscription': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_properties': (Role.SUPER_ADMIN, Role.OWNER),
+    # Not in PRD §6 — owner decision 2026-10-09: a Manager may edit the
+    # details of a property they're assigned to, but not create one or change
+    # its status (those stay under manage_properties).
+    'edit_properties': _OPS,
     # PRD §6's matrix table lists Owner-only, but PRD Module 2B's prose and its
     # own settings summary table both say "Configurable By: Owner, Manager" —
     # confirmed with the product owner 2026-07-03 that Module 2B is correct.
@@ -32,6 +36,10 @@ PERMISSION_MATRIX = {
     'manage_staff_accounts': (Role.SUPER_ADMIN, Role.OWNER),
     'assign_staff_to_properties': (Role.SUPER_ADMIN, Role.OWNER),
     'manage_rooms_beds': _OPS,
+    # Module 18. Read is wider than write: a Receptionist fields "do you have
+    # parking?" at the desk but doesn't decide what the PG offers.
+    'view_property_features': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
+    'manage_property_features': _OPS,
     'manage_residents': _OPS,
     'manage_admissions': _OPS,
     'manage_allocations': _OPS,
@@ -39,6 +47,16 @@ PERMISSION_MATRIX = {
     'manage_payments': _OPS,
     'manage_deposits': _OPS,
     'manage_discounts': _OPS,
+    # Module-access codes (2026-10-12, owner request — see apps/core/modules.py).
+    # view_dashboard only gates the dashboard *screen* (each card's data is still
+    # enforced by its own module); view_finance is the read side of invoices,
+    # payments and discounts and of the billing money fields on resident/bed views.
+    'view_dashboard': _OPS,
+    'view_finance': _OPS,
+    # Module 20 (Expenses, owner request 2026-10-16 — UX roadmap Phase 4).
+    # Same audience as Finance: a Receptionist doesn't see the PG's spending.
+    'view_expenses': _OPS,
+    'manage_expenses': _OPS,
     'manage_complaints': _OPS,
     'manage_visitors': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_resident_profile': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
@@ -57,6 +75,13 @@ PERMISSION_MATRIX = {
     'view_own_invoices': (Role.RESIDENT,),
     'raise_complaint': (Role.RESIDENT,),
     'request_visitor': (Role.RESIDENT,),
+    # Self-scoped by request.user (Module 14 V2) — every tenant role receives
+    # some notification type today (Owner: trial reminders; all staff roles
+    # are reachable via future types), so this isn't Resident-only like the
+    # rows above. Same "no resident login yet" caveat as raise_complaint /
+    # request_visitor applies until Module 04 adds one.
+    'view_own_notifications': TENANT_ROLES,
+    'manage_notification_preferences': TENANT_ROLES,
 }
 
 
@@ -64,3 +89,12 @@ def permissions_for(role):
     """Sorted permission codes for a role — serialized on /auth/me/ so the
     frontend renders actions from the matrix instead of inferring from role names."""
     return sorted(perm for perm, roles in PERMISSION_MATRIX.items() if role in roles)
+
+
+def permissions_for_user(user):
+    """Sorted permission codes for a user: the role's matrix, adjusted by a staff
+    member's Owner-configured module access (apps/core/modules.py). Every
+    permission check and /auth/me/ resolve through this, never through the bare role."""
+    from .modules import resolve_permissions  # modules.py imports this module
+
+    return resolve_permissions(user)

@@ -1,3 +1,4 @@
+from django.test import override_settings
 from django.urls import reverse
 
 from apps.residents.models import Resident
@@ -22,6 +23,18 @@ class SubscriptionRetrieveTests(SubscriptionAPITestCase):
         self.assertEqual(response.data['max_properties'], 2)
         self.assertEqual(response.data['max_residents_per_property'], 3)
         self.assertEqual(response.data['tenant_status'], 'trial')
+
+    def test_checkout_key_id_is_blank_until_razorpay_is_configured(self):
+        self.authenticate(self.owner)
+        url = reverse('subscription-detail', args=[self.tenant.id])
+
+        self.assertEqual(self.client.get(url).data['razorpay_key_id'], '')
+
+        with override_settings(RAZORPAY_KEY_ID='rzp_test_public', RAZORPAY_KEY_SECRET='super-secret'):
+            response = self.client.get(url)
+
+        self.assertEqual(response.data['razorpay_key_id'], 'rzp_test_public')
+        self.assertNotIn('super-secret', str(response.data))
 
     def test_usage_summary_counts_properties_and_residents(self):
         prop = self.create_property(self.tenant)

@@ -37,9 +37,14 @@ Table: admissions                               (RLS enforced, app: apps.residen
   food_preference           with_food | without_food
   contracted_rent            decimal(12,2)
 
-  advance_amount              decimal(12,2), default 0
+  advance_amount              decimal(12,2), default 0   (rent paid upfront for the first period; min 0)
   advance_collected_date      date, null            (added by Module 10)
   advance_mode                upi | cash | bank_transfer, blank   (added by Module 10)
+  advance_applied_amount      decimal(12,2), default 0   (read-only; set when applied to the first invoice)
+  security_deposit_amount     decimal(12,2), default 0   (refundable deposit; min 0)
+  security_deposit_collected_date  date, null
+  security_deposit_mode       upi | cash | bank_transfer, blank
+  -- advance_refundable = advance_amount - advance_applied_amount (read-only property)
   first_month_billing_amount  decimal(12,2), null   (manual partial-month override)
   first_month_billing_note    text, blank
   addons                      jsonb, default []     (reserved; added by Module 08)
@@ -52,6 +57,7 @@ Table: admissions                               (RLS enforced, app: apps.residen
 ```
 GET|POST   /api/v1/admissions/          list/create (= Check-In)   manage_admissions
 GET        /api/v1/admissions/{id}/     retrieve                   manage_admissions
+           list filters: resident, bed, property (the bed's property; 2026-10-20, dashboard property scoping)
 ```
 No PATCH/DELETE — an admission is immutable once created (405 on both).
 
@@ -142,6 +148,14 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   (`check_resident_limit`, checked per property per PRD §4) to
   `perform_create`, before any bed/resident mutation — a blocked check-in
   leaves the bed/resident untouched. Fail-open when no plan is configured.
+- [DECISION 2026-09-10] **Check-in locks the bed row and re-checks
+  availability.** The serializer's `bed_not_available` check is a bare read;
+  two concurrent admissions (or an admission racing a transfer) could both
+  see the bed AVAILABLE and double-book it. `perform_create` now re-fetches
+  the bed `select_for_update(of=('self',))` inside the transaction and
+  re-validates status before the limit check and any mutation. The same
+  transaction now also carries `check_resident_limit`'s subscription row
+  lock (Module 13), closing the count-then-create window on the plan cap.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -161,3 +175,17 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   `advance_amount`. No behaviour change to Check-In itself.
 - 2026-07-04  Module 13 added a per-property plan-limit check to Check-In
   (see Decisions).
+- 2026-10-04  Admission gained `security_deposit_*` (separate from the
+  advance, see Module 10 update). A collected amount (advance or deposit > 0)
+  requires its date and mode (400 otherwise); negatives rejected. Response adds
+  read-only `advance_applied_amount` and `advance_refundable`.
+- 2026-10-16  Admission accepts a **reserved** bed when it is held for this
+  resident or for nobody (`bed.reserved_for` empty) — the only reserved →
+  occupied path (Module 02 D9). A bed held for someone else stays
+  `bed_not_available`. Check-in clears `reserved_for` / `reserved_until`.
+  Re-checked under the bed row lock as before (`serializers.bed_admits`).
+  [DECISION 2026-10-16, owner] "Allow if for this resident".
+  Tests: `properties/tests/test_bed_transitions.py::AdmissionToReservedBedTests`.
+- 2026-10-20: `property` filter on `GET /admissions/` (`AdmissionFilter`, UUID filter on the bed's property) so the
+  phone dashboard's activity feed follows the property selector. Narrows the caller's visible set only; a malformed
+  id is a 400. Tests: `AdmissionPropertyFilterTests`.

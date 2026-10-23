@@ -5,4 +5,4 @@ class CoreConfig(AppConfig):
     name = 'apps.core'
 
     def ready(self):
-        from . import schema  # noqa: F401 — registers spectacular auth extension
+        from . import checks, schema  # noqa: F401 — schema registers the spectacular auth extension; checks the deploy checks

@@ -155,6 +155,13 @@ history, no update/delete).
   — Module 08 (Billing) is what will actually split/apply rent on the
   effective date. Likewise the temporary-allocation "suggest matching room"
   automation is explicitly V2 (PRD) and not built.
+- [DECISION 2026-09-10] **Bed availability is re-checked under a row lock in
+  `perform_transfer`.** The serializer's `new_bed.status == AVAILABLE` read
+  is not held under a lock, so two concurrent transfers (or a transfer racing
+  a check-in — see Module 05) could both take the same bed. The service now
+  `select_for_update(of=('self',))` on both beds (ordered by id to avoid
+  deadlocks) and re-checks the destination before mutating. Same fix applied
+  to `AdmissionViewSet.perform_create` (Module 05).
 
 ## Changelog
 - 2026-06-xx  Created stub.

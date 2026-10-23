@@ -1,241 +1,236 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
-import { LoaderCircle, AlertTriangle } from "lucide-react";
+import React, { Suspense, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { ActiveIssuesCard } from "@/features/dashboard/ActiveIssuesCard";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
+import { InstallNudge } from "@/features/pwa/InstallNudge";
+import { PropertyPill } from "@/components/mobile/PropertyPill";
+import { WelcomeCard } from "@/features/dashboard/WelcomeCard";
+import {
+  MobileActivityCard,
+  MobileFinancialsCard,
+  MobileIssuesCard,
+  MobileOccupancyCard,
+} from "@/features/dashboard/MobileSections";
+import { formatDate, isLocalToday } from "@/lib/date";
 import { DesktopHeader } from "@/features/dashboard/DesktopHeader";
 import { FinancialsCard } from "@/features/dashboard/FinancialsCard";
 import { OccupancyCard } from "@/features/dashboard/OccupancyCard";
 import { QuickActions } from "@/features/dashboard/QuickActions";
 import { TodaysActivity } from "@/features/dashboard/TodaysActivity";
 import {
-  listAllBeds,
-  listComplaints,
-  listInvoices,
-  listPayments,
+  getAnalyticsSummary,
   listAdmissions,
+  listComplaints,
+  listPaymentsFiltered,
   listResidents,
-  type Bed,
-  type Complaint,
-  type Invoice,
-  type Payment,
-  type Admission,
-  type Resident,
-  ApiError
 } from "@/lib/api";
-import type { DashboardSummary, ActivityItem } from "@/features/dashboard/types";
+import { RequirePermission } from "@/components/shared/RequirePermission";
+import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
+import { useActiveProperty } from "@/components/shared/PropertyFilter";
+import { formatMoney } from "@/lib/money";
+import { currentMonthKey } from "@/lib/period";
+import { queryKeys } from "@/lib/queryKeys";
+import { useSession } from "@/lib/session";
+import type { ActiveIssue, ActivityItem } from "@/features/dashboard/types";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const t = useTranslations("dashboard");
-  const [beds, setBeds] = useState<Bed[]>([]);
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [residents, setResidents] = useState<Resident[]>([]);
-  
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { can } = useSession();
+  const { propertyId } = useActiveProperty();
+  const canSeeFinance = can("view_finance");
+  const canSeeComplaints = can("manage_complaints");
+  const canSeeAdmissions = can("manage_admissions");
+  const canSeeResidents = can("view_resident_profile");
+  const month = currentMonthKey();
 
-  useEffect(() => {
-    let cancelled = false;
+  // D0/D1: occupancy + financials come from one server-computed summary —
+  // no client-side summing of invoice/payment lists (invariant F1).
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.analytics.summary({ property: propertyId, month }),
+    queryFn: () => getAnalyticsSummary({ property: propertyId ?? undefined, month }),
+  });
 
-    Promise.all([
-      listAllBeds(),
-      listComplaints(),
-      listInvoices(),
-      listPayments(),
-      listAdmissions(),
-      listResidents()
-    ])
-      .then(([bedsData, complaintsData, invoicesData, paymentsData, admissionsData, residentsData]) => {
-        if (cancelled) return;
-        setBeds(bedsData);
-        setComplaints(complaintsData);
-        setInvoices(invoicesData);
-        setPayments(paymentsData);
-        setAdmissions(admissionsData);
-        setResidents(residentsData);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : "Failed to load dashboard report metrics.");
-        setIsLoading(false);
-      });
+  // Section-state rule: no permission -> the query is simply disabled, so
+  // nothing is fetched and nothing renders for it; a real error gets its
+  // own retry, never silently swallowed into an empty list.
+  // Every section follows the property selector, not just the summary above: the property is part of
+  // each key, so switching it refetches instead of showing another property's rows from the cache.
+  const property = propertyId ?? undefined;
+  const complaintsQuery = useQuery({
+    queryKey: ["dashboard", "complaints", propertyId],
+    queryFn: () => listComplaints({ property }),
+    enabled: canSeeComplaints,
+  });
+  const admissionsQuery = useQuery({
+    queryKey: ["dashboard", "admissions", propertyId],
+    queryFn: () => listAdmissions({ property }),
+    enabled: canSeeAdmissions,
+  });
+  const residentsQuery = useQuery({
+    queryKey: ["dashboard", "residents", propertyId],
+    queryFn: () => listResidents(property),
+    enabled: canSeeResidents,
+  });
+  const paymentsQuery = useQuery({
+    queryKey: ["dashboard", "payments", month, propertyId],
+    queryFn: () => listPaymentsFiltered({ month, property }),
+    enabled: canSeeFinance,
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { activity, todayActivity } = useMemo<{ activity: ActivityItem[]; todayActivity: ActivityItem[] }>(() => {
+    const admissions = admissionsQuery.data ?? [];
+    const residents = residentsQuery.data ?? [];
+    const payments = paymentsQuery.data ?? [];
+    const complaints = complaintsQuery.data ?? [];
 
-  const summaryData = useMemo<DashboardSummary | null>(() => {
-    if (isLoading || error) return null;
+    // iso is the raw API value: a date-only string (joining/payment date) or a full timestamp (complaint).
+    const feed: Array<{ id: string; tone: ActivityItem["tone"]; text: string; date: Date; iso: string }> = [];
 
-    // 1. Occupancy aggregation
-    const totalBeds = beds.length;
-    const occupiedBeds = beds.filter((b) => b.status === "occupied").length;
-    const vacantBeds = totalBeds - occupiedBeds;
-    const occupiedPercent = totalBeds > 0 ? parseFloat(((occupiedBeds / totalBeds) * 100).toFixed(1)) : 0;
-    const vacantPercent = totalBeds > 0 ? parseFloat(((vacantBeds / totalBeds) * 100).toFixed(1)) : 0;
-
-    // 2. Financials aggregation
-    const now = new Date();
-    // Sum monthly revenue for current month
-    const thisMonthPayments = payments.filter((p) => {
-      const d = new Date(p.payment_date);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    const monthlyRev = thisMonthPayments.reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    
-    // Revenue delta calculation compared to last month
-    const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
-    const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const lastMonthPayments = payments.filter((p) => {
-      const d = new Date(p.payment_date);
-      return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear;
-    });
-    const lastMonthRev = lastMonthPayments.reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    const diff = monthlyRev - lastMonthRev;
-    const direction = diff >= 0 ? "up" as const : "down" as const;
-    const deltaPct = lastMonthRev > 0 ? ((Math.abs(diff) / lastMonthRev) * 100).toFixed(1) : "0";
-    const deltaLabel = diff >= 0 ? `+${deltaPct}% vs last month` : `-${deltaPct}% vs last month`;
-
-    // Outstanding dues (invoices issued or partially paid)
-    const unpaidInvoices = invoices.filter((i) => i.status === "issued" || i.status === "partially_paid");
-    const totalOutstanding = unpaidInvoices.reduce((acc, i) => acc + parseFloat(i.balance_due), 0);
-
-    // Security deposits held
-    const totalDeposits = admissions.reduce((acc, a) => acc + parseFloat(a.advance_amount), 0);
-
-    // 3. Active issues (unresolved complaints)
-    const activeComplaints = complaints.filter(
-      (c) => c.status === "open" || c.status === "assigned" || c.status === "in_progress"
-    );
-    const mappedIssues = activeComplaints.slice(0, 3).map((c) => ({
-      id: c.id,
-      unit: c.resident_details?.unit || "N/A",
-      issue: c.description,
-      status: c.status === "assigned" ? ("open" as const) : (c.status as "open" | "in_progress" | "resolved")
-    }));
-    const highPriorityCount = activeComplaints.filter((c) => c.priority === "high" || c.priority === "urgent").length;
-
-    // 4. Activity feed construction
-    const feed: Array<{ id: string; tone: "info" | "good" | "neutral"; text: string; date: Date; timestamp: string }> = [];
-    
-    // Admissions (Check-ins)
     admissions.forEach((a) => {
       const r = residents.find((res) => res.id === a.resident);
-      const name = r ? `${r.first_name} ${r.last_name || ""}`.trim() : "Resident";
-      const room = r?.unit || "N/A";
-      const d = new Date(a.joining_date);
+      const name = r ? `${r.first_name} ${r.last_name || ""}`.trim() : t("activity.residentFallback");
+      const room = r?.unit || t("activity.roomFallback");
       feed.push({
         id: `adm-${a.id}`,
         tone: "info",
-        text: `New resident **${name}** checked into ${room}.`,
-        date: d,
-        timestamp: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })
+        text: t("activity.checkedIn", { name, room }),
+        date: new Date(a.joining_date),
+        iso: a.joining_date,
       });
     });
 
-    // Payments received
     payments.forEach((p) => {
-      const inv = invoices.find((i) => i.id === p.invoice);
-      const r = inv ? residents.find((res) => res.id === inv.resident) : null;
-      const room = r?.unit || "Room";
-      const d = new Date(p.payment_date);
       feed.push({
         id: `pay-${p.id}`,
         tone: "good",
-        text: `Rent payment received for ${room} (₹${parseFloat(p.amount).toLocaleString("en-IN")}).`,
-        date: d,
-        timestamp: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })
+        text: t("activity.paymentReceived", {
+          room: p.room_number ?? t("activity.roomFallback"),
+          amount: formatMoney(p.amount),
+        }),
+        date: new Date(p.payment_date),
+        iso: p.payment_date,
       });
     });
 
-    // Complaints logged
     complaints.forEach((c) => {
-      const room = c.resident_details?.unit || "Room";
-      const d = new Date(c.created_at);
       feed.push({
         id: `comp-${c.id}`,
         tone: "neutral",
-        text: `New complaint logged for ${room} (${c.category.replace("_", " ")}).`,
-        date: d,
-        timestamp: d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })
+        text: t("activity.complaintLogged", {
+          room: c.resident_details?.unit || t("activity.roomFallback"),
+          category: c.category.replace("_", " "),
+        }),
+        date: new Date(c.created_at),
+        iso: c.created_at,
       });
     });
 
-    // Sort descending by date
-    const sortedFeed: ActivityItem[] = feed
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 5)
-      .map((item) => ({
-        id: item.id,
-        tone: item.tone,
-        text: item.text,
-        timestamp: item.timestamp
-      }));
-
+    const sorted = feed.sort((a, b) => b.date.getTime() - a.date.getTime());
     return {
-      occupancy: {
-        totalBeds,
-        occupiedBeds,
-        vacantBeds,
-        occupiedPercent,
-        vacantPercent
-      },
-      financials: {
-        monthlyRevenue: `₹${monthlyRev.toLocaleString("en-IN")}`,
-        revenueDelta: { direction, label: deltaLabel },
-        outstandingDues: `₹${totalOutstanding.toLocaleString("en-IN")}`,
-        securityDeposits: `₹${totalDeposits.toLocaleString("en-IN")}`
-      },
-      issues: mappedIssues,
-      highPriorityIssueCount: highPriorityCount,
-      activity: sortedFeed
+      // Desktop: the latest five, whatever day they happened.
+      activity: sorted.slice(0, 5).map(({ id, tone, text, date }) => ({
+        id,
+        tone,
+        text,
+        timestamp: formatDate(date),
+      })),
+      // Phone: only what happened on the device's local calendar day, so the section name is truthful.
+      todayActivity: sorted
+        .filter(({ iso }) => isLocalToday(iso))
+        .slice(0, 8)
+        .map(({ id, tone, text, date, iso }) => ({
+          id,
+          tone,
+          text,
+          timestamp: iso.includes("T")
+            ? date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })
+            : formatDate(iso),
+        })),
     };
-  }, [isLoading, error, beds, complaints, invoices, payments, admissions, residents]);
+  }, [admissionsQuery.data, residentsQuery.data, paymentsQuery.data, complaintsQuery.data, t]);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-32 text-sm text-ink-muted">
-        <LoaderCircle className="size-8 animate-spin text-accent" />
-        <p className="font-semibold mt-2">{t("loadingSummary")}</p>
-      </div>
-    );
-  }
+  // The phone activity card is built from up to four queries. Until the ones this user can read have settled
+  // it must not claim "No activity today", and if one failed the feed is incomplete, not empty.
+  const activitySources = [
+    canSeeAdmissions && admissionsQuery,
+    canSeeResidents && residentsQuery,
+    canSeeFinance && paymentsQuery,
+    canSeeComplaints && complaintsQuery,
+  ].filter((query) => query !== false);
+  const activityFailed = activitySources.filter((query) => query.isError);
+  const activityPending = activityFailed.length === 0 && activitySources.some((query) => query.isPending);
 
-  if (error || !summaryData) {
-    return (
-      <div className="space-y-4 max-w-md mx-auto py-16 text-center">
-        <div className="flex size-14 items-center justify-center rounded-full bg-status-critical-soft text-status-critical border border-status-critical/10 mx-auto">
-          <AlertTriangle className="size-6" />
-        </div>
-        <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
-        <p className="text-sm text-ink-muted leading-relaxed">
-          {error || t("errLoadDesc")}
-        </p>
-      </div>
-    );
-  }
+  const issues = useMemo<ActiveIssue[]>(() => {
+    const complaints = complaintsQuery.data ?? [];
+    return complaints
+      .filter((c) => c.status === "open" || c.status === "assigned" || c.status === "in_progress")
+      .slice(0, 3)
+      .map((c) => ({
+        id: c.id,
+        unit: c.resident_details?.unit || t("activity.roomFallback"),
+        issue: c.description,
+        status: c.status === "assigned" ? ("open" as const) : (c.status as "open" | "in_progress" | "resolved"),
+      }));
+  }, [complaintsQuery.data, t]);
+
+  const highPriorityCount = (complaintsQuery.data ?? []).filter(
+    (c) => (c.status === "open" || c.status === "assigned" || c.status === "in_progress") &&
+      (c.priority === "high" || c.priority === "urgent")
+  ).length;
+
+  const summary = summaryQuery.data;
+  const occupancy = summary
+    ? {
+        totalBeds: summary.occupancy.total,
+        occupiedBeds: summary.occupancy.occupied,
+        vacantBeds: summary.occupancy.available,
+        occupiedPercent: summary.occupancy.occupancy_rate ?? 0,
+        vacantPercent:
+          summary.occupancy.total > 0
+            ? Math.round((summary.occupancy.available / summary.occupancy.total) * 1000) / 10
+            : 0,
+      }
+    : null;
+  const financials = summary?.finance
+    ? {
+        monthlyRevenue: formatMoney(summary.finance.cash_collected),
+        outstandingDues: formatMoney(summary.finance.outstanding_total),
+        securityDeposits: formatMoney(summary.finance.deposits_held),
+      }
+    : null;
 
   return (
     <>
       {/* Mobile */}
       <div className="mx-auto flex max-w-md flex-col gap-4 pb-6 md:hidden">
         <DashboardHeader />
-        <QuickActions />
         <div className="flex flex-col gap-4 px-4">
-          <OccupancyCard data={summaryData.occupancy} />
-          <FinancialsCard data={summaryData.financials} />
-          <ActiveIssuesCard
-            issues={summaryData.issues}
-            highPriorityCount={summaryData.highPriorityIssueCount}
-          />
+          <InstallNudge />
+          <PropertyPill wide />
+          <WelcomeCard />
+          <QuickActions />
+          {summaryQuery.isLoading && <SectionSkeleton className="h-40" />}
+          {summaryQuery.isError && <SectionError onRetry={() => summaryQuery.refetch()} />}
+          {occupancy && <MobileOccupancyCard data={occupancy} />}
+          {canSeeFinance && financials && <MobileFinancialsCard data={financials} />}
+          {canSeeComplaints && (
+            <>
+              {complaintsQuery.isLoading && <SectionSkeleton className="h-32" />}
+              {complaintsQuery.isError && <SectionError onRetry={() => complaintsQuery.refetch()} />}
+              {complaintsQuery.isSuccess && <MobileIssuesCard issues={issues} highPriorityCount={highPriorityCount} />}
+            </>
+          )}
+          {activitySources.length > 0 &&
+            (activityFailed.length > 0 ? (
+              <SectionError onRetry={() => activityFailed.forEach((query) => void query.refetch())} />
+            ) : activityPending ? (
+              <SectionSkeleton className="h-40" />
+            ) : (
+              <MobileActivityCard items={todayActivity} />
+            ))}
         </div>
       </div>
 
@@ -243,19 +238,34 @@ export default function DashboardPage() {
       <div className="hidden md:block">
         <DesktopHeader />
         <div className="flex flex-col gap-6 p-8">
-          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
-            <OccupancyCard data={summaryData.occupancy} />
-            <FinancialsCard data={summaryData.financials} />
+          <div className={`grid grid-cols-1 items-stretch gap-6 ${canSeeFinance ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
+            {summaryQuery.isLoading && <SectionSkeleton className="h-48" />}
+            {summaryQuery.isError && <SectionError onRetry={() => summaryQuery.refetch()} />}
+            {occupancy && <OccupancyCard data={occupancy} />}
+            {canSeeFinance && financials && <FinancialsCard data={financials} />}
           </div>
-          <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[2fr_1fr]">
-            <ActiveIssuesCard
-              issues={summaryData.issues}
-              highPriorityCount={summaryData.highPriorityIssueCount}
-            />
-            <TodaysActivity items={summaryData.activity} />
+          <div className={`grid grid-cols-1 items-stretch gap-6 ${canSeeComplaints ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
+            {canSeeComplaints && (
+              <>
+                {complaintsQuery.isLoading && <SectionSkeleton className="h-48" />}
+                {complaintsQuery.isError && <SectionError onRetry={() => complaintsQuery.refetch()} />}
+                {complaintsQuery.isSuccess && <ActiveIssuesCard issues={issues} highPriorityCount={highPriorityCount} />}
+              </>
+            )}
+            <TodaysActivity items={activity} />
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <RequirePermission permission="view_dashboard">
+      <Suspense>
+        <DashboardContent />
+      </Suspense>
+    </RequirePermission>
   );
 }

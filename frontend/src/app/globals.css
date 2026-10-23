@@ -33,6 +33,30 @@
   --color-status-critical: #dc2626;
   --color-status-critical-soft: #fee2e2;
 
+  /* Phone UI (Material 3, matching the Android app; sampled from its screenshots). Used only by
+     components/mobile/* and the phone-only (< md) markup; the desktop tokens above are untouched. */
+  --color-m3-primary: #3e5fe0;
+  --color-m3-on-primary: #ffffff;
+  --color-m3-primary-container: #dde0ff;
+  --color-m3-on-primary-container: #00164e;
+  --color-m3-surface: #fbf8ff;
+  --color-m3-surface-page: #f7f8fa;
+  --color-m3-surface-container: #eeedf3;
+  --color-m3-surface-container-high: #f0eff4;
+  --color-m3-on-surface: #1b1b1f;
+  --color-m3-on-surface-variant: #46464f;
+  --color-m3-outline-variant: #c7c6ce;
+  --color-m3-tertiary-container: #e7dff6;
+  --color-m3-on-tertiary-container: #2b1f4d;
+  --color-m3-good-container: #d6f5e3;
+  --color-m3-good: #1e8e3e;
+  --color-m3-warn-container: #fbf0d2;
+  --color-m3-warn: #c77700;
+  --color-m3-total-container: #e9defe;
+  --color-m3-total: #6a40c4;
+  --color-m3-critical-container: #fde2e2;
+  --color-m3-critical: #c62828;
+
   /* Elevation — low-alpha layered shadows tinted with the ink hue, so cards
      lift off the page without the grey haze of a plain black shadow. */
   --shadow-xs: 0 1px 2px 0 rgb(11 18 32 / 0.04);
@@ -67,6 +91,28 @@
   --color-status-warn-soft: var(--color-status-warn-soft);
   --color-status-critical: var(--color-status-critical);
   --color-status-critical-soft: var(--color-status-critical-soft);
+
+  --color-m3-primary: var(--color-m3-primary);
+  --color-m3-on-primary: var(--color-m3-on-primary);
+  --color-m3-primary-container: var(--color-m3-primary-container);
+  --color-m3-on-primary-container: var(--color-m3-on-primary-container);
+  --color-m3-surface: var(--color-m3-surface);
+  --color-m3-surface-page: var(--color-m3-surface-page);
+  --color-m3-surface-container: var(--color-m3-surface-container);
+  --color-m3-surface-container-high: var(--color-m3-surface-container-high);
+  --color-m3-on-surface: var(--color-m3-on-surface);
+  --color-m3-on-surface-variant: var(--color-m3-on-surface-variant);
+  --color-m3-outline-variant: var(--color-m3-outline-variant);
+  --color-m3-tertiary-container: var(--color-m3-tertiary-container);
+  --color-m3-on-tertiary-container: var(--color-m3-on-tertiary-container);
+  --color-m3-good-container: var(--color-m3-good-container);
+  --color-m3-good: var(--color-m3-good);
+  --color-m3-warn-container: var(--color-m3-warn-container);
+  --color-m3-warn: var(--color-m3-warn);
+  --color-m3-total-container: var(--color-m3-total-container);
+  --color-m3-total: var(--color-m3-total);
+  --color-m3-critical-container: var(--color-m3-critical-container);
+  --color-m3-critical: var(--color-m3-critical);
 
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
@@ -144,6 +190,20 @@
   }
 }
 
+/* Phone typography: Roboto (the Android app's face) with the same per-glyph fallbacks as the desktop
+   stack. Unlayered on purpose: it must beat the global `h1…h4 { font-family: var(--font-display) }` rule
+   and the `font-display` utility, both of which live in cascade layers. The class sits on the (owner)
+   layout wrapper; above the md breakpoint nothing changes. */
+@media (max-width: 767px) {
+  .phone-ui,
+  .phone-ui :is(h1, h2, h3, h4),
+  .phone-ui .font-display,
+  .phone-ui .font-sans {
+    font-family: var(--font-roboto), var(--font-noto-sans), var(--font-noto-sans-telugu), system-ui, sans-serif;
+    letter-spacing: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -151,5 +211,16 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* iOS Safari zooms the whole page when a focused form control has a font size under 16px,
+   and the installed app never zooms back out. Unlayered on purpose so it beats Tailwind's
+   text-sm / text-xs utilities, which live in a cascade layer. Touch devices only. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
   }
 }

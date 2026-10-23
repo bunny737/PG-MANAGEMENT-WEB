@@ -20,6 +20,10 @@ staticfiles/
 .venv/
 venv/
 env/
+*firebase-adminsdk*.json
+*service-account*.json
+# Backend secrets mounted into containers at /run/secrets (docker-compose.yml)
+secrets/
 
 # IDE
 .vscode/

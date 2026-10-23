@@ -97,6 +97,14 @@ class Invoice(TenantModelMixin):
     class Meta:
         db_table = 'invoices'
         ordering = ['-period_start', '-created_at']
+        constraints = [
+            # One invoice per resident per billing period. The generate/bulk-
+            # generate `.exists()` pre-checks race without this backstop
+            # (concurrent "generate" clicks would bill the resident twice).
+            models.UniqueConstraint(
+                fields=['resident', 'period_start'], name='unique_invoice_per_resident_period',
+            ),
+        ]
 
     def __str__(self):
         return f'Invoice {self.resident} {self.period_start}'
@@ -198,10 +206,48 @@ class Payment(TenantModelMixin):
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='payments_recorded'
     )
+    # Per-tenant sequential receipt number ("RCT-000123"), assigned under the
+    # ReceiptCounter row lock when the payment is recorded. Never reused, even
+    # if the payment is later deleted as a correction.
+    receipt_number = models.CharField(max_length=20, null=True, blank=True)
+    # Client-supplied Idempotency-Key of the POST that created this payment
+    # (apps/core/idempotency.py). Null for payments recorded without one.
+    idempotency_key = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         db_table = 'payments'
         ordering = ['-payment_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant_id', 'receipt_number'], name='unique_payment_receipt_number',
+            ),
+            models.UniqueConstraint(
+                fields=['tenant_id', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False),
+                name='unique_payment_idempotency_key',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.amount} via {self.get_payment_mode_display()} on {self.payment_date}'
+
+
+class ReceiptCounter(TenantModelMixin):
+    """One row per tenant holding the last receipt number issued. Locked with
+    SELECT ... FOR UPDATE while a payment is recorded so two concurrent
+    payments can never share a number."""
+
+    PREFIX = 'RCT-'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'receipt_counters'
+        constraints = [
+            models.UniqueConstraint(fields=['tenant_id'], name='unique_receipt_counter_per_tenant'),
+        ]
+
+    @classmethod
+    def format(cls, number):
+        return f'{cls.PREFIX}{number:06d}'

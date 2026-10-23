@@ -29,8 +29,11 @@ class TrialExpiryReminderTests(AuthAPITestCase):
         return tenant
 
     def _logs(self, tenant_id):
+        # trial_expiry_reminder also attempts a push channel (registry.py) —
+        # skipped here since no Firebase credentials are configured
+        # (channels/push.py); filter to the email channel these tests exercise.
         with tenant_context(tenant_id):
-            return list(NotificationLog.objects.filter(notification_type='trial_expiry_reminder'))
+            return list(NotificationLog.objects.filter(notification_type='trial_expiry_reminder', channel='email'))
 
     def test_sends_reminder_at_first_offset(self):
         tenant = self._tenant_with_days_remaining(15)

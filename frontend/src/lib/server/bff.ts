@@ -32,8 +32,17 @@ const TOKEN_ISSUING_PATHS = new Set([
   "auth/password/change",
 ]);
 
-export function isTokenIssuingPath(apiPath: string): boolean {
-  return TOKEN_ISSUING_PATHS.has(apiPath.replace(/^v1\//, "").replace(/\/+$/, ""));
+/** Endpoints that issue a token pair only on POST. Their GET/DELETE (viewing or cancelling an
+ * account-deletion request) carry no tokens and stay on the generic proxy. */
+const TOKEN_ISSUING_POST_PATHS = new Set(["auth/account/deletion"]);
+
+/** `method` defaults to POST, the strictest reading: a caller that does not say is refused. */
+export function isTokenIssuingPath(apiPath: string, method: string = "POST"): boolean {
+  const normalized = apiPath.replace(/^v1\//, "").replace(/\/+$/, "");
+  return (
+    TOKEN_ISSUING_PATHS.has(normalized) ||
+    (method.toUpperCase() === "POST" && TOKEN_ISSUING_POST_PATHS.has(normalized))
+  );
 }
 
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;

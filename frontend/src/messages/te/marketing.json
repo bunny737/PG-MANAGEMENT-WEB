@@ -38,6 +38,10 @@
     },
     "notFound": {
       "title": "పేజీ కనుగొనబడలేదు — PGLive"
+    },
+    "deleteAccount": {
+      "title": "మీ ఖాతాను తొలగించండి — PGLive",
+      "description": "మీ PGLive ఖాతా మరియు డేటాను ఎలా తొలగించాలి, ఏది తొలగించబడుతుంది, మేము ఏమి ఉంచుకుంటాము."
     }
   },
   "nav": {
@@ -428,7 +432,8 @@
     "privacy": "గోప్యతా విధానం",
     "terms": "సేవా నిబంధనలు",
     "refund": "రీఫండ్ & రద్దు విధానం",
-    "copyright": "© {year} {company}. అన్ని హక్కులూ ప్రత్యేకించబడ్డాయి."
+    "copyright": "© {year} {company}. అన్ని హక్కులూ ప్రత్యేకించబడ్డాయి.",
+    "deleteAccount": "మీ PGLive ఖాతాను తొలగించండి"
   },
   "notFound": {
     "title": "ఆ పేజీ మాకు దొరకలేదు",
@@ -491,7 +496,7 @@
         },
         {
           "heading": "How long we keep it",
-          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can ask us to delete your data at any time."
+          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can delete your account yourself at any time (see \"Delete your PGLive account\" in the footer); it is then permanently deleted after a waiting period of at least 7 days, apart from the billing and tax records mentioned above."
         },
         {
           "heading": "Your rights",
@@ -638,6 +643,36 @@
         {
           "heading": "Changes",
           "body": "We will post any changes to this policy on this page and update the date above."
+        }
+      ]
+    },
+    "deleteAccount": {
+      "title": "మీ PGLive ఖాతాను తొలగించండి",
+      "updated": "చివరిగా నవీకరించబడింది: 23 అక్టోబర్ 2026",
+      "intro": "మీరు మీ PGLive ఖాతాను వెబ్‌లో లేదా యాప్‌లో మీరే తొలగించుకోవచ్చు. PGLive ను {company} అందిస్తుంది. ఎలా తొలగించాలో, ఏది తొలగించబడుతుందో, మేము ఏమి ఉంచుకుంటామో ఈ పేజీ వివరిస్తుంది.",
+      "signIn": "మీ ఖాతాను తొలగించడానికి సైన్ ఇన్ చేయండి",
+      "contactHeading": "సైన్ ఇన్ చేయలేకపోతున్నారా?",
+      "contactBody": "మీ వ్యాపార ఖాతా సస్పెండ్ అయిన వంటి కారణాల వల్ల సైన్ ఇన్ చేయలేకపోతే, కింది వివరాలతో మమ్మల్ని సంప్రదించండి. మీరు ఎవరో నిర్ధారించుకున్న తర్వాత మేము సహాయం చేస్తాము.",
+      "sections": [
+        {
+          "heading": "ఖాతాను ఎలా తొలగించాలి",
+          "body": "వెబ్‌లో లేదా యాప్‌లో PGLive కు సైన్ ఇన్ చేసి, మీ ప్రొఫైల్ తెరిచి, ఖాతాను తొలగించండి ఎంచుకోండి. మీ పాస్‌వర్డ్‌తో లేదా మేము ఇమెయిల్ చేసే కోడ్‌తో నిర్ధారించండి. మీరు ఈ పేజీ నుండే ప్రారంభించవచ్చు: సైన్ ఇన్ చేసి, ఆపై మీ ప్రొఫైల్ తెరవండి."
+        },
+        {
+          "heading": "తర్వాత ఏమి జరుగుతుంది",
+          "body": "మీ ఖాతా వెంటనే లాక్ అవుతుంది మరియు మీ ఇతర పరికరాల్లో సైన్ అవుట్ అవుతారు. కనీసం 7 రోజుల నిరీక్షణ తర్వాత, భారత కాలమానం ప్రకారం అర్ధరాత్రి ఇది శాశ్వతంగా తొలగించబడుతుంది. అప్పటివరకు మీరు సైన్ ఇన్ చేసి అభ్యర్థనను రద్దు చేయవచ్చు. తొలగింపు ప్రారంభమైన తర్వాత దీన్ని రద్దు చేయలేరు."
+        },
+        {
+          "heading": "మీరు యజమాని (Owner) అయితే",
+          "body": "యజమాని ఖాతాను తొలగిస్తే మొత్తం వ్యాపారం తొలగించబడుతుంది: ప్రాపర్టీలు, గదులు మరియు బెడ్‌లు, నివాసితులు మరియు వారి రికార్డులు (అప్‌లోడ్ చేసిన ID పత్రాలతో సహా), ఇన్వాయిస్‌లు, చెల్లింపులు, ఫిర్యాదులు, సందర్శకులు, ఖర్చులు, నోటిఫికేషన్ చరిత్ర, మరియు మీ మేనేజర్ మరియు రిసెప్షనిస్ట్ ఖాతాల లాగిన్‌లు. తొలగింపు జరిగినప్పుడు మీ PGLive సబ్‌స్క్రిప్షన్ రద్దు అవుతుంది. తర్వాత ఏదీ తిరిగి పొందలేరు కాబట్టి, నిర్ధారించే ముందు మీకు అవసరమైనది రిపోర్ట్స్ నుండి ఎగుమతి చేసుకోండి."
+        },
+        {
+          "heading": "మీరు మేనేజర్ లేదా రిసెప్షనిస్ట్ అయితే",
+          "body": "మీ ఖాతాను తొలగిస్తే మీ లాగిన్, మీ నోటిఫికేషన్ సెట్టింగ్‌లు మరియు పరికరాలు, మరియు మా వద్ద ఉన్న మీ వ్యక్తిగత వివరాలు తొలగించబడతాయి. మీరు వ్యాపారం కోసం సృష్టించిన రికార్డులు (ఉదాహరణకు మీరు జారీ చేసిన ఇన్వాయిస్) మీ పేరు లేకుండా వ్యాపారం వద్దే ఉంటాయి."
+        },
+        {
+          "heading": "మేము ఏమి ఉంచుకుంటాము",
+          "body": "పన్ను చట్టం కోరుతున్నందున PGLive సబ్‌స్క్రిప్షన్ యొక్క బిల్లింగ్ రికార్డులను (ప్లాన్, ఇన్వాయిస్‌లు, మొత్తాలు, తేదీలు, చెల్లింపు రిఫరెన్స్‌లు మరియు వ్యాపారం పేరు) మేము ఉంచుకుంటాము. ఆ రికార్డులలోని చెల్లింపు సంప్రదింపు వివరాల వంటి వ్యక్తిగత వివరాలు తొలగించబడతాయి. సాంకేతిక లాగ్‌లు మా గోప్యతా విధానంలోని షెడ్యూల్ ప్రకారం తొలగించబడతాయి."
         }
       ]
     }

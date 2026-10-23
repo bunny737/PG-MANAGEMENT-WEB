@@ -16,15 +16,16 @@ from rest_framework_simplejwt.serializers import (
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.audit import log as audit_log
-from apps.core.authentication import BLOCKED_TENANT_STATUSES
+from apps.core.authentication import BLOCKED_TENANT_STATUSES, active_deletion_for
 from apps.core.models import PlatformConfig
 from apps.core.modules import validate_levels_payload
 from apps.core.roles import Role, STAFF_ROLES, permissions_for_user
 from apps.core.tasks import enqueue
 from apps.subscriptions.models import Subscription
 
+from . import deletion as account_deletion
 from . import otp as otp_service
-from .models import Tenant, User
+from .models import AccountDeletionRequest, Tenant, User
 from .normalization import normalize_email, normalize_phone
 from .tasks import (
     send_login_code_task,
@@ -50,7 +51,13 @@ def _check_user_can_authenticate(user, *, require_verified_email=True):
         raise AuthenticationFailed(
             _('Verify your email address to log in.'), code='email_not_verified'
         )
-    if user.tenant_id is not None and user.tenant.status in BLOCKED_TENANT_STATUSES:
+    # Module 22: a user with an ACTIVE deletion request may still sign in even if the tenant
+    # was suspended meanwhile — the token they get is limited to viewing/cancelling the request.
+    if (
+        user.tenant_id is not None
+        and user.tenant.status in BLOCKED_TENANT_STATUSES
+        and active_deletion_for(user) is None
+    ):
         raise AuthenticationFailed(
             _('This account is suspended.'), code='subscription_suspended'
         )
@@ -215,7 +222,11 @@ class RefreshSerializer(TokenRefreshSerializer):
             raise AuthenticationFailed(
                 _('No active account found.'), code='no_active_account'
             )
-        if user.tenant_id is not None and user.tenant.status in BLOCKED_TENANT_STATUSES:
+        if (
+            user.tenant_id is not None
+            and user.tenant.status in BLOCKED_TENANT_STATUSES
+            and active_deletion_for(user) is None
+        ):
             raise AuthenticationFailed(
                 _('This account is suspended.'), code='subscription_suspended'
             )
@@ -504,15 +515,19 @@ class MeSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer(read_only=True)
     permissions = serializers.SerializerMethodField()
     kyc_uploads_enabled = serializers.SerializerMethodField()
+    deletion = serializers.SerializerMethodField()
+    deletion_confirm_methods = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone', 'role',
             'language_code', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
+            'deletion', 'deletion_confirm_methods',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
+            'deletion', 'deletion_confirm_methods',
         ]
 
     def get_permissions(self, obj) -> list[str]:
@@ -521,6 +536,72 @@ class MeSerializer(serializers.ModelSerializer):
     def get_kyc_uploads_enabled(self, obj) -> bool:
         """Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False."""
         return settings.KYC_UPLOADS_ENABLED
+
+    def get_deletion(self, obj) -> dict | None:
+        """The ACTIVE account-deletion request that locks this user (their own, or their
+        business's), so clients can show the "scheduled for deletion" screen. None when unlocked."""
+        deletion = account_deletion.active_request_for(obj)
+        if deletion is None:
+            return None
+        return {
+            'scope': deletion.scope,
+            'status': deletion.status,
+            'scheduled_for': deletion.scheduled_for,
+            'can_cancel': account_deletion.can_cancel(deletion, obj),
+        }
+
+    def get_deletion_confirm_methods(self, obj) -> list[str]:
+        """Which of 'password' / 'otp_email' / 'otp_phone' can confirm a deletion request right now."""
+        return account_deletion.confirm_methods(obj)
+
+
+class AccountDeletionSerializer(serializers.ModelSerializer):
+    """An account-deletion request as its owner sees it."""
+
+    can_cancel = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AccountDeletionRequest
+        fields = ['id', 'scope', 'status', 'requested_at', 'scheduled_for', 'can_cancel']
+        read_only_fields = fields
+
+    def get_can_cancel(self, obj) -> bool:
+        request = self.context.get('request')
+        return bool(request) and account_deletion.can_cancel(obj, request.user)
+
+
+class AccountDeletionCreateSerializer(serializers.Serializer):
+    """Confirms a deletion request: the account's password, or a deletion-purpose email code.
+    A login code never works here (OTPs are bound to their purpose)."""
+
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    # Malformed codes are a 400 before any lookup, so they never use up one of the code's attempts.
+    otp = serializers.RegexField(r'^\d{6}$', write_only=True, required=False, allow_blank=True)
+    confirm = serializers.BooleanField()
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate_confirm(self, value):
+        if value is not True:
+            raise serializers.ValidationError(_('Confirm that you want to delete your account.'), code='not_confirmed')
+        return value
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        password, code = attrs.get('password') or '', attrs.get('otp') or ''
+        if bool(password) == bool(code):
+            raise serializers.ValidationError(
+                {'detail': [_('Confirm with your password or an emailed code.')]}, code='confirmation_required',
+            )
+        if password:
+            if not user.has_usable_password() or not user.check_password(password):
+                raise serializers.ValidationError({'password': [_('Incorrect password.')]}, code='invalid_password')
+        else:
+            # No outer transaction: verify() commits the failed-attempt counter even though this raises.
+            if not user.email or not otp_service.verify(
+                user, code, otp_service.Channel.EMAIL, purpose=otp_service.OtpCode.Purpose.ACCOUNT_DELETION,
+            ):
+                raise serializers.ValidationError({'otp': [_('The code is incorrect or has expired.')]}, code='invalid_otp')
+        return attrs
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):

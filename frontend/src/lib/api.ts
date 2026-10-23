@@ -7,6 +7,12 @@
 import { readLocaleCookie, writeLocaleCookie } from "@/i18n/locale";
 import { CACHE_SCOPE_HEADER, getCacheScope } from "@/lib/cacheScope";
 import { awaitPendingPurge, registerSessionCleanup, runPreLogoutSteps, runSessionCleanups } from "@/lib/sessionPurge";
+import {
+  DELETION_LOCK_CODES,
+  DELETION_PENDING_ROUTE,
+  type AccountDeletion,
+  type DeletionConfirmMethod,
+} from "@/lib/accountDeletion";
 
 // Same-origin: the BFF proxy owns the Django origin (INTERNAL_API_URL, server-side only).
 const API_BASE_URL = "";
@@ -135,6 +141,26 @@ interface ApiFetchOptions extends RequestInit {
   skipAuth?: boolean;
 }
 
+/**
+ * A 403 is either a locked account or a plain permission refusal.
+ *
+ * An account scheduled for deletion answers 403 with a deletion code on every route but the status and
+ * cancel ones. That is NOT a dead session (unlike a 401), so the session is kept and the user goes to the
+ * one screen the account can still use — unless they are already there, which would loop.
+ *
+ * Anything else: the Owner may have just changed this user's access, so lib/session.ts re-fetches
+ * /auth/me/ immediately (bypassing its focus throttle) so gated UI updates now.
+ */
+function handleForbidden(body: ApiErrorBody) {
+  if (typeof window === "undefined") return;
+  const code = typeof body.code === "string" ? body.code.toUpperCase() : "";
+  if (DELETION_LOCK_CODES.has(code)) {
+    if (window.location.pathname !== DELETION_PENDING_ROUTE) window.location.href = DELETION_PENDING_ROUTE;
+    return;
+  }
+  window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const isFormData = options.body instanceof FormData;
   const headers = new Headers(options.headers);
@@ -162,12 +188,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   if (!res.ok) {
-    if (res.status === 403 && typeof window !== "undefined") {
-      // The Owner may have just changed this user's access: lib/session.ts re-fetches
-      // /auth/me/ immediately (bypassing its focus throttle) so gated UI updates now.
-      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
-    }
-    throw new ApiError(res.status, await parseErrorBody(res));
+    const body = await parseErrorBody(res);
+    if (res.status === 403) handleForbidden(body);
+    throw new ApiError(res.status, body);
   }
 
   if (res.status === 204) return undefined as T;
@@ -212,10 +235,9 @@ export async function apiFetchWithMeta<T>(
   }
 
   if (!res.ok) {
-    if (res.status === 403 && typeof window !== "undefined") {
-      window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
-    }
-    throw new ApiError(res.status, await parseErrorBody(res));
+    const body = await parseErrorBody(res);
+    if (res.status === 403) handleForbidden(body);
+    throw new ApiError(res.status, body);
   }
 
   const data = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
@@ -250,7 +272,9 @@ export async function apiDownload(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, await parseErrorBody(res));
+    const body = await parseErrorBody(res);
+    if (res.status === 403) handleForbidden(body);
+    throw new ApiError(res.status, body);
   }
 
   const disposition = res.headers.get("Content-Disposition") ?? "";
@@ -1252,10 +1276,39 @@ export interface CurrentUser {
   permissions?: string[];
   /** Launch gate for new Aadhaar/PAN uploads. Absent (an older cached profile) means off. */
   kyc_uploads_enabled?: boolean;
+  /** The account-deletion request locking this account (its own, or its business's); null when none. */
+  deletion?: AccountDeletion | null;
+  /** How a deletion request can be confirmed right now (password, emailed code). */
+  deletion_confirm_methods?: DeletionConfirmMethod[];
 }
 
 export function getCurrentUser() {
   return apiFetch<CurrentUser>("/api/v1/auth/me/");
+}
+
+/** Asks to delete the signed-in account (an Owner's request deletes the whole business). The route
+ * handler installs the replacement token pair Django answers with — the request ends every session,
+ * this one included — so the caller stays signed in long enough to see (and cancel) it. */
+export async function requestAccountDeletion(payload: { password?: string; otp?: string; reason?: string }) {
+  const result = await apiFetch<{ deletion: AccountDeletion }>("/api/auth/request-account-deletion", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, confirm: true }),
+  });
+  return result.deletion;
+}
+
+/** Emails a deletion-purpose code (it cannot sign anyone in). */
+export async function sendAccountDeletionCode() {
+  await apiFetch<{ detail: string }>("/api/v1/auth/account/deletion/otp/", { method: "POST" });
+}
+
+export function getAccountDeletion() {
+  return apiFetch<AccountDeletion>("/api/v1/auth/account/deletion/");
+}
+
+/** Cancels the pending request; only the requester (or the business's Owner) may, and only while pending. */
+export async function cancelAccountDeletion() {
+  await apiFetch<void>("/api/v1/auth/account/deletion/", { method: "DELETE" });
 }
 
 export function updateMe(payload: { first_name?: string; last_name?: string; phone?: string; language_code?: string }) {

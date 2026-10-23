@@ -76,6 +76,7 @@ describe("marketing pages stay out of the worker's page cache", () => {
     "/privacy",
     "/terms",
     "/refund-policy",
+    "/delete-account",
     "/pricing/",
     "/features/x",
   ])(

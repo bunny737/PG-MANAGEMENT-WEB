@@ -19,6 +19,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from apps.accounts.models import Tenant
 from apps.audit import log as audit_log
+from apps.core.exceptions import Conflict
 from apps.core.models import PlatformConfig
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Property
@@ -313,6 +314,7 @@ def select_plan(*, subscription, plan, actor, request=None):
     # Same lock as the limit checks, so a bed create can't interleave with the
     # bed check below; it runs before any Razorpay side effect.
     subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+    assert_not_deleting(subscription)  # Module 22: a deleted account can't pick a plan
     # Then the target plan, re-read under its own lock (order: Subscription ->
     # Plan, as in PlanViewSet): the caller's instance is stale if an admin has
     # since repriced, capped or retired it, and the lock stops them doing so
@@ -445,12 +447,22 @@ def handle_webhook_event(payload, event_id=None):
         if not created:
             return  # a redelivery of an event we already processed
         if event.startswith('invoice.'):
-            _handle_invoice_webhook(event, payload)
-            outcome, detail, tenant_id = RazorpayWebhookEvent.Outcome.APPLIED, 'invoice event', None
+            # The invoice's tenant is now recorded on the event too (it used to be left empty), so a
+            # tenant purge can find its invoice events without matching on payload contents.
+            tenant_id = _handle_invoice_webhook(event, payload)
+            outcome, detail = RazorpayWebhookEvent.Outcome.APPLIED, 'invoice event'
         else:
             outcome, detail, tenant_id = _handle_subscription_webhook(event, payload, record.event_id)
         record.outcome, record.detail, record.tenant_id = outcome, detail[:500], tenant_id
-        record.save(update_fields=['outcome', 'detail', 'tenant_id'])
+        update_fields = ['outcome', 'detail', 'tenant_id']
+        # The row was inserted above before we knew whose it was. If it belongs to a tenant whose
+        # billing is closed for deletion, only the sanitized form may ever commit (same transaction).
+        if tenant_id and Subscription.objects.filter(
+            tenant_id=tenant_id, status_hold=Subscription.STATUS_HOLD_DELETED,
+        ).exists():
+            record.payload = sanitized_payload(record.payload)
+            update_fields.append('payload')
+        record.save(update_fields=update_fields)
 
 
 def _promote_ledger_row(subscription, row):
@@ -520,7 +532,9 @@ def _reconcile_non_current_event(event, subscription, row, *, razorpay_payment_i
             SubscriptionPayment.objects.create(
                 tenant_id=subscription.tenant_id, subscription=subscription,
                 razorpay_payment_id=razorpay_payment_id, amount=charged_amount,
-                status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+                status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(),
+                raw_payload=_persistable_payload(subscription, payload),
+                refund_status=SubscriptionPayment.RefundStatus.PENDING, refund_flagged_at=timezone.now(),
             )
             audit_log.record(
                 action='subscription.payment_needs_refund', tenant_id=subscription.tenant_id, obj=subscription,
@@ -583,28 +597,140 @@ def _verify_with_razorpay(decision, razorpay_subscription_id, facts):
 
 
 def _record_event_payment(kind, subscription, razorpay_payment_id, amount, payload):
-    """Keeps the money visible whatever the event's ordering outcome. Returns True if a new row was written.
+    """Keeps the money visible whatever the event's ordering outcome. Returns the new payment row, or None
+    if nothing was written (a replay, or an event that isn't a payment attempt).
     Only charge and payment-failure events describe a payment attempt; a halted/cancelled/resumed payload may
     still carry a payment entity, which is not a new payment."""
     if kind not in (*webhook_policy.CHARGE_KINDS, 'payment_failed'):
-        return False
+        return None
     if razorpay_payment_id:
         if SubscriptionPayment.objects.filter(razorpay_payment_id=razorpay_payment_id).exists():
-            return False
+            return None
     elif kind in webhook_policy.CHARGE_KINDS:
         if SubscriptionPayment.objects.filter(
             subscription=subscription, status=SubscriptionPayment.Status.SUCCESS,
             created_at__date=timezone.now().date(),
         ).exists():
-            return False
+            return None
     succeeded = kind in webhook_policy.CHARGE_KINDS
-    SubscriptionPayment.objects.create(
+    return SubscriptionPayment.objects.create(
         tenant_id=subscription.tenant_id, subscription=subscription,
         razorpay_payment_id=razorpay_payment_id, amount=amount,
         status=SubscriptionPayment.Status.SUCCESS if succeeded else SubscriptionPayment.Status.FAILED,
-        paid_at=timezone.now() if succeeded else None, raw_payload=payload,
+        paid_at=timezone.now() if succeeded else None,
+        raw_payload=_persistable_payload(subscription, payload),
     )
-    return True
+
+
+def _flag_payment_for_refund(payment):
+    """Puts a captured payment that access will not honour on the refund queue. The obligation
+    lives on the retained payment row (not just an audit row, which a tenant purge deletes)."""
+    if payment.refund_status != SubscriptionPayment.RefundStatus.NONE:
+        return
+    payment.refund_status = SubscriptionPayment.RefundStatus.PENDING
+    payment.refund_flagged_at = timezone.now()
+    payment.save(update_fields=['refund_status', 'refund_flagged_at', 'updated_at'])
+
+
+def sanitized_payload(payload):
+    """The only form in which a deleted tenant's Razorpay payload may be stored: a strict allow-list
+    of scalar facts, built field by field. Entity dicts are never copied, because they carry the
+    customer's contact details (the reason these rows are personal data in the first place)."""
+    payload = payload if isinstance(payload, dict) else {}
+    entities = payload.get('payload') if isinstance(payload.get('payload'), dict) else {}
+
+    def entity(name):
+        wrapper = entities.get(name)
+        inner = wrapper.get('entity') if isinstance(wrapper, dict) else None
+        return inner if isinstance(inner, dict) else {}
+
+    subscription_entity, payment_entity, invoice_entity = entity('subscription'), entity('payment'), entity('invoice')
+    result = {'redacted': True}
+
+    def put(key, value, kind):
+        if isinstance(value, kind) and not isinstance(value, bool):
+            result[key] = value[:100] if isinstance(value, str) else value
+
+    put('event', payload.get('event'), str)
+    put('created_at', payload.get('created_at'), int)
+    put('subscription_id', subscription_entity.get('id'), str)
+    put('payment_id', payment_entity.get('id'), str)
+    put('invoice_id', invoice_entity.get('id'), str)
+    put('invoice_receipt', invoice_entity.get('receipt'), str)
+    amount = payment_entity.get('amount')
+    put('amount', amount if amount is not None else invoice_entity.get('amount'), int)
+    put('currency', payment_entity.get('currency') or invoice_entity.get('currency'), str)
+    put('status', subscription_entity.get('status') or payment_entity.get('status') or invoice_entity.get('status'), str)
+    return result
+
+
+def _persistable_payload(subscription, payload):
+    """What may be written to `raw_payload` / `RazorpayWebhookEvent.payload`: the payload itself,
+    except once the tenant's billing is closed for deletion — then only the allow-list. Processing
+    reads the original in memory; this is purely about what is persisted."""
+    if subscription is not None and subscription.status_hold == Subscription.STATUS_HOLD_DELETED:
+        return sanitized_payload(payload)
+    return payload
+
+
+class TenantDeleted(Conflict):
+    """The tenant's billing is closed for account deletion; this change is no longer allowed.
+    A 409 for API callers; the Django admin catches it and shows the message."""
+
+    default_detail = _('This account has been deleted; its billing can no longer be changed.')
+    default_code = 'tenant_deleted'
+
+
+def assert_not_deleting(subscription):
+    """Refuses any change to a subscription whose hold is `deleted`. Callers re-read the row under
+    `select_for_update` first (see `lock_subscription`), so this can't race `close_billing_for_deletion`,
+    which holds the same lock when it sets the hold."""
+    if subscription is not None and subscription.status_hold == Subscription.STATUS_HOLD_DELETED:
+        raise TenantDeleted()
+
+
+def lock_subscription(tenant):
+    """The tenant's Subscription under a row lock (None if it has none yet)."""
+    return Subscription.objects.select_for_update().filter(tenant=tenant).first()
+
+
+def _handle_deleted_tenant_event(event, kind, subscription, ledger_row, *, razorpay_payment_id, charged_amount, payload):
+    """A subscription webhook for a tenant whose billing is closed for deletion. Record-and-refund only:
+    it never promotes a ledger row, restores a plan, or touches the tenant's status. Returns the
+    (outcome, detail, tenant_id) triple `handle_webhook_event` stores."""
+    Outcome = RazorpayWebhookEvent.Outcome
+    State = RazorpaySubscription.State
+    tenant_id = subscription.tenant_id
+    if ledger_row is not None and ledger_row.subscription_id != subscription.pk:
+        ledger_row = None  # not one of this tenant's Razorpay subscriptions
+
+    if kind in webhook_policy.CHARGE_KINDS:
+        if razorpay_payment_id and SubscriptionPayment.objects.filter(razorpay_payment_id=razorpay_payment_id).exists():
+            return Outcome.TERMINAL_IGNORED, 'tenant deleted: payment already recorded', tenant_id
+        SubscriptionPayment.objects.create(
+            tenant_id=tenant_id, subscription=subscription,
+            razorpay_payment_id=razorpay_payment_id, amount=charged_amount,
+            status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(),
+            raw_payload=sanitized_payload(payload),
+            refund_status=SubscriptionPayment.RefundStatus.PENDING, refund_flagged_at=timezone.now(),
+        )
+        audit_log.record(
+            action='subscription.payment_needs_refund', tenant_id=tenant_id, obj=subscription,
+            after={
+                'razorpay_subscription_id': ledger_row.razorpay_subscription_id if ledger_row else '',
+                'razorpay_payment_id': razorpay_payment_id, 'amount': str(charged_amount),
+                'reason': 'tenant deleted',
+            },
+        )
+        return Outcome.TERMINAL_IGNORED, 'tenant deleted: payment flagged for refund', tenant_id
+
+    if event in ('subscription.cancelled', 'subscription.halted') and ledger_row is not None \
+            and ledger_row.state != State.CANCELLED:
+        # Razorpay confirms it is finished: the cancellation retry loop's job is done for that row.
+        ledger_row.state = State.CANCELLED
+        ledger_row.cancelled_at = timezone.now()
+        ledger_row.save(update_fields=['state', 'cancelled_at', 'updated_at'])
+    return Outcome.TERMINAL_IGNORED, 'tenant deleted', tenant_id
 
 
 _OUTCOME_BY_ACTION = {
@@ -691,6 +817,14 @@ def _handle_subscription_webhook(event, payload, event_id):
             RazorpaySubscription.objects.select_for_update()
             .filter(razorpay_subscription_id=razorpay_subscription_id).first()
         )
+        # Module 22: a deleted tenant's billing is closed for good. This comes BEFORE the
+        # live-vs-non-current reconciliation, which would otherwise promote a pending/abandoned
+        # row (restoring a plan and a live subscription that nothing then cancels).
+        if subscription.status_hold == Subscription.STATUS_HOLD_DELETED:
+            return _handle_deleted_tenant_event(
+                event, kind, subscription, ledger_row,
+                razorpay_payment_id=razorpay_payment_id, charged_amount=charged_amount, payload=payload,
+            )
         if subscription.razorpay_subscription_id != razorpay_subscription_id:
             if _reconcile_non_current_event(
                 event, subscription, ledger_row, razorpay_payment_id=razorpay_payment_id,
@@ -708,7 +842,9 @@ def _handle_subscription_webhook(event, payload, event_id):
         facts = webhook_policy.Facts(
             tenant_status=tenant.status,
             row_cancelled=bool(ledger_row and ledger_row.state == RazorpaySubscription.State.CANCELLED),
-            manual_hold=subscription.status_hold == Subscription.STATUS_HOLD_MANUAL,
+            # Any hold (a Super Admin's manual one, or the permanent deletion one) freezes the
+            # tenant's status; the deleted hold is already handled before we get here.
+            manual_hold=bool(subscription.status_hold),
             activated_before=bool(ledger_row and ledger_row.activated_at),
             last=webhook_policy.LastEvent(
                 ledger_row.last_status_event_at, ledger_row.last_status_event_type, ledger_row.last_status_event_id,
@@ -754,6 +890,7 @@ def _handle_subscription_webhook(event, payload, event_id):
             )
         if decision.flag_payment and new_payment and kind in webhook_policy.CHARGE_KINDS:
             # A captured payment that access will not honour: keep it, and put it in front of ops.
+            _flag_payment_for_refund(new_payment)
             audit_log.record(
                 action='subscription.payment_needs_refund', tenant_id=tenant.id, obj=subscription,
                 after={
@@ -860,12 +997,13 @@ def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
         subscription.payment_failed_at = None
         subscription.save(update_fields=['payment_failed_at', 'updated_at'])
         if (tenant.status == Tenant.Status.PAYMENT_FAILED
-                and subscription.status_hold != Subscription.STATUS_HOLD_MANUAL):
+                and not subscription.status_hold):
             tenant.status = Tenant.Status.ACTIVE
         SubscriptionPayment.objects.create(
             tenant_id=tenant.id, subscription=subscription,
             razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-            status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(), raw_payload=payload,
+            status=SubscriptionPayment.Status.SUCCESS, paid_at=timezone.now(),
+            raw_payload=_persistable_payload(subscription, payload),
         )
     elif event in ('invoice.expired', 'invoice.partially_paid'):
         if invoice.status in (SubscriptionInvoice.Status.FAILED, SubscriptionInvoice.Status.PAID):
@@ -879,14 +1017,15 @@ def _apply_invoice_event(event, invoice, razorpay_payment_id, payload):
         # A failed invoice is still recorded, but it only starts the grace clock for a tenant in good
         # standing: it never reaches a suspended or cancelled one, nor one a Super Admin holds.
         if (tenant.status in (Tenant.Status.TRIAL, Tenant.Status.ACTIVE, Tenant.Status.PAYMENT_FAILED)
-                and subscription.status_hold != Subscription.STATUS_HOLD_MANUAL):
+                and not subscription.status_hold):
             tenant.status = Tenant.Status.PAYMENT_FAILED
             subscription.payment_failed_at = timezone.now()
             subscription.save(update_fields=['payment_failed_at', 'updated_at'])
         SubscriptionPayment.objects.create(
             tenant_id=tenant.id, subscription=subscription,
             razorpay_payment_id=razorpay_payment_id, amount=invoice.total_amount,
-            status=SubscriptionPayment.Status.FAILED, raw_payload=payload,
+            status=SubscriptionPayment.Status.FAILED,
+            raw_payload=_persistable_payload(subscription, payload),
         )
     else:
         return  # unhandled event type — ignore
@@ -905,7 +1044,7 @@ def _handle_invoice_webhook(event, payload):
     entity = payload.get('payload', {}).get('invoice', {}).get('entity', {})
     found = _invoice_for_webhook(entity)
     if found is None:
-        return  # unknown invoice — nothing to reconcile
+        return None  # unknown invoice — nothing to reconcile
 
     payment_entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
     razorpay_payment_id = payment_entity.get('id', '')
@@ -926,9 +1065,10 @@ def _handle_invoice_webhook(event, payload):
                 'Ignoring %s for Razorpay invoice %s: invoice %s is bound to %s',
                 event, entity.get('id', ''), invoice.pk, invoice.razorpay_invoice_id,
             )
-            return
+            return found.tenant_id
         _bind_razorpay_invoice(invoice, entity.get('id', ''))
         _apply_invoice_event(event, invoice, razorpay_payment_id, payload)
+        return found.tenant_id
 
 
 def datetime_from_epoch(seconds):
@@ -937,10 +1077,13 @@ def datetime_from_epoch(seconds):
     return datetime.fromtimestamp(seconds, tz=dt_timezone.utc).date()
 
 
+@transaction.atomic
 def override_limits(*, subscription, max_properties_override, max_residents_override,
                     max_beds_override, actor, request=None):
     """Super Admin manual override 'for a specific tenant if needed (e.g.
     grace period, enterprise negotiation)' (PRD §4)."""
+    subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+    assert_not_deleting(subscription)
     before = {
         'max_properties_override': subscription.max_properties_override,
         'max_residents_override': subscription.max_residents_override,
@@ -965,14 +1108,20 @@ def override_limits(*, subscription, max_properties_override, max_residents_over
     return subscription
 
 
+@transaction.atomic
 def set_manual_status_hold(tenant, held):
     """A Super Admin's own suspension or cancellation sticks: while the hold is on, no webhook may change
-    the tenant's status (webhook_policy). Only an explicit reactivation clears it."""
+    the tenant's status (webhook_policy). Only an explicit reactivation clears it. It never overwrites the
+    permanent `deleted` hold (Module 22): the row is locked and re-read first, so it can't race the
+    deletion purge setting that hold."""
+    assert_not_deleting(lock_subscription(tenant))
     Subscription.objects.filter(tenant=tenant).update(
         status_hold=Subscription.STATUS_HOLD_MANUAL if held else '', updated_at=timezone.now())
 
 
+@transaction.atomic
 def suspend_tenant(*, tenant, actor, request=None):
+    assert_not_deleting(lock_subscription(tenant))
     before_status = tenant.status
     tenant.status = Tenant.Status.SUSPENDED
     tenant.save(update_fields=['status', 'updated_at'])
@@ -984,7 +1133,9 @@ def suspend_tenant(*, tenant, actor, request=None):
     return tenant
 
 
+@transaction.atomic
 def reactivate_tenant(*, tenant, actor, request=None):
+    assert_not_deleting(lock_subscription(tenant))
     before_status = tenant.status
     tenant.status = Tenant.Status.ACTIVE
     tenant.save(update_fields=['status', 'updated_at'])
@@ -1253,7 +1404,7 @@ def process_payment_grace_periods():
     cutoff = timezone.now() - timedelta(days=grace_days)
     overdue = Subscription.objects.filter(
         tenant__status=Tenant.Status.PAYMENT_FAILED, payment_failed_at__lte=cutoff,
-    ).select_related('tenant')
+    ).exclude(status_hold=Subscription.STATUS_HOLD_DELETED).select_related('tenant')
 
     suspended = []
     for subscription in overdue:
@@ -1267,3 +1418,43 @@ def process_payment_grace_periods():
         )
         suspended.append(tenant)
     return suspended
+
+
+@transaction.atomic
+def close_billing_for_deletion(tenant):
+    """Module 22, `razorpay_close` phase of an Owner's account deletion: the tenant's billing is
+    closed for good. Idempotent (a rerun after the hold is set does nothing).
+
+    Under the Subscription row lock — the same one every hold writer and webhook takes:
+      * a per-bed plan's accrued arrears are invoiced first (rule 28: leaving a plan, so
+        `close_per_bed_period`, while the plan and period can still price them);
+      * the live Razorpay subscription becomes REPLACED and any unpaid pending one ABANDONED, so
+        the existing cancellation queue (`process_razorpay_cancellations`, retried every 10
+        minutes) keeps cancelling them until Razorpay confirms;
+      * plan and pending plan are cleared, and `status_hold` becomes `deleted` — which makes every
+        later webhook record-and-refund only (`_handle_deleted_tenant_event`).
+    `tenant.status` is deliberately left alone here; the purge sets DELETED in its last phase.
+    Returns the Subscription (None if the tenant never had one)."""
+    with tenant_context(tenant.pk, is_super_admin=True):
+        subscription = (
+            Subscription.objects.select_for_update(of=('self',)).select_related('plan').filter(tenant=tenant).first()
+        )
+        if subscription is None or subscription.status_hold == Subscription.STATUS_HOLD_DELETED:
+            return subscription
+        close_per_bed_period(subscription)
+        _retire_current_subscription(subscription)
+        _abandon_pending_subscriptions(subscription)
+        subscription.plan = None
+        subscription.pending_plan = None
+        subscription.status_hold = Subscription.STATUS_HOLD_DELETED
+        subscription.save(update_fields=['plan', 'pending_plan', 'status_hold', 'updated_at'])
+        subscription_id = subscription.pk
+
+    def _queue_cancellations():
+        try:
+            process_razorpay_cancellations(subscription_id=subscription_id)
+        except Exception:  # noqa: BLE001 - the 10-minute sweep retries; never fail the purge phase on this
+            logger.exception('Could not run Razorpay cancellations for deleted tenant subscription %s', subscription_id)
+
+    transaction.on_commit(_queue_cancellations)
+    return subscription

@@ -1,6 +1,6 @@
 import uuid
 
-from django.core.validators import RegexValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -70,6 +70,11 @@ class PlatformConfig(models.Model):
     support_whatsapp = models.CharField(max_length=15, blank=True, default='', validators=[SUPPORT_NUMBER_VALIDATOR])
     support_website = models.URLField(blank=True, default='')
     support_hours = models.CharField(max_length=120, blank=True, default='')
+    # Module 22 (account deletion): full days between a request and the first
+    # 00:00 IST purge run, and how many separate nightly runs a failing purge
+    # gets before it is parked as `failed` for a Super Admin.
+    account_deletion_grace_days = models.PositiveIntegerField(default=7, validators=[MinValueValidator(1)])
+    account_deletion_max_attempts = models.PositiveIntegerField(default=5, validators=[MinValueValidator(1)])
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

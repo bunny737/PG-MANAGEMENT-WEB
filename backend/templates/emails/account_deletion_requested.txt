@@ -1,0 +1,12 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% trans "Your account is scheduled for deletion" %}{% endblock %}
+{% block content %}{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}
+
+{% if whole_business %}{% blocktrans trimmed with date=scheduled_for|date:"j F Y" %}You asked to delete your PGLive account. Your whole business, including its properties, residents, staff and files, will be permanently deleted on {{ date }} (after midnight IST).{% endblocktrans %}{% else %}{% blocktrans trimmed with date=scheduled_for|date:"j F Y" %}You asked to delete your PGLive account. It will be permanently deleted on {{ date }} (after midnight IST).{% endblocktrans %}{% endif %}
+
+{% trans "Until then your account is locked. To keep it, sign in and cancel the request." %}
+{% endblock %}
+{% block cta_label %}{% trans "Review or cancel" %}{% endblock %}
+{% block footnote %}
+{% trans "If you did not ask for this, sign in and cancel the request now, then change your password." %}
+{% endblock %}

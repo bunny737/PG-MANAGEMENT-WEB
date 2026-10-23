@@ -1,0 +1,10 @@
+{% extends "emails/base.html" %}{% load i18n %}
+{% block title %}{% trans "Your account deletion code" %}{% endblock %}
+{% block preheader %}{% blocktrans trimmed %}Your account deletion code is {{ code }}.{% endblocktrans %}{% endblock %}
+{% block heading %}{% trans "Your account deletion code" %}{% endblock %}
+{% block content %}
+<p style="margin:0 0 16px 0;">{% trans "Enter this code to confirm that you want to delete your account:" %}</p>
+<div class="code-box" style="display:inline-block;margin:0 0 16px 0;padding:14px 24px;background-color:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-family:'SFMono-Regular',Menlo,Consolas,'Courier New',monospace;font-size:32px;line-height:38px;font-weight:700;letter-spacing:8px;color:#312e81;">{{ code }}</div>
+<p style="margin:0 0 4px 0;">{% blocktrans trimmed count minutes=minutes %}It expires in {{ minutes }} minute.{% plural %}It expires in {{ minutes }} minutes.{% endblocktrans %}</p>
+{% endblock %}
+{% block footnote %}{% trans "If you didn't ask to delete your account, ignore this email and consider changing your password. Nothing has been deleted." %}{% endblock %}

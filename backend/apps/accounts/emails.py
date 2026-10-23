@@ -93,3 +93,51 @@ def send_staff_invite_email(user, tenant):
             ),
         },
     )
+
+
+# --- Account deletion (Module 22) ------------------------------------------------------------
+def send_account_deletion_requested_email(user, deletion):
+    """Confirmation with the date and how to cancel. The date is rendered in the recipient's
+    language by the template (it runs under translation.override)."""
+    from django.utils import timezone
+
+    _send(
+        user,
+        subject=lambda: _('Your account is scheduled for deletion'),
+        template='account_deletion_requested',
+        context={
+            'scheduled_for': timezone.localtime(deletion.scheduled_for),
+            'whole_business': deletion.scope == 'tenant',
+            'cta_url': f'{settings.FRONTEND_BASE_URL}/account/deletion-pending',
+        },
+    )
+
+
+def send_account_deletion_begun_email(address, language):
+    """Sent by address, not by user: by the time the worker runs, the purge may have deleted the
+    account. The text is generic so it needs nothing else from the (possibly gone) user."""
+    send_templated_email(
+        to=address,
+        subject=lambda: _('Your account deletion has started'),
+        template='account_deletion_begun',
+        context={},
+        language=language or 'en',
+    )
+
+
+def send_account_deletion_cancelled_email(user):
+    _send(
+        user,
+        subject=lambda: _('Your account deletion was cancelled'),
+        template='account_deletion_cancelled',
+        context={},
+    )
+
+
+def send_account_deletion_code_email(user, code):
+    _send(
+        user,
+        subject=lambda: _('Your account deletion code'),
+        template='account_deletion_code',
+        context={'code': code, 'minutes': max(1, settings.OTP_TTL_SECONDS // 60)},
+    )

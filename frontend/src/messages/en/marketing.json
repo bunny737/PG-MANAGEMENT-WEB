@@ -38,6 +38,10 @@
     },
     "notFound": {
       "title": "Page not found — PGLive"
+    },
+    "deleteAccount": {
+      "title": "Delete your account — PGLive",
+      "description": "How to delete your PGLive account and its data, what is deleted, and what we keep."
     }
   },
   "nav": {
@@ -428,7 +432,8 @@
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
     "refund": "Refund & Cancellation Policy",
-    "copyright": "© {year} {company}. All rights reserved."
+    "copyright": "© {year} {company}. All rights reserved.",
+    "deleteAccount": "Delete your PGLive account"
   },
   "legal": {
     "privacy": {
@@ -486,7 +491,7 @@
         },
         {
           "heading": "How long we keep it",
-          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can ask us to delete your data at any time."
+          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can delete your account yourself at any time (see \"Delete your PGLive account\" in the footer); it is then permanently deleted after a waiting period of at least 7 days, apart from the billing and tax records mentioned above."
         },
         {
           "heading": "Your rights",
@@ -633,6 +638,36 @@
         {
           "heading": "Changes",
           "body": "We will post any changes to this policy on this page and update the date above."
+        }
+      ]
+    },
+    "deleteAccount": {
+      "title": "Delete your PGLive account",
+      "updated": "Last updated: 23 October 2026",
+      "intro": "You can delete your PGLive account yourself, on the web or in the app. {company} provides PGLive. This page explains how, what is deleted, and what we keep.",
+      "signIn": "Sign in to delete your account",
+      "contactHeading": "Can't sign in?",
+      "contactBody": "If you cannot sign in, for example because your business account was suspended, contact us using the details below. We will help once we have confirmed who you are.",
+      "sections": [
+        {
+          "heading": "How to delete your account",
+          "body": "Sign in to PGLive on the web or in the app, open your Profile, and choose Delete account. Confirm with your password, or with a code we email you. You can start from this page: sign in, then open your Profile."
+        },
+        {
+          "heading": "What happens next",
+          "body": "Your account is locked straight away and you are signed out of your other devices. It is deleted permanently after a waiting period of at least 7 days, at midnight India time. Until then you can sign in and cancel the request. Once the deletion has started it can no longer be cancelled."
+        },
+        {
+          "heading": "If you are an Owner",
+          "body": "Deleting an Owner account deletes the whole business: its properties, rooms and beds, residents and their records (including uploaded ID documents), invoices, payments, complaints, visitors, expenses, notification history, and the logins of your Manager and Receptionist accounts. Your PGLive subscription is cancelled when the deletion runs. Export what you need from Reports before you confirm, because nothing can be recovered afterwards."
+        },
+        {
+          "heading": "If you are a Manager or Receptionist",
+          "body": "Deleting your account removes your login, your notification settings and devices, and the personal details we hold about you. Records you created for the business, such as an invoice you issued, stay with the business without your name."
+        },
+        {
+          "heading": "What we keep",
+          "body": "We keep the billing records of the PGLive subscription itself (plan, invoices, amounts, dates, payment references and the business name) because tax law requires it. Personal details inside those records, such as payment contact details, are removed. Technical logs are removed on the schedule in our Privacy Policy."
         }
       ]
     }

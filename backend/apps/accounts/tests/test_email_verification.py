@@ -396,7 +396,7 @@ class AdminVerificationTests(AuthAPITestCase):
         self.assertEqual((rows[0].before, rows[0].after), ({'email_verified': False}, {'email_verified': True}))
 
     def test_create_queues_verification_in_the_users_language(self):
-        user = User(email='new@example.com', first_name='New', role=Role.OWNER, tenant=self.tenant,
+        user = User(email='new@example.com', first_name='New', role=Role.OWNER, tenant=self.create_tenant('New Biz'),
                     language_code='te')
         user.set_password(STRONG_PASSWORD)
         with self.captureOnCommitCallbacks(execute=True):

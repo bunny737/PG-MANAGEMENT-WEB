@@ -1,6 +1,7 @@
 "use client";
 
 import { SIDEBAR_NAV_ITEMS } from "@/components/shared/NavItems";
+import { DELETION_PENDING_ROUTE } from "./accountDeletion";
 import { useSession } from "./session";
 
 /**
@@ -46,4 +47,13 @@ export function firstAllowedRoute(permissions: readonly string[], exclude?: stri
       entry.href !== exclude && (!entry.permission || permissions.includes(entry.permission))
   );
   return item?.href ?? PROFILE_ROUTE;
+}
+
+/**
+ * Where a user lands right after signing in: the pending-deletion screen if their account (or, for
+ * staff, their business) is scheduled for deletion — it is locked, so nothing else would open —
+ * otherwise the first screen their permissions allow.
+ */
+export function postLoginRoute(me: { permissions?: readonly string[]; deletion?: unknown }): string {
+  return me.deletion ? DELETION_PENDING_ROUTE : firstAllowedRoute(me.permissions ?? []);
 }

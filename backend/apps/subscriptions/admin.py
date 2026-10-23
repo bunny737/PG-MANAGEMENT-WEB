@@ -1,7 +1,12 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
+from apps.audit import log as audit_log
+
+from . import services
 from .models import (
     PRICING_LOCKED_MESSAGE,
     BedLedgerEntry,
@@ -158,13 +163,63 @@ class RazorpayWebhookEventAdmin(admin.ModelAdmin):
 class SubscriptionAdmin(admin.ModelAdmin):
     list_display = ['tenant', 'plan', 'razorpay_subscription_id']
     inlines = [SubscriptionPaymentInline]
+    # A free-text field, so an admin could type `deleted` and close billing without a purge. The
+    # hold is managed through the Tenant status (manual) and the deletion purge (deleted) only.
+    readonly_fields = ['status_hold']
+
+    def has_change_permission(self, request, obj=None):
+        # Module 22: a subscription whose billing is closed for account deletion is view-only.
+        if obj is not None and obj.status_hold == Subscription.STATUS_HOLD_DELETED:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def save_model(self, request, obj, form, change):
+        # The permission check above used the row as loaded for this form; re-check under the
+        # row lock so a deletion closing it in between can't be overwritten.
+        if change:
+            try:
+                services.assert_not_deleting(services.lock_subscription(obj.tenant))
+            except services.TenantDeleted:
+                messages.error(request, _('This account has been deleted; its billing can no longer be changed.'))
+                return
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(SubscriptionPayment)
 class SubscriptionPaymentAdmin(admin.ModelAdmin):
-    list_display = ['subscription', 'amount', 'status', 'razorpay_payment_id', 'paid_at', 'created_at']
-    list_filter = ['status']
+    """Payments, and the refund queue: filter `refund_status=pending` for charges that must be
+    returned by hand in the Razorpay dashboard, then set the status to refunded (with the
+    Razorpay refund id) or waived (with a reason code). The refund fields hold codes and ids only —
+    never free text — because this table outlives a deleted tenant."""
+    list_display = ['subscription', 'amount', 'status', 'refund_status', 'razorpay_payment_id', 'paid_at', 'created_at']
+    list_filter = ['status', 'refund_status']
     search_fields = ['subscription__tenant__name', 'razorpay_payment_id']
+    readonly_fields = ['refund_flagged_at', 'refund_resolved_at', 'raw_payload']
+
+    def save_model(self, request, obj, form, change):
+        if change and 'refund_status' in form.changed_data:
+            before = SubscriptionPayment.objects.values_list('refund_status', flat=True).get(pk=obj.pk)
+            now = timezone.now()
+            if obj.refund_status == SubscriptionPayment.RefundStatus.NONE:
+                obj.refund_flagged_at = obj.refund_resolved_at = None
+            elif obj.refund_status == SubscriptionPayment.RefundStatus.PENDING:
+                obj.refund_flagged_at = obj.refund_flagged_at or now
+                obj.refund_resolved_at = None
+            else:
+                obj.refund_flagged_at = obj.refund_flagged_at or now
+                obj.refund_resolved_at = now
+            super().save_model(request, obj, form, change)
+            # Platform-level audit, ids and codes only (the tenant's own audit rows may be gone).
+            audit_log.record(
+                action='subscription.refund_resolved' if obj.refund_resolved_at else 'subscription.refund_status_changed',
+                actor=request.user, tenant_id=None, obj=obj,
+                before={'refund_status': before},
+                after={'refund_status': obj.refund_status, 'refund_resolution': obj.refund_resolution,
+                       'razorpay_payment_id': obj.razorpay_payment_id},
+                request=request,
+            )
+            return
+        super().save_model(request, obj, form, change)
 
 
 class SubscriptionInvoiceLineInline(admin.TabularInline):

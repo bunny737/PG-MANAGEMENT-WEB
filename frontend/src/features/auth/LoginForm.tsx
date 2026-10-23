@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { BrandMark } from "@/components/shared/BrandMark";
-import { firstAllowedRoute } from "@/lib/permissions";
+import { postLoginRoute } from "@/lib/permissions";
 import { ApiError, clearSession, login, loginPhone, type CurrentUser } from "@/lib/api";
 import { EmailCodeLogin, type CodeRequests } from "./EmailCodeLogin";
 import { ResendVerificationPrompt } from "./ResendVerificationPrompt";
@@ -109,7 +109,7 @@ export function LoginForm({ signupEnabled = false, initialView }: LoginFormProps
       setIsSuccess(true);
       setTimeout(() => {
         // Access is Owner-configured per person, so land on the first screen it allows.
-        router.push(firstAllowedRoute(me.permissions ?? []));
+        router.push(postLoginRoute(me));
       }, 800);
     } catch (err) {
       setIsLoading(false);
@@ -156,7 +156,7 @@ export function LoginForm({ signupEnabled = false, initialView }: LoginFormProps
       setIsLoading(false);
       setIsSuccess(true);
       setTimeout(() => {
-        router.push(firstAllowedRoute(me.permissions ?? []));
+        router.push(postLoginRoute(me));
       }, 800);
     } catch (err) {
       setIsLoading(false);
@@ -170,7 +170,7 @@ export function LoginForm({ signupEnabled = false, initialView }: LoginFormProps
 
   const handleEmailCodeSuccess = (me: CurrentUser) => {
     setTimeout(() => {
-      router.push(firstAllowedRoute(me.permissions ?? []));
+      router.push(postLoginRoute(me));
     }, 800);
   };
 

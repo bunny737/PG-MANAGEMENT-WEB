@@ -1,0 +1,9 @@
+{% extends "emails/base.html" %}{% load i18n %}
+{% block title %}{% trans "Your account deletion was cancelled" %}{% endblock %}
+{% block preheader %}{% trans "Your account is active again." %}{% endblock %}
+{% block heading %}{% trans "Your account deletion was cancelled" %}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px 0;">{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}</p>
+<p style="margin:0 0 12px 0;">{% trans "The deletion of your PGLive account has been cancelled. Nothing was deleted and you can sign in as usual." %}</p>
+{% endblock %}
+{% block footnote %}{% trans "If you still want to delete your account, you can ask again from your profile." %}{% endblock %}

@@ -12,7 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.audit import log as audit_log
 from apps.core.roles import Role, STAFF_ROLES
 from apps.core.tasks import enqueue
-from .models import OtpCode, Tenant, User
+from .models import AccountDeletionRequest, OtpCode, Tenant, User
 from .normalization import normalize_email, normalize_phone
 from .tasks import send_verification_email_to_user_task
 
@@ -263,7 +263,39 @@ class TenantAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     readonly_fields = ('created_at', 'updated_at')
 
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        # Module 22: while an account-deletion request is ACTIVE (or the tenant is deleted),
+        # the status is not editable here — the purge owns it.
+        if obj is not None and (
+            obj.status == Tenant.Status.DELETED or obj.deletion_requests.active().exists()
+        ):
+            readonly.append('status')
+        return readonly
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        # `deleted` is written only by the purge (apps.accounts.deletion, complete phase). Offering
+        # it here would let an admin mark a live tenant deleted without its data being purged or
+        # its billing closed.
+        if db_field.name == 'status':
+            kwargs['choices'] = [c for c in db_field.choices if c[0] != Tenant.Status.DELETED]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
+
     def save_model(self, request, obj, form, change):
+        if obj.status == Tenant.Status.DELETED and not (
+            change and Tenant.objects.filter(pk=obj.pk, status=Tenant.Status.DELETED).exists()
+        ):
+            messages.error(request, _('The deleted status is set only by the account-deletion purge.'))
+            return
+        if change and 'status' in form.changed_data:
+            from apps.subscriptions import services as subscription_services
+            try:
+                with transaction.atomic():
+                    subscription_services.assert_not_deleting(subscription_services.lock_subscription(obj))
+            except subscription_services.TenantDeleted:
+                obj.refresh_from_db(fields=['status'])
+                messages.error(request, _('This account has been deleted; its status can no longer be changed.'))
+                return
         super().save_model(request, obj, form, change)
         if change and 'status' in form.changed_data:
             # A suspension or cancellation made here is manual: Razorpay webhooks must not undo it
@@ -278,3 +310,109 @@ class OtpCodeAdmin(admin.ModelAdmin):
     list_filter = ('used',)
     search_fields = ('user__email', 'user__phone')
     readonly_fields = ('id', 'code_hash', 'created_at')
+
+
+# --- Account deletion (Module 22) ------------------------------------------------------------
+class DeletionActionForm(admin.helpers.ActionForm):
+    """Adds a mandatory note to the actions that override the normal flow, so each is a deliberate,
+    attributable act. The note is only checked, never stored (the request table holds no free text)."""
+
+    note = forms.CharField(required=False, label=_('Verification note'), widget=forms.TextInput(attrs={'size': 50}))
+
+
+@admin.register(AccountDeletionRequest)
+class AccountDeletionRequestAdmin(admin.ModelAdmin):
+    """Read-only queue of deletion requests. `failed` ones need a person: "Retry now" runs them
+    again through the same claim as the nightly job; "Resolve as cancelled" unlocks the account but
+    only while nothing irreversible has run. Both are audited."""
+
+    action_form = DeletionActionForm
+    list_display = ('id', 'scope', 'status', 'user', 'tenant', 'scheduled_for', 'attempts', 'last_error', 'completed_at')
+    list_filter = ('status', 'scope')
+    search_fields = ('id', 'user__email', 'user__phone', 'tenant__name')
+    actions = ['retry_now', 'resolve_as_cancelled']
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in AccountDeletionRequest._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop('delete_selected', None)
+        return actions
+
+    @admin.action(description=_('Retry now (pending or failed requests)'))
+    def retry_now(self, request, queryset):
+        from . import deletion
+
+        retried = skipped = 0
+        for row in queryset:
+            try:
+                deletion.retry_now(row, actor=request.user, request=request)
+                retried += 1
+            except Exception:  # noqa: BLE001 - e.g. a request that is processing or finished
+                skipped += 1
+        self.message_user(
+            request,
+            gettext('Queued for retry: %(retried)d. Skipped: %(skipped)d.') % {'retried': retried, 'skipped': skipped},
+            messages.SUCCESS if retried else messages.WARNING,
+        )
+
+    @admin.action(description=_('Resolve as cancelled (only while nothing irreversible has run)'))
+    def resolve_as_cancelled(self, request, queryset):
+        from . import deletion
+
+        note = (request.POST.get('note') or '').strip()
+        if not note:
+            self.message_user(request, gettext('Enter a verification note first.'), messages.ERROR)
+            return
+        resolved = refused = 0
+        for row in queryset:
+            try:
+                deletion.resolve_as_cancelled(row, actor=request.user, note=note, request=request)
+                resolved += 1
+            except Exception:  # noqa: BLE001 - past the point of no return, or already decided
+                refused += 1
+        self.message_user(
+            request,
+            gettext('Cancelled: %(resolved)d. Refused (already past the point of no return, or not open): %(refused)d.')
+            % {'resolved': resolved, 'refused': refused},
+            messages.SUCCESS if resolved else messages.WARNING,
+        )
+
+
+def create_deletion_request_on_behalf(modeladmin, request, queryset):
+    """For an Owner who cannot sign in (their business was suspended or cancelled), so they cannot
+    use the in-app flow. A Super Admin who has verified the person creates the request for them."""
+    from . import deletion
+
+    note = (request.POST.get('note') or '').strip()
+    if not note:
+        modeladmin.message_user(request, gettext('Enter a verification note first.'), messages.ERROR)
+        return
+    created = skipped = 0
+    for user in queryset:
+        try:
+            deletion.create_request(user, created_by=request.user, request=request)
+            created += 1
+        except Exception:  # noqa: BLE001 - not eligible, or one already exists
+            skipped += 1
+    modeladmin.message_user(
+        request,
+        gettext('Deletion requests created: %(created)d. Skipped (not eligible, or already requested): %(skipped)d.')
+        % {'created': created, 'skipped': skipped},
+        messages.SUCCESS if created else messages.WARNING,
+    )
+
+
+create_deletion_request_on_behalf.short_description = _('Create account deletion request (identity verified)')
+UserAdmin.actions = [*UserAdmin.actions, create_deletion_request_on_behalf]
+UserAdmin.action_form = DeletionActionForm

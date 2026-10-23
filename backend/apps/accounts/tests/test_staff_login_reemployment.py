@@ -451,7 +451,7 @@ class StaffLoginAndReemploymentTests(AuthAPITestCase):
         )
         # Active account
         active_user = User.objects.create_user(
-            tenant=self.tenant,
+            tenant=self.create_tenant('Active Tenant'),
             role=Role.OWNER,
             email='active@example.com',
             is_active=True,

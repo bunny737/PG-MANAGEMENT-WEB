@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -15,11 +16,15 @@ from django.shortcuts import get_object_or_404
 
 from apps.audit import log as audit_log
 from apps.core.modules import describe_access, effective_levels, storage_value
+from apps.core.tasks import enqueue
 from apps.core.permissions import require_permission
-from apps.core.roles import STAFF_ROLES
+from apps.core.roles import Role, STAFF_ROLES
 
+from . import deletion as account_deletion
 from .models import User
 from .serializers import (
+    AccountDeletionCreateSerializer,
+    AccountDeletionSerializer,
     EmailOtpRequestSerializer,
     EmailOtpVerifySerializer,
     EmailVerificationSerializer,
@@ -44,6 +49,7 @@ from .serializers import (
     TokenPairSerializer,
 )
 from .staff_access import locked_staff
+from .tasks import send_account_deletion_code_task
 from .throttles import OtpEmailThrottle, PasswordResetEmailThrottle, VerificationEmailThrottle
 
 
@@ -363,3 +369,86 @@ class CurrentTenantView(RetrieveUpdateAPIView):
                 request=request,
             )
         return Response(TenantSerializer(tenant).data)
+
+
+class AccountDeletionView(APIView):
+    """Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+    locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+    DELETE cancels it while still pending. While a request is active these are among the only
+    routes the account can still reach (apps.core.authentication)."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'account_deletion'
+
+    def get_throttles(self):
+        # Only requesting is throttled: looking at, or cancelling, a request must always work.
+        return super().get_throttles() if self.request.method == 'POST' else []
+
+    def _active(self, request):
+        deletion = account_deletion.active_request_for(request.user)
+        if deletion is None:
+            raise NotFound(_('There is no active deletion request.'), code='no_deletion_request')
+        return deletion
+
+    @extend_schema(responses=AccountDeletionSerializer)
+    def get(self, request):
+        return Response(AccountDeletionSerializer(self._active(request), context={'request': request}).data)
+
+    @extend_schema(request=AccountDeletionCreateSerializer, responses={201: AccountDeletionSerializer})
+    def post(self, request):
+        if not account_deletion.can_request_deletion(request.user):
+            raise PermissionDenied(_('This account cannot be deleted from here.'), code='deletion_not_allowed')
+        serializer = AccountDeletionCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        created = account_deletion.create_request(
+            request.user, reason=serializer.validated_data.get('reason', ''), request=request,
+        )
+        # Requesting ended every session, this one included: hand back a pair minted from the
+        # post-request row so the caller stays signed in long enough to see (and cancel) it.
+        user = User.objects.get(pk=request.user.pk)
+        refresh = LoginSerializer.get_token(user)
+        return Response(
+            {
+                'deletion': AccountDeletionSerializer(created, context={'request': request}).data,
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(responses={204: None})
+    def delete(self, request):
+        deletion = self._active(request)
+        user = request.user
+        allowed = (
+            user.role == Role.OWNER and user.tenant_id == deletion.tenant_id
+            if deletion.scope == account_deletion.Scope.TENANT
+            else deletion.user_id == user.pk
+        )
+        if not allowed:
+            raise PermissionDenied(_('Only the account owner can cancel this deletion.'), code='deletion_cancel_forbidden')
+        account_deletion.cancel_request(deletion, actor=user, request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AccountDeletionOtpView(APIView):
+    """Emails a deletion-purpose code to the signed-in user (they pick this or their password to
+    confirm). Phone codes are refused while no SMS backend exists."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'account_deletion_otp'
+
+    @extend_schema(request=None, responses={202: None})
+    def post(self, request):
+        user = request.user
+        if not account_deletion.can_request_deletion(user):
+            raise PermissionDenied(_('This account cannot be deleted from here.'), code='deletion_not_allowed')
+        if 'otp_email' not in account_deletion.confirm_methods(user):
+            raise serializers.ValidationError(
+                {'detail': [_('A code cannot be sent to this account. Confirm with your password instead.')]},
+                code='otp_channel_unavailable',
+            )
+        enqueue(send_account_deletion_code_task, str(user.pk))
+        return Response({'detail': _('A code has been sent to your email address.')}, status=status.HTTP_202_ACCEPTED)

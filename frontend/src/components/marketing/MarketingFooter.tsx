@@ -82,6 +82,11 @@ export async function MarketingFooter() {
                 {t("footer.refund")}
               </Link>
             </li>
+            <li>
+              <Link href="/delete-account" className="hover:text-ink-inverse">
+                {t("footer.deleteAccount")}
+              </Link>
+            </li>
           </ul>
         </Container>
       </div>

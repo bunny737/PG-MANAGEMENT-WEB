@@ -247,3 +247,111 @@ def send_login_code_task(self, email):
     delayed emails arrive out of order only the newest code works. Neither the
     code nor the address is ever logged."""
     _deliver(self, deliver_login_code, email)
+
+
+# --- Account deletion (Module 22) ------------------------------------------------------------
+def _send_deletion_requested(user, deletion):
+    from .emails import send_account_deletion_requested_email
+
+    send_account_deletion_requested_email(user, deletion)
+    return DeliveryResult.SENT
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_account_deletion_requested_task(self, request_id):
+    """Confirmation of a new request. Courtesy only (the date is also shown in the app), so it is
+    queued best-effort; skipped if the request is no longer pending or the user has no email."""
+    from .models import AccountDeletionRequest
+
+    deletion = AccountDeletionRequest.objects.select_related('user').filter(pk=request_id).first()
+    if deletion is None or deletion.status != AccountDeletionRequest.Status.PENDING:
+        return
+    user = deletion.user
+    if user is None or not user.email:
+        return
+    _deliver(self, _send_deletion_requested, user, deletion)
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_account_deletion_begun_task(self, request_id, address, channel, language):
+    """"Your deletion has started and can no longer be cancelled." Takes the address as an argument
+    because the account may already be gone when this runs; it travels in the broker message only
+    (Redis, until a worker consumes it) and is never stored. Delivery is best effort."""
+    from .emails import send_account_deletion_begun_email
+
+    if channel != 'email' or not address:
+        return  # SMS has no backend yet (otp.sms_delivery_available)
+    _deliver(self, lambda: (send_account_deletion_begun_email(address, language), DeliveryResult.SENT)[1])
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_account_deletion_cancelled_task(self, user_id):
+    from .emails import send_account_deletion_cancelled_email
+    from .models import User
+
+    user = User.objects.filter(pk=user_id, is_active=True).first()
+    if user is None or not user.email:
+        return
+    _deliver(self, lambda: (send_account_deletion_cancelled_email(user), DeliveryResult.SENT)[1])
+
+
+@shared_task
+def notify_super_admins_deletion_failed_task(request_id):
+    """Ops alert: a deletion gave up after its retries and the account is still locked. Internal
+    mail to platform staff, deliberately plain English and free of any user data."""
+    from django.core.mail import send_mail
+
+    from apps.core.roles import Role
+
+    from .models import User
+
+    recipients = list(
+        User.objects.filter(role=Role.SUPER_ADMIN, is_active=True).exclude(email=None).values_list('email', flat=True)
+    )
+    if not recipients:
+        return
+    send_mail(
+        subject='Account deletion needs attention',
+        message=(
+            f'Account deletion request {request_id} failed repeatedly and is parked as "failed". '
+            'The account stays locked. Open it in Django admin (Accounts > Account deletion requests) '
+            'and use "Retry now", or resolve it as cancelled if nothing irreversible has run.'
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=recipients,
+        fail_silently=True,
+    )
+
+
+@shared_task
+def purge_due_account_deletions():
+    """Nightly (00:00 IST, django-celery-beat PeriodicTask seeded in migration 0010): processes every
+    deletion request that is due, once each. See apps.accounts.deletion."""
+    from . import deletion
+
+    return deletion.run_due_requests()
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_account_deletion_code_task(self, user_id):
+    """Issues a deletion-purpose email code and mails it. The code is created here, on the worker,
+    so it never travels through the broker (same as the email sign-in code)."""
+    from . import otp as otp_service
+    from .emails import send_account_deletion_code_email
+    from .models import User
+
+    user = User.objects.filter(pk=user_id, is_active=True).first()
+    if user is None or not user.email:
+        return
+
+    def _issue_and_send():
+        code = otp_service.issue(
+            user, otp_service.Channel.EMAIL, purpose=otp_service.OtpCode.Purpose.ACCOUNT_DELETION,
+            still_eligible=lambda locked: locked.is_active and bool(locked.email),
+        )
+        if code is None:
+            return DeliveryResult.SKIPPED
+        send_account_deletion_code_email(user, code)
+        return DeliveryResult.SENT
+
+    _deliver(self, _issue_and_send)

@@ -159,6 +159,9 @@ This means limits can be adjusted as part of marketing campaigns, promotional of
 - Payment failure grace period: 5 days before account suspension
 - Suspended accounts: login blocked, data preserved
 - Deleted accounts: data retained for 30 days before permanent deletion
+  - *Amended 2026-10-23 (Module 22):* a user-requested deletion (Google Play requirement) is purged after a
+    configurable grace period (default 7 days) at 00:00 IST and can be cancelled until it starts; billing records
+    needed for tax law are retained with personal data removed. See [modules/22-account-deletion.md](modules/22-account-deletion.md).
 
 ## Subscription Lifecycle
 ```

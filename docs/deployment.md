@@ -177,6 +177,7 @@ Then, in Super Admin: PlatformConfig (trial days, grace days, caps — invariant
 | Rotate Razorpay webhook secret | new secret in dashboard + Secret Manager together, low traffic, replay failed deliveries |
 | CSP to enforcing / back | `CSP_MODE=enforce` / `report-only` + new revision of `pglive-web` |
 | HSTS ramp | LB response header 300 s → 1 d → 1 wk → 1 y; `includeSubDomains` only at the end; verify apex, www, api each time |
+| Account-deletion alert | Cloud Monitoring log-based alert on the structured log `event=account_deletion_failed` (severity ERROR, from `apps.accounts.deletion`): a deletion gave up after its retries and the account stays locked until a Super Admin opens Django admin → *Account deletion requests* and runs **Retry now** (Module 22). The nightly run also logs the count of failed requests and open refunds |
 | Operator one-off command | IAP SSH to the worker VM, `docker compose run --rm worker python manage.py …`, with a ticket |
 
 Smoke-test account: user `smoke@pglive.in` in a dedicated `PGLive Smoke Test` tenant with the least-privileged
@@ -204,6 +205,9 @@ tests, and deletes the instance.
   ship with those uploads disabled. This is the `KYC_UPLOADS_ENABLED` setting, which defaults to **off in
   production**: new Aadhaar/PAN files are refused (stored ones stay readable and can be cleared) until
   `KYC_UPLOADS_ENABLED=true` is set on the API service.
+- **Account deletion (Module 22)**: create the `account_deletion_failed` log-based alert (see §7), confirm with the accountant that the
+  retained billing set satisfies GST record rules, and put the public `/delete-account` URL into Play Console → Data safety.
+  The Flutter app must also ship its in-app "Delete account" entry before the module is closed.
 - **Razorpay live activation** (KYC, Subscriptions enabled) and **billing upgraded to a paid account before launch**.
 - **Stale webhook ordering** is an open decision — see [modules/13-subscription.md](modules/13-subscription.md).
 - Cost estimate must be an exported Pricing Calculator file before choosing the launch tier (the lean option leaves

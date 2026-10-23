@@ -1,0 +1,9 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% trans "Your account deletion code" %}{% endblock %}
+{% block content %}{% blocktrans trimmed %}Your account deletion code is {{ code }}.{% endblocktrans %}
+
+{% blocktrans trimmed count minutes=minutes %}It expires in {{ minutes }} minute.{% plural %}It expires in {{ minutes }} minutes.{% endblocktrans %}
+{% endblock %}
+{% block footnote %}
+{% trans "If you didn't ask to delete your account, ignore this email and consider changing your password. Nothing has been deleted." %}
+{% endblock %}

@@ -1,6 +1,7 @@
 import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import RegexValidator
 from django.db import models, transaction
 from django.db.models import F
 from django.utils.translation import gettext_lazy as _
@@ -231,6 +232,10 @@ class Subscription(models.Model):
     # Set when a Super Admin suspends or cancels the tenant by hand; no webhook may then change
     # the tenant's status (webhook_policy). Cleared only by an explicit reactivation.
     STATUS_HOLD_MANUAL = 'manual'
+    # Module 22: the tenant's account-deletion purge has closed billing. Unlike `manual`, this
+    # hold is permanent — only apps.accounts.deletion sets it and nothing ever clears it
+    # (`services.assert_not_deleting`). It also makes webhook handling record-and-refund only.
+    STATUS_HOLD_DELETED = 'deleted'
     status_hold = models.CharField(max_length=10, blank=True, default='')
     # Super Admin manual override "for a specific tenant if needed (e.g.
     # grace period, enterprise negotiation)" — null defers to the plan.
@@ -398,10 +403,60 @@ class SubscriptionPayment(TenantModelMixin):
     paid_at = models.DateTimeField(null=True, blank=True)
     raw_payload = models.JSONField(default=dict, blank=True)
 
+    # Refund obligation (Module 22). This table is retained after a tenant is deleted, so the
+    # obligation lives here as structured fields — never free text — instead of only in an
+    # audit row the purge removes. `refund_status` is the single source of truth; the
+    # CheckConstraints below define every valid combination of the other fields.
+    class RefundStatus(models.TextChoices):
+        NONE = 'none', _('No refund needed')
+        PENDING = 'pending', _('Refund pending')
+        REFUNDED = 'refunded', _('Refunded')
+        WAIVED = 'waived', _('Waived')
+
+    class RefundResolution(models.TextChoices):
+        REFUNDED_VIA_RAZORPAY = 'refunded_via_razorpay', _('Refunded via Razorpay')
+        WAIVED_DUPLICATE = 'waived_duplicate', _('Waived: duplicate')
+        WAIVED_CREDIT_APPLIED = 'waived_credit_applied', _('Waived: credit applied')
+        WAIVED_BELOW_THRESHOLD = 'waived_below_threshold', _('Waived: below threshold')
+        WAIVED_OTHER = 'waived_other', _('Waived: other')
+
+    refund_status = models.CharField(
+        max_length=10, choices=RefundStatus.choices, default=RefundStatus.NONE, db_index=True,
+    )
+    refund_flagged_at = models.DateTimeField(null=True, blank=True)
+    refund_resolved_at = models.DateTimeField(null=True, blank=True)
+    refund_reference = models.CharField(
+        max_length=64, blank=True, default='',
+        validators=[RegexValidator(r'^rfnd_[A-Za-z0-9]+$', _('Enter a Razorpay refund id (rfnd_...).'))],
+    )
+    refund_resolution = models.CharField(max_length=30, choices=RefundResolution.choices, blank=True, default='')
+
     class Meta:
         db_table = 'subscription_payments'
         ordering = ['-created_at']
         constraints = [
+            models.CheckConstraint(
+                name='payment_refund_state_valid',
+                condition=(
+                    models.Q(
+                        refund_status='none', refund_flagged_at__isnull=True,
+                        refund_resolved_at__isnull=True, refund_reference='', refund_resolution='',
+                    )
+                    | models.Q(
+                        refund_status='pending', refund_flagged_at__isnull=False,
+                        refund_resolved_at__isnull=True, refund_reference='', refund_resolution='',
+                    )
+                    | models.Q(
+                        refund_status='refunded', refund_flagged_at__isnull=False,
+                        refund_resolved_at__isnull=False, refund_resolution='refunded_via_razorpay',
+                    ) & ~models.Q(refund_reference='')
+                    | models.Q(
+                        refund_status='waived', refund_flagged_at__isnull=False,
+                        refund_resolved_at__isnull=False, refund_reference='',
+                        refund_resolution__startswith='waived_',
+                    )
+                ),
+            ),
             # Idempotency backstop: a replayed / concurrently-delivered Razorpay
             # webhook must never double-record the same charge. The exists()
             # guard in services.handle_webhook_event races without this.
@@ -414,6 +469,26 @@ class SubscriptionPayment(TenantModelMixin):
 
     def __str__(self):
         return f'{self.get_status_display()} payment for {self.subscription.tenant.name}'
+
+    def clean(self):
+        """Friendly form-level version of `payment_refund_state_valid` (the DB constraint is the
+        authority): resolving a refund needs a Razorpay refund id, waiving needs a reason code."""
+        super().clean()
+        Status, Resolution = self.RefundStatus, self.RefundResolution
+        errors = {}
+        if self.refund_status == Status.REFUNDED:
+            if not self.refund_reference:
+                errors['refund_reference'] = _('A Razorpay refund id (rfnd_...) is required to mark a refund as done.')
+            self.refund_resolution = Resolution.REFUNDED_VIA_RAZORPAY
+        elif self.refund_status == Status.WAIVED:
+            if not str(self.refund_resolution).startswith('waived_'):
+                errors['refund_resolution'] = _('Choose why the refund is waived.')
+            self.refund_reference = ''
+        else:
+            self.refund_reference = ''
+            self.refund_resolution = ''
+        if errors:
+            raise DjangoValidationError(errors)
 
 
 class BedLedgerEntry(TenantModelMixin):

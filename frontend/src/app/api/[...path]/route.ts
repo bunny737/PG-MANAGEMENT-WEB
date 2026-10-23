@@ -29,7 +29,7 @@ function json(status: number, body: unknown) {
 
 async function handle(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  if (isTokenIssuingPath(path.join("/"))) {
+  if (isTokenIssuingPath(path.join("/"), request.method)) {
     return json(404, { detail: "Not found." });
   }
   if (hasForeignOrigin(request)) {

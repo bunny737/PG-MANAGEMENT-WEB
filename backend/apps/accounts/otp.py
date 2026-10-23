@@ -15,7 +15,7 @@ Channel = OtpCode.Channel
 
 
 @transaction.atomic
-def issue(user, channel, *, still_eligible=None):
+def issue(user, channel, *, purpose=OtpCode.Purpose.LOGIN, still_eligible=None):
     """Create a fresh OTP for the user on `channel`, invalidating only that
     channel's outstanding codes. Returns the plaintext code (the caller
     delivers it), or None when the user is gone or `still_eligible` rejects
@@ -36,10 +36,11 @@ def issue(user, channel, *, still_eligible=None):
     if still_eligible is not None and not still_eligible(locked):
         return None
     code = f'{secrets.randbelow(10**6):06d}'
-    OtpCode.objects.filter(user=locked, channel=channel, used=False).update(used=True)
+    OtpCode.objects.filter(user=locked, channel=channel, purpose=purpose, used=False).update(used=True)
     OtpCode.objects.create(
         user=locked,
         channel=channel,
+        purpose=purpose,
         code_hash=make_password(code),
         expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SECONDS),
     )
@@ -56,7 +57,7 @@ def _deliver(user, code):
 
 
 @transaction.atomic
-def verify(user, code, channel):
+def verify(user, code, channel, purpose=OtpCode.Purpose.LOGIN):
     """True if `code` matches the user's latest active OTP on `channel`.
     Consumes the OTP on success; counts an attempt (and locks after
     OTP_MAX_ATTEMPTS) on failure. A successful email code also marks the
@@ -82,7 +83,7 @@ def verify(user, code, channel):
         return False
     otp = (
         OtpCode.objects.select_for_update()
-        .filter(user=user, channel=channel, used=False, expires_at__gt=timezone.now())
+        .filter(user=user, channel=channel, purpose=purpose, used=False, expires_at__gt=timezone.now())
         .order_by('-created_at')
         .first()
     )
@@ -103,4 +104,11 @@ def verify(user, code, channel):
         return True
     otp.attempts += 1
     otp.save(update_fields=['attempts'])
+    return False
+
+
+def sms_delivery_available():
+    """Whether phone OTPs can actually reach a user. False until an SMS backend is wired in
+    (PRD Module 18, V2): `_deliver` above only logs in DEBUG. Callers that offer a phone code
+    as a confirmation or notice channel (account deletion) must check this and fall back."""
     return False

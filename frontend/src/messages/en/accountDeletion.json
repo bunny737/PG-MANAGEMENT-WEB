@@ -1,0 +1,62 @@
+{
+  "card": {
+    "title": "Delete account",
+    "ownerBody": "Deleting your account permanently deletes your whole business: its properties, residents and their records, invoices, payments, staff logins and uploaded files.",
+    "staffBody": "Deleting your account removes your login and the personal details we hold about you. Records you created for the business stay with it, without your name.",
+    "button": "Delete my account",
+    "loadFailed": "Could not load your account details."
+  },
+  "dialog": {
+    "title": "Delete your account?",
+    "ownerIntro": "This permanently deletes the whole business, including:",
+    "ownerItems": [
+      "All properties, rooms and beds",
+      "All residents and their records, including uploaded ID documents",
+      "All invoices, payments, complaints, visitors and expenses",
+      "Your Manager and Receptionist accounts"
+    ],
+    "staffIntro": "This removes your login, your notification settings and devices, and the personal details we hold about you.",
+    "exportHint": "Export anything you need before you confirm — nothing can be recovered afterwards.",
+    "exportLink": "Open Reports",
+    "waiting": "Your account is locked straight away and deleted permanently after a waiting period. You can cancel until the deletion starts, and you will see the date next.",
+    "retained": "We keep only the billing records of your PGLive subscription that tax law requires.",
+    "understand": "I understand that my account will be permanently deleted.",
+    "methodLabel": "Confirm with",
+    "methods": {
+      "password": "My password",
+      "otp_email": "A code sent to my email"
+    },
+    "passwordLabel": "Password",
+    "codeLabel": "6-digit code",
+    "sendCode": "Email me a code",
+    "sendingCode": "Sending…",
+    "codeSent": "We have emailed you a code.",
+    "codeFailed": "Could not send a code. Please try again.",
+    "noMethod": "This account cannot be confirmed online. Please contact support to delete it.",
+    "submit": "Delete my account",
+    "submitting": "Deleting…",
+    "keep": "Keep my account",
+    "failed": "We could not start the deletion. Please try again.",
+    "throttled": "Too many attempts. Please wait a while and try again."
+  },
+  "pending": {
+    "loading": "Loading…",
+    "loadFailed": "Could not load the status of your account.",
+    "retry": "Try again",
+    "titlePending": "Your account is scheduled for deletion",
+    "titleProcessing": "Deletion in progress",
+    "titleFailed": "Deletion is delayed",
+    "ownBusinessBody": "Your whole business will be permanently deleted on {date}.",
+    "ownAccountBody": "Your account will be permanently deleted on {date}.",
+    "staffBody": "Your organisation is being deleted by its owner. Your access ends on {date}.",
+    "locked": "Until then the account is locked.",
+    "canCancel": "Changed your mind? You can cancel the deletion any time before then.",
+    "ownerOnly": "Only the account owner can cancel this deletion.",
+    "cancel": "Cancel deletion",
+    "cancelling": "Cancelling…",
+    "cancelFailed": "Could not cancel the deletion. Please try again.",
+    "processingBody": "The deletion has started and can no longer be cancelled. You will be signed out when it finishes.",
+    "failedBody": "Something went wrong while deleting this account. Our support team has been notified and will sort it out.",
+    "signOut": "Sign out"
+  }
+}

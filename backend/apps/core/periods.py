@@ -66,3 +66,24 @@ def property_timezones(property_ids=None):
     """Distinct timezones of the given properties — always the product zone
     until properties carry their own (see module docstring)."""
     return [settings.TIME_ZONE]
+
+
+def next_midnight_ist(now=None):
+    """00:00 in the product timezone (IST) on the calendar day *after* `now`,
+    even when `now` is exactly 00:00:00. Account-deletion scheduling and retry
+    pacing both use it so a failure at midnight is never retried in the same
+    nightly run."""
+    from datetime import datetime, time, timedelta
+
+    local = timezone.localtime(now or timezone.now())
+    tomorrow = local.date() + timedelta(days=1)
+    return timezone.make_aware(datetime.combine(tomorrow, time.min))
+
+
+def first_midnight_ist_at_or_after(moment):
+    """The first 00:00 IST that is >= `moment` (an exact midnight stays put)."""
+    from datetime import datetime, time
+
+    local = timezone.localtime(moment)
+    midnight = timezone.make_aware(datetime.combine(local.date(), time.min))
+    return midnight if midnight >= moment else next_midnight_ist(moment)

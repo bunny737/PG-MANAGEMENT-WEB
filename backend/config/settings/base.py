@@ -152,6 +152,9 @@ REST_FRAMEWORK = {
         'password_reset_confirm': '10/min',
         # Authenticated: DRF keys this on the user, not the IP.
         'password_change': '5/min',
+        # Account deletion (Module 22): requesting is rare and high-impact; the OTP is emailed.
+        'account_deletion': '5/hour',
+        'account_deletion_otp': '3/min',
         # Mobile app device registration (apps.devices).
         'device_register_installation': '30/hour',
         'device_register_ip': '120/hour',

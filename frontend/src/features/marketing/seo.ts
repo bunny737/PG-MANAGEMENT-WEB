@@ -4,7 +4,16 @@ import { getPlanCatalog } from "./data/plans";
 import { getSupportContacts } from "./data/support";
 import { getSiteConfig } from "@/lib/site-config";
 
-export type MarketingPage = "home" | "features" | "pricing" | "app" | "contact" | "privacy" | "terms" | "refund";
+export type MarketingPage =
+  | "home"
+  | "features"
+  | "pricing"
+  | "app"
+  | "contact"
+  | "privacy"
+  | "terms"
+  | "refund"
+  | "deleteAccount";
 
 const PATHS: Record<MarketingPage, string> = {
   home: "/",
@@ -15,6 +24,8 @@ const PATHS: Record<MarketingPage, string> = {
   privacy: "/privacy",
   terms: "/terms",
   refund: "/refund-policy",
+  // Google Play "Delete account URL": public, no sign-in needed to read it.
+  deleteAccount: "/delete-account",
 };
 
 export const MARKETING_PATHS = Object.values(PATHS);

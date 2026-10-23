@@ -866,3 +866,15 @@ frontend always reaches a tenant's subscription via
   generation + idempotency, RLS isolation for the three new tables); full
   subscriptions suite (90) green.
 - 2026-10-21  Razorpay deploy check and no-stub production settings (see Decisions).
+- 2026-10-23  Account deletion (Module 22) touches billing: `Subscription.status_hold` gains the permanent value
+  `deleted` (set by `services.close_billing_for_deletion` in the purge's `razorpay_close` phase, never cleared). While it is
+  set, `_handle_subscription_webhook` hands the event to `_handle_deleted_tenant_event` BEFORE the live-vs-non-current
+  reconciliation: it never promotes a ledger row, restores a plan or changes the tenant; a charge is recorded with a
+  sanitized payload and `refund_status='pending'`; `cancelled`/`halted` still close the ledger row so the cancellation
+  queue finishes. `SubscriptionPayment` gains structured refund fields (`refund_status`, `refund_flagged_at`,
+  `refund_resolved_at`, `refund_reference`, `refund_resolution`) with the `payment_refund_state_valid` constraint, replacing
+  the audit row as the refund work-queue; both `payment_needs_refund` sites set it. `suspend_tenant`, `reactivate_tenant`,
+  `set_manual_status_hold`, `select_plan`, `override_limits` and the Tenant/Subscription admin refuse a deleted
+  subscription (`assert_not_deleting`, re-read under the row lock). Invoice webhook events are now stored with the invoice's
+  `tenant_id`. New cycle invoices stop (no plan); `process_invoice_issuing` is unchanged so an exit invoice whose first
+  Razorpay call failed is still sent. See [22-account-deletion.md](22-account-deletion.md).

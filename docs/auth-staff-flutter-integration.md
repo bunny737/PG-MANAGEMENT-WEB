@@ -301,6 +301,9 @@ check first with the `GET ...?staff={id}` list if you're building a toggle UI (s
       absent for a Manager/Receptionist session, driven by the `permissions` array, not a role
       check — and that reducing a module from the Owner's session removes its screens for that
       staff user after the next `/auth/me/` refresh (resume or after a `403`).
+- [ ] Account deletion (§10): request it as an Owner and as a Manager, confirm the next call on a stale token gets
+      `PASSWORD_CHANGED`, the returned token pair works for `GET /auth/me/`, any other route answers `403` with
+      `ACCOUNT_DELETION_PENDING` / `TENANT_DELETION_PENDING`, and cancelling restores access.
 - [ ] Try phone formats `9876543210`, `09876543210`, `+91 98765 43210`, `919876543210` against
       `login-phone/` with the same account — all four should succeed (same canonical number).
       Try an 11-digit number not starting with `0`, or a 10-digit number not starting 6–9 — both
@@ -315,3 +318,32 @@ check first with the `GET ...?staff={id}` list if you're building a toggle UI (s
 | Resident/Bed JSON deserialization crashes only for one test account | Almost always a Receptionist (or a staff user with Finance/Tenants reduced) hitting §4 — check which fields are missing in the raw response vs. what your model requires. |
 | `/auth/me/.email` is `null` and some unrelated feature breaks | That feature assumed every account has an email — see §3, fix the assumption, not the test data. |
 | Staff creation returns 400 with no top-level `code` you recognize | Expected for ordinary validation errors (§6) — read the field-keyed message array instead of switching on `code`. |
+
+## 10. Account deletion (Google Play requirement — the app MUST expose it)
+
+Play requires an **in-app** way to delete the account (the public page `/delete-account` is the web half).
+Minimum: Settings → **Delete account** that opens that page in the browser. Better: a native screen using the
+API below. Backend spec: [modules/22-account-deletion.md](modules/22-account-deletion.md).
+
+| Call | Purpose |
+|---|---|
+| `GET /api/v1/auth/me/` | `deletion` is `null` or `{scope: user\|tenant, status: pending\|processing\|failed, scheduled_for, can_cancel}`; `deletion_confirm_methods` lists what can confirm a request (`password`, `otp_email`; offer only these) |
+| `POST /api/v1/auth/account/deletion/otp/` | emails a 6-digit **deletion** code (a login code will not work here) |
+| `POST /api/v1/auth/account/deletion/` | body `{password}` **or** `{otp}`, `confirm: true`, optional `reason` → `201 {deletion, access, refresh}` |
+| `GET /api/v1/auth/account/deletion/` | the active request; `404` when none |
+| `DELETE /api/v1/auth/account/deletion/` | cancel (`204`); `409` unless still `pending`; `403` for staff on their Owner's request |
+
+Behaviour to implement:
+- **Owner = the whole business.** Say so, and point at the exports first. Manager/Receptionist delete only themselves.
+- A successful request **ends every session** (like a password change). Store the returned pair immediately; the
+  old tokens get `PASSWORD_CHANGED` (§2). For an Owner this also signs out all staff.
+- While a request is active **everything except** `GET /auth/me/` and the deletion endpoint answers
+  **`403`** with `code` `ACCOUNT_DELETION_PENDING` (the requester) or `TENANT_DELETION_PENDING` (staff of that
+  business). This is **not** a dead session — do not log out or refresh-loop. Route to a "scheduled for deletion"
+  screen showing `scheduled_for` (IST) and, if `can_cancel`, a Cancel button. Login and refresh still work so the
+  user can get back to that screen even if the business was suspended meanwhile.
+- `processing` can no longer be cancelled; `failed` means the deletion is delayed and support has been notified —
+  show it, keep the account locked, no cancel.
+- A phone-only user with no usable password and no email cannot confirm online (`deletion_confirm_methods` is
+  empty): send them to support (`GET /api/v1/support/`).
+- The app-client gate (force-update / maintenance) still applies to these routes; the web page is the fallback.

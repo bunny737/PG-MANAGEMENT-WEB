@@ -596,3 +596,10 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   Tests: `apps/core/test_support.py`. These are platform-wide contacts, not per-property/PG contacts.
 - 2026-10-21  Auth backend hardening: password-reset / staff-invite / password-changed emails moved to Celery (links in the URL fragment, 24 h), race-safe reset confirm (token rechecked under the user row lock), `POST /auth/password/change/` (current password checked under the lock, returns a fresh token pair), split reset throttle scopes, `user.password_reset` / `user.password_changed` audit records. New tests: `test_password_reset.py` (rewritten), `test_password_change.py`, `test_staff_invite.py`.
 - 2026-10-21  Web auth pages: real `/forgot-password` and `/reset-password` (also the staff-invite set-password page), `/login?view=staff`, Settings → change password via the `change-password` BFF route (`lib/server/authenticatedUpstream.ts`), shared `useEmailRequest` hook, 8-character new-password rule (login keeps non-empty only), removed the demo-credentials box and the unwired remember-me. Frontend tests: `ForgotPasswordForm`, `ResetPasswordForm`, `LoginForm.flows`, `GlobalSettings.password`, `bff` change-password cases.
+- 2026-10-23  Account deletion (Module 22): `AccountDeletionRequest`, `Tenant.Status.DELETED`, `OtpCode.purpose`
+  (a login code never confirms a deletion), one active Owner per tenant (`unique_active_owner_per_tenant`, migration pre-check),
+  `/auth/account/deletion/` (+ `/otp/`), `/auth/me/` gains `deletion` and `deletion_confirm_methods`. `TenantJWTAuthentication`
+  now looks up an ACTIVE request before the suspended check and, while one exists, allows only `GET /auth/me/` and
+  `GET|DELETE /auth/account/deletion/` (403 `ACCOUNT_DELETION_PENDING` / `TENANT_DELETION_PENDING`); login and refresh share
+  the same lookup so a locked user can still sign in to view or cancel. `BLOCKED_TENANT_STATUSES` includes `deleted`.
+  See [22-account-deletion.md](22-account-deletion.md).

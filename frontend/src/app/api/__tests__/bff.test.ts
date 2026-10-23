@@ -6,6 +6,7 @@ import { POST as changePasswordPost } from "../auth/change-password/route";
 import { POST as loginPost } from "../auth/login/route";
 import { POST as loginEmailOtpPost } from "../auth/login-email-otp/route";
 import { POST as logoutPost } from "../auth/logout/route";
+import { POST as requestAccountDeletionPost } from "../auth/request-account-deletion/route";
 import { signOrigin } from "@/lib/server/originSignature";
 
 const ORIGIN = "http://app.test";
@@ -288,6 +289,7 @@ describe("BFF proxy", () => {
     "v1/auth/otp/verify/",
     "v1/auth/otp/email/verify/",
     "v1/auth/password/change/",
+    "v1/auth/account/deletion/", // POST issues a token pair; GET/DELETE (below) do not
   ])(
     "token-issuing endpoint %s is not reachable through the generic proxy",
     async (path) => {
@@ -580,6 +582,102 @@ describe("change-password route handler", () => {
   test("an oversized body is rejected", async () => {
     const res = await change("pg_access=tok", { headers: { "content-length": String(1024 * 1024) } });
     expect(res.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("account deletion", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const URL_ = "http://django.test/api/v1/auth/account/deletion/";
+  const BODY = JSON.stringify({ password: "pw-123456", confirm: true });
+  const DELETION = { scope: "tenant", status: "pending", scheduled_for: "2026-10-31T00:00:00+05:30", can_cancel: true };
+
+  const setCookie = (res: Response) => res.headers.get("set-cookie") ?? "";
+  const request_ = (cookie: string, init: { headers?: Record<string, string>; body?: string } = {}) =>
+    requestAccountDeletionPost(
+      request("/api/auth/request-account-deletion", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json", ...init.headers },
+        body: init.body ?? BODY,
+      })
+    );
+
+  beforeEach(() => {
+    process.env.INTERNAL_API_URL = "http://django.test";
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("viewing and cancelling carry no tokens, so they go through the generic proxy", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, DELETION)).mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const cookie = { cookie: "pg_access=tok; pg_refresh=ref" };
+    const got = await GET(request("/api/v1/auth/account/deletion/", { headers: cookie }), params("v1/auth/account/deletion/"));
+    expect(got.status).toBe(200);
+    const deleted = await (await import("../[...path]/route")).DELETE(
+      request("/api/v1/auth/account/deletion/", { method: "DELETE", headers: cookie }),
+      params("v1/auth/account/deletion/")
+    );
+    expect(deleted.status).toBe(204);
+    expect(fetchMock.mock.calls[0][0]).toBe(URL_);
+  });
+
+  test("a locked account's 403 passes through the proxy untouched and is NOT treated as a dead session", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(403, { detail: "locked", code: "ACCOUNT_DELETION_PENDING" }));
+    const res = await GET(
+      request("/api/v1/properties/", { headers: { cookie: "pg_access=tok; pg_refresh=ref" } }),
+      params("v1/properties/")
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe("ACCOUNT_DELETION_PENDING");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no refresh attempt, no replay
+    expect(res.headers.get("set-cookie")).toBeNull(); // cookies kept
+  });
+
+  test("the request handler installs the new token pair and returns only the request", async () => {
+    const access = jwt(900);
+    const refresh = jwt(7 * 86400);
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { deletion: DELETION, access, refresh }));
+
+    const res = await request_("pg_access=old-access; pg_refresh=old-refresh");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(URL_);
+    expect((init.headers as Headers).get("authorization")).toBe("Bearer old-access");
+    expect(res.status).toBe(201);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ deletion: DELETION });
+    expect(text).not.toContain(access);
+    expect(text).not.toContain(refresh);
+    expect(setCookie(res)).toContain(`pg_access=${access}`);
+    expect(setCookie(res)).toContain(`pg_refresh=${refresh}`);
+    expect(setCookie(res)).toContain("pg_session=1");
+  });
+
+  test("a rejection (wrong password) passes Django's body through and leaves the session alone", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { password: ["Incorrect password."] }));
+    const res = await request_("pg_access=tok; pg_refresh=ref");
+    expect(res.status).toBe(400);
+    expect((await res.json()).password[0]).toBe("Incorrect password.");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  test("a success without a usable token pair ends the session", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { deletion: DELETION }));
+    const res = await request_("pg_access=tok; pg_refresh=ref");
+    expect(res.status).toBe(502);
+    for (const name of ["pg_access", "pg_refresh", "pg_session"]) expect(setCookie(res)).toContain(`${name}=;`);
+  });
+
+  test("no session cookies: 401 without calling Django; foreign origin: 403", async () => {
+    const anonymous = await request_("other=1");
+    expect(anonymous.status).toBe(401);
+    const foreign = await request_("pg_access=tok", { headers: { origin: "https://evil.test", host: "app.test" } });
+    expect(foreign.status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

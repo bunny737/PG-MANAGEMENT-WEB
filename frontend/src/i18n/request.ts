@@ -22,6 +22,8 @@ export const MODULES = [
   'pwa',
   'vacancies',
   'errors',
+  // Account deletion (Module 22): profile card, confirm dialog and the pending screen.
+  'accountDeletion',
   // Public pglive.in site (server-rendered; see app/(marketing)).
   'marketing',
 ];

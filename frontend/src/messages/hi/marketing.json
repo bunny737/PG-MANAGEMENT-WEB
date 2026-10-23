@@ -38,6 +38,10 @@
     },
     "notFound": {
       "title": "Page not found — PGLive"
+    },
+    "deleteAccount": {
+      "title": "अपना खाता हटाएँ — PGLive",
+      "description": "अपना PGLive खाता और उसका डेटा कैसे हटाएँ, क्या हटाया जाता है और हम क्या रखते हैं।"
     }
   },
   "nav": {
@@ -428,7 +432,8 @@
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
     "refund": "Refund & Cancellation Policy",
-    "copyright": "© {year} {company}. All rights reserved."
+    "copyright": "© {year} {company}. All rights reserved.",
+    "deleteAccount": "अपना PGLive खाता हटाएँ"
   },
   "legal": {
     "privacy": {
@@ -486,7 +491,7 @@
         },
         {
           "heading": "How long we keep it",
-          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can ask us to delete your data at any time."
+          "body": "We keep your data while your account is active. After an account is cancelled we keep it for 30 days so you can come back, and then delete it, except records the law requires us to keep, such as billing and tax records. App installation records are removed automatically after a period of inactivity (currently 180 days). You can delete your account yourself at any time (see \"Delete your PGLive account\" in the footer); it is then permanently deleted after a waiting period of at least 7 days, apart from the billing and tax records mentioned above."
         },
         {
           "heading": "Your rights",
@@ -633,6 +638,36 @@
         {
           "heading": "Changes",
           "body": "We will post any changes to this policy on this page and update the date above."
+        }
+      ]
+    },
+    "deleteAccount": {
+      "title": "अपना PGLive खाता हटाएँ",
+      "updated": "अंतिम अपडेट: 23 अक्टूबर 2026",
+      "intro": "आप अपना PGLive खाता वेब या ऐप में स्वयं हटा सकते हैं। PGLive {company} द्वारा उपलब्ध कराया जाता है। यह पेज बताता है कि कैसे, क्या हटाया जाता है और हम क्या रखते हैं।",
+      "signIn": "अपना खाता हटाने के लिए साइन इन करें",
+      "contactHeading": "साइन इन नहीं कर पा रहे?",
+      "contactBody": "यदि आप साइन इन नहीं कर सकते, उदाहरण के लिए आपका व्यावसायिक खाता निलंबित है, तो नीचे दिए विवरण से हमसे संपर्क करें। आपकी पहचान की पुष्टि होने के बाद हम मदद करेंगे।",
+      "sections": [
+        {
+          "heading": "खाता कैसे हटाएँ",
+          "body": "वेब या ऐप पर PGLive में साइन इन करें, अपनी प्रोफ़ाइल खोलें और खाता हटाएँ चुनें। अपने पासवर्ड से या हमारे ईमेल किए कोड से पुष्टि करें। आप इसी पेज से शुरू कर सकते हैं: साइन इन करें, फिर अपनी प्रोफ़ाइल खोलें।"
+        },
+        {
+          "heading": "इसके बाद क्या होता है",
+          "body": "आपका खाता तुरंत लॉक हो जाता है और आप अपने अन्य डिवाइस से साइन आउट हो जाते हैं। कम से कम 7 दिनों की प्रतीक्षा अवधि के बाद, भारतीय समय के अनुसार आधी रात को, इसे स्थायी रूप से हटा दिया जाता है। तब तक आप साइन इन करके अनुरोध रद्द कर सकते हैं। विलोपन शुरू होने के बाद इसे रद्द नहीं किया जा सकता।"
+        },
+        {
+          "heading": "यदि आप मालिक (Owner) हैं",
+          "body": "मालिक का खाता हटाने से पूरा व्यवसाय हट जाता है: प्रॉपर्टी, कमरे और बेड, निवासी और उनके रिकॉर्ड (अपलोड किए गए ID दस्तावेज़ों सहित), इनवॉइस, भुगतान, शिकायतें, आगंतुक, खर्च, नोटिफ़िकेशन इतिहास, और आपके मैनेजर व रिसेप्शनिस्ट खातों के लॉगिन। विलोपन चलने पर आपकी PGLive सदस्यता रद्द हो जाती है। पुष्टि करने से पहले जो चाहिए उसे रिपोर्ट से एक्सपोर्ट कर लें, क्योंकि बाद में कुछ भी वापस नहीं मिलेगा।"
+        },
+        {
+          "heading": "यदि आप मैनेजर या रिसेप्शनिस्ट हैं",
+          "body": "अपना खाता हटाने से आपका लॉगिन, आपकी नोटिफ़िकेशन सेटिंग और डिवाइस, और हमारे पास मौजूद आपकी व्यक्तिगत जानकारी हट जाती है। व्यवसाय के लिए आपके बनाए रिकॉर्ड, जैसे आपके जारी किए इनवॉइस, आपके नाम के बिना व्यवसाय के पास रहते हैं।"
+        },
+        {
+          "heading": "हम क्या रखते हैं",
+          "body": "कर कानून के कारण हम PGLive सदस्यता के बिलिंग रिकॉर्ड (प्लान, इनवॉइस, राशि, तारीखें, भुगतान संदर्भ और व्यवसाय का नाम) रखते हैं। उन रिकॉर्ड में मौजूद भुगतान संपर्क विवरण जैसी व्यक्तिगत जानकारी हटा दी जाती है। तकनीकी लॉग हमारी गोपनीयता नीति में बताई समय-सारणी के अनुसार हटाए जाते हैं।"
         }
       ]
     }

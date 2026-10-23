@@ -72,6 +72,7 @@ residents, billing, and operations through a single system.
 → 10 deposits-exit → 11 complaints → 12 visitors → 13 subscription
 → 14 notifications → 15 audit-logs → 16 activity-timeline → 17 export
 → 18 pg-features (owner request 2026-10-06, not in PRD v2; depends on 02 only)
+→ 22 account-deletion (Google Play requirement 2026-10-23, not in PRD v2; deps 01/13/14/15/19; spec: docs/modules/22-account-deletion.md)
 
 ## Per-task workflow
 1. Read this file + the relevant docs/modules/<nn>.md spec

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { firstAllowedRoute } from "@/lib/permissions";
+import { postLoginRoute } from "@/lib/permissions";
 import { ensureFreshSession } from "@/lib/session";
 
 const PORTAL_ROLES = ["owner", "manager", "receptionist"];
@@ -19,7 +19,7 @@ export function RedirectIfSignedIn() {
     let cancelled = false;
     void ensureFreshSession().then((me) => {
       if (cancelled || !me || !PORTAL_ROLES.includes(me.role)) return;
-      router.replace(firstAllowedRoute(me.permissions ?? []));
+      router.replace(postLoginRoute(me));
     });
     return () => {
       cancelled = true;

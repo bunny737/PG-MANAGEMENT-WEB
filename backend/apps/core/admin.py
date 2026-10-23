@@ -16,6 +16,8 @@ class PlatformConfigAdmin(admin.ModelAdmin):
         'trial_reminder_first_days_before',
         'trial_reminder_second_days_before',
         'min_billable_amount',
+        'account_deletion_grace_days',
+        'account_deletion_max_attempts',
         'support_email',
         'support_phone',
         'updated_at',

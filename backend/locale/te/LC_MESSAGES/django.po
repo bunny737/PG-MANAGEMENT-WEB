@@ -2251,3 +2251,135 @@ msgstr "కొత్త పాస్‌వర్డ్ ప్రస్తుత 
 #: apps/residents/serializers.py
 msgid "Identity document uploads are not enabled yet."
 msgstr "గుర్తింపు పత్రాల అప్‌లోడ్‌లు ఇంకా ప్రారంభించబడలేదు."
+
+#: apps/accounts/emails.py templates/emails/account_deletion_requested.html
+msgid "Your account is scheduled for deletion"
+msgstr "మీ ఖాతా తొలగింపుకు షెడ్యూల్ చేయబడింది"
+
+#: templates/emails/account_deletion_requested.html
+msgid "You can cancel this before it happens."
+msgstr "ఇది జరగడానికి ముందే మీరు దీన్ని రద్దు చేయవచ్చు."
+
+#: templates/emails/account_deletion_requested.html templates/emails/account_deletion_requested.txt
+msgid "You asked to delete your PGLive account. Your whole business, including its properties, residents, staff and files, will be permanently deleted on %(date)s (after midnight IST)."
+msgstr "మీరు మీ PGLive ఖాతాను తొలగించమని కోరారు. మీ మొత్తం వ్యాపారం, అందులోని ప్రాపర్టీలు, నివాసితులు, సిబ్బంది మరియు ఫైళ్లతో సహా, %(date)s న (అర్ధరాత్రి IST తర్వాత) శాశ్వతంగా తొలగించబడుతుంది."
+
+#: templates/emails/account_deletion_requested.html templates/emails/account_deletion_requested.txt
+msgid "You asked to delete your PGLive account. It will be permanently deleted on %(date)s (after midnight IST)."
+msgstr "మీరు మీ PGLive ఖాతాను తొలగించమని కోరారు. ఇది %(date)s న (అర్ధరాత్రి IST తర్వాత) శాశ్వతంగా తొలగించబడుతుంది."
+
+#: templates/emails/account_deletion_requested.html templates/emails/account_deletion_requested.txt
+msgid "Until then your account is locked. To keep it, sign in and cancel the request."
+msgstr "అప్పటి వరకు మీ ఖాతా లాక్ చేయబడి ఉంటుంది. దాన్ని ఉంచుకోవడానికి, సైన్ ఇన్ చేసి అభ్యర్థనను రద్దు చేయండి."
+
+#: templates/emails/account_deletion_requested.html templates/emails/account_deletion_requested.txt
+msgid "Review or cancel"
+msgstr "సమీక్షించండి లేదా రద్దు చేయండి"
+
+#: templates/emails/account_deletion_requested.html templates/emails/account_deletion_requested.txt
+msgid "If you did not ask for this, sign in and cancel the request now, then change your password."
+msgstr "ఇది మీరు కోరినది కాకపోతే, ఇప్పుడే సైన్ ఇన్ చేసి అభ్యర్థనను రద్దు చేయండి, ఆపై మీ పాస్‌వర్డ్ మార్చండి."
+
+#: apps/accounts/emails.py templates/emails/account_deletion_begun.html
+msgid "Your account deletion has started"
+msgstr "మీ ఖాతా తొలగింపు ప్రారంభమైంది"
+
+#: templates/emails/account_deletion_begun.html
+msgid "This can no longer be cancelled."
+msgstr "దీన్ని ఇకపై రద్దు చేయలేరు."
+
+#: templates/emails/account_deletion_begun.html templates/emails/account_deletion_begun.txt
+msgid "The grace period for deleting your PGLive account has ended and the deletion has started. It can no longer be cancelled."
+msgstr "మీ PGLive ఖాతా తొలగింపునకు ఇచ్చిన గడువు ముగిసింది మరియు తొలగింపు ప్రారంభమైంది. దీన్ని ఇకపై రద్దు చేయలేరు."
+
+#: templates/emails/account_deletion_begun.html templates/emails/account_deletion_begun.txt
+msgid "Your data will be permanently removed. Only the billing records we are legally required to keep (for tax purposes) are retained."
+msgstr "మీ డేటా శాశ్వతంగా తొలగించబడుతుంది. చట్టప్రకారం (పన్ను అవసరాల కోసం) మేము ఉంచుకోవలసిన బిల్లింగ్ రికార్డులు మాత్రమే నిలుపుకోబడతాయి."
+
+#: templates/emails/account_deletion_begun.html templates/emails/account_deletion_begun.txt
+msgid "We will not email you again about this account."
+msgstr "ఈ ఖాతా గురించి మేము మీకు మళ్లీ ఇమెయిల్ చేయము."
+
+#: apps/accounts/emails.py templates/emails/account_deletion_cancelled.html
+msgid "Your account deletion was cancelled"
+msgstr "మీ ఖాతా తొలగింపు రద్దు చేయబడింది"
+
+#: templates/emails/account_deletion_cancelled.html
+msgid "Your account is active again."
+msgstr "మీ ఖాతా మళ్లీ యాక్టివ్‌గా ఉంది."
+
+#: templates/emails/account_deletion_cancelled.html templates/emails/account_deletion_cancelled.txt
+msgid "The deletion of your PGLive account has been cancelled. Nothing was deleted and you can sign in as usual."
+msgstr "మీ PGLive ఖాతా తొలగింపు రద్దు చేయబడింది. ఏదీ తొలగించబడలేదు మరియు మీరు యథావిధిగా సైన్ ఇన్ చేయవచ్చు."
+
+#: templates/emails/account_deletion_cancelled.html templates/emails/account_deletion_cancelled.txt
+msgid "If you still want to delete your account, you can ask again from your profile."
+msgstr "మీరు ఇంకా మీ ఖాతాను తొలగించాలనుకుంటే, మీ ప్రొఫైల్ నుండి మళ్లీ కోరవచ్చు."
+
+#: apps/accounts/emails.py templates/emails/account_deletion_code.html templates/emails/account_deletion_code.txt
+msgid "Your account deletion code"
+msgstr "మీ ఖాతా తొలగింపు కోడ్"
+
+#: templates/emails/account_deletion_code.html templates/emails/account_deletion_code.txt
+msgid "Your account deletion code is %(code)s."
+msgstr "మీ ఖాతా తొలగింపు కోడ్ %(code)s."
+
+#: templates/emails/account_deletion_code.html
+msgid "Enter this code to confirm that you want to delete your account:"
+msgstr "మీ ఖాతాను తొలగించాలనుకుంటున్నారని నిర్ధారించడానికి ఈ కోడ్‌ను నమోదు చేయండి:"
+
+#: templates/emails/account_deletion_code.html templates/emails/account_deletion_code.txt
+msgid "If you didn't ask to delete your account, ignore this email and consider changing your password. Nothing has been deleted."
+msgstr "మీరు మీ ఖాతాను తొలగించమని కోరకపోతే, ఈ ఇమెయిల్‌ను విస్మరించండి మరియు మీ పాస్‌వర్డ్ మార్చడాన్ని పరిగణించండి. ఏదీ తొలగించబడలేదు."
+
+#: apps/core/authentication.py
+msgid "This account is scheduled for deletion."
+msgstr "ఈ ఖాతా తొలగింపుకు షెడ్యూల్ చేయబడింది."
+
+#: apps/accounts/serializers.py
+msgid "Confirm that you want to delete your account."
+msgstr "మీ ఖాతాను తొలగించాలనుకుంటున్నారని నిర్ధారించండి."
+
+#: apps/accounts/serializers.py
+msgid "Confirm with your password or an emailed code."
+msgstr "మీ పాస్‌వర్డ్ లేదా ఇమెయిల్ ద్వారా వచ్చిన కోడ్‌తో నిర్ధారించండి."
+
+#: apps/accounts/serializers.py
+msgid "Incorrect password."
+msgstr "పాస్‌వర్డ్ తప్పు."
+
+#: apps/accounts/views.py
+msgid "There is no active deletion request."
+msgstr "క్రియాశీల తొలగింపు అభ్యర్థన ఏదీ లేదు."
+
+#: apps/accounts/views.py
+msgid "This account cannot be deleted from here."
+msgstr "ఈ ఖాతాను ఇక్కడ నుండి తొలగించలేరు."
+
+#: apps/accounts/views.py
+msgid "Only the account owner can cancel this deletion."
+msgstr "ఖాతా యజమాని మాత్రమే ఈ తొలగింపును రద్దు చేయగలరు."
+
+#: apps/accounts/views.py
+msgid "A code cannot be sent to this account. Confirm with your password instead."
+msgstr "ఈ ఖాతాకు కోడ్ పంపడం సాధ్యం కాదు. బదులుగా మీ పాస్‌వర్డ్‌తో నిర్ధారించండి."
+
+#: apps/accounts/views.py
+msgid "A code has been sent to your email address."
+msgstr "మీ ఇమెయిల్ చిరునామాకు కోడ్ పంపబడింది."
+
+#: apps/accounts/deletion.py
+msgid "This account type cannot be deleted from here."
+msgstr "ఈ రకమైన ఖాతాను ఇక్కడ నుండి తొలగించలేరు."
+
+#: apps/accounts/deletion.py
+msgid "A deletion request already exists for this account."
+msgstr "ఈ ఖాతా కోసం తొలగింపు అభ్యర్థన ఇప్పటికే ఉంది."
+
+#: apps/accounts/deletion.py
+msgid "This deletion request can no longer be cancelled."
+msgstr "ఈ తొలగింపు అభ్యర్థనను ఇకపై రద్దు చేయలేరు."
+
+#: apps/subscriptions/services.py
+msgid "This account has been deleted; its billing can no longer be changed."
+msgstr "ఈ ఖాతా తొలగించబడింది; దాని బిల్లింగ్‌ను ఇకపై మార్చలేరు."

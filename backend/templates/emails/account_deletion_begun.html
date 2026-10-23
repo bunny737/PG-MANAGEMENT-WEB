@@ -1,0 +1,10 @@
+{% extends "emails/base.html" %}{% load i18n %}
+{% block title %}{% trans "Your account deletion has started" %}{% endblock %}
+{% block preheader %}{% trans "This can no longer be cancelled." %}{% endblock %}
+{% block heading %}{% trans "Your account deletion has started" %}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px 0;">{% trans "Hello," %}</p>
+<p style="margin:0 0 12px 0;">{% trans "The grace period for deleting your PGLive account has ended and the deletion has started. It can no longer be cancelled." %}</p>
+<p style="margin:0 0 12px 0;">{% trans "Your data will be permanently removed. Only the billing records we are legally required to keep (for tax purposes) are retained." %}</p>
+{% endblock %}
+{% block footnote %}{% trans "We will not email you again about this account." %}{% endblock %}

@@ -11,7 +11,7 @@ const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', 
 // The public marketing site. These pages must not hand every anonymous visitor a Set-Cookie:
 // they render in the default language until the visitor picks one with the language switcher
 // (which writes the cookie itself). They do get the CSP — they are the most exposed pages.
-const MARKETING_PATH = /^\/(?:$|(?:features|pricing|app|contact|privacy|terms|refund-policy)(?:\/|$))/;
+const MARKETING_PATH = /^\/(?:$|(?:features|pricing|app|contact|privacy|terms|refund-policy|delete-account)(?:\/|$))/;
 
 export function isMarketingPath(pathname: string): boolean {
   return MARKETING_PATH.test(pathname);

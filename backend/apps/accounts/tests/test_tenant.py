@@ -59,7 +59,7 @@ class TenantEndpointTests(AuthAPITestCase):
         # translated language (owner decision 2026-08-11) with a compiled
         # catalog, proving translation actually happened, not just that the
         # header was accepted.
-        self.create_user(self.tenant, Role.OWNER, 'taken@example.com')
+        self.create_user(self.create_tenant('Other Biz'), Role.OWNER, 'taken@example.com')
 
         url = reverse('auth-signup')
         response = self.client.post(

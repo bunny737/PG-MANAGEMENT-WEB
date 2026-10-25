@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import { SOLUTION_PAGES, SOLUTIONS_HUB_PATH, solutionPath } from "@/features/marketing/content/landing";
 import { formatPhone, getSupportContacts, telHref } from "@/features/marketing/data/support";
 import { getSiteConfig } from "@/lib/site-config";
 import { Logo } from "./Logo";
@@ -18,7 +19,7 @@ export async function MarketingFooter() {
 
   return (
     <footer className="bg-surface-inverse text-ink-inverse">
-      <Container className="grid gap-10 py-12 md:grid-cols-4">
+      <Container className="grid gap-10 py-12 md:grid-cols-5">
         <div className="md:col-span-2">
           <Logo name={t("brand.name")} homeLabel={t("nav.home")} inverse />
           <p className="mt-4 max-w-sm text-sm text-ink-inverse-muted">{t("footer.about")}</p>
@@ -34,6 +35,23 @@ export async function MarketingFooter() {
                 </Link>
               </li>
             ))}
+          </ul>
+        </div>
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider">{t("footer.solutions")}</h2>
+          <ul className="mt-4 space-y-2.5">
+            {SOLUTION_PAGES.map((page) => (
+              <li key={page.slug}>
+                <Link href={solutionPath(page.slug)} className={linkClass}>
+                  {t(`solutions.pages.${page.slug}.nav`)}
+                </Link>
+              </li>
+            ))}
+            <li>
+              <Link href={SOLUTIONS_HUB_PATH} className={linkClass}>
+                {t("footer.allSolutions")}
+              </Link>
+            </li>
           </ul>
         </div>
 

@@ -13,7 +13,7 @@ const BASE_URL = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/+$
 const API_URL = process.env.API_URL?.replace(/\/+$/, "");
 
 // Paths that must answer 404 (one unknown slug per landing family joins this list as they ship).
-const MUST_404 = ["/features/__seo-smoke-404__"];
+const MUST_404 = ["/features/__seo-smoke-404__", "/solutions/__seo-smoke-404__"];
 
 const failures = [];
 const check = (ok, message) => {
@@ -70,6 +70,12 @@ async function checkPage(sitemapUrl) {
   await checkImage(at("twitter:image"), twitterImage);
 
   check(doc.querySelectorAll("h1").length === 1, at(`${doc.querySelectorAll("h1").length} <h1> elements, expected 1`));
+
+  // Headings must not skip a level (h1 to h3), which breaks screen-reader navigation and the outline.
+  const levels = [...doc.querySelectorAll("h1, h2, h3, h4, h5, h6")].map((h) => Number(h.tagName[1]));
+  levels.forEach((level, i) => {
+    check(i === 0 || level <= levels[i - 1] + 1, at(`heading jumps from h${levels[i - 1]} to h${level}`));
+  });
 
   const blocks = [...doc.querySelectorAll('script[type="application/ld+json"]')];
   check(blocks.length > 0, at("no JSON-LD"));

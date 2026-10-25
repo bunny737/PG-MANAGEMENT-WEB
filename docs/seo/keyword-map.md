@@ -1,6 +1,6 @@
 # SEO keyword map (B0 discovery)
 
-Status: **draft for owner approval**, 2026-10-25. No slug in this file is final until the owner signs off, and `frontend/src/features/marketing/content/landing.ts` does not exist yet. Plan: [frontend-plan.md §12.9](../frontend-plan.md).
+Status: the three wave-1 slugs were **approved by the owner on 2026-10-25** and are built (`frontend/src/features/marketing/content/landing.ts`). Volumes are still unverified, so revisit the "not now" table once Search Console has data. Plan: [frontend-plan.md §12.9](../frontend-plan.md).
 
 Rule: one primary query cluster per URL, and a candidate that fails the intent or truthfulness check is dropped or merged rather than padded into a page.
 

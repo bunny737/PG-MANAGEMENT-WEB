@@ -13,7 +13,7 @@ const BASE_URL = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/+$
 const API_URL = process.env.API_URL?.replace(/\/+$/, "");
 
 // Paths that must answer 404 (one unknown slug per landing family joins this list as they ship).
-const MUST_404 = ["/features/__seo-smoke-404__"];
+const MUST_404 = ["/features/__seo-smoke-404__", "/solutions/__seo-smoke-404__"];
 
 const failures = [];
 const check = (ok, message) => {

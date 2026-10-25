@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SOLUTION_PAGES, SOLUTIONS_HUB_PATH, solutionPath } from "../content/landing";
 import {
   OG_LOCALE,
   SOCIAL_IMAGE,
@@ -127,8 +128,8 @@ describe("sitemap", () => {
 
   it("lists every marketing page with an absolute URL and no priority or changeFrequency", async () => {
     const { entries, seo } = await load({ status: "unavailable" });
-    expect(entries).toHaveLength(Object.keys(seo.PATHS).length);
-    for (const path of seo.MARKETING_PATHS) {
+    expect(entries).toHaveLength(Object.keys(seo.PATHS).length + 1 + SOLUTION_PAGES.length);
+    for (const path of [...seo.MARKETING_PATHS, SOLUTIONS_HUB_PATH, ...SOLUTION_PAGES.map((page) => solutionPath(page.slug))]) {
       const url = `https://www.pglive.in${path === "/" ? "" : path}`;
       expect(entries.map((e) => e.url)).toContain(url);
     }

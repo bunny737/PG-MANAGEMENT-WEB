@@ -14,12 +14,13 @@ import { FEATURE_ICONS } from "../featureIcons";
 
 const STATES: Availability[] = ["available", "preview", "comingSoon", "notPlanned"];
 
-export async function FeatureHighlights() {
+/** The home page shows the curated highlights; a landing page passes the features it is about. */
+export async function FeatureHighlights({ keys = HIGHLIGHT_KEYS }: { keys?: readonly string[] } = {}) {
   const [t, tCta] = await Promise.all([
     getTranslations("marketing.features"),
     getTranslations("marketing.cta"),
   ]);
-  const highlights = HIGHLIGHT_KEYS.map((key) => FEATURES.find((feature) => feature.key === key)).filter(
+  const highlights = keys.map((key) => FEATURES.find((feature) => feature.key === key)).filter(
     (feature) => feature !== undefined
   );
 

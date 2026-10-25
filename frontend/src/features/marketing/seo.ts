@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { getPlanCatalog } from "./data/plans";
 import { getSupportContacts } from "./data/support";
 import { breadcrumbJsonLd, pageMetadata, softwareApplicationJsonLd, websiteJsonLd } from "./seoCore";
+import { SOLUTIONS_HUB_PATH, solutionPath, type SolutionSlug } from "./content/landing";
 import { getSiteConfig } from "@/lib/site-config";
 
 export type MarketingPage =
@@ -134,4 +135,49 @@ export async function organizationJsonLd(): Promise<Record<string, unknown>[]> {
     websiteJsonLd(url, t("brand.name")),
     softwareApplicationJsonLd({ origin: url, name: t("brand.name"), offers, playStoreUrl }),
   ];
+}
+
+// ---- Solution (keyword landing) pages: docs/seo/keyword-map.md -------------------------------
+
+const solutionNamespace = (slug: SolutionSlug) => `marketing.solutions.pages.${slug}`;
+
+export async function solutionMetadata(slug: SolutionSlug): Promise<Metadata> {
+  const [t, brand] = await Promise.all([
+    getTranslations(`${solutionNamespace(slug)}.meta`),
+    getTranslations("marketing.brand"),
+  ]);
+  return pageMetadata({
+    title: t("title"),
+    description: t("description"),
+    path: solutionPath(slug),
+    siteName: brand("name"),
+  });
+}
+
+export async function solutionsHubMetadata(): Promise<Metadata> {
+  const [t, brand] = await Promise.all([
+    getTranslations("marketing.solutions.hub.meta"),
+    getTranslations("marketing.brand"),
+  ]);
+  return pageMetadata({
+    title: t("title"),
+    description: t("description"),
+    path: SOLUTIONS_HUB_PATH,
+    siteName: brand("name"),
+  });
+}
+
+/** Home → Solutions (→ page). The trail follows the real click path through the hub. */
+export async function solutionsBreadcrumb(slug?: SolutionSlug): Promise<Record<string, unknown>> {
+  const [t, hub] = await Promise.all([getTranslations("marketing"), getTranslations("marketing.solutions.hub")]);
+  const { url } = getSiteConfig();
+  const trail = [
+    { name: t("brand.name"), path: PATHS.home },
+    { name: hub("breadcrumb"), path: SOLUTIONS_HUB_PATH },
+  ];
+  if (slug) {
+    const page = await getTranslations(solutionNamespace(slug));
+    trail.push({ name: page("breadcrumb"), path: solutionPath(slug) });
+  }
+  return breadcrumbJsonLd(url, trail);
 }

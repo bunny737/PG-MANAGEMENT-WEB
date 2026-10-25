@@ -1,5 +1,6 @@
 import { FinalCta } from "@/features/marketing/sections/FaqAndCta";
 import { FeatureMatrix } from "@/features/marketing/sections/FeatureSections";
+import { SolutionLinks } from "@/features/marketing/sections/LandingSections";
 import { marketingMetadata } from "@/features/marketing/seo";
 import { PageBreadcrumb } from "@/components/marketing/PageBreadcrumb";
 
@@ -10,6 +11,7 @@ export default function FeaturesPage() {
     <>
       <PageBreadcrumb page="features" />
       <FeatureMatrix />
+      <SolutionLinks />
       <FinalCta />
     </>
   );

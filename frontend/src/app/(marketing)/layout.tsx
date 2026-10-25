@@ -6,13 +6,13 @@ import { getSiteConfig } from "@/lib/site-config";
 
 // The root layout defaults every route to noindex (the signed-in app must never
 // be indexed); the public marketing pages opt back in here.
-export async function generateMetadata(): Promise<Metadata> {
-  const [{ url }, t] = await Promise.all([Promise.resolve(getSiteConfig()), getTranslations("marketing")]);
+// Per-page openGraph/twitter live in features/marketing/seoCore.ts (pageMetadata): Next merges
+// metadata shallowly, so setting them here would be replaced by every page anyway.
+export function generateMetadata(): Metadata {
+  const { url } = getSiteConfig();
   return {
     metadataBase: new URL(url),
     robots: { index: true, follow: true },
-    openGraph: { siteName: t("brand.name"), type: "website" },
-    twitter: { card: "summary_large_image" },
   };
 }
 

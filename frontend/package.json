@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "seo:smoke": "node scripts/seo-smoke.mjs",
     "test": "vitest run",
     "gen:api": "openapi-typescript http://backend:8000/api/schema/ -o src/lib/api-schema.d.ts"
   },

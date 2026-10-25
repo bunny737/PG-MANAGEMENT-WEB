@@ -15,6 +15,8 @@ import {
  * The QR encodes https://pglive.in/app, never the Play URL, so it can be printed
  * today and keeps working after launch. */
 export async function AppShowcase({ isPage = false }: { isPage?: boolean }) {
+  // The /app page has the h1 directly above these, so they are h2 there and h3 under the home page's h2.
+  const Sub = isPage ? "h2" : "h3";
   const [t, support] = await Promise.all([getTranslations("marketing.app"), getSupportContacts()]);
   const { appStatus, playStoreUrl } = getSiteConfig();
   const live = appStatus === "live" && playStoreUrl !== null;
@@ -64,7 +66,7 @@ export async function AppShowcase({ isPage = false }: { isPage?: boolean }) {
           className="mx-auto size-44 rounded-xl border border-border bg-white p-2"
         />
         <div className="text-center sm:text-left">
-          <h3 className="text-xl font-bold text-ink">{t("scanTitle")}</h3>
+          <Sub className="text-xl font-bold text-ink">{t("scanTitle")}</Sub>
           <p className="mt-2 text-sm text-ink-muted">{t("scanBody")}</p>
           <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start">
             {live && playStoreUrl ? (
@@ -88,7 +90,7 @@ export async function AppShowcase({ isPage = false }: { isPage?: boolean }) {
       </div>
 
       <div className="mx-auto mt-8 max-w-3xl">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-ink-muted">{t("requirementsTitle")}</h3>
+        <Sub className="text-sm font-bold uppercase tracking-wider text-ink-muted">{t("requirementsTitle")}</Sub>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-ink-muted">
           {(t.raw("requirements") as string[]).map((item) => (
             <li key={item}>{item}</li>

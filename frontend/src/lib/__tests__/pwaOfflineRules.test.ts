@@ -79,6 +79,8 @@ describe("marketing pages stay out of the worker's page cache", () => {
     "/delete-account",
     "/pricing/",
     "/features/x",
+    "/solutions",
+    "/solutions/pg-rent-tracking",
   ])(
     "%s is a marketing path",
     (path) => expect(isMarketingPath(path)).toBe(true)

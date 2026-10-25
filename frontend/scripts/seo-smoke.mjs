@@ -55,6 +55,7 @@ async function checkPage(sitemapUrl) {
   const robots = (meta(doc, 'meta[name="robots"]') ?? "").replace(/\s+/g, "");
   check(robots === "index,follow", at(`robots is "${robots}", expected index,follow`));
 
+  check(!!doc.querySelector('header a[href="/solutions"]'), at("the navbar has no link to /solutions"));
   check(!!doc.querySelector("title")?.textContent?.trim(), at("no <title>"));
   check(!!meta(doc, 'meta[name="description"]'), at("no meta description"));
   check(meta(doc, 'meta[property="og:site_name"]'), at("no og:site_name"));

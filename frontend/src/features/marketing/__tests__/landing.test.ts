@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import en from "@/messages/en/marketing.json";
+import te from "@/messages/te/marketing.json";
 import { FEATURES } from "../content/features";
 import {
   SOLUTION_PAGES,
@@ -108,5 +109,34 @@ describe("solution page copy (English, the indexed language)", () => {
     expect(copyFor("pg-bed-occupancy").faq.items.some((item) => /coming soon/i.test(item.a))).toBe(true);
     expect(copyFor("pg-rent-tracking").faq.items[0].a).toMatch(/does not collect|No\./);
     expect(copyFor("hostel-management-software").faq.items[0].a).toMatch(/^No\./);
+  });
+});
+
+describe("solution page copy (Telugu)", () => {
+  const TELUGU = /[ఀ-౿]/;
+  const strings = (node: unknown): string[] =>
+    typeof node === "string"
+      ? [node]
+      : node && typeof node === "object"
+        ? Object.values(node as Record<string, unknown>).flatMap(strings)
+        : [];
+
+  // The catalogue key-parity test passes with English placeholders, so check the text itself.
+  it("is actually translated, with no English left in the visible copy", () => {
+    const untranslated = strings(te.solutions).filter((text) => !TELUGU.test(text));
+    expect(untranslated).toEqual([]);
+    expect(strings(te.solutionLinks).filter((text) => !TELUGU.test(text))).toEqual([]);
+  });
+
+  it("keeps brand, product and claim limits in step with English", () => {
+    const text = JSON.stringify(te.solutions);
+    expect(text).toContain("PGLive");
+    // Same truthfulness limits as the English copy: no reminders, WhatsApp/SMS.
+    expect(text).not.toMatch(/రిమైండర్|వాట్సాప్|WhatsApp|SMS/i);
+    for (const page of SOLUTION_PAGES) {
+      const copy = (te.solutions.pages as Record<string, Copy>)[page.slug];
+      expect(copy.sections.length).toBe(copyFor(page.slug).sections.length);
+      expect(copy.faq.items.length).toBe(copyFor(page.slug).faq.items.length);
+    }
   });
 });

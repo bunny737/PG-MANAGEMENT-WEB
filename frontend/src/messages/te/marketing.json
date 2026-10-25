@@ -688,161 +688,161 @@
   "solutions": {
     "hub": {
       "meta": {
-        "title": "Solutions for PG and hostel owners — PGLive",
-        "description": "Rent tracking, hostel management and bed occupancy for PG and hostel owners in India. See which part of running your property PGLive covers."
+        "title": "PG మరియు హాస్టల్ యజమానులకు పరిష్కారాలు — PGLive",
+        "description": "భారతదేశంలోని PG మరియు హాస్టల్ యజమానుల కోసం అద్దె ట్రాకింగ్, హాస్టల్ నిర్వహణ మరియు బెడ్ ఆక్యుపెన్సీ. మీ ఆస్తి నిర్వహణలో PGLive ఏ భాగాన్ని చూసుకుంటుందో చూడండి."
       },
-      "breadcrumb": "Solutions",
-      "eyebrow": "Solutions",
-      "title": "PGLive for the way you run your PG or hostel",
-      "subtitle": "Pick the job that takes most of your time. Each page shows what PGLive does for it today and which parts are still on the way.",
-      "cardCta": "Read more"
+      "breadcrumb": "పరిష్కారాలు",
+      "eyebrow": "పరిష్కారాలు",
+      "title": "మీరు మీ PG లేదా హాస్టల్‌ను నడిపే విధానానికి PGLive",
+      "subtitle": "మీ ఎక్కువ సమయం తీసుకునే పనిని ఎంచుకోండి. ప్రతి పేజీ ఆ పనికి PGLive ఈరోజు ఏం చేస్తుందో, ఇంకా ఏవి రావాల్సి ఉన్నాయో చూపిస్తుంది.",
+      "cardCta": "మరింత చదవండి"
     },
     "pages": {
       "pg-rent-tracking": {
         "meta": {
-          "title": "PG rent management app for owners — PGLive",
-          "description": "Create rent invoices for a whole PG in one go, record UPI, cash and part payments, and see who owes what. Built for PG and hostel owners in India."
+          "title": "యజమానుల కోసం PG అద్దె నిర్వహణ యాప్ — PGLive",
+          "description": "మొత్తం PGకి అద్దె ఇన్‌వాయిస్‌లను ఒకేసారి తయారు చేయండి, UPI, నగదు, పాక్షిక చెల్లింపులను నమోదు చేయండి, ఎవరు ఎంత బాకీ ఉన్నారో చూడండి. భారతదేశంలోని PG మరియు హాస్టల్ యజమానుల కోసం రూపొందించబడింది."
         },
-        "breadcrumb": "PG rent tracking",
-        "nav": "PG rent tracking",
-        "eyebrow": "PG rent management",
-        "title": "Rent invoices and payment tracking for your PG",
-        "intro": "PGLive turns the monthly rent round into a few clicks. Generate invoices for a whole property at once, record each payment as it arrives, and see what every resident owes without a notebook or a spreadsheet.",
-        "summary": "Invoices for a whole property at once, every payment recorded, and dues visible per resident.",
+        "breadcrumb": "PG అద్దె ట్రాకింగ్",
+        "nav": "PG అద్దె ట్రాకింగ్",
+        "eyebrow": "PG అద్దె నిర్వహణ",
+        "title": "మీ PGకి అద్దె ఇన్‌వాయిస్‌లు మరియు చెల్లింపుల ట్రాకింగ్",
+        "intro": "PGLive నెలవారీ అద్దె వసూలు పనిని కొన్ని క్లిక్‌లకు తగ్గిస్తుంది. మొత్తం ప్రాపర్టీకి ఒకేసారి ఇన్‌వాయిస్‌లు తయారు చేయండి, ప్రతి చెల్లింపు అందగానే నమోదు చేయండి, నోట్‌బుక్ లేదా స్ప్రెడ్‌షీట్ లేకుండానే ప్రతి నివాసి ఎంత బాకీ ఉన్నారో చూడండి.",
+        "summary": "మొత్తం ప్రాపర్టీకి ఒకేసారి ఇన్‌వాయిస్‌లు, ప్రతి చెల్లింపు నమోదు, ప్రతి నివాసికి బాకీల వివరాలు.",
         "sections": [
           {
-            "heading": "Invoices that show every charge",
-            "body": "Rent, discounts, electricity, water and other charges appear as separate lines, so a resident can see exactly what they are being billed. Rent is billed at the amount agreed when the resident joined, so a discount given to one resident never changes what the person in the next bed pays."
+            "heading": "ప్రతి ఛార్జీని చూపే ఇన్‌వాయిస్‌లు",
+            "body": "అద్దె, డిస్కౌంట్లు, కరెంటు, నీరు మరియు ఇతర ఛార్జీలు వేర్వేరు లైన్లుగా కనిపిస్తాయి, కాబట్టి నివాసికి తనకు ఎంత బిల్లు వేస్తున్నారో స్పష్టంగా తెలుస్తుంది. నివాసి చేరినప్పుడు అంగీకరించిన మొత్తంపైనే అద్దె బిల్లు అవుతుంది, కాబట్టి ఒక నివాసికి ఇచ్చిన డిస్కౌంట్ పక్క బెడ్‌లో ఉన్నవారు చెల్లించే మొత్తాన్ని మార్చదు."
           },
           {
-            "heading": "Record payments the way they actually arrive",
-            "body": "Log UPI, cash, bank transfer, card or cheque payments, including part payments, and PGLive keeps the balance up to date. PGLive records what you receive; it does not collect rent for you, and residents keep paying you directly."
+            "heading": "చెల్లింపులు అందే విధంగానే నమోదు చేయండి",
+            "body": "UPI, నగదు, బ్యాంక్ ట్రాన్స్‌ఫర్, కార్డ్ లేదా చెక్ చెల్లింపులను, పాక్షిక చెల్లింపులతో సహా, నమోదు చేయండి; PGLive బ్యాలెన్స్‌ను తాజాగా ఉంచుతుంది. PGLive మీకు అందినదాన్ని నమోదు చేస్తుంది; ఇది మీ తరఫున అద్దె వసూలు చేయదు, నివాసితులు మీకే నేరుగా చెల్లిస్తారు."
           },
           {
-            "heading": "See dues and collections at a glance",
-            "body": "The dashboard shows what has been collected and what is still due, for one property or all of them. Export collections, payment history and dues as CSV, Excel or PDF, and track your monthly expenses by category next to your income."
+            "heading": "బాకీలు మరియు వసూళ్లను ఒక్క చూపులో చూడండి",
+            "body": "ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఎంత వసూలైంది, ఇంకా ఎంత బాకీ ఉందో డాష్‌బోర్డ్ చూపిస్తుంది. వసూళ్లు, చెల్లింపుల చరిత్ర మరియు బాకీలను CSV, Excel లేదా PDFగా ఎగుమతి చేయండి, మీ ఆదాయం పక్కనే నెలవారీ ఖర్చులను వర్గాల వారీగా ట్రాక్ చేయండి."
           }
         ],
         "faq": {
-          "title": "Rent tracking questions",
+          "title": "అద్దె ట్రాకింగ్ ప్రశ్నలు",
           "items": [
             {
-              "q": "Does PGLive collect rent from my residents?",
-              "a": "No. PGLive creates the invoices and records the payments you receive by UPI, cash, bank transfer, card or cheque. Residents pay you directly. The payment gateway is used only for your own PGLive subscription."
+              "q": "PGLive నా నివాసితుల నుండి అద్దె వసూలు చేస్తుందా?",
+              "a": "లేదు. PGLive ఇన్‌వాయిస్‌లను తయారు చేసి, మీకు UPI, నగదు, బ్యాంక్ ట్రాన్స్‌ఫర్, కార్డ్ లేదా చెక్ ద్వారా అందిన చెల్లింపులను నమోదు చేస్తుంది. నివాసితులు మీకే నేరుగా చెల్లిస్తారు. పేమెంట్ గేట్‌వే మీ స్వంత PGLive సబ్‌స్క్రిప్షన్ కోసం మాత్రమే ఉపయోగించబడుతుంది."
             },
             {
-              "q": "Can I record part payments?",
-              "a": "Yes. Record any amount against an invoice and PGLive shows what is still owed, so you can see who owes what at any time."
+              "q": "పాక్షిక చెల్లింపులను నమోదు చేయవచ్చా?",
+              "a": "అవును. ఇన్‌వాయిస్‌పై ఏ మొత్తమైనా నమోదు చేయవచ్చు; ఇంకా ఎంత బాకీ ఉందో PGLive చూపిస్తుంది, కాబట్టి ఎవరు ఎంత బాకీ ఉన్నారో ఎప్పుడైనా చూడవచ్చు."
             },
             {
-              "q": "Can I give one resident a discount?",
-              "a": "Yes. Give a fixed or percentage discount with a reason and a validity window. It appears as its own line on that resident's invoice and does not affect anyone else."
+              "q": "ఒక నివాసికి డిస్కౌంట్ ఇవ్వవచ్చా?",
+              "a": "అవును. కారణం మరియు చెల్లుబాటు కాలంతో స్థిర మొత్తం లేదా శాతం డిస్కౌంట్ ఇవ్వవచ్చు. అది ఆ నివాసి ఇన్‌వాయిస్‌లో ప్రత్యేక లైన్‌గా కనిపిస్తుంది, మరెవరిపైనా ప్రభావం చూపదు."
             },
             {
-              "q": "Can I export my collections?",
-              "a": "Yes. Collections, payment history, dues and resident lists can be exported as CSV, Excel or PDF."
+              "q": "నా వసూళ్లను ఎగుమతి చేయవచ్చా?",
+              "a": "అవును. వసూళ్లు, చెల్లింపుల చరిత్ర, బాకీలు మరియు నివాసితుల జాబితాలను CSV, Excel లేదా PDFగా ఎగుమతి చేయవచ్చు."
             }
           ]
         }
       },
       "hostel-management-software": {
         "meta": {
-          "title": "Hostel management software for private hostels — PGLive",
-          "description": "Residents, rent invoices, payments, visitors and staff for privately run hostels and PGs in India, in one system. Not built for school or college campuses."
+          "title": "ప్రైవేట్ హాస్టళ్ల కోసం హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్ — PGLive",
+          "description": "భారతదేశంలో ప్రైవేట్‌గా నడిచే హాస్టళ్లు మరియు PGల కోసం నివాసితులు, అద్దె ఇన్‌వాయిస్‌లు, చెల్లింపులు, సందర్శకులు మరియు సిబ్బంది — అన్నీ ఒకే సిస్టమ్‌లో. పాఠశాల లేదా కళాశాల క్యాంపస్‌ల కోసం రూపొందించలేదు."
         },
-        "breadcrumb": "Hostel management software",
-        "nav": "Hostel management",
-        "eyebrow": "Hostel management software",
-        "title": "Hostel management software for privately run hostels",
-        "intro": "PGLive is for owners and managers who run a hostel or PG as a business. Keep resident records, rent invoices, payments, visitors and your team in one place instead of notebooks, spreadsheets and chat groups.",
-        "summary": "Residents, billing, visitors and staff in one system for a privately run hostel or PG.",
+        "breadcrumb": "హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్",
+        "nav": "హాస్టల్ నిర్వహణ",
+        "eyebrow": "హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్",
+        "title": "ప్రైవేట్‌గా నడిచే హాస్టళ్ల కోసం హాస్టల్ నిర్వహణ సాఫ్ట్‌వేర్",
+        "intro": "హాస్టల్ లేదా PGని వ్యాపారంగా నడిపే యజమానులు మరియు మేనేజర్ల కోసం PGLive. నోట్‌బుక్‌లు, స్ప్రెడ్‌షీట్‌లు, చాట్ గ్రూపులకు బదులుగా నివాసితుల రికార్డులు, అద్దె ఇన్‌వాయిస్‌లు, చెల్లింపులు, సందర్శకులు మరియు మీ బృందాన్ని ఒకే చోట ఉంచండి.",
+        "summary": "ప్రైవేట్‌గా నడిచే హాస్టల్ లేదా PG కోసం నివాసితులు, బిల్లింగ్, సందర్శకులు మరియు సిబ్బంది ఒకే సిస్టమ్‌లో.",
         "sections": [
           {
-            "heading": "One record for every resident",
-            "body": "Keep profiles, emergency contacts and ID documents together, with a clear status from inquiry to vacated, so you always know who is staying and who has left."
+            "heading": "ప్రతి నివాసికి ఒకే రికార్డు",
+            "body": "ప్రొఫైల్‌లు, అత్యవసర సంప్రదింపులు మరియు ID పత్రాలను కలిపి ఉంచండి; ఎంక్వైరీ నుండి ఖాళీ చేసే వరకు స్పష్టమైన స్థితితో, ఎవరు ఉంటున్నారో, ఎవరు వెళ్లిపోయారో మీకు ఎల్లప్పుడూ తెలుస్తుంది."
           },
           {
-            "heading": "Billing and payments without the notebook",
-            "body": "Generate rent invoices for a whole property at once, with rent, discounts and other charges on separate lines. Record UPI, cash, bank transfer, card or cheque payments, including part payments, and see who owes what."
+            "heading": "నోట్‌బుక్ లేకుండా బిల్లింగ్ మరియు చెల్లింపులు",
+            "body": "మొత్తం ప్రాపర్టీకి ఒకేసారి అద్దె ఇన్‌వాయిస్‌లు తయారు చేయండి; అద్దె, డిస్కౌంట్లు మరియు ఇతర ఛార్జీలు వేర్వేరు లైన్లుగా ఉంటాయి. UPI, నగదు, బ్యాంక్ ట్రాన్స్‌ఫర్, కార్డ్ లేదా చెక్ చెల్లింపులను, పాక్షిక చెల్లింపులతో సహా, నమోదు చేసి ఎవరు ఎంత బాకీ ఉన్నారో చూడండి."
           },
           {
-            "heading": "A front desk and a team that share one system",
-            "body": "Check visitors in and out with a record of who visited whom. Add managers and receptionists, assign them to properties and control which modules each person can use."
+            "heading": "ఒకే సిస్టమ్‌ను పంచుకునే ఫ్రంట్ డెస్క్ మరియు బృందం",
+            "body": "ఎవరు ఎవరిని కలిశారనే రికార్డుతో సందర్శకులను చెక్-ఇన్ మరియు చెక్-అవుట్ చేయండి. మేనేజర్లు మరియు రిసెప్షనిస్టులను జోడించి, వారిని ప్రాపర్టీలకు కేటాయించి, ప్రతి ఒక్కరు ఏ మాడ్యూళ్లను ఉపయోగించవచ్చో నియంత్రించండి."
           },
           {
-            "heading": "Made for private hostels, not campuses",
-            "body": "Campus systems handle fee structures, mess allotment and academic calendars. PGLive does not. If you run a school or university hostel, a campus ERP is a better fit; if the hostel is your business, this is what PGLive is for."
+            "heading": "ప్రైవేట్ హాస్టళ్ల కోసం, క్యాంపస్‌ల కోసం కాదు",
+            "body": "క్యాంపస్ సిస్టమ్‌లు ఫీజు నిర్మాణాలు, మెస్ కేటాయింపు మరియు విద్యా క్యాలెండర్‌లను చూసుకుంటాయి. PGLive అలా చేయదు. మీరు పాఠశాల లేదా విశ్వవిద్యాలయ హాస్టల్ నడుపుతుంటే క్యాంపస్ ERP మీకు బాగా సరిపోతుంది; హాస్టల్ మీ వ్యాపారమైతే, PGLive దాని కోసమే."
           }
         ],
         "faq": {
-          "title": "Hostel software questions",
+          "title": "హాస్టల్ సాఫ్ట్‌వేర్ ప్రశ్నలు",
           "items": [
             {
-              "q": "Is PGLive hostel software for schools and colleges?",
-              "a": "No. PGLive is built for privately run hostels and PGs. It does not cover campus needs such as fee structures, mess allotment or academic calendars."
+              "q": "PGLive పాఠశాలలు మరియు కళాశాలల హాస్టల్ సాఫ్ట్‌వేరా?",
+              "a": "కాదు. PGLive ప్రైవేట్‌గా నడిచే హాస్టళ్లు మరియు PGల కోసం రూపొందించబడింది. ఫీజు నిర్మాణాలు, మెస్ కేటాయింపు లేదా విద్యా క్యాలెండర్‌ల వంటి క్యాంపస్ అవసరాలను ఇది తీర్చదు."
             },
             {
-              "q": "Can I manage more than one hostel?",
-              "a": "Yes. The dashboard shows occupancy and finances for one property or all of them. The number of properties depends on your plan."
+              "q": "ఒకటి కంటే ఎక్కువ హాస్టళ్లను నిర్వహించవచ్చా?",
+              "a": "అవును. ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్యుపెన్సీ మరియు ఆర్థిక వివరాలను డాష్‌బోర్డ్ చూపిస్తుంది. ప్రాపర్టీల సంఖ్య మీ ప్లాన్‌పై ఆధారపడి ఉంటుంది."
             },
             {
-              "q": "Can my manager or receptionist use it?",
-              "a": "Yes. Add managers and receptionists, assign them to the properties they handle and choose which modules each person can use."
+              "q": "నా మేనేజర్ లేదా రిసెప్షనిస్ట్ దీన్ని ఉపయోగించవచ్చా?",
+              "a": "అవును. మేనేజర్లు మరియు రిసెప్షనిస్టులను జోడించి, వారు చూసుకునే ప్రాపర్టీలను కేటాయించి, ప్రతి ఒక్కరు ఏ మాడ్యూళ్లను ఉపయోగించవచ్చో ఎంచుకోండి."
             },
             {
-              "q": "Is there a visitor log?",
-              "a": "Yes. Front-desk check-in and check-out keep a clear record of who visited whom."
+              "q": "సందర్శకుల లాగ్ ఉందా?",
+              "a": "అవును. ఫ్రంట్ డెస్క్ చెక్-ఇన్ మరియు చెక్-అవుట్ ద్వారా ఎవరు ఎవరిని కలిశారో స్పష్టమైన రికార్డు ఉంటుంది."
             },
             {
-              "q": "Which languages does it support?",
-              "a": "English and Telugu today, with more Indian languages planned."
+              "q": "ఏ భాషలకు మద్దతు ఉంది?",
+              "a": "ప్రస్తుతం ఇంగ్లీష్ మరియు తెలుగు; మరిన్ని భారతీయ భాషలు రానున్నాయి."
             }
           ]
         }
       },
       "pg-bed-occupancy": {
         "meta": {
-          "title": "Track vacant beds across your PG properties — PGLive",
-          "description": "See beds occupied and vacant for one property or all of them, with collections and dues alongside. Built for PG and hostel owners in India."
+          "title": "మీ PG ప్రాపర్టీలలో ఖాళీ బెడ్‌లను ట్రాక్ చేయండి — PGLive",
+          "description": "ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్రమిత మరియు ఖాళీ బెడ్‌లను, పక్కనే వసూళ్లు మరియు బాకీలతో చూడండి. భారతదేశంలోని PG మరియు హాస్టల్ యజమానుల కోసం రూపొందించబడింది."
         },
-        "breadcrumb": "Bed occupancy",
-        "nav": "Bed occupancy",
-        "eyebrow": "Occupancy tracking",
-        "title": "See every vacant bed across your properties",
-        "intro": "Empty beds cost you rent every month. PGLive shows beds occupied and vacant at a glance, for one property or all of them, next to what you have collected and what is still due.",
-        "summary": "Beds occupied and vacant for one property or all, with collections and dues alongside.",
+        "breadcrumb": "బెడ్ ఆక్యుపెన్సీ",
+        "nav": "బెడ్ ఆక్యుపెన్సీ",
+        "eyebrow": "ఆక్యుపెన్సీ ట్రాకింగ్",
+        "title": "మీ అన్ని ప్రాపర్టీలలో ప్రతి ఖాళీ బెడ్‌ను చూడండి",
+        "intro": "ఖాళీ బెడ్‌లు ప్రతి నెలా మీకు అద్దె ఆదాయాన్ని నష్టపరుస్తాయి. ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్రమిత మరియు ఖాళీ బెడ్‌లను, మీరు ఎంత వసూలు చేశారో, ఇంకా ఎంత బాకీ ఉందో పక్కనే PGLive ఒక్క చూపులో చూపిస్తుంది.",
+        "summary": "ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్రమిత మరియు ఖాళీ బెడ్‌లు, పక్కనే వసూళ్లు మరియు బాకీలు.",
         "sections": [
           {
-            "heading": "Occupancy at a glance",
-            "body": "The dashboard counts beds occupied and beds vacant for a single property or across all of them, so you can see where you have room without walking the floors or checking a sheet."
+            "heading": "ఒక్క చూపులో ఆక్యుపెన్సీ",
+            "body": "ఒక్క ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్రమిత బెడ్‌లు, ఖాళీ బెడ్‌లను డాష్‌బోర్డ్ లెక్కిస్తుంది; అంతస్తులన్నీ తిరగకుండా లేదా షీట్ చూడకుండానే ఎక్కడ ఖాళీ ఉందో తెలుస్తుంది."
           },
           {
-            "heading": "Know who is staying",
-            "body": "Resident records keep profiles, emergency contacts and ID documents, with a clear status from inquiry to vacated. A resident who has left no longer counts as staying."
+            "heading": "ఎవరు ఉంటున్నారో తెలుసుకోండి",
+            "body": "నివాసితుల రికార్డులు ప్రొఫైల్‌లు, అత్యవసర సంప్రదింపులు మరియు ID పత్రాలను ఉంచుతాయి; ఎంక్వైరీ నుండి ఖాళీ చేసే వరకు స్పష్టమైన స్థితి ఉంటుంది. వెళ్లిపోయిన నివాసి ఇకపై ఉంటున్నవారిగా లెక్కలోకి రాడు."
           },
           {
-            "heading": "Trends you can take away",
-            "body": "Reports show collections and occupancy trends over time, and resident lists, payment history and dues export as CSV, Excel or PDF."
+            "heading": "మీరు తీసుకెళ్లగల ట్రెండ్‌లు",
+            "body": "రిపోర్టులు కాలక్రమేణా వసూళ్లు మరియు ఆక్యుపెన్సీ ట్రెండ్‌లను చూపిస్తాయి; నివాసితుల జాబితాలు, చెల్లింపుల చరిత్ర మరియు బాకీలను CSV, Excel లేదా PDFగా ఎగుమతి చేయవచ్చు."
           }
         ],
         "faq": {
-          "title": "Occupancy questions",
+          "title": "ఆక్యుపెన్సీ ప్రశ్నలు",
           "items": [
             {
-              "q": "Does PGLive track beds or only rooms?",
-              "a": "The dashboard shows beds occupied and beds vacant, for one property or all of them."
+              "q": "PGLive బెడ్‌లను ట్రాక్ చేస్తుందా లేక గదులనా?",
+              "a": "ఒక ప్రాపర్టీకి లేదా అన్నింటికీ ఆక్రమిత బెడ్‌లు, ఖాళీ బెడ్‌లను డాష్‌బోర్డ్ చూపిస్తుంది."
             },
             {
-              "q": "Can I see all my properties together?",
-              "a": "Yes. The dashboard works for one property or across all of them."
+              "q": "నా అన్ని ప్రాపర్టీలను కలిపి చూడవచ్చా?",
+              "a": "అవును. డాష్‌బోర్డ్ ఒక ప్రాపర్టీకి లేదా అన్నింటికీ పని చేస్తుంది."
             },
             {
-              "q": "Can I move a resident to another bed?",
-              "a": "Bed allocation and transfers are coming soon. Today PGLive shows you occupancy and resident records; moving residents between rooms is not available yet."
+              "q": "నివాసిని మరో బెడ్‌కు మార్చవచ్చా?",
+              "a": "బెడ్ కేటాయింపు మరియు బదిలీలు త్వరలో రానున్నాయి. ప్రస్తుతం PGLive ఆక్యుపెన్సీ మరియు నివాసితుల రికార్డులను చూపిస్తుంది; నివాసితులను గదుల మధ్య మార్చడం ఇంకా అందుబాటులో లేదు."
             },
             {
-              "q": "Which languages does it support?",
-              "a": "English and Telugu today, with more Indian languages planned."
+              "q": "ఏ భాషలకు మద్దతు ఉంది?",
+              "a": "ప్రస్తుతం ఇంగ్లీష్ మరియు తెలుగు; మరిన్ని భారతీయ భాషలు రానున్నాయి."
             }
           ]
         }

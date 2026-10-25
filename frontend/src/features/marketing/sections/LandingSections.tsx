@@ -48,7 +48,9 @@ export async function SolutionBody({ slug }: { slug: SolutionSlug }) {
   );
 }
 
-async function SolutionCards({ exclude }: { exclude?: SolutionSlug }) {
+/** Card titles are h3 under a section heading (SolutionLinks) and h2 directly under the hub's h1 (`hub`). */
+async function SolutionCards({ exclude, hub = false }: { exclude?: SolutionSlug; hub?: boolean }) {
+  const Heading = hub ? "h2" : "h3";
   const [t, tLinks] = await Promise.all([
     getTranslations("marketing.solutions.pages"),
     getTranslations("marketing.solutionLinks"),
@@ -57,7 +59,7 @@ async function SolutionCards({ exclude }: { exclude?: SolutionSlug }) {
     <ul className="mt-10 grid gap-6 md:grid-cols-3">
       {SOLUTION_PAGES.filter((page) => page.slug !== exclude).map((page) => (
         <li key={page.slug} className="flex flex-col rounded-2xl border border-border bg-surface-card p-6 shadow-xs">
-          <h3 className="text-lg font-bold">{t(`${page.slug}.nav`)}</h3>
+          <Heading className="text-lg font-bold">{t(`${page.slug}.nav`)}</Heading>
           <p className="mt-2 flex-1 text-sm text-ink-muted">{t(`${page.slug}.summary`)}</p>
           <Link
             href={solutionPath(page.slug)}
@@ -94,7 +96,7 @@ export async function SolutionsHub() {
   return (
     <Section>
       <SectionHeading pageTitle eyebrow={t("eyebrow")} title={t("title")} subtitle={t("subtitle")} />
-      <SolutionCards />
+      <SolutionCards hub />
     </Section>
   );
 }

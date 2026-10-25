@@ -71,6 +71,12 @@ async function checkPage(sitemapUrl) {
 
   check(doc.querySelectorAll("h1").length === 1, at(`${doc.querySelectorAll("h1").length} <h1> elements, expected 1`));
 
+  // Headings must not skip a level (h1 to h3), which breaks screen-reader navigation and the outline.
+  const levels = [...doc.querySelectorAll("h1, h2, h3, h4, h5, h6")].map((h) => Number(h.tagName[1]));
+  levels.forEach((level, i) => {
+    check(i === 0 || level <= levels[i - 1] + 1, at(`heading jumps from h${levels[i - 1]} to h${level}`));
+  });
+
   const blocks = [...doc.querySelectorAll('script[type="application/ld+json"]')];
   check(blocks.length > 0, at("no JSON-LD"));
   for (const block of blocks) {

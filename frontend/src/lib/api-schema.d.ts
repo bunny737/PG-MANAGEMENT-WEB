@@ -277,6 +277,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/account/deletion/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        get: operations["v1_auth_account_deletion_retrieve"];
+        put?: never;
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        post: operations["v1_auth_account_deletion_create"];
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        delete: operations["v1_auth_account_deletion_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/account/deletion/otp/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Emails a deletion-purpose code to the signed-in user (they pick this or their password to
+         *     confirm). Phone codes are refused while no SMS backend exists.
+         */
+        post: operations["v1_auth_account_deletion_otp_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login/": {
         parameters: {
             query?: never;
@@ -2806,6 +2860,38 @@ export interface components {
             /** @default  */
             absconded_note: string;
         };
+        /** @description An account-deletion request as its owner sees it. */
+        AccountDeletion: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly scope: components["schemas"]["ScopeEnum"];
+            readonly status: components["schemas"]["AccountDeletionStatusEnum"];
+            /** Format: date-time */
+            readonly requested_at: string;
+            /** Format: date-time */
+            readonly scheduled_for: string;
+            readonly can_cancel: boolean;
+        };
+        /**
+         * @description Confirms a deletion request: the account's password, or a deletion-purpose email code.
+         *     A login code never works here (OTPs are bound to their purpose).
+         */
+        AccountDeletionCreate: {
+            password?: string;
+            otp?: string;
+            confirm: boolean;
+            reason?: string;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `processing` - Processing
+         *     * `completed` - Completed
+         *     * `cancelled` - Cancelled
+         *     * `failed` - Failed
+         *     * `superseded` - Superseded
+         * @enum {string}
+         */
+        AccountDeletionStatusEnum: "pending" | "processing" | "completed" | "cancelled" | "failed" | "superseded";
         Admission: {
             /** Format: uuid */
             readonly id: string;
@@ -3681,6 +3767,15 @@ export interface components {
             readonly permissions: string[];
             /** @description Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False. */
             readonly kyc_uploads_enabled: boolean;
+            /**
+             * @description The ACTIVE account-deletion request that locks this user (their own, or their
+             *     business's), so clients can show the "scheduled for deletion" screen. None when unlocked.
+             */
+            readonly deletion: {
+                [key: string]: unknown;
+            } | null;
+            /** @description Which of 'password' / 'otp_email' / 'otp_phone' can confirm a deletion request right now. */
+            readonly deletion_confirm_methods: string[];
         };
         MeUpdate: {
             first_name: string;
@@ -4583,6 +4678,12 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `user` - User
+         *     * `tenant` - Whole business
+         * @enum {string}
+         */
+        ScopeEnum: "user" | "tenant";
         ScreenInfo: {
             width_px: number;
             height_px: number;
@@ -4768,9 +4869,10 @@ export interface components {
          *     * `payment_failed` - Payment Failed
          *     * `suspended` - Suspended
          *     * `cancelled` - Cancelled
+         *     * `deleted` - Deleted
          * @enum {string}
          */
-        TenantStatusEnum: "trial" | "active" | "payment_failed" | "suspended" | "cancelled";
+        TenantStatusEnum: "trial" | "active" | "payment_failed" | "suspended" | "cancelled" | "deleted";
         TenantUpdate: {
             default_language?: components["schemas"]["LanguageEnum"];
             fiscal_year_start_month?: number;
@@ -5285,6 +5387,86 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuditLog"];
                 };
+            };
+        };
+    };
+    v1_auth_account_deletion_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletion"];
+                };
+            };
+        };
+    };
+    v1_auth_account_deletion_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["AccountDeletionCreate"];
+                "multipart/form-data": components["schemas"]["AccountDeletionCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletion"];
+                };
+            };
+        };
+    };
+    v1_auth_account_deletion_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_auth_account_deletion_otp_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

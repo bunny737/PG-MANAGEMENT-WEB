@@ -4,6 +4,7 @@ import { FaqSection, FinalCta } from "@/features/marketing/sections/FaqAndCta";
 import { FeatureHighlights, HowItWorks } from "@/features/marketing/sections/FeatureSections";
 import { Hero } from "@/features/marketing/sections/Hero";
 import { PricingSection } from "@/features/marketing/sections/PricingSection";
+import { SolutionLinks } from "@/features/marketing/sections/LandingSections";
 import { RolesSection, TrustStrip } from "@/features/marketing/sections/TrustAndRoles";
 import { marketingMetadata, organizationJsonLd } from "@/features/marketing/seo";
 
@@ -19,6 +20,7 @@ export default async function HomePage() {
       <Hero />
       <TrustStrip />
       <FeatureHighlights />
+      <SolutionLinks />
       <RolesSection />
       <HowItWorks />
       <AppShowcase />

@@ -5,8 +5,9 @@ import { JsonLd } from "@/components/marketing/JsonLd";
 import { Section, SectionHeading } from "@/components/marketing/Section";
 import { PrimaryCtaButton } from "../PrimaryCtaButton";
 
-export async function FaqSection() {
-  const t = await getTranslations("marketing.faq");
+/** `namespace` lets a landing page bring its own `{ title, items }` (default: the site-wide FAQ). */
+export async function FaqSection({ namespace = "marketing.faq" }: { namespace?: string } = {}) {
+  const t = await getTranslations(namespace);
   const items = t.raw("items") as { q: string; a: string }[];
 
   return (

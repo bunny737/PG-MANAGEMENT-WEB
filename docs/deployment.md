@@ -97,6 +97,9 @@ clients (future mobile apps, scripts) are exactly what a peer-IP limit is for.
   without the previous key.
 - Test locally: `infra/edge/test-limits.sh` (needs Docker; builds the real `limits.conf` into a throwaway
   nginx and bursts requests through each path).
+- Test locally: `infra/edge/test-robots-header.sh` (needs Docker) renders the real `pglive.conf.template` in nginx 1.22 and
+  proves `api.pglive.in` sends `X-Robots-Tag: noindex, nofollow` on every response, nginx-generated errors included
+  (`always`), while `www.pglive.in` sends none and HSTS is still present. Neither edge test runs in CI.
 - The schema/docs routes (`/api/schema/`, `/api/docs/`) share the `/admin/` IP allowlist; Django itself also
   requires an admin session for them (`prod.py`, `SPECTACULAR_SETTINGS`).
 
@@ -168,6 +171,7 @@ Then, in Super Admin: PlatformConfig (trial days, grace days, caps — invariant
   database downgrade.
 - Rollback: `gcloud run services update-traffic SERVICE --to-revisions=PREVIOUS=100`; worker VM:
   `deploy.sh PREVIOUS_TAG`.
+- **SEO check after each deploy.** `cd frontend && BASE_URL=https://www.pglive.in API_URL=https://api.pglive.in npm run seo:smoke` walks the sitemap and asserts canonical, robots meta, OG/Twitter tags, share-card image, one `<h1>`, JSON-LD, no redirect or cookie, a 404 for an unknown slug and `X-Robots-Tag` on the API (frontend-plan §12.9). The API header check passes only after the edge is re-rendered with `infra/edge/setup-edge.sh` on the worker VM (it installs the `X-Robots-Tag` header from `pglive.conf.template`).
 
 ## 7. Operations cheat sheet
 
@@ -210,6 +214,7 @@ tests, and deletes the instance.
 - **Account deletion (Module 22)**: create the `account_deletion_failed` log-based alert (see §7), confirm with the accountant that the
   retained billing set satisfies GST record rules, and put the public `/delete-account` URL into Play Console → Data safety.
   The Flutter app must also ship its in-app "Delete account" entry before the module is closed.
+- **Search Console and Bing (owner action, no deploy).** Verify `pglive.in` as a *Domain property* with a DNS TXT record at GoDaddy (covers apex, www and api), submit `https://www.pglive.in/sitemap.xml`, then import the site into Bing Webmaster Tools. A Google Business Profile is only for a business that serves customers face to face at a real address or service area; an online-only SaaS is not eligible, so skip it unless that changes.
 - **Razorpay live activation** (KYC, Subscriptions enabled) and **billing upgraded to a paid account before launch**.
 - **Stale webhook ordering** is an open decision — see [modules/13-subscription.md](modules/13-subscription.md).
 - Cost estimate must be an exported Pricing Calculator file before choosing the launch tier (the lean option leaves

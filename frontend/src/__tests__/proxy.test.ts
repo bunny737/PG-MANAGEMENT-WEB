@@ -63,7 +63,7 @@ describe.each([
 });
 
 describe("cookies and redirects (unchanged behaviour)", () => {
-  test.each(["/", "/features", "/pricing/", "/app", "/contact", "/privacy", "/terms", "/refund-policy", "/delete-account"])(
+  test.each(["/", "/features", "/pricing/", "/app", "/contact", "/privacy", "/terms", "/refund-policy", "/delete-account", "/solutions", "/solutions/pg-rent-tracking"])(
     "anonymous marketing page %s gets no Set-Cookie and no redirect",
     (path) => {
       setEnv("report-only");
@@ -99,6 +99,9 @@ describe("cookies and redirects (unchanged behaviour)", () => {
   test("marketing detection is exact", () => {
     expect(isMarketingPath("/")).toBe(true);
     expect(isMarketingPath("/features/pricing-table")).toBe(true);
+    expect(isMarketingPath("/solutions")).toBe(true);
+    expect(isMarketingPath("/solutions/hostel-management-software")).toBe(true);
+    expect(isMarketingPath("/solutionsx")).toBe(false);
     expect(isMarketingPath("/apps")).toBe(false);
     expect(isMarketingPath("/dashboard")).toBe(false);
   });

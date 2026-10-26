@@ -10,6 +10,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.audit.models import AuditLog
+from apps.billing.models import Invoice, InvoiceLineItem
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Bed, Property
 from apps.residents import services
@@ -173,6 +174,223 @@ class VacateFinalizeTests(ResidentAPITestCase):
 
         response = self.client.get(reverse('vacate-detail', args=[self.vacate['id']]))
         self.assertEqual(response.status_code, 404)
+
+
+class VacateSettlementPreviewTests(ResidentAPITestCase):
+    """GET /vacates/{id}/settlement-preview/ (owner request 2026-10-26): the
+    checkout screen's refund breakdown before `finalize` is called. A
+    non-locking read — the defining property of these tests is that nothing
+    changes (no audit entry, no mutation) no matter what is previewed."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.floor = self.create_floor(self.property)
+        self.room = self.create_room(self.floor)
+        self.bed = self.create_bed(self.room, bed_number='101-A')
+        self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.check_in(self.resident, self.bed, security_deposit_amount=Decimal('1500.00'))
+        self.authenticate(self.owner)
+        self.vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-07-01',
+        }).data
+
+    def _preview(self, vacate_id=None, **params):
+        return self.client.get(reverse('vacate-settlement-preview', args=[vacate_id or self.vacate['id']]), params)
+
+    _invoice_month = 0
+
+    def _issue_invoice(self, amount, status=Invoice.Status.ISSUED):
+        # Each call gets its own period: `unique_invoice_per_resident_period`
+        # forbids two invoices for the same resident in the same period.
+        self._invoice_month += 1
+        period_start = date(2026, self._invoice_month, 1)
+        period_end = date(2026, self._invoice_month, 28)
+        with tenant_context(self.tenant.id):
+            invoice = Invoice.objects.create(
+                tenant_id=self.tenant.id, resident=self.resident, period_start=period_start,
+                period_end=period_end, billing_mode='monthly', due_date=period_start,
+                status=status, issue_date=period_start,
+            )
+            InvoiceLineItem.objects.create(
+                tenant_id=self.tenant.id, invoice=invoice, line_type='accommodation',
+                label='Accommodation', amount=amount,
+            )
+            return invoice
+
+    def test_preview_matches_finalize_for_the_same_deduction(self):
+        with tenant_context(self.tenant.id):
+            admission = self.resident.admission
+            admission.advance_amount = Decimal('7000.00')
+            admission.advance_applied_amount = Decimal('3500.00')
+            admission.save(update_fields=['advance_amount', 'advance_applied_amount'])
+
+        preview = self._preview(maintenance_deduction='500.00')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['security_deposit_amount'], '1500.00')
+        self.assertEqual(preview.data['advance_refundable'], '3500.00')
+        self.assertEqual(preview.data['maintenance_deduction'], '500.00')
+        self.assertEqual(preview.data['refund_amount'], '4500.00')  # 1500 - 500 + 3500
+
+        finalize = self.client.post(
+            reverse('vacate-finalize', args=[self.vacate['id']]),
+            {'actual_vacate_date': '2026-08-01', 'maintenance_deduction': '500.00'},
+        )
+        self.assertEqual(finalize.data['refund_amount'], preview.data['refund_amount'])
+
+    def test_deduction_defaults_to_zero_when_omitted(self):
+        response = self._preview()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['maintenance_deduction'], '0.00')
+        self.assertEqual(response.data['refund_amount'], '1500.00')
+
+    def test_negative_deduction_rejected(self):
+        response = self._preview(maintenance_deduction='-1.00')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('maintenance_deduction', response.data)
+
+    def test_deduction_above_deposit_rejected(self):
+        response = self._preview(maintenance_deduction='2000.00')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('maintenance_deduction', response.data)
+
+    def test_non_numeric_deduction_rejected(self):
+        response = self._preview(maintenance_deduction='abc')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('maintenance_deduction', response.data)
+
+    def test_deduction_with_too_many_decimal_places_rejected(self):
+        response = self._preview(maintenance_deduction='0.001')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('maintenance_deduction', response.data)
+
+    def test_outstanding_dues_sums_issued_and_partially_paid_only(self):
+        self._issue_invoice(Decimal('8000.00'), status=Invoice.Status.ISSUED)
+        self._issue_invoice(Decimal('2000.00'), status=Invoice.Status.PARTIALLY_PAID)
+        self._issue_invoice(Decimal('5000.00'), status=Invoice.Status.DRAFT)
+        self._issue_invoice(Decimal('3000.00'), status=Invoice.Status.PAID)
+
+        response = self._preview()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['outstanding_dues'], '10000.00')
+
+    def test_outstanding_dues_query_count_does_not_grow_with_invoice_count(self):
+        """Regression guard: `outstanding_dues_for` prefetches `line_items`/
+        `payments` so `balance_due` (billing/models.py) doesn't N+1 over the
+        qualifying invoices. This endpoint is hit on every adjustment of a
+        checkout screen's deduction field, unlike `mark_absconded`'s one-off
+        call, so that N+1 would scale with every resident's invoice history
+        on every keystroke. A fresh `Resident` is fetched for each
+        measurement so Python-level attribute caching on a reused instance
+        can't mask the query count either way."""
+        self._issue_invoice(Decimal('1000.00'), status=Invoice.Status.ISSUED)
+        with tenant_context(self.tenant.id):
+            resident = Resident.objects.get(pk=self.resident.id)
+            with CaptureQueriesContext(connection) as one_invoice:
+                services.outstanding_dues_for(resident)
+
+        for _ in range(3):
+            self._issue_invoice(Decimal('1000.00'), status=Invoice.Status.ISSUED)
+        with tenant_context(self.tenant.id):
+            resident = Resident.objects.get(pk=self.resident.id)
+            with CaptureQueriesContext(connection) as four_invoices:
+                services.outstanding_dues_for(resident)
+
+        self.assertEqual(len(four_invoices), len(one_invoice))
+
+    def test_outstanding_dues_are_shown_but_never_subtracted_from_the_refund(self):
+        without_dues = self._preview()
+        self._issue_invoice(Decimal('50000.00'), status=Invoice.Status.ISSUED)
+        with_dues = self._preview()
+
+        self.assertEqual(without_dues.data['outstanding_dues'], '0.00')
+        self.assertEqual(with_dues.data['outstanding_dues'], '50000.00')
+        # Unlike mark_absconded, a normal vacate never nets dues against the refund.
+        self.assertEqual(without_dues.data['refund_amount'], with_dues.data['refund_amount'])
+
+    def test_rejected_once_settled(self):
+        self.client.post(
+            reverse('vacate-finalize', args=[self.vacate['id']]), {'actual_vacate_date': '2026-08-01'},
+        )
+        response = self._preview()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['detail'].code, 'already_settled')
+        self.assertEqual(response.data['code'], 'ALREADY_SETTLED')
+
+    def test_rejected_once_cancelled(self):
+        self.client.post(
+            reverse('vacate-cancel', args=[self.vacate['id']]), {'cancellation_reason': 'Staying on'},
+        )
+        response = self._preview()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['detail'].code, 'already_cancelled')
+        self.assertEqual(response.data['code'], 'ALREADY_CANCELLED')
+
+    def test_preview_writes_no_audit_log_and_mutates_nothing(self):
+        with tenant_context(self.tenant.id):
+            audit_count_before = AuditLog.objects.count()
+
+        response = self._preview(maintenance_deduction='500.00')
+        self.assertEqual(response.status_code, 200, response.data)
+
+        with tenant_context(self.tenant.id):
+            self.assertEqual(AuditLog.objects.count(), audit_count_before)
+            vacate = Vacate.objects.get(pk=self.vacate['id'])
+            self.resident.refresh_from_db()
+            self.bed.refresh_from_db()
+            admission = self.resident.admission
+        self.assertIsNone(vacate.actual_vacate_date)
+        self.assertIsNone(vacate.maintenance_deduction)
+        self.assertTrue(vacate.is_open)
+        self.assertEqual(self.resident.status, Resident.Status.NOTICE_PERIOD)
+        self.assertEqual(self.bed.status, Bed.Status.OCCUPIED)
+        self.assertEqual(admission.security_deposit_amount, Decimal('1500.00'))
+
+    def test_receptionist_forbidden(self):
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+
+        self.assertEqual(self._preview().status_code, 403)
+
+    def test_manager_not_assigned_to_property_gets_not_found(self):
+        manager = self.create_manager(self.tenant)
+        # Deliberately not assigned to self.property.
+        self.authenticate(manager)
+
+        self.assertEqual(self._preview().status_code, 404)
+
+    def test_preview_is_tenant_scoped(self):
+        other_tenant = self.create_tenant('Other PG')
+        other_owner = self.create_owner(other_tenant, email='other-owner@example.com')
+        self.authenticate(other_owner)
+
+        self.assertEqual(self._preview().status_code, 404)
+
+    def test_aggregates_past_twelve_digits_serialize_without_error(self):
+        """Regression guard for the response serializer's `max_digits=None`:
+        `refund_amount` sums two 12-digit money fields and `outstanding_dues`
+        sums across invoices, so either can legitimately exceed the 12-digit
+        cap any single stored column is held to (invariant 5)."""
+        near_max = Decimal('9999999999.99')  # the largest value a 12-digit, 2-decimal field holds
+        with tenant_context(self.tenant.id):
+            admission = self.resident.admission
+            admission.security_deposit_amount = near_max
+            admission.advance_amount = near_max
+            admission.advance_applied_amount = Decimal('0.00')
+            admission.save(update_fields=[
+                'security_deposit_amount', 'advance_amount', 'advance_applied_amount',
+            ])
+        self._issue_invoice(near_max, status=Invoice.Status.ISSUED)
+        self._issue_invoice(near_max, status=Invoice.Status.ISSUED)
+
+        response = self._preview()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['refund_amount'], '19999999999.98')  # 13 digits total
+        self.assertEqual(response.data['outstanding_dues'], '19999999999.98')
 
 
 class VacateCancelTests(ResidentAPITestCase):

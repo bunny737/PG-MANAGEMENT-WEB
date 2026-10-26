@@ -1,5 +1,5 @@
 import django_filters
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
@@ -20,7 +20,7 @@ from apps.subscriptions.services import check_resident_limit
 from . import services
 from .finance import resident_finance
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
-from .schema import ResidentDetailResponseSerializer
+from .schema import ResidentDetailResponseSerializer, VacateSettlementPreviewResponseSerializer
 from .serializers import (
     bed_admits,
     AbscondedRecordCreateSerializer,
@@ -38,6 +38,7 @@ from .serializers import (
     VacateFinalizeSerializer,
     VacateGiveNoticeSerializer,
     VacateSerializer,
+    VacateSettlementPreviewSerializer,
 )
 
 
@@ -378,6 +379,30 @@ class VacateViewSet(viewsets.ModelViewSet):
             vacate=vacate, actor=request.user, request=request, **serializer.validated_data
         )
         return Response(VacateSerializer(vacate).data)
+
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'maintenance_deduction', str, OpenApiParameter.QUERY, required=False, default='0.00',
+            description='Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit).',
+        )],
+        responses=VacateSettlementPreviewResponseSerializer,
+    )
+    @action(detail=True, methods=['get'], url_path='settlement-preview', url_name='settlement-preview')
+    def settlement_preview(self, request, pk=None):
+        """Refund breakdown for a not-yet-finalized vacate (owner request
+        2026-10-26) — lets the app's checkout screen show the figure before
+        `finalize` is called. Read-only: see services.settlement_preview for
+        why this is a non-locking, point-in-time estimate."""
+        vacate = self.get_object()
+        self._reject_unless_open(vacate)
+        serializer = VacateSettlementPreviewSerializer(
+            data=request.query_params, context={'vacate': vacate}
+        )
+        serializer.is_valid(raise_exception=True)
+        preview = services.settlement_preview(
+            vacate=vacate, maintenance_deduction=serializer.validated_data['maintenance_deduction']
+        )
+        return Response(VacateSettlementPreviewResponseSerializer(preview).data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):

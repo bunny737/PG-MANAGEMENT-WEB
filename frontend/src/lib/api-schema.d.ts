@@ -2717,6 +2717,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vacates/{id}/settlement-preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Refund breakdown for a not-yet-finalized vacate (owner request
+         *     2026-10-26) — lets the app's checkout screen show the figure before
+         *     `finalize` is called. Read-only: see services.settlement_preview for
+         *     why this is a non-locking, point-in-time estimate.
+         */
+        get: operations["v1_vacates_settlement_preview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/visitors/": {
         parameters: {
             query?: never;
@@ -5004,6 +5026,28 @@ export interface components {
             resident: string;
             /** Format: date */
             notice_given_date: string;
+        };
+        /**
+         * @description Response shape for `VacateViewSet.settlement_preview` (owner request
+         *     2026-10-26). `refund_amount` and `outstanding_dues` are aggregates (a sum
+         *     of two 12-digit money fields, or a sum across many invoices) rather than
+         *     a single stored column, so they use `max_digits=None` instead of
+         *     `MONEY_KWARGS` — otherwise an otherwise-valid total past 12 digits would
+         *     fail `DecimalField.to_representation` with a precision error. The single
+         *     stored values below are given the same field for uniformity; the schema
+         *     types every field as a decimal string either way.
+         */
+        VacateSettlementPreviewResponse: {
+            /** Format: decimal */
+            security_deposit_amount: string;
+            /** Format: decimal */
+            advance_refundable: string;
+            /** Format: decimal */
+            maintenance_deduction: string;
+            /** Format: decimal */
+            refund_amount: string;
+            /** Format: decimal */
+            outstanding_dues: string;
         };
         Visitor: {
             /** Format: uuid */
@@ -9436,6 +9480,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Vacate"];
+                };
+            };
+        };
+    };
+    v1_vacates_settlement_preview_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit). */
+                maintenance_deduction?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this vacate. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VacateSettlementPreviewResponse"];
                 };
             };
         };

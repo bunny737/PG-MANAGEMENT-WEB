@@ -97,6 +97,7 @@ completing the PRD's advance trio alongside the already-existing
 ```
 GET|POST   /api/v1/vacates/                      list / give notice (Active -> Notice Period)   manage_deposits
 GET        /api/v1/vacates/{id}/                 retrieve
+GET        /api/v1/vacates/{id}/settlement-preview/  refund breakdown before finalize (below)  manage_deposits
 POST       /api/v1/vacates/{id}/finalize/        move-out settlement (Notice Period -> Vacated) manage_deposits
 POST       /api/v1/vacates/{id}/cancel/          withdraw notice (Notice Period -> Active)      manage_deposits
 
@@ -156,6 +157,16 @@ discipline; corrections happen via the dedicated actions (`finalize`,
 5. `refund_amount` = `security_deposit_amount - maintenance_deduction +
    advance_refundable` (advance not consumed by the first invoice), computed on
    the fly (invariant 5: Decimal, never stored, can't drift).
+5a. **Settlement preview** (`GET /vacates/{id}/settlement-preview/?maintenance_deduction=`,
+   owner request 2026-10-26) runs the same math as `finalize` — same
+   deduction cap, same `refund_amount` formula — so the app's checkout screen
+   can show the refund before a staff member confirms it, without finalize's
+   formula ever drifting from the preview's. It also reports
+   `outstanding_dues` (the same sum `mark_absconded` uses below), but
+   **informational only**: unlike `mark_absconded`, a normal vacate never
+   nets dues against the refund. Rejected once settled/cancelled, same as
+   `finalize`. It is read-only — no row lock, no mutation, no audit entry
+   (see Decisions).
 6. **Mark absconded** (`POST /absconded-records/`) requires `Active`
    (`resident_not_active`); frees the bed **immediately** (no notice
    period, unlike a normal vacate); computes outstanding dues as the sum of
@@ -269,6 +280,32 @@ discipline; corrections happen via the dedicated actions (`finalize`,
   settlement (double refund audit, double bed release). The service now
   `select_for_update()` the `Vacate` row and re-raises `already_settled`
   before doing any work.
+- [DECISION 2026-10-26] **The settlement preview does not net unpaid
+  invoices against the refund.** `mark_absconded` forfeits the deposit
+  against outstanding dues because leaving without notice is the
+  penalised path; a normal vacate (give notice, then settle) is not — the
+  owner's call was to surface `outstanding_dues` on the preview so staff
+  see it before paying out, but leave collection a separate, later step
+  rather than silently shrinking (or, if dues exceed the refund, zeroing
+  out) a resident's deposit refund.
+- [DECISION 2026-10-26] **No date validation was added to `finalize` or the
+  preview.** `actual_vacate_date` still accepts any date — before the
+  notice, before `notice_given_date`, or in the future — unlike `cancel`'s
+  date, which is bounded. Flagged as a gap when the preview was proposed;
+  the owner chose to leave finalize's existing behaviour as-is rather than
+  bound it as part of this change. Revisit together if the product owner
+  wants it tightened later.
+- [DECISION 2026-10-26] **The settlement preview is a non-locking,
+  point-in-time estimate.** Unlike `finalize_vacate`/`cancel_notice`, the
+  preview service takes no row lock, so a `finalize` or `cancel` committed
+  between the preview request and the next one can make the previewed
+  figure stale. This is accepted rather than fixed: `finalize_vacate`
+  already re-checks everything under its own lock (see the 2026-09-10
+  decision above), so a stale preview can never cause a wrong settlement —
+  at worst a staff member sees a number that is a few seconds old, the same
+  risk as not reloading the screen. Locking a `GET` would not remove that
+  window (the state can still change the instant after the response is
+  sent) and would cost every preview a lock it doesn't need.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -405,3 +442,32 @@ needed a support data-fix.
   isolation, state-aware occupancy display + N+1 guard, billing across the
   round trip, and two service-level concurrency tests for cancel-vs-finalize
   and double give-notice). Full suite (625) green.
+
+## Update 2026-10-26 — settlement preview (owner request, mobile checkout)
+The mobile app could give notice and cancel it, but had no way to show a
+checkout screen's refund breakdown before calling `finalize`.
+
+- [DECISION] **`Vacate.refund_for(maintenance_deduction)`** holds the refund
+  formula; `refund_amount` (the settled figure) and the preview (an estimate
+  for a not-yet-chosen deduction) both call it, so they can't drift apart.
+- [DECISION] **`VacateFinalizeSerializer` now subclasses a new
+  `VacateSettlementPreviewSerializer`**, which holds `maintenance_deduction`
+  and its validation (non-negative, capped at the deposit). One set of rules
+  for both endpoints, enforced in one place.
+- [DECISION] **The preview's response fields use `max_digits=None`,
+  not `MONEY_KWARGS`.** `refund_amount` sums two 12-digit money fields and
+  `outstanding_dues` sums across invoices — either can legitimately exceed
+  the 12-digit cap a single stored column is held to (invariant 5), and a
+  12-digit response field would then fail to serialize an otherwise-valid
+  total.
+- See the three Decisions above (dues not netted, no new date rules, preview
+  is a non-locking estimate) for the owner calls this shipped against.
+- Built: `GET /vacates/{id}/settlement-preview/`,
+  `services.settlement_preview`, `Vacate.refund_for`,
+  `VacateSettlementPreviewSerializer`,
+  `VacateSettlementPreviewResponseSerializer`. 18 new tests (formula parity
+  with finalize, default/validation of the deduction, dues summed but not
+  netted, rejected once settled/cancelled, read-only/no-audit-log guarantee,
+  permission + tenant-isolation scoping, large-aggregate precision). Schema
+  completeness test extended to cover the new query parameter and typed
+  response.

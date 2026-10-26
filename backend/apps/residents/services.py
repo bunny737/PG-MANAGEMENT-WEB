@@ -284,6 +284,30 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     return vacate
 
 
+def settlement_preview(*, vacate, maintenance_deduction):
+    """Move-out settlement breakdown for a not-yet-finalized vacate (owner
+    request 2026-10-26: a checkout screen showing the refund before staff
+    confirm it). A non-locking, point-in-time estimate — unlike
+    `finalize_vacate` it takes no row lock, mutates nothing and writes no
+    audit entry, so a concurrent finalize/cancel can make this figure stale
+    between the preview and the real settlement. That's accepted: the real
+    settlement (`finalize_vacate`) re-checks everything under its own locks
+    (see lock_resident there), so a stale preview can never cause a wrong
+    refund — it can only show a staff member a number that's a few seconds
+    old, which they'd see anyway if they reloaded the screen.
+
+    `outstanding_dues` is informational only (owner decision 2026-10-26) —
+    unlike `mark_absconded`, a normal vacate never nets dues against the
+    refund; the deposit/advance math is exactly `Vacate.refund_for`."""
+    return {
+        'security_deposit_amount': vacate.resident.admission.security_deposit_amount,
+        'advance_refundable': vacate.resident.admission.advance_refundable,
+        'maintenance_deduction': maintenance_deduction,
+        'refund_amount': vacate.refund_for(maintenance_deduction),
+        'outstanding_dues': outstanding_dues_for(vacate.resident),
+    }
+
+
 @transaction.atomic
 def cancel_notice(*, vacate, cancelled_date, cancellation_reason, actor, request=None):
     """Withdraw a notice to vacate: Notice Period -> Active (owner request
@@ -370,12 +394,20 @@ def cancel_notice(*, vacate, cancelled_date, cancellation_reason, actor, request
 def outstanding_dues_for(resident):
     """Sum of balance_due across the resident's issued/partially_paid invoices
     (Module 08/09). Deferred import: apps.billing imports apps.residents at
-    module level, so importing it back at this module's top would be circular."""
+    module level, so importing it back at this module's top would be circular.
+
+    `balance_due` is `total - amount_paid`, each computed in Python from
+    `line_items.all()`/`payments.all()` (billing/models.py) rather than
+    stored — without prefetching, that's 1 query per invoice for each of the
+    two, i.e. O(N) queries for N invoices. Originally only reached from
+    `mark_absconded` (one-off, non-interactive), it's now also called from
+    `settlement_preview` on every checkout-screen request, so the N+1 is
+    worth avoiding here rather than in each caller."""
     from apps.billing.models import Invoice
 
     invoices = Invoice.objects.filter(
         resident=resident, status__in=(Invoice.Status.ISSUED, Invoice.Status.PARTIALLY_PAID),
-    )
+    ).prefetch_related('line_items', 'payments')
     return sum((invoice.balance_due for invoice in invoices), Decimal('0.00'))
 
 

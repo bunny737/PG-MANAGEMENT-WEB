@@ -277,6 +277,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/account/deletion/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        get: operations["v1_auth_account_deletion_retrieve"];
+        put?: never;
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        post: operations["v1_auth_account_deletion_create"];
+        /**
+         * @description Account deletion (Module 22, Google Play requirement). GET shows the ACTIVE request that
+         *     locks this account; POST asks to delete it (an Owner's request deletes the whole business);
+         *     DELETE cancels it while still pending. While a request is active these are among the only
+         *     routes the account can still reach (apps.core.authentication).
+         */
+        delete: operations["v1_auth_account_deletion_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/account/deletion/otp/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Emails a deletion-purpose code to the signed-in user (they pick this or their password to
+         *     confirm). Phone codes are refused while no SMS backend exists.
+         */
+        post: operations["v1_auth_account_deletion_otp_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login/": {
         parameters: {
             query?: never;
@@ -2663,6 +2717,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vacates/{id}/settlement-preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Refund breakdown for a not-yet-finalized vacate (owner request
+         *     2026-10-26) — lets the app's checkout screen show the figure before
+         *     `finalize` is called. Read-only: see services.settlement_preview for
+         *     why this is a non-locking, point-in-time estimate.
+         */
+        get: operations["v1_vacates_settlement_preview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/visitors/": {
         parameters: {
             query?: never;
@@ -2806,6 +2882,38 @@ export interface components {
             /** @default  */
             absconded_note: string;
         };
+        /** @description An account-deletion request as its owner sees it. */
+        AccountDeletion: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly scope: components["schemas"]["ScopeEnum"];
+            readonly status: components["schemas"]["AccountDeletionStatusEnum"];
+            /** Format: date-time */
+            readonly requested_at: string;
+            /** Format: date-time */
+            readonly scheduled_for: string;
+            readonly can_cancel: boolean;
+        };
+        /**
+         * @description Confirms a deletion request: the account's password, or a deletion-purpose email code.
+         *     A login code never works here (OTPs are bound to their purpose).
+         */
+        AccountDeletionCreate: {
+            password?: string;
+            otp?: string;
+            confirm: boolean;
+            reason?: string;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `processing` - Processing
+         *     * `completed` - Completed
+         *     * `cancelled` - Cancelled
+         *     * `failed` - Failed
+         *     * `superseded` - Superseded
+         * @enum {string}
+         */
+        AccountDeletionStatusEnum: "pending" | "processing" | "completed" | "cancelled" | "failed" | "superseded";
         Admission: {
             /** Format: uuid */
             readonly id: string;
@@ -3681,6 +3789,15 @@ export interface components {
             readonly permissions: string[];
             /** @description Launch gate for new Aadhaar/PAN uploads; clients hide the upload controls when False. */
             readonly kyc_uploads_enabled: boolean;
+            /**
+             * @description The ACTIVE account-deletion request that locks this user (their own, or their
+             *     business's), so clients can show the "scheduled for deletion" screen. None when unlocked.
+             */
+            readonly deletion: {
+                [key: string]: unknown;
+            } | null;
+            /** @description Which of 'password' / 'otp_email' / 'otp_phone' can confirm a deletion request right now. */
+            readonly deletion_confirm_methods: string[];
         };
         MeUpdate: {
             first_name: string;
@@ -4583,6 +4700,12 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `user` - User
+         *     * `tenant` - Whole business
+         * @enum {string}
+         */
+        ScopeEnum: "user" | "tenant";
         ScreenInfo: {
             width_px: number;
             height_px: number;
@@ -4768,9 +4891,10 @@ export interface components {
          *     * `payment_failed` - Payment Failed
          *     * `suspended` - Suspended
          *     * `cancelled` - Cancelled
+         *     * `deleted` - Deleted
          * @enum {string}
          */
-        TenantStatusEnum: "trial" | "active" | "payment_failed" | "suspended" | "cancelled";
+        TenantStatusEnum: "trial" | "active" | "payment_failed" | "suspended" | "cancelled" | "deleted";
         TenantUpdate: {
             default_language?: components["schemas"]["LanguageEnum"];
             fiscal_year_start_month?: number;
@@ -4902,6 +5026,28 @@ export interface components {
             resident: string;
             /** Format: date */
             notice_given_date: string;
+        };
+        /**
+         * @description Response shape for `VacateViewSet.settlement_preview` (owner request
+         *     2026-10-26). `refund_amount` and `outstanding_dues` are aggregates (a sum
+         *     of two 12-digit money fields, or a sum across many invoices) rather than
+         *     a single stored column, so they use `max_digits=None` instead of
+         *     `MONEY_KWARGS` — otherwise an otherwise-valid total past 12 digits would
+         *     fail `DecimalField.to_representation` with a precision error. The single
+         *     stored values below are given the same field for uniformity; the schema
+         *     types every field as a decimal string either way.
+         */
+        VacateSettlementPreviewResponse: {
+            /** Format: decimal */
+            security_deposit_amount: string;
+            /** Format: decimal */
+            advance_refundable: string;
+            /** Format: decimal */
+            maintenance_deduction: string;
+            /** Format: decimal */
+            refund_amount: string;
+            /** Format: decimal */
+            outstanding_dues: string;
         };
         Visitor: {
             /** Format: uuid */
@@ -5285,6 +5431,86 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AuditLog"];
                 };
+            };
+        };
+    };
+    v1_auth_account_deletion_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletion"];
+                };
+            };
+        };
+    };
+    v1_auth_account_deletion_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["AccountDeletionCreate"];
+                "multipart/form-data": components["schemas"]["AccountDeletionCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletion"];
+                };
+            };
+        };
+    };
+    v1_auth_account_deletion_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_auth_account_deletion_otp_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -9254,6 +9480,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Vacate"];
+                };
+            };
+        };
+    };
+    v1_vacates_settlement_preview_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit). */
+                maintenance_deduction?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this vacate. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VacateSettlementPreviewResponse"];
                 };
             };
         };

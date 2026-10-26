@@ -376,12 +376,19 @@ class Vacate(TenantModelMixin):
         which finalize or cancel may act."""
         return not self.is_settled and not self.is_cancelled
 
+    def refund_for(self, maintenance_deduction):
+        """The refund formula (security deposit - deduction + unapplied
+        advance), shared by `refund_amount` (the settled figure) and the
+        settlement-preview endpoint (an estimate for a not-yet-chosen
+        deduction) so they can never drift apart."""
+        admission = self.resident.admission
+        return admission.security_deposit_amount - maintenance_deduction + admission.advance_refundable
+
     @property
     def refund_amount(self):
         if self.maintenance_deduction is None:
             return None
-        admission = self.resident.admission
-        return admission.security_deposit_amount - self.maintenance_deduction + admission.advance_refundable
+        return self.refund_for(self.maintenance_deduction)
 
 
 class AbscondedRecord(TenantModelMixin):

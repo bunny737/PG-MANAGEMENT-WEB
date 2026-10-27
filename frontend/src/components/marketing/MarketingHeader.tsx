@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { SOLUTIONS_HUB_PATH } from "@/features/marketing/content/landing";
 import { PrimaryCtaButton } from "@/features/marketing/PrimaryCtaButton";
 import { AuthAwareLink } from "./AuthAwareLink";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -9,6 +10,7 @@ import { Container } from "./Section";
 
 const NAV = [
   { href: "/features", key: "features" },
+  { href: SOLUTIONS_HUB_PATH, key: "solutions" },
   { href: "/pricing", key: "pricing" },
   { href: "/app", key: "app" },
   { href: "/contact", key: "contact" },

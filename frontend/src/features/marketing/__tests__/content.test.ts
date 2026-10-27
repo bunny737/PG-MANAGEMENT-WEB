@@ -59,7 +59,7 @@ describe("feature availability matrix", () => {
 });
 
 describe("marketing message catalogues", () => {
-  it("Telugu mirrors every English key (legal text is still English until counsel reviews a translation)", () => {
+  it("Telugu mirrors every English key (legal text and solution-page copy are still English until reviewed)", () => {
     expect(keyPaths(te).sort()).toEqual(keyPaths(en).sort());
   });
 

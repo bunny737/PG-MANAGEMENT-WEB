@@ -66,6 +66,10 @@ server {
     include /etc/nginx/snippets/pglive-tls.conf;
     set $upstream_host ${API_HOST};
 
+    # The API is not a website: keep it out of search results (health checks, DRF pages, error bodies).
+    # Server level, so every location inherits it (none of them sets add_header of its own).
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
     # Two counters, each counting only its own kind of caller (see limits.conf): direct clients per peer IP,
     # the web BFF (proved by the edge key) per browser IP. A request lands in exactly one of them.
     location /api/v1/auth/ {

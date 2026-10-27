@@ -46,6 +46,7 @@
   },
   "nav": {
     "features": "Features",
+    "solutions": "Solutions",
     "pricing": "Pricing",
     "app": "Android app",
     "contact": "Contact",
@@ -433,7 +434,9 @@
     "terms": "Terms of Service",
     "refund": "Refund & Cancellation Policy",
     "copyright": "© {year} {company}. All rights reserved.",
-    "deleteAccount": "Delete your PGLive account"
+    "deleteAccount": "Delete your PGLive account",
+    "solutions": "Solutions",
+    "allSolutions": "All solutions"
   },
   "legal": {
     "privacy": {
@@ -676,5 +679,175 @@
     "title": "We could not find that page",
     "body": "The link may be old or mistyped.",
     "home": "Back to home"
+  },
+  "solutions": {
+    "hub": {
+      "meta": {
+        "title": "Solutions for PG and hostel owners — PGLive",
+        "description": "Rent tracking, hostel management and bed occupancy for PG and hostel owners in India. See which part of running your property PGLive covers."
+      },
+      "breadcrumb": "Solutions",
+      "eyebrow": "Solutions",
+      "title": "PGLive for the way you run your PG or hostel",
+      "subtitle": "Pick the job that takes most of your time. Each page shows what PGLive does for it today and which parts are still on the way.",
+      "cardCta": "Read more"
+    },
+    "pages": {
+      "pg-rent-tracking": {
+        "meta": {
+          "title": "PG rent management app for owners — PGLive",
+          "description": "Create rent invoices for a whole PG in one go, record UPI, cash and part payments, and see who owes what. Built for PG and hostel owners in India."
+        },
+        "breadcrumb": "PG rent tracking",
+        "nav": "PG rent tracking",
+        "eyebrow": "PG rent management",
+        "title": "Rent invoices and payment tracking for your PG",
+        "intro": "PGLive turns the monthly rent round into a few clicks. Generate invoices for a whole property at once, record each payment as it arrives, and see what every resident owes without a notebook or a spreadsheet.",
+        "summary": "Invoices for a whole property at once, every payment recorded, and dues visible per resident.",
+        "sections": [
+          {
+            "heading": "Invoices that show every charge",
+            "body": "Rent, discounts, electricity, water and other charges appear as separate lines, so a resident can see exactly what they are being billed. Rent is billed at the amount agreed when the resident joined, so a discount given to one resident never changes what the person in the next bed pays."
+          },
+          {
+            "heading": "Record payments the way they actually arrive",
+            "body": "Log UPI, cash, bank transfer, card or cheque payments, including part payments, and PGLive keeps the balance up to date. PGLive records what you receive; it does not collect rent for you, and residents keep paying you directly."
+          },
+          {
+            "heading": "See dues and collections at a glance",
+            "body": "The dashboard shows what has been collected and what is still due, for one property or all of them. Export collections, payment history and dues as CSV, Excel or PDF, and track your monthly expenses by category next to your income."
+          }
+        ],
+        "faq": {
+          "title": "Rent tracking questions",
+          "items": [
+            {
+              "q": "Does PGLive collect rent from my residents?",
+              "a": "No. PGLive creates the invoices and records the payments you receive by UPI, cash, bank transfer, card or cheque. Residents pay you directly. The payment gateway is used only for your own PGLive subscription."
+            },
+            {
+              "q": "Can I record part payments?",
+              "a": "Yes. Record any amount against an invoice and PGLive shows what is still owed, so you can see who owes what at any time."
+            },
+            {
+              "q": "Can I give one resident a discount?",
+              "a": "Yes. Give a fixed or percentage discount with a reason and a validity window. It appears as its own line on that resident's invoice and does not affect anyone else."
+            },
+            {
+              "q": "Can I export my collections?",
+              "a": "Yes. Collections, payment history, dues and resident lists can be exported as CSV, Excel or PDF."
+            }
+          ]
+        }
+      },
+      "hostel-management-software": {
+        "meta": {
+          "title": "Hostel management software for private hostels — PGLive",
+          "description": "Residents, rent invoices, payments, visitors and staff for privately run hostels and PGs in India, in one system. Not built for school or college campuses."
+        },
+        "breadcrumb": "Hostel management software",
+        "nav": "Hostel management",
+        "eyebrow": "Hostel management software",
+        "title": "Hostel management software for privately run hostels",
+        "intro": "PGLive is for owners and managers who run a hostel or PG as a business. Keep resident records, rent invoices, payments, visitors and your team in one place instead of notebooks, spreadsheets and chat groups.",
+        "summary": "Residents, billing, visitors and staff in one system for a privately run hostel or PG.",
+        "sections": [
+          {
+            "heading": "One record for every resident",
+            "body": "Keep profiles, emergency contacts and ID documents together, with a clear status from inquiry to vacated, so you always know who is staying and who has left."
+          },
+          {
+            "heading": "Billing and payments without the notebook",
+            "body": "Generate rent invoices for a whole property at once, with rent, discounts and other charges on separate lines. Record UPI, cash, bank transfer, card or cheque payments, including part payments, and see who owes what."
+          },
+          {
+            "heading": "A front desk and a team that share one system",
+            "body": "Check visitors in and out with a record of who visited whom. Add managers and receptionists, assign them to properties and control which modules each person can use."
+          },
+          {
+            "heading": "Made for private hostels, not campuses",
+            "body": "Campus systems handle fee structures, mess allotment and academic calendars. PGLive does not. If you run a school or university hostel, a campus ERP is a better fit; if the hostel is your business, this is what PGLive is for."
+          }
+        ],
+        "faq": {
+          "title": "Hostel software questions",
+          "items": [
+            {
+              "q": "Is PGLive hostel software for schools and colleges?",
+              "a": "No. PGLive is built for privately run hostels and PGs. It does not cover campus needs such as fee structures, mess allotment or academic calendars."
+            },
+            {
+              "q": "Can I manage more than one hostel?",
+              "a": "Yes. The dashboard shows occupancy and finances for one property or all of them. The number of properties depends on your plan."
+            },
+            {
+              "q": "Can my manager or receptionist use it?",
+              "a": "Yes. Add managers and receptionists, assign them to the properties they handle and choose which modules each person can use."
+            },
+            {
+              "q": "Is there a visitor log?",
+              "a": "Yes. Front-desk check-in and check-out keep a clear record of who visited whom."
+            },
+            {
+              "q": "Which languages does it support?",
+              "a": "English and Telugu today, with more Indian languages planned."
+            }
+          ]
+        }
+      },
+      "pg-bed-occupancy": {
+        "meta": {
+          "title": "Track vacant beds across your PG properties — PGLive",
+          "description": "See beds occupied and vacant for one property or all of them, with collections and dues alongside. Built for PG and hostel owners in India."
+        },
+        "breadcrumb": "Bed occupancy",
+        "nav": "Bed occupancy",
+        "eyebrow": "Occupancy tracking",
+        "title": "See every vacant bed across your properties",
+        "intro": "Empty beds cost you rent every month. PGLive shows beds occupied and vacant at a glance, for one property or all of them, next to what you have collected and what is still due.",
+        "summary": "Beds occupied and vacant for one property or all, with collections and dues alongside.",
+        "sections": [
+          {
+            "heading": "Occupancy at a glance",
+            "body": "The dashboard counts beds occupied and beds vacant for a single property or across all of them, so you can see where you have room without walking the floors or checking a sheet."
+          },
+          {
+            "heading": "Know who is staying",
+            "body": "Resident records keep profiles, emergency contacts and ID documents, with a clear status from inquiry to vacated. A resident who has left no longer counts as staying."
+          },
+          {
+            "heading": "Trends you can take away",
+            "body": "Reports show collections and occupancy trends over time, and resident lists, payment history and dues export as CSV, Excel or PDF."
+          }
+        ],
+        "faq": {
+          "title": "Occupancy questions",
+          "items": [
+            {
+              "q": "Does PGLive track beds or only rooms?",
+              "a": "The dashboard shows beds occupied and beds vacant, for one property or all of them."
+            },
+            {
+              "q": "Can I see all my properties together?",
+              "a": "Yes. The dashboard works for one property or across all of them."
+            },
+            {
+              "q": "Can I move a resident to another bed?",
+              "a": "Bed allocation and transfers are coming soon. Today PGLive shows you occupancy and resident records; moving residents between rooms is not available yet."
+            },
+            {
+              "q": "Which languages does it support?",
+              "a": "English and Telugu today, with more Indian languages planned."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "solutionLinks": {
+    "title": "Explore PGLive by what you need",
+    "subtitle": "Pick the part of running your PG or hostel that takes most of your time.",
+    "hubCta": "All solutions",
+    "viewPage": "Read more"
   }
 }

@@ -3,12 +3,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 
-export const alt = "PGLive — PG & hostel management software for India";
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
+const size = { width: 1200, height: 630 };
 
-// Social-share card. Colours mirror the design tokens in globals.css.
-export default async function OpenGraphImage() {
+// Social-share card (og:image and twitter:image, features/marketing/seoCore.ts). It lives at a stable
+// URL rather than the opengraph-image file convention, whose hashed URL a page cannot reference and
+// which Next drops once a page sets its own openGraph. Colours mirror the design tokens in globals.css.
+export async function GET() {
   const mark = await readFile(path.join(process.cwd(), "public/brand/pglive-mark.png"));
   const markSrc = `data:image/png;base64,${mark.toString("base64")}`;
   return new ImageResponse(
@@ -38,6 +38,7 @@ export default async function OpenGraphImage() {
         </div>
       </div>
     ),
-    size
+    // Short cache: the URL is stable, so a redesigned card must reach crawlers within a day.
+    { ...size, headers: { "Cache-Control": "public, max-age=86400" } }
   );
 }

@@ -44,6 +44,23 @@ class ResidentFinanceSerializer(serializers.Serializer):
     last_payment_date = serializers.DateField(allow_null=True)
 
 
+class VacateSettlementPreviewResponseSerializer(serializers.Serializer):
+    """Response shape for `VacateViewSet.settlement_preview` (owner request
+    2026-10-26). `refund_amount` and `outstanding_dues` are aggregates (a sum
+    of two 12-digit money fields, or a sum across many invoices) rather than
+    a single stored column, so they use `max_digits=None` instead of
+    `MONEY_KWARGS` — otherwise an otherwise-valid total past 12 digits would
+    fail `DecimalField.to_representation` with a precision error. The single
+    stored values below are given the same field for uniformity; the schema
+    types every field as a decimal string either way."""
+
+    security_deposit_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
+    advance_refundable = serializers.DecimalField(max_digits=None, decimal_places=2)
+    maintenance_deduction = serializers.DecimalField(max_digits=None, decimal_places=2)
+    refund_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
+    outstanding_dues = serializers.DecimalField(max_digits=None, decimal_places=2)
+
+
 class ResidentDetailResponseSerializer(ResidentSerializer):
     """ResidentSerializer's own fields, plus the two the detail view adds."""
 

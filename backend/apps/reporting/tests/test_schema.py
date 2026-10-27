@@ -24,6 +24,7 @@ class SchemaCompletenessTests(TestCase):
         ('get', ['expenses', 'summary']),
         ('get', ['expenses', 'attachment']),
         ('get', ['residents', '{']),  # the detail route, not the list
+        ('get', ['vacates', 'settlement-preview']),
     ]
 
     @classmethod
@@ -55,3 +56,17 @@ class SchemaCompletenessTests(TestCase):
                 self.assertNotEqual(schema, {}, f'{method.upper()} {path} is still untyped ({{}})')
                 is_typed = bool(schema.get('$ref')) or bool(schema.get('properties')) or bool(schema.get('allOf'))
                 self.assertTrue(is_typed, f'{method.upper()} {path} response has no usable shape: {schema}')
+
+    def test_settlement_preview_has_an_optional_decimal_deduction_parameter(self):
+        """The TARGETS loop above only proves the *response* is typed — it
+        would still pass if `maintenance_deduction` were missing, required
+        by mistake, or typed as something a decimal string can't satisfy."""
+        path, operation = self._find_operation('get', ['vacates', 'settlement-preview'])
+        self.assertIsNotNone(path, 'no GET settlement-preview operation found')
+        parameters = {p['name']: p for p in operation.get('parameters', []) if p.get('in') == 'query'}
+        self.assertIn('maintenance_deduction', parameters)
+        param = parameters['maintenance_deduction']
+        self.assertFalse(param.get('required', False), 'maintenance_deduction must be optional')
+        param_type = param['schema'].get('type')
+        self.assertIn(param_type, ('string', 'number'), f'unexpected schema type: {param["schema"]}')
+        self.assertEqual(param['schema'].get('default'), '0.00')

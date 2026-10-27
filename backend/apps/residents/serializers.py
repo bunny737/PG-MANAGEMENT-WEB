@@ -426,20 +426,16 @@ class VacateGiveNoticeSerializer(serializers.Serializer):
         return attrs
 
 
-class VacateFinalizeSerializer(serializers.Serializer):
-    """Step 2 of the vacating workflow (PRD Module 11): the move-out
-    settlement — maintenance deduction and security deposit refund."""
+class VacateSettlementPreviewSerializer(serializers.Serializer):
+    """Shared deduction input + validation for both the settlement preview
+    (this serializer, used directly) and `finalize` (which subclasses it).
+    Input-only — there is no matching model field validated here beyond
+    `maintenance_deduction` itself, so the two endpoints can never apply
+    different deposit-cap rules to the same number."""
 
-    actual_vacate_date = serializers.DateField()
     maintenance_deduction = serializers.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal('0.00')
     )
-    maintenance_deduction_note = serializers.CharField(required=False, allow_blank=True, default='')
-    refund_date = serializers.DateField(required=False, allow_null=True, default=None)
-    refund_mode = serializers.ChoiceField(
-        choices=Vacate.RefundMode.choices, required=False, allow_blank=True, default=''
-    )
-    refund_note = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_maintenance_deduction(self, value):
         if value < 0:
@@ -457,6 +453,19 @@ class VacateFinalizeSerializer(serializers.Serializer):
                 code='deduction_exceeds_deposit',
             )
         return attrs
+
+
+class VacateFinalizeSerializer(VacateSettlementPreviewSerializer):
+    """Step 2 of the vacating workflow (PRD Module 11): the move-out
+    settlement — maintenance deduction and security deposit refund."""
+
+    actual_vacate_date = serializers.DateField()
+    maintenance_deduction_note = serializers.CharField(required=False, allow_blank=True, default='')
+    refund_date = serializers.DateField(required=False, allow_null=True, default=None)
+    refund_mode = serializers.ChoiceField(
+        choices=Vacate.RefundMode.choices, required=False, allow_blank=True, default=''
+    )
+    refund_note = serializers.CharField(required=False, allow_blank=True, default='')
 
 
 class VacateCancelSerializer(serializers.Serializer):

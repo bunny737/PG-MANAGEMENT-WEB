@@ -96,6 +96,14 @@ class CycleTests(SimpleTestCase):
         # Jan 16..Feb 14 sums to 16/31 + 14/28 > 1.
         self.assertEqual(calendar_fraction(date(2026, 1, 16), date(2026, 2, 14), FIXED_15), 1)
 
+    def test_a_capped_partial_is_still_partial(self):
+        # Priced like a full cycle, but it doesn't start on a billing day, so
+        # it must still go to the owner for confirmation.
+        cycle = cycle_starting(date(2026, 1, 16), FIXED_15)
+        self.assertEqual(cycle.fraction, 1)
+        self.assertTrue(cycle.is_partial)
+        self.assertFalse(cycle_starting(date(2026, 1, 15), FIXED_15).is_partial)
+
     def test_weekly_partial_is_days_over_seven(self):
         weekly = Schedule('weekly', anchor_date=date(2026, 7, 1))
         cycle = cycle_starting(date(2026, 7, 4), weekly)

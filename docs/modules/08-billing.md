@@ -55,6 +55,12 @@ Table: auto_billing_notices                     (RLS enforced, app: apps.billing
   id, tenant_id, resident FK (CASCADE), kind (coverage_gap), key_date
   UNIQUE (resident, kind, key_date)              -- a warning sent once, not daily
 
+Table: auto_billing_summaries                   (RLS enforced, app: apps.billing)
+  id, tenant_id, property FK (CASCADE), on_date,
+  created / scheduled / needs_confirmation (counts), gaps (resident names),
+  delivered_to uuid[] (users reached), attempts, completed
+  UNIQUE (property, on_date)                     -- the owner summary owed, kept until delivered
+
 Table: invoice_line_items                       (RLS enforced, app: apps.billing)
   id                uuid PK
   tenant_id         uuid              (RLS)
@@ -122,13 +128,22 @@ properties included):
    when it starts no later than tomorrow.
 3. **Notify** the Owner(s) and the property's staff with `manage_invoices`
    (`invoice_drafts_ready`, email + push) when it drafted or flagged anything,
-   or found a new coverage gap.
+   or found a new coverage gap. The news is first persisted as an
+   `AutoBillingSummary` (after the drafts commit), then delivered. A recipient
+   counts as reached once any channel sent it (or none could — no template /
+   address); a failed send or exception leaves them pending. Pending summaries
+   up to 2 days old are retried by every sweep and every 30 minutes by
+   `billing.retry_auto_billing_summaries` (migration 0009), so a failure is
+   normally resent before the drafts auto-issue, and only to recipients not
+   yet reached.
 
 **Cycle selection — continue from the last covered day.** `next_start` = the
 day after the latest `period_end` of the resident's invoices and
 `AutoBillingCycle` markers (or `joining_date` if neither). If `next_start` is a
 billing day ⇒ a full cycle up to the next billing day − 1; else a **partial**
-(`first_partial` when it is the joining date, otherwise `transition`). Billing
+(`first_partial` when it is the joining date, otherwise `transition`) —
+decided by the schedule boundaries, never by the price (a partial capped at a
+full cycle's rent, e.g. Jan 16–Feb 14 with day 15, is still a partial). Billing
 days: the resident's joining day each month, clamped to month end (31st ⇒
 30 Apr, 28/29 Feb), or the property's fixed day (1–28); **weekly** residents
 every 7 days from joining whatever the rule; **daily** residents never.
@@ -367,3 +382,10 @@ takes the Resident lock and checks overlap inside it, so every generation path
   `test_auto_billing_concurrency.py` (threaded lock-order races). Owner UI:
   settings section, Needs review / Auto-issue scheduled list filters with
   "Issue selected", detail banner with Hold / Resume.
+- 2026-10-28  Review fixes: (1) partial status comes from the schedule, not
+  the capped price — a Jan 16–Feb 14 period priced at one full cycle was
+  auto-issuing without confirmation; (2) owner summaries are persisted
+  (`AutoBillingSummary`, RLS) and retried per recipient by each sweep and a
+  30-minute beat task until delivered, instead of being lost on a failed
+  send; (3) the 06:00 crontab seed includes the timezone in its lookup, so an
+  existing 06:00 UTC schedule is never reused.

@@ -10,8 +10,8 @@ from django.urls import reverse
 
 from apps.audit.models import AuditLog
 from apps.billing import autobilling, services
-from apps.billing.autobilling import run_auto_billing
-from apps.billing.models import AutoBillingCycle, AutoBillingNotice, Invoice
+from apps.billing.autobilling import retry_pending_summaries, run_auto_billing
+from apps.billing.models import AutoBillingCycle, AutoBillingNotice, AutoBillingSummary, Invoice
 from apps.core.periods import local_today
 from apps.core.tenancy import tenant_context
 from apps.notifications.models import NotificationLog
@@ -235,6 +235,17 @@ class ModeAndRuleTests(AutoBillingTestCase):
         draft = self.invoices(resident)[0]
         self.assertEqual((draft.period_start, draft.period_end), (date(2026, 7, 20), date(2026, 7, 31)))
         self.assertEqual(self.lines(draft)['accommodation'], Decimal('2709.68'))  # 7000 x 12/31
+        self.assertEqual(draft.review_reasons, [R.FIRST_PARTIAL])
+        self.assertIsNone(draft.auto_issue_on)
+
+    def test_a_capped_partial_first_period_still_needs_confirmation(self):
+        self.settings_for(billing_day_rule=PropertySettings.BillingDayRule.FIXED_DAY, billing_day_of_month=15)
+        resident = self.admit(joining=date(2026, 1, 16))
+
+        run_auto_billing(date(2026, 1, 15))
+        draft = self.invoices(resident)[0]
+        self.assertEqual((draft.period_start, draft.period_end), (date(2026, 1, 16), date(2026, 2, 14)))
+        self.assertEqual(self.lines(draft)['accommodation'], Decimal('7000.00'))  # capped at one cycle
         self.assertEqual(draft.review_reasons, [R.FIRST_PARTIAL])
         self.assertIsNone(draft.auto_issue_on)
 
@@ -632,3 +643,81 @@ class TenantIsolationTests(AutoBillingTestCase):
         with tenant_context(other_tenant.id):
             self.assertEqual(AutoBillingCycle.objects.count(), 1)
             self.assertFalse(AutoBillingNotice.objects.exclude(tenant_id=other_tenant.id).exists())
+
+
+class OwnerSummaryDeliveryTests(AutoBillingTestCase):
+    """The owner summary is persisted and retried until it reaches everyone,
+    so a failed send isn't lost when a rerun finds no new work."""
+
+    def setUp(self):
+        super().setUp()
+        self.resident = self.admit()
+        self.billed(self.resident, JULY_15, date(2026, 8, 14))
+        self.manager = self.create_manager(self.tenant)
+        self.assign_staff(self.manager, self.property)
+
+    def flaky_notify(self, failing_user_ids):
+        """notify() that raises once for each of the given users."""
+        from apps.notifications import services as notifications
+
+        real, failed_once = notifications.notify, set()
+
+        def notify(**kwargs):
+            user = kwargs['recipient_user']
+            if kwargs['notification_type'] == 'invoice_drafts_ready' and user.pk in failing_user_ids \
+                    and user.pk not in failed_once:
+                failed_once.add(user.pk)
+                raise RuntimeError('mail server down')
+            return real(**kwargs)
+
+        return mock.patch.object(notifications, 'notify', side_effect=notify)
+
+    def summary(self):
+        with tenant_context(self.tenant.id):
+            return AutoBillingSummary.objects.get(property=self.property, on_date=date(2026, 8, 14))
+
+    def test_a_failed_summary_is_retried_by_the_next_run_and_the_retry_task(self):
+        with self.flaky_notify({self.owner.pk, self.manager.pk}), self.assertLogs('apps.billing.autobilling'):
+            run_auto_billing(date(2026, 8, 14))
+        self.assertEqual(self.staff_notifications(), [])
+        self.assertFalse(self.summary().completed)
+
+        # The retry task (every 30 min) delivers it the same day.
+        totals = retry_pending_summaries(date(2026, 8, 14))
+        self.assertEqual(totals, {'pending': 1, 'completed': 1})
+        self.assertEqual(len(self.staff_notifications(self.owner)), 1)
+        self.assertEqual(len(self.staff_notifications(self.manager)), 1)
+        self.assertEqual(self.summary().attempts, 2)
+
+        # Nothing pending any more: no duplicate sends.
+        run_auto_billing(date(2026, 8, 14))
+        retry_pending_summaries(date(2026, 8, 14))
+        self.assertEqual(len(self.staff_notifications()), 2)
+
+    def test_a_rerun_with_no_new_work_still_delivers_the_pending_summary(self):
+        with self.flaky_notify({self.owner.pk}), self.assertLogs('apps.billing.autobilling'):
+            run_auto_billing(date(2026, 8, 14))
+        self.assertEqual(self.staff_notifications(self.owner), [])
+        self.assertEqual(len(self.staff_notifications(self.manager)), 1)
+
+        run_auto_billing(date(2026, 8, 14))  # finds no new drafts
+        self.assertEqual(len(self.staff_notifications(self.owner)), 1)
+        # Only the recipient it hadn't reached is sent to again.
+        self.assertEqual(len(self.staff_notifications(self.manager)), 1)
+        self.assertTrue(self.summary().completed)
+
+    def test_old_undelivered_summaries_are_given_up(self):
+        with self.flaky_notify({self.owner.pk, self.manager.pk}), self.assertLogs('apps.billing.autobilling'):
+            run_auto_billing(date(2026, 8, 14))
+        self.assertEqual(retry_pending_summaries(date(2026, 8, 20)), {'pending': 0, 'completed': 0})
+
+
+class BeatScheduleTests(AutoBillingTestCase):
+    def test_tasks_are_seeded_on_the_right_schedule(self):
+        from django_celery_beat.models import PeriodicTask
+
+        daily = PeriodicTask.objects.get(name='billing.auto_billing')
+        self.assertEqual((daily.crontab.hour, daily.crontab.minute), ('6', '0'))
+        self.assertEqual(str(daily.crontab.timezone), 'Asia/Kolkata')
+        retry = PeriodicTask.objects.get(name='billing.retry_auto_billing_summaries')
+        self.assertEqual((retry.interval.every, retry.interval.period), (30, 'minutes'))

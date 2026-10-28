@@ -288,6 +288,37 @@ class AutoBillingNotice(TenantModelMixin):
         return f'{self.kind} notice for {self.resident} ({self.key_date})'
 
 
+class AutoBillingSummary(TenantModelMixin):
+    """The owner summary a sweep owes for one property and day, kept until it
+    reaches every recipient. Written in its own transaction after the drafts
+    commit, then delivered by the sweep and retried by
+    `billing.retry_auto_billing_summaries` — so a failed email/push is resent
+    (ideally before the drafts auto-issue) instead of lost."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.ForeignKey(
+        'properties.Property', on_delete=models.CASCADE, related_name='auto_billing_summaries',
+    )
+    on_date = models.DateField()
+    created = models.PositiveIntegerField(default=0)
+    scheduled = models.PositiveIntegerField(default=0)
+    needs_confirmation = models.PositiveIntegerField(default=0)
+    gaps = models.TextField(blank=True)  # comma-separated resident names
+    # Users the summary has reached (a channel sent it, or none could).
+    delivered_to = ArrayField(models.UUIDField(), default=list, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'auto_billing_summaries'
+        constraints = [
+            models.UniqueConstraint(fields=['property', 'on_date'], name='unique_auto_billing_summary'),
+        ]
+
+    def __str__(self):
+        return f'Auto billing summary {self.property_id} {self.on_date}'
+
+
 class Payment(TenantModelMixin):
     """A manually-recorded payment against an invoice (PRD Module 10). Razorpay
     is never used for resident payments — owners collect via UPI/cash/bank/etc.

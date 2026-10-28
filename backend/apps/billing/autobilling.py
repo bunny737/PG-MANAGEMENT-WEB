@@ -113,10 +113,10 @@ class Cycle:
     # Share of a full cycle's rent this period is charged (exactly 1 for a
     # full cycle). A Fraction, so the money math stays exact until rounding.
     fraction: Fraction = Fraction(1)
-
-    @property
-    def is_partial(self):
-        return self.fraction != 1
+    # Set from the schedule boundaries (the start is not a billing day), never
+    # from the price: a capped partial (Jan 16..Feb 14) still costs a full
+    # cycle but must still go to the owner for confirmation.
+    is_partial: bool = False
 
 
 def calendar_fraction(start, end, schedule):
@@ -146,7 +146,7 @@ def cycle_starting(start, schedule):
     end = schedule.billing_day_after(start) - ONE_DAY
     if schedule.is_billing_day(start):
         return Cycle(start, end)
-    return Cycle(start, end, calendar_fraction(start, end, schedule))
+    return Cycle(start, end, calendar_fraction(start, end, schedule), is_partial=True)
 
 
 def apply_fraction(amount, fraction):
@@ -442,42 +442,141 @@ def run_for_property(prop, on_date):
         _generate_due_drafts(prop, on_date, outcome)
     if outcome.worth_telling:
         try:
-            notify_staff(prop, on_date, outcome)
+            record_summary(prop, on_date, outcome)
         except Exception:
-            logger.exception('Auto billing: notifying staff of property %s failed', prop.pk)
+            logger.exception('Auto billing: recording the summary of property %s failed', prop.pk)
+    try:
+        deliver_pending_summaries(prop, on_date)
+    except Exception:
+        logger.exception('Auto billing: notifying staff of property %s failed', prop.pk)
     return outcome
 
 
-def notify_staff(prop, on_date, outcome):
-    """Tell the Owner(s) and the property's invoice managers what the sweep
-    drafted, what needs their confirmation, and any unbilled gap."""
+# --- Owner summaries (persisted, retried until delivered) ---------------------
+
+# How far back an undelivered summary is still worth sending.
+SUMMARY_RETRY_DAYS = 2
+
+
+def record_summary(prop, on_date, outcome):
+    """Add this run's news to the property's summary for the day. New news
+    after a delivered summary re-opens it, so everyone hears the combined
+    figures."""
+    from .models import AutoBillingSummary
+
+    with transaction.atomic():
+        AutoBillingSummary.objects.get_or_create(
+            property=prop, on_date=on_date, defaults={'tenant_id': prop.tenant_id},
+        )
+        summary = AutoBillingSummary.objects.select_for_update().get(property=prop, on_date=on_date)
+        summary.created += outcome.created
+        summary.scheduled += outcome.scheduled
+        summary.needs_confirmation += outcome.needs_confirmation + outcome.flagged
+        names = [name for name in summary.gaps.split(', ') if name]
+        names += [str(resident) for resident, _start in outcome.gaps]
+        summary.gaps = ', '.join(names)
+        summary.delivered_to = []
+        summary.completed = False
+        summary.save()
+    return summary
+
+
+def summary_recipients(prop):
+    """The Owner(s) and the property's staff who can manage invoices."""
     from django.contrib.auth import get_user_model
 
     from apps.core.modules import resolve_permissions
     from apps.core.roles import Role
-    from apps.notifications import services as notifications
 
     user_model = get_user_model()
-    owners = user_model.objects.filter(tenant_id=prop.tenant_id, role=Role.OWNER, is_active=True)
+    recipients = {
+        user.pk: user
+        for user in user_model.objects.filter(tenant_id=prop.tenant_id, role=Role.OWNER, is_active=True)
+    }
     staff = user_model.objects.filter(
         tenant_id=prop.tenant_id, is_active=True, property_assignments__property=prop,
     )
-    recipients = {user.pk: user for user in owners}
     for user in staff:
         if 'manage_invoices' in resolve_permissions(user):
             recipients[user.pk] = user
-    gap_names = ', '.join(str(resident) for resident, _start in outcome.gaps)
-    for user in recipients.values():
-        notifications.notify(
-            tenant_id=prop.tenant_id, notification_type='invoice_drafts_ready', recipient_user=user,
-            context={
-                'name': user.first_name, 'property': prop.name, 'date': on_date.isoformat(),
-                'created': outcome.created, 'scheduled': outcome.scheduled,
-                'needs_confirmation': outcome.needs_confirmation + outcome.flagged,
-                'gaps': gap_names,
-            },
-            reference=f'auto_billing:{prop.pk}:{on_date.isoformat()}',
-        )
+    return list(recipients.values())
+
+
+def deliver_summary(summary):
+    """Send the summary to every recipient it hasn't reached yet. A recipient
+    counts as reached once any channel sent it — or when no channel could
+    (no template / no address: retrying wouldn't help); a failed send or an
+    exception leaves them for the next attempt."""
+    from apps.notifications import services as notifications
+    from apps.notifications.models import NotificationLog
+
+    from .models import AutoBillingSummary
+
+    with transaction.atomic():
+        summary = AutoBillingSummary.objects.select_for_update().select_related('property').get(pk=summary.pk)
+        if summary.completed:
+            return summary
+        prop = summary.property
+        recipients = summary_recipients(prop)
+        delivered = set(summary.delivered_to)
+        for user in recipients:
+            if user.pk in delivered:
+                continue
+            try:
+                logs = notifications.notify(
+                    tenant_id=prop.tenant_id, notification_type='invoice_drafts_ready', recipient_user=user,
+                    context={
+                        'name': user.first_name, 'property': prop.name, 'date': summary.on_date.isoformat(),
+                        'created': summary.created, 'scheduled': summary.scheduled,
+                        'needs_confirmation': summary.needs_confirmation, 'gaps': summary.gaps,
+                    },
+                    reference=f'auto_billing:{prop.pk}:{summary.on_date.isoformat()}',
+                )
+            except Exception:
+                logger.exception('Auto billing: summary %s to user %s failed', summary.pk, user.pk)
+                continue
+            statuses = {log.status for log in logs}
+            if NotificationLog.Status.SENT in statuses or NotificationLog.Status.FAILED not in statuses:
+                delivered.add(user.pk)
+        summary.delivered_to = sorted(delivered, key=str)
+        summary.attempts += 1
+        summary.completed = all(user.pk in delivered for user in recipients)
+        summary.save(update_fields=['delivered_to', 'attempts', 'completed', 'updated_at'])
+    return summary
+
+
+def _pending_summaries(today):
+    from .models import AutoBillingSummary
+
+    return AutoBillingSummary.objects.filter(
+        completed=False, on_date__gte=today - timedelta(days=SUMMARY_RETRY_DAYS), on_date__lte=today,
+    )
+
+
+def deliver_pending_summaries(prop, on_date):
+    for summary in _pending_summaries(on_date).filter(property=prop):
+        deliver_summary(summary)
+
+
+def retry_pending_summaries(today=None):
+    """Every undelivered recent summary, across tenants — run every 30 min by
+    `billing.retry_auto_billing_summaries` so a failed send is retried well
+    before the drafts it announces are auto-issued."""
+    from .models import AutoBillingSummary
+
+    today = today or local_today()
+    with tenant_context(is_super_admin=True):
+        pending = list(_pending_summaries(today).values_list('pk', 'tenant_id'))
+    delivered = 0
+    for summary_id, tenant_id in pending:
+        try:
+            with tenant_context(tenant_id):
+                summary = deliver_summary(AutoBillingSummary(pk=summary_id))
+        except Exception:
+            logger.exception('Auto billing: retrying summary %s failed', summary_id)
+            continue
+        delivered += int(summary.completed)
+    return {'pending': len(pending), 'completed': delivered}
 
 
 def run_auto_billing(on_date=None):

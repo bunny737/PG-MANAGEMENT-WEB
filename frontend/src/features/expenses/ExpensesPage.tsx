@@ -17,6 +17,7 @@ import { MonthNavigator } from "@/components/shared/MonthNavigator";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
+import { WatchVideoButton } from "@/features/onboarding/WatchVideoButton";
 import { afterExpenseChange } from "@/lib/refresh";
 import { currentMonthKey } from "@/lib/period";
 import { queryKeys } from "@/lib/queryKeys";
@@ -168,6 +169,7 @@ export function ExpensesPage() {
           <Receipt className="size-8 text-ink-faint" />
           <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
           <p className="text-xs text-ink-muted">{t("emptyDesc")}</p>
+          <WatchVideoButton topic="expenses" />
         </div>
       )}
 

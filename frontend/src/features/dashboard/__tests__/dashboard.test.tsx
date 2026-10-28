@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
     listAdmissions: vi.fn(),
     listResidents: vi.fn(),
     listPaymentsFiltered: vi.fn(),
+    getOnboardingChecklist: vi.fn(),
+    listTutorialVideos: vi.fn(),
   },
 }));
 
@@ -76,6 +78,9 @@ beforeEach(() => {
   state.api.listAdmissions.mockResolvedValue([]);
   state.api.listResidents.mockResolvedValue([]);
   state.api.listPaymentsFiltered.mockResolvedValue([]);
+  // The Getting started card (Module 23) has its own tests; here it is hidden.
+  state.api.getOnboardingChecklist.mockResolvedValue({ status: "completed", dismissed: true, target_property: null, progress: { done: 0, total: 0 }, next_step: null, steps: [] });
+  state.api.listTutorialVideos.mockResolvedValue({ requested_language: "en", videos: [] });
 });
 
 describe("QuickActions (phone)", () => {

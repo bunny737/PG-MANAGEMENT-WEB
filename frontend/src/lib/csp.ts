@@ -42,6 +42,7 @@ export function buildCsp(nonce: string, reportUri?: string): string {
       "https://*.googleapis.com",
       "https://*.gstatic.com",
       "https://*.razorpay.com",
+      "https://i.ytimg.com", // tutorial video thumbnails (Help, Module 23)
     ],
     "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
     "connect-src": [
@@ -49,7 +50,11 @@ export function buildCsp(nonce: string, reportUri?: string): string {
       "https://*.googleapis.com", // Maps, FCM registration, Firebase installations
       "https://*.razorpay.com",
     ],
-    "frame-src": ["https://api.razorpay.com", "https://checkout.razorpay.com"],
+    "frame-src": [
+      "https://api.razorpay.com",
+      "https://checkout.razorpay.com",
+      "https://www.youtube-nocookie.com", // tutorial videos (Module 23), privacy-enhanced embed
+    ],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],

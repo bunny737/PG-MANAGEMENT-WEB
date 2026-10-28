@@ -1320,6 +1320,28 @@ export interface paths {
         patch: operations["v1_floors_partial_update"];
         trace?: never;
     };
+    "/api/v1/help/videos/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Active tutorial videos the caller's role may see, one per topic, in
+         *     ?language= (default: the user's language), falling back to English only.
+         *     Role filtering happens before the fallback, so a video the caller can't see
+         *     never hides an English one they can.
+         */
+        get: operations["v1_help_videos_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/": {
         parameters: {
             query?: never;
@@ -1632,6 +1654,52 @@ export interface paths {
          *     don't send it (the mobile app) get the plain delete.
          */
         delete: operations["v1_notifications_push_subscriptions_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/checklist/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The Getting started checklist for ?property= (default: the visible
+         *     property the caller can best act on now). See apps/onboarding/checklist.py.
+         */
+        get: operations["v1_onboarding_checklist_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/checklist/dismiss/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST hides the checklist for this user, DELETE shows it again. Both are
+         *     idempotent: a repeat POST keeps the first timestamp, and only a real change
+         *     is audit-logged.
+         */
+        post: operations["v1_onboarding_checklist_dismiss_create"];
+        /**
+         * @description POST hides the checklist for this user, DELETE shows it again. Both are
+         *     idempotent: a repeat POST keeps the first timestamp, and only a real change
+         *     is audit-logged.
+         */
+        delete: operations["v1_onboarding_checklist_dismiss_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3219,6 +3287,47 @@ export interface components {
          * @enum {string}
          */
         ChannelEnum: "email" | "sms" | "whatsapp" | "push";
+        Checklist: {
+            status: components["schemas"]["ChecklistStatusEnum"];
+            dismissed: boolean;
+            target_property: components["schemas"]["ChecklistTargetProperty"] | null;
+            progress: components["schemas"]["ChecklistProgress"];
+            next_step: (components["schemas"]["OnboardingRequiredStepEnum"] | components["schemas"]["NullEnum"]) | null;
+            steps: components["schemas"]["ChecklistStep"][];
+        };
+        ChecklistProgress: {
+            done: number;
+            total: number;
+        };
+        /**
+         * @description * `in_progress` - in_progress
+         *     * `completed` - completed
+         *     * `no_actions` - no_actions
+         * @enum {string}
+         */
+        ChecklistStatusEnum: "in_progress" | "completed" | "no_actions";
+        ChecklistStep: {
+            key: components["schemas"]["KeyEnum"];
+            required: boolean;
+            done: boolean;
+            permitted: boolean;
+            blocked_by: (components["schemas"]["OnboardingRequiredStepEnum"] | components["schemas"]["NullEnum"]) | null;
+            params: components["schemas"]["ChecklistStepParams"];
+            video_topic: components["schemas"]["TutorialTopicEnum"];
+        };
+        ChecklistStepParams: {
+            /** Format: uuid */
+            property_id?: string;
+            /** Format: uuid */
+            building_id?: string;
+            /** Format: uuid */
+            floor_id?: string;
+        };
+        ChecklistTargetProperty: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         Complaint: {
             /** Format: uuid */
             readonly id: string;
@@ -3652,6 +3761,16 @@ export interface components {
             notes?: string;
         };
         /**
+         * @description * `add_property` - add_property
+         *     * `add_building` - add_building
+         *     * `add_floor` - add_floor
+         *     * `add_room` - add_room
+         *     * `admit_resident` - admit_resident
+         *     * `record_expense` - record_expense
+         * @enum {string}
+         */
+        KeyEnum: "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident" | "record_expense";
+        /**
          * @description * `en` - English
          *     * `hi` - Hindi
          *     * `te` - Telugu
@@ -3798,6 +3917,8 @@ export interface components {
             } | null;
             /** @description Which of 'password' / 'otp_email' / 'otp_phone' can confirm a deletion request right now. */
             readonly deletion_confirm_methods: string[];
+            /** @description True once the user hid the Getting started checklist (Module 23). */
+            readonly onboarding_dismissed: boolean;
         };
         MeUpdate: {
             first_name: string;
@@ -3834,6 +3955,8 @@ export interface components {
          * @enum {string}
          */
         NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt";
+        /** @enum {unknown} */
+        NullEnum: null;
         Occupancy: {
             total: number;
             occupied: number;
@@ -3843,6 +3966,15 @@ export interface components {
             /** Format: double */
             occupancy_rate: number | null;
         };
+        /**
+         * @description * `add_property` - add_property
+         *     * `add_building` - add_building
+         *     * `add_floor` - add_floor
+         *     * `add_room` - add_room
+         *     * `admit_resident` - admit_resident
+         * @enum {string}
+         */
+        OnboardingRequiredStepEnum: "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident";
         OsInfo: {
             name: string;
             version: string;
@@ -4978,6 +5110,33 @@ export interface components {
             finance: components["schemas"]["TrendFinance"] | null;
             expenses: components["schemas"]["TrendExpenses"] | null;
             cash_flow: components["schemas"]["TrendCashFlow"] | null;
+        };
+        /**
+         * @description * `overview` - Overview
+         *     * `add_property` - Add a property
+         *     * `add_building` - Add a building
+         *     * `add_floor` - Add a floor
+         *     * `add_room` - Add rooms and beds
+         *     * `admit_resident` - Admit a resident
+         *     * `property_settings` - Property settings
+         *     * `expenses` - Expenses
+         *     * `billing` - Billing
+         *     * `staff` - Staff
+         * @enum {string}
+         */
+        TutorialTopicEnum: "overview" | "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident" | "property_settings" | "expenses" | "billing" | "staff";
+        TutorialVideo: {
+            readonly topic: components["schemas"]["TutorialTopicEnum"];
+            readonly language: components["schemas"]["LanguageEnum"];
+            readonly title: string;
+            readonly description: string;
+            /** @description The id from the video link, e.g. dQw4w9WgXcQ in youtu.be/dQw4w9WgXcQ. */
+            readonly youtube_id: string;
+            readonly duration_seconds: number | null;
+        };
+        TutorialVideoList: {
+            requested_language: components["schemas"]["LanguageEnum"];
+            videos: components["schemas"]["TutorialVideo"][];
         };
         /**
          * @description * `payment` - payment
@@ -7294,6 +7453,28 @@ export interface operations {
             };
         };
     };
+    v1_help_videos_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Language code; default is the user’s. */
+                language?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialVideoList"];
+                };
+            };
+        };
+    };
     v1_invoices_list: {
         parameters: {
             query?: {
@@ -7744,6 +7925,64 @@ export interface operations {
                 /** @description A UUID string identifying this push subscription. */
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_onboarding_checklist_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Property UUID; default picks one. */
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+        };
+    };
+    v1_onboarding_checklist_dismiss_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_onboarding_checklist_dismiss_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

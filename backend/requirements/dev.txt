@@ -2,7 +2,7 @@
 pytest-django==4.*
 pytest-cov==5.*
 factory-boy==3.*
-faker==26.*
+faker==40.*
 ipython
 django-debug-toolbar
 django-extensions==3.*

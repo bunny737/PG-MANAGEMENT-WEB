@@ -128,8 +128,12 @@ properties included):
    when it starts no later than tomorrow.
 3. **Notify** the Owner(s) and the property's staff with `manage_invoices`
    (`invoice_drafts_ready`, email + push) when it drafted or flagged anything,
-   or found a new coverage gap. The news is first persisted as an
-   `AutoBillingSummary` (after the drafts commit), then delivered. A recipient
+   or found a new coverage gap. Each draft, flag and gap notice adds its line
+   to the day's `AutoBillingSummary` **in its own transaction**, so the owner
+   is owed a summary exactly when the change commits (a failed summary write
+   rolls the draft/flag back for the next run; a crash can't leave news
+   without a summary). The summary row is locked last in the billing lock
+   order. The sweep then only delivers. A recipient
    counts as reached once any channel sent it (or none could — no template /
    address); a failed send or exception leaves them pending. Pending summaries
    up to 2 days old are retried by every sweep and every 30 minutes by
@@ -389,3 +393,7 @@ takes the Resident lock and checks overlap inside it, so every generation path
   30-minute beat task until delivered, instead of being lost on a failed
   send; (3) the 06:00 crontab seed includes the timezone in its lookup, so an
   existing 06:00 UTC schedule is never reused.
+- 2026-10-28  Review fix: the summary line is written in the same transaction
+  as the draft / flag / gap notice it reports (`note_in_summary`), closing the
+  window where a draft committed but its summary failed to save or the worker
+  stopped in between — the owner would never have been told.

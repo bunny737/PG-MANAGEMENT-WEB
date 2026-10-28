@@ -268,16 +268,13 @@ class PropertyOutcome:
     failed: int = 0
     gaps: list = field(default_factory=list)
 
-    @property
-    def worth_telling(self):
-        return bool(self.created or self.flagged or self.gaps)
-
 
 def generate_next_draft(*, resident_id, property_id, on_date):
     """Draft one resident's next cycle if it is due. Returns 'scheduled' (will
     auto-issue), 'needs_confirmation', 'skipped' (overlaps a manual invoice) or
-    None (nothing due). Runs in its own transaction; locks Settings ->
-    Resident (the global billing lock order)."""
+    None (nothing due). Runs in its own transaction — the draft, its marker
+    and its line in the owner summary commit together; locks Settings ->
+    Resident (the global billing lock order), the summary last."""
     from apps.residents.models import Allocation, Resident
     from apps.residents.services import lock_resident
 
@@ -340,13 +337,19 @@ def generate_next_draft(*, resident_id, property_id, on_date):
         marker.outcome = AutoBillingCycle.Outcome.CREATED
         marker.invoice = invoice
         marker.save()
-        return ('scheduled' if plan.auto_issue_on else 'needs_confirmation')
+        scheduled = plan.auto_issue_on is not None
+        note_in_summary(
+            property_id=property_id, tenant_id=resident.tenant_id, on_date=on_date,
+            created=1, scheduled=int(scheduled), needs_confirmation=int(not scheduled),
+        )
+        return 'scheduled' if scheduled else 'needs_confirmation'
 
 
 def find_new_gap(resident, on_date):
     """Start of the later period sitting after an unbilled `on_date`, if the
     owner hasn't been told about it yet. Skipped-overlap markers don't count
-    as billing on_date — they bill nothing."""
+    as billing on_date — they bill nothing. Call inside a transaction: the
+    "already warned" notice and the summary line commit together."""
     from .models import AutoBillingCycle, AutoBillingNotice, Invoice
 
     covering = Q(period_start__lte=on_date, period_end__gte=on_date)
@@ -366,7 +369,13 @@ def find_new_gap(resident, on_date):
         resident=resident, kind=AutoBillingNotice.Kind.COVERAGE_GAP, key_date=later,
         defaults={'tenant_id': resident.tenant_id},
     )
-    return later if created else None
+    if not created:
+        return None
+    note_in_summary(
+        property_id=resident.property_id, tenant_id=resident.tenant_id, on_date=on_date,
+        gap=str(resident),
+    )
+    return later
 
 
 def _issue_due_drafts(prop, on_date, outcome):
@@ -381,7 +390,12 @@ def _issue_due_drafts(prop, on_date, outcome):
     )
     for invoice_id in due_ids:
         try:
-            result = services.issue_invoice(invoice_id=invoice_id, actor=None, on_date=on_date, auto=True)
+            # A flag and its line in the owner summary commit together.
+            with transaction.atomic():
+                result = services.issue_invoice(invoice_id=invoice_id, actor=None, on_date=on_date, auto=True)
+                if result == services.FLAGGED:
+                    note_in_summary(property_id=prop.pk, tenant_id=prop.tenant_id, on_date=on_date,
+                                    needs_confirmation=1)
         except Exception:
             logger.exception('Auto billing: issuing invoice %s failed', invoice_id)
             outcome.failed += 1
@@ -440,11 +454,8 @@ def run_for_property(prop, on_date):
     _issue_due_drafts(prop, on_date, outcome)
     if PropertySettings.objects.filter(property=prop, auto_billing_enabled=True).exists():
         _generate_due_drafts(prop, on_date, outcome)
-    if outcome.worth_telling:
-        try:
-            record_summary(prop, on_date, outcome)
-        except Exception:
-            logger.exception('Auto billing: recording the summary of property %s failed', prop.pk)
+    # Every draft, flag and gap recorded its summary line in its own
+    # transaction, so this (and the retry task) only has to deliver.
     try:
         deliver_pending_summaries(prop, on_date)
     except Exception:
@@ -458,26 +469,29 @@ def run_for_property(prop, on_date):
 SUMMARY_RETRY_DAYS = 2
 
 
-def record_summary(prop, on_date, outcome):
-    """Add this run's news to the property's summary for the day. New news
-    after a delivered summary re-opens it, so everyone hears the combined
-    figures."""
+def note_in_summary(*, property_id, tenant_id, on_date, created=0, scheduled=0, needs_confirmation=0,
+                    gap=None):
+    """Add one piece of news to the property's summary for the day. Must run
+    inside the transaction that makes the news (draft, flag, gap notice), so
+    the owner is owed a summary exactly when the change commits. Locked last
+    in the billing lock order. New news after a delivered summary re-opens
+    it, so everyone hears the combined figures."""
     from .models import AutoBillingSummary
 
-    with transaction.atomic():
-        AutoBillingSummary.objects.get_or_create(
-            property=prop, on_date=on_date, defaults={'tenant_id': prop.tenant_id},
-        )
-        summary = AutoBillingSummary.objects.select_for_update().get(property=prop, on_date=on_date)
-        summary.created += outcome.created
-        summary.scheduled += outcome.scheduled
-        summary.needs_confirmation += outcome.needs_confirmation + outcome.flagged
-        names = [name for name in summary.gaps.split(', ') if name]
-        names += [str(resident) for resident, _start in outcome.gaps]
-        summary.gaps = ', '.join(names)
-        summary.delivered_to = []
-        summary.completed = False
-        summary.save()
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError('note_in_summary() must run inside the transaction that makes the news.')
+    AutoBillingSummary.objects.get_or_create(
+        property_id=property_id, on_date=on_date, defaults={'tenant_id': tenant_id},
+    )
+    summary = AutoBillingSummary.objects.select_for_update().get(property_id=property_id, on_date=on_date)
+    summary.created += created
+    summary.scheduled += scheduled
+    summary.needs_confirmation += needs_confirmation
+    if gap:
+        summary.gaps = ', '.join([name for name in summary.gaps.split(', ') if name] + [gap])
+    summary.delivered_to = []
+    summary.completed = False
+    summary.save()
     return summary
 
 

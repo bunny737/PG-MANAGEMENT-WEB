@@ -706,6 +706,45 @@ class OwnerSummaryDeliveryTests(AutoBillingTestCase):
         self.assertEqual(len(self.staff_notifications(self.manager)), 1)
         self.assertTrue(self.summary().completed)
 
+    def summary_save_fails(self):
+        return mock.patch.object(AutoBillingSummary, 'save', side_effect=RuntimeError('db hiccup'))
+
+    def test_a_draft_never_commits_without_its_summary(self):
+        # Saving the summary fails: the draft (and its marker) roll back with
+        # it, instead of committing a draft nobody will be told about.
+        with self.summary_save_fails(), self.assertLogs('apps.billing.autobilling'):
+            totals = run_auto_billing(date(2026, 8, 14))
+        self.assertEqual(totals['failed'], 1)
+        self.assertEqual(len(self.invoices(self.resident)), 1)
+        with tenant_context(self.tenant.id):
+            self.assertFalse(AutoBillingCycle.objects.filter(resident=self.resident).exists())
+            self.assertFalse(AutoBillingSummary.objects.exists())
+
+        # The next run drafts it and tells the owner.
+        run_auto_billing(date(2026, 8, 14))
+        draft = self.invoices(self.resident)[-1]
+        self.assertEqual(draft.auto_issue_on, date(2026, 8, 15))
+        self.assertEqual(self.summary().created, 1)
+        self.assertEqual(len(self.staff_notifications(self.owner)), 1)
+
+    def test_a_flag_never_commits_without_its_summary(self):
+        run_auto_billing(date(2026, 8, 14))
+        draft = self.invoices(self.resident)[-1]
+        with tenant_context(self.tenant.id):
+            self.resident.status = Resident.Status.VACATED
+            self.resident.save(update_fields=['status'])
+
+        with self.summary_save_fails(), self.assertLogs('apps.billing.autobilling'):
+            run_auto_billing(date(2026, 8, 15))
+        self.assertEqual(self.refreshed(draft).review_reasons, [])
+
+        run_auto_billing(date(2026, 8, 15))
+        self.assertEqual(self.refreshed(draft).review_reasons, [R.INELIGIBLE])
+        with tenant_context(self.tenant.id):
+            flagged = AutoBillingSummary.objects.get(property=self.property, on_date=date(2026, 8, 15))
+        self.assertEqual(flagged.needs_confirmation, 1)
+        self.assertTrue(flagged.completed)
+
     def test_old_undelivered_summaries_are_given_up(self):
         with self.flaky_notify({self.owner.pk, self.manager.pk}), self.assertLogs('apps.billing.autobilling'):
             run_auto_billing(date(2026, 8, 14))

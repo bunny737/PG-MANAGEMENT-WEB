@@ -324,6 +324,10 @@ class PropertySettings(TenantModelMixin):
         ONE_TIME = 'one_time', _('One-time')
         MONTHLY = 'monthly', _('Monthly')
 
+    class BillingDayRule(models.TextChoices):
+        ADMISSION_DATE = 'admission_date', _("Resident's admission date")
+        FIXED_DAY = 'fixed_day', _('Fixed day of the month')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     property = models.OneToOneField(Property, on_delete=models.CASCADE, related_name='settings')
     room_transfer_rent_timing = models.CharField(
@@ -343,6 +347,17 @@ class PropertySettings(TenantModelMixin):
     )
     penalty_compounding = models.CharField(
         max_length=10, choices=PenaltyCompounding.choices, default=PenaltyCompounding.ONE_TIME
+    )
+    # Automatic invoicing (Module 08, owner decision 2026-10-28): drafts the
+    # day before each resident's billing day, issues them on it. On by
+    # default, existing properties included.
+    auto_billing_enabled = models.BooleanField(default=True)
+    billing_day_rule = models.CharField(
+        max_length=20, choices=BillingDayRule.choices, default=BillingDayRule.ADMISSION_DATE
+    )
+    # Only meaningful for FIXED_DAY. Capped at 28 so every month has the day.
+    billing_day_of_month = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(28)]
     )
 
     class Meta:

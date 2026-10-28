@@ -29,6 +29,7 @@ class NotificationLog(TenantModelMixin):
         TRIAL_EXPIRY_REMINDER = 'trial_expiry_reminder', _('Trial Expiry Reminder')
         INVOICE_ISSUED = 'invoice_issued', _('Invoice Issued')
         PAYMENT_RECEIPT = 'payment_receipt', _('Payment Receipt')
+        INVOICE_DRAFTS_READY = 'invoice_drafts_ready', _('Invoice Drafts Ready')
 
     class Status(models.TextChoices):
         SENT = 'sent', _('Sent')

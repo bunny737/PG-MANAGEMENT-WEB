@@ -1,5 +1,3 @@
-from datetime import date
-
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -14,19 +12,22 @@ from rest_framework.views import APIView
 from apps.audit import log as audit_log
 from apps.core.idempotency import idempotency_key, key_reused
 from apps.core.periods import local_today, month_end, month_start, parse_date, parse_month
-from apps.core.tasks import enqueue
 from apps.core.permissions import require_permission, require_permission_by_method
-from apps.notifications.tasks import send_invoice_issued_email_task
 from apps.properties.services import scoped_property_ids, visible_property_ids
 from apps.residents.models import Resident
 
 from . import receipts, selectors, services
 from .filters import DiscountFilter, InvoiceFilter, PaymentFilter
 from .models import Discount, Invoice, InvoiceLineItem, Payment
-from .schema import CashMovementsResponseSerializer, ReceiptResponseSerializer
+from .schema import (
+    CashMovementsResponseSerializer,
+    InvoiceBulkIssueResponseSerializer,
+    ReceiptResponseSerializer,
+)
 from .serializers import (
     DiscountSerializer,
     InvoiceBulkGenerateSerializer,
+    InvoiceBulkIssueSerializer,
     InvoiceGenerateSerializer,
     InvoiceLineItemWriteSerializer,
     InvoiceSerializer,
@@ -131,10 +132,16 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _require_draft(invoice):
-        if invoice.status != Invoice.Status.DRAFT:
-            raise ValidationError(
-                {'detail': _('Only draft invoices can be modified.')}, code='invoice_not_draft'
-            )
+        services.require_draft(invoice)
+
+    def _locked_draft(self):
+        """The scoped invoice, row-locked and re-checked as a draft. Callers
+        run in a transaction, so an edit can't interleave with an issue (manual
+        or by the automatic-billing sweep)."""
+        invoice = self.get_object()
+        invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        self._require_draft(invoice)
+        return invoice
 
     def _fresh_response(self, invoice, http_status=status.HTTP_200_OK):
         # Re-fetch so the prefetched line_items cache reflects the mutation.
@@ -149,44 +156,78 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         )
         return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
-        invoice = self.get_object()
-        self._require_draft(invoice)
+        invoice = self._locked_draft()
         serializer = self.get_serializer(invoice, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(InvoiceSerializer(invoice).data)
+        extra = {}
+        if 'due_date' in serializer.validated_data:
+            # A due date the owner typed is kept as-is on issue, never
+            # recomputed from the issue date.
+            extra['due_date_policy'] = Invoice.DueDatePolicy.MANUAL
+        serializer.save(**extra)
+        return self._fresh_response(invoice)
 
-    def perform_destroy(self, instance):
-        self._require_draft(instance)
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        instance = self._locked_draft()
         audit_log.record(
             action='invoice.deleted', actor=self.request.user, obj=instance,
             before={'resident': str(instance.resident_id), 'period_start': instance.period_start.isoformat()},
             request=self.request,
         )
         instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
-    @transaction.atomic
     def issue(self, request, pk=None):
         invoice = self.get_object()
-        self._require_draft(invoice)
-        invoice.status = Invoice.Status.ISSUED
-        invoice.issue_date = date.today()
-        invoice.save(update_fields=['status', 'issue_date', 'updated_at'])
-        audit_log.record(
-            action='invoice.issued', actor=request.user, obj=invoice,
-            after={'status': invoice.status, 'issue_date': invoice.issue_date.isoformat()},
-            request=request,
-        )
-        # The advance (rent paid upfront at admission) settles the first invoice.
-        services.apply_advance_to_first_invoice(invoice=invoice, actor=request.user, request=request)
-        invoice.refresh_from_db()  # the payment may have changed its status
-        # Module 14: "Invoice generated notification to resident" (PRD).
-        # Issuing (not the draft) is when it becomes a real obligation the
-        # resident should be told about — see the Module 14 spec's Decisions.
-        transaction.on_commit(lambda: enqueue(send_invoice_issued_email_task, str(invoice.id)))
-        return Response(InvoiceSerializer(invoice).data)
+        services.issue_invoice(invoice_id=invoice.pk, actor=request.user, request=request)
+        return self._fresh_response(invoice)
+
+    @extend_schema(request=InvoiceBulkIssueSerializer, responses=InvoiceBulkIssueResponseSerializer)
+    @action(detail=False, methods=['post'], url_path='bulk-issue')
+    def bulk_issue(self, request):
+        """Confirm (issue) many drafts at once — e.g. everything in the Needs
+        review list. Each invoice is issued in its own transaction; one that
+        fails doesn't stop the rest, and the response says what happened to
+        each id."""
+        serializer = InvoiceBulkIssueSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        visible = set(self.get_queryset().filter(pk__in=serializer.validated_data['ids']).values_list('pk', flat=True))
+        results = []
+        for invoice_id in serializer.validated_data['ids']:
+            if invoice_id not in visible:
+                results.append({'id': str(invoice_id), 'result': 'not_found'})
+                continue
+            try:
+                services.issue_invoice(invoice_id=invoice_id, actor=request.user, request=request)
+            except ValidationError as exc:
+                code = exc.get_codes()
+                if isinstance(code, dict):
+                    code = code.get('detail', 'invalid')
+                if isinstance(code, list):
+                    code = code[0] if code else 'invalid'
+                results.append({'id': str(invoice_id), 'result': str(code)})
+                continue
+            results.append({'id': str(invoice_id), 'result': 'issued'})
+        return Response({
+            'issued': sum(1 for row in results if row['result'] == 'issued'),
+            'results': results,
+        })
+
+    @action(detail=True, methods=['post'], url_path='hold-auto-issue')
+    def hold_auto_issue(self, request, pk=None):
+        invoice = self.get_object()
+        services.hold_auto_issue(invoice_id=invoice.pk, actor=request.user, request=request)
+        return self._fresh_response(invoice)
+
+    @action(detail=True, methods=['post'], url_path='resume-auto-issue')
+    def resume_auto_issue(self, request, pk=None):
+        invoice = self.get_object()
+        services.resume_auto_issue(invoice_id=invoice.pk, actor=request.user, request=request)
+        return self._fresh_response(invoice)
 
     @action(detail=False, methods=['get'])
     def outstanding(self, request):
@@ -212,6 +253,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             allocation__isnull=False,
         )
         created = []
+        overlapping = 0
         for resident in residents:
             if services.resident_has_invoice_for_period(resident, data['period_start']):
                 continue
@@ -221,20 +263,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     period_end=data['period_end'], due_date=data['due_date'],
                     actor=request.user, request=request,
                 ))
-            except ValidationError:
-                # A concurrent run (or single-generate) already invoiced this
-                # resident for the period — unique_invoice_per_resident_period
-                # caught it. Skip, don't abort the batch.
+            except services.InvoiceConflict as exc:
+                # Already invoiced for (part of) this period — by a concurrent
+                # run, a single generate, or automatic billing. Skip, don't
+                # abort the batch.
+                if 'overlapping_invoice' in str(exc.get_codes()):
+                    overlapping += 1
                 continue
         return Response(
-            {'created': len(created), 'invoices': InvoiceSerializer(created, many=True).data},
+            {'created': len(created), 'skipped_overlapping': overlapping,
+             'invoices': InvoiceSerializer(created, many=True).data},
             status=status.HTTP_201_CREATED,
         )
 
     @action(detail=True, methods=['post'], url_path='line-items')
+    @transaction.atomic
     def add_line_item(self, request, pk=None):
-        invoice = self.get_object()
-        self._require_draft(invoice)
+        invoice = self._locked_draft()
         serializer = InvoiceLineItemWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         InvoiceLineItem.objects.create(
@@ -247,9 +292,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         return self._fresh_response(invoice, status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'], url_path=r'line-items/(?P<line_pk>[0-9a-f-]+)')
+    @transaction.atomic
     def modify_line_item(self, request, pk=None, line_pk=None):
-        invoice = self.get_object()
-        self._require_draft(invoice)
+        invoice = self._locked_draft()
         line = invoice.line_items.filter(pk=line_pk).first()
         if line is None:
             raise NotFound(_('Line item not found.'))

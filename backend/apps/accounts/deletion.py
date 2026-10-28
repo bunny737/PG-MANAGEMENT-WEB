@@ -71,6 +71,8 @@ DISPOSITION = {
     'accounts.Tenant': (RETAIN, RETAIN),
     'accounts.User': (PURGE, PURGE),
     'audit.AuditLog': (PURGE, REDACT),
+    'billing.AutoBillingCycle': (PURGE, RETAIN),
+    'billing.AutoBillingNotice': (PURGE, RETAIN),
     'billing.Discount': (PURGE, RETAIN),
     'billing.Invoice': (PURGE, RETAIN),
     'billing.InvoiceLineItem': (PURGE, RETAIN),
@@ -125,6 +127,7 @@ DISPOSITION = {
 # rows that PROTECT-reference them (Payment -> Invoice, Admission -> Bed, Resident -> Property ...).
 # A test asserts this is exactly the set of TenantModelMixin models marked PURGE above.
 PURGE_ORDER = [
+    'billing.AutoBillingCycle', 'billing.AutoBillingNotice',
     'billing.Payment', 'billing.InvoiceLineItem', 'billing.Invoice', 'billing.Discount', 'billing.ReceiptCounter',
     'operations.ComplaintComment', 'operations.Complaint', 'operations.Visitor',
     'residents.Vacate', 'residents.Transfer', 'residents.Allocation', 'residents.Admission',

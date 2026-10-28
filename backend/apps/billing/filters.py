@@ -47,10 +47,29 @@ class InvoiceFilter(django_filters.FilterSet):
     status = django_filters.CharFilter(method='filter_status')
     period = django_filters.CharFilter(method='filter_period')
     search = django_filters.CharFilter(method='filter_search')
+    review = django_filters.CharFilter(method='filter_review')
 
     class Meta:
         model = Invoice
-        fields = ['resident', 'property', 'billing_mode', 'status', 'period', 'search']
+        fields = ['resident', 'property', 'billing_mode', 'status', 'period', 'search', 'review']
+
+    REVIEW_FILTERS = {
+        # Drafts the owner has to confirm (any review reason).
+        'needs_confirmation': ~Q(review_reasons=[]),
+        # Auto drafts that will be issued by the sweep.
+        'scheduled': Q(review_reasons=[], auto_issue_on__isnull=False, auto_issue_held=False),
+        'held': Q(review_reasons=[], auto_issue_held=True),
+    }
+
+    def filter_review(self, queryset, name, value):
+        """Automatic-billing drafts: needs_confirmation / scheduled / held."""
+        condition = self.REVIEW_FILTERS.get(value.strip())
+        if condition is None:
+            raise ValidationError(
+                {'review': [_('Unknown review filter. Use needs_confirmation, scheduled or held.')]},
+                code='invalid_review',
+            )
+        return queryset.filter(condition, status=Invoice.Status.DRAFT, auto_generated=True)
 
     def filter_status(self, queryset, name, value):
         """Comma-separated stored statuses, or one of the derived aliases

@@ -32,9 +32,28 @@ Table: invoices                                 (RLS enforced, app: apps.billing
                     -- Module 08 sets only draft/issued; paid/partially_paid
                     -- are Module 09's. "Overdue" is DERIVED (is_overdue), never stored.
   notes             text, blank
-  created_by        FK -> users, null (SET_NULL)
+  created_by        FK -> users, null (SET_NULL; null = drafted by automatic billing)
+  auto_generated    bool (default false)         -- drafted by the daily sweep
+  review_reasons    varchar[] (default [])       -- non-empty = owner must confirm; never auto-issued
+                    weekly | first_partial | transition | late | vacating |
+                    no_prior_invoice | ineligible | rule_changed
+  due_date_policy   from_period_start | from_issue_date | manual  (default from_period_start)
+  auto_issue_on     date, null                   -- day the sweep issues it (only while no reasons)
+  auto_issue_held   bool (default false)         -- the owner's hold
   created_at / updated_at
   -- total is summed from line_items in the serializer, never stored.
+
+Table: auto_billing_cycles                      (RLS enforced, app: apps.billing)
+  id, tenant_id, resident FK (CASCADE), period_start, period_end,
+  outcome  created | skipped_overlap, invoice FK null (SET_NULL),
+  created_on date (the sweep's effective date)
+  UNIQUE (resident, period_start)
+  -- "automation already handled this cycle": a deleted draft is never
+  -- recreated and still counts as covered when the next cycle is planned.
+
+Table: auto_billing_notices                     (RLS enforced, app: apps.billing)
+  id, tenant_id, resident FK (CASCADE), kind (coverage_gap), key_date
+  UNIQUE (resident, kind, key_date)              -- a warning sent once, not daily
 
 Table: invoice_line_items                       (RLS enforced, app: apps.billing)
   id                uuid PK
@@ -56,6 +75,9 @@ land later with no migration (see Module 05 spec).
 GET|POST         /api/v1/invoices/                       list / generate (one resident)   manage_invoices
 GET|PATCH|DELETE /api/v1/invoices/{id}/                  detail / edit due_date+notes / delete draft   manage_invoices
 POST             /api/v1/invoices/{id}/issue/            draft -> issued                  manage_invoices
+POST             /api/v1/invoices/bulk-issue/            {ids:[...]} issue many; per-id results   manage_invoices
+POST             /api/v1/invoices/{id}/hold-auto-issue/  owner hold on a scheduled auto draft     manage_invoices
+POST             /api/v1/invoices/{id}/resume-auto-issue/ lift the hold (next day at the earliest) manage_invoices
 POST             /api/v1/invoices/bulk-generate/         generate drafts for a property   manage_invoices
 POST             /api/v1/invoices/{id}/line-items/       add an ad-hoc line (draft only)  manage_invoices
 PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (draft only) manage_invoices
@@ -72,6 +94,77 @@ as `/invoices/outstanding/` and the analytics `outstanding_total`) or
 contribution to analytics `period_collected`. Money figures for filters and
 analytics come from `apps/billing/selectors.py` (DB annotations), so a list
 and the summary that drills into it share one definition.
+
+`?review=needs_confirmation|scheduled|held` (2026-10-28) narrows to automatic
+drafts: needing confirmation (any review reason), scheduled for auto-issue, or
+on hold. Unknown values → 400 `invalid_review`. Invoice rows also carry
+`auto_generated, review_reasons, due_date_policy, auto_issue_on,
+auto_issue_held, can_auto_issue`. Manual generate / bulk-generate now reject a
+period overlapping any of the resident's invoices (`overlapping_invoice`; bulk
+skips it and reports `skipped_overlapping`). PATCHing `due_date` on a draft sets
+`due_date_policy=manual` (kept as typed, never recomputed).
+
+## Automatic billing (owner decision 2026-10-28)
+`apps/billing/autobilling.py`, run daily at 06:00 IST by the beat task
+`billing.auto_billing` (seeded by migration 0008, retimable in Django admin;
+ops fallback `manage.py run_auto_billing [--date YYYY-MM-DD]`). Per property
+with `PropertySettings.auto_billing_enabled` (default **on**, existing
+properties included):
+
+1. **Issue** every non-held auto draft whose `auto_issue_on` is today or
+   yesterday (one missed run tolerated). Rechecked under the locks: property
+   still enabled, resident Active/Notice with an allocation, and no open notice
+   ending before `period_end`. A failed check adds `vacating` / `ineligible`
+   (or `late` when the schedule is ≥2 days old) and clears the schedule instead.
+   Issued after `period_start` ⇒ due = issue date + grace.
+2. **Draft** each Active/Notice, allocated, non-daily resident's next cycle,
+   at most one per resident per day (`AutoBillingCycle.created_on`), and only
+   when it starts no later than tomorrow.
+3. **Notify** the Owner(s) and the property's staff with `manage_invoices`
+   (`invoice_drafts_ready`, email + push) when it drafted or flagged anything,
+   or found a new coverage gap.
+
+**Cycle selection — continue from the last covered day.** `next_start` = the
+day after the latest `period_end` of the resident's invoices and
+`AutoBillingCycle` markers (or `joining_date` if neither). If `next_start` is a
+billing day ⇒ a full cycle up to the next billing day − 1; else a **partial**
+(`first_partial` when it is the joining date, otherwise `transition`). Billing
+days: the resident's joining day each month, clamped to month end (31st ⇒
+30 Apr, 28/29 Feb), or the property's fixed day (1–28); **weekly** residents
+every 7 days from joining whatever the rule; **daily** residents never.
+Rollout: a never-billed resident who joined before the current cycle starts at
+the current cycle (`no_prior_invoice`) — earlier months are not backfilled.
+
+**Amounts.** Base = `admission.first_month_billing_amount` only when the period
+starts on the joining date; else contracted rent × calendar fraction. The
+fraction is exactly 1 for a full cycle; a monthly partial sums each calendar
+month's `days / days_in_month` (Jan 20–Feb 14 = 12/31 + 14/28), capped at 1;
+a weekly partial is `days / 7`. Rounded half-up to paise once. Discount: a %
+discount on the base charged; a fixed discount × the same calendar fraction;
+none when contracted rent is 0. Due date at draft = `period_start` + grace days.
+
+**Review reasons (never auto-issued while any is present):** `weekly`,
+`first_partial`, `transition`, `late` (drafted on/after its start ⇒ due from
+issue date), `vacating` (open notice ends before `period_end`),
+`no_prior_invoice`, `ineligible`, `rule_changed` (the property's automatic
+billing switch / rule / day changed while it was scheduled — the settings PATCH
+flags them in the same transaction). Several can apply at once; confirming =
+issuing (manually or via `bulk-issue`).
+
+**Hold / resume.** Only for auto drafts with no review reasons
+(`not_auto_issuable` otherwise). Held drafts are skipped by both issuing and
+the stale check. Resume schedules `max(period_start, tomorrow)` — a
+calendar-day boundary, not 24 hours — and if that is after `period_start` the
+due date is recomputed from the issue date (unless `manual`).
+
+**Locking — one global order:** `PropertySettings` → `Resident`
+(`residents.services.lock_resident`) → `Vacate` → `Invoice` → `Admission`.
+Auto generation: Settings → Resident. Every issue (auto, manual, bulk):
+Settings → Resident → Invoice → Admission, grace days read under the Settings
+lock. Settings PATCH: Settings → Invoice. Draft edits / delete / line items /
+hold / resume: Invoice row lock + draft recheck. `generate_invoice` itself
+takes the Resident lock and checks overlap inside it, so every generation path
+(single, bulk, auto) serializes per resident.
 
 ## Business rules (each maps to a test)
 1. Generation creates a draft invoice with an **accommodation** line whose
@@ -101,8 +194,10 @@ and the summary that drills into it share one definition.
    a property that has an allocation and no invoice yet for that
    `period_start` (idempotent — re-running creates 0).
 9. No duplicate invoice for the same resident + `period_start`
-   (`duplicate_invoice`). Only Active/Notice-Period, allocated residents can
-   be invoiced.
+   (`duplicate_invoice`), and (since 2026-10-28) no invoice whose period
+   overlaps another of the resident's invoices (`overlapping_invoice`),
+   checked under the resident row lock on every generation path. Only
+   Active/Notice-Period, allocated residents can be invoiced.
 10. Draft invoices are deletable (regenerate); issued invoices are immutable
     financial records (no edit/delete). Generation, issue, delete, and every
     line-item change are audit logged.
@@ -174,6 +269,52 @@ and the summary that drills into it share one definition.
   and maps the resulting `IntegrityError` to the existing `duplicate_invoice`
   validation error; `bulk_generate` swallows it and skips. Mirrors
   `SubscriptionInvoice.unique_invoice_per_cycle` (Module 13).
+- [DECISION 2026-10-28] **Automatic invoicing** (owner). Billing day =
+  per-property setting, default the resident's admission date each month,
+  alternative a fixed day 1–28. Draft the day before, auto-issue on the day;
+  due = billing date + `penalty_grace_days`. Weekly residents always need
+  confirmation; daily residents are never auto-billed. On by default for all
+  properties, existing ones included, never overlapping an existing invoice.
+- [DECISION 2026-10-28] (owner) A draft created on/after its start date is
+  `late`: needs confirmation, due = issue date + grace (set when issued).
+- [DECISION 2026-10-28] (owner) Proration splits per calendar month
+  (Jan 20–Feb 14 = rent × 12/31 + rent × 14/28). Capped at one full cycle:
+  a partial never costs more than a full month (engineering call — the
+  per-month sum can exceed 1, e.g. Jan 16–Feb 14).
+- [DECISION 2026-10-28] (owner) On a partial, a % discount applies to the rent
+  charged and a fixed ₹ discount is prorated. The ratio is the calendar
+  fraction, not base ÷ rent, so a manual first-month amount isn't discounted
+  twice; zero contracted rent ⇒ no discount line.
+- [DECISION 2026-10-28] (owner) Changing the rule / day or switching
+  automation off moves scheduled drafts to review (`rule_changed`); billing
+  continues from the last covered day, bridging to the new billing day with a
+  prorated `transition` draft.
+- [DECISION 2026-10-28] **No overlapping invoices is now a platform
+  invariant, manual generation included** (was: identical `period_start`
+  only). Partial months and transfer splits are line edits, never a second
+  overlapping invoice, so nothing legitimate needs an overlap.
+- [DECISION 2026-10-28] **Automation bills forward only.** It continues after
+  the latest recorded period; gaps before it (incl. before a future-dated
+  manual invoice) are left to the owner. The one gap it detects — today
+  uncovered while a later period is billed — is warned about once
+  (`AutoBillingNotice`).
+- [DECISION 2026-10-28] `first_month_billing_amount` applies to an automatic
+  draft only when its period starts on the joining date, never just because
+  it is the first invoice in the database (a rollout must not re-apply an old
+  admission concession). The manual path keeps its original behaviour.
+- [DECISION 2026-10-28] A scheduled draft still auto-issues one day late
+  (missed sweep), due from the issue date; older ⇒ `late` for review. Held
+  drafts are exempt from both, so Resume always stays available.
+- [DECISION 2026-10-28] A Notice-Period resident's draft is flagged
+  `vacating` only when the open notice ends before `period_end`; no draft at
+  all for a cycle starting after the expected vacate date.
+- [DECISION 2026-10-28] A due date typed by the owner on a draft
+  (`due_date_policy=manual`) is never recomputed by automation.
+- [DECISION 2026-10-28] `issue_date` uses the product-timezone date
+  (`core.periods.local_today`, or the sweep's effective date), not the
+  container clock (`date.today()`, a day behind before 05:30 IST).
+- [DECISION 2026-10-28] Every system (actor-less) audit row passes
+  `tenant_id` explicitly — `audit_log.record` only infers it from the actor.
 
 ## Changelog
 - 2026-06-xx  Created stub.
@@ -215,3 +356,14 @@ and the summary that drills into it share one definition.
   `capped_allocated`; `is_overdue` uses the product-timezone date
   (`core.periods.local_today`) instead of the container clock. Tests:
   `billing/tests/test_list_filters.py`.
+- 2026-10-28  Automatic invoicing (owner request): `apps/billing/autobilling.py`
+  daily sweep + `billing.auto_billing` beat task + `run_auto_billing` command;
+  `Invoice` review / schedule fields; `AutoBillingCycle` and `AutoBillingNotice`
+  (RLS); `issue_invoice` service (extracted from the view, global lock order,
+  eligibility recheck); `hold-auto-issue` / `resume-auto-issue` / `bulk-issue`
+  endpoints; `?review=` filter; overlap rejection on every generation path;
+  `invoice_drafts_ready` notification (Module 14). Property settings fields in
+  Module 03. Tests: `test_auto_billing_math.py`, `test_auto_billing.py`,
+  `test_auto_billing_concurrency.py` (threaded lock-order races). Owner UI:
+  settings section, Needs review / Auto-issue scheduled list filters with
+  "Issue selected", detail banner with Hold / Resume.

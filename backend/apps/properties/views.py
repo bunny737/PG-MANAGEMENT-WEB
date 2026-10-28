@@ -54,6 +54,10 @@ from .serializers import (
 # scoping (services.visible_property_ids) enforces the assignment itself.
 _PROPERTY_VIEW_ROLES = (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST)
 
+# Changing any of these sends the property's scheduled auto drafts to review
+# (owner decision 2026-10-28: continue from the last invoice under the new rule).
+AUTO_BILLING_KEYS = ('auto_billing_enabled', 'billing_day_rule', 'billing_day_of_month')
+
 LAYOUT_ENTRY_PERMISSIONS = (
     'view_property_features', 'manage_rooms_beds', 'manage_admissions', 'manage_allocations',
 )
@@ -215,16 +219,25 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response(PropertySettingsSerializer(instance).data)
 
-        before = PropertySettingsSerializer(instance).data
-        serializer = PropertySettingsSerializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
-        after = PropertySettingsSerializer(instance).data
-        if before != after:
-            audit_log.record(
-                action='property_settings.updated', actor=request.user, obj=instance,
-                before=before, after=after, request=request,
-            )
+        with transaction.atomic():
+            # Locked first, like every invoice issue (Settings -> Resident ->
+            # Invoice), so a change can't interleave with the billing sweep.
+            instance = PropertySettings.objects.select_for_update().get(pk=instance.pk)
+            before = PropertySettingsSerializer(instance).data
+            serializer = PropertySettingsSerializer(instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            instance = serializer.save()
+            after = PropertySettingsSerializer(instance).data
+            if before != after:
+                audit_log.record(
+                    action='property_settings.updated', actor=request.user, obj=instance,
+                    before=before, after=after, request=request,
+                )
+            if any(before[key] != after[key] for key in AUTO_BILLING_KEYS):
+                # Deferred import: billing (Module 08) builds on properties.
+                from apps.billing.services import flag_scheduled_drafts
+
+                flag_scheduled_drafts(property_id=prop.pk, actor=request.user, request=request)
         return Response(after)
 
     @extend_schema(

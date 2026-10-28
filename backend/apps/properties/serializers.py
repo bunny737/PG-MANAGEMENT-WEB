@@ -541,11 +541,32 @@ class PropertySettingsSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'room_transfer_rent_timing', 'late_payment_penalty_type',
             'penalty_value', 'penalty_grace_days', 'penalty_applies_to',
-            'penalty_compounding', 'created_at', 'updated_at',
+            'penalty_compounding', 'auto_billing_enabled', 'billing_day_rule',
+            'billing_day_of_month', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate(self, attrs):
+        self._validate_billing_day(attrs)
+        return self._validate_penalty(attrs)
+
+    def _validate_billing_day(self, attrs):
+        rule = attrs.get(
+            'billing_day_rule',
+            getattr(self.instance, 'billing_day_rule', PropertySettings.BillingDayRule.ADMISSION_DATE),
+        )
+        if rule != PropertySettings.BillingDayRule.FIXED_DAY:
+            # The admission-date rule has no day of its own.
+            attrs['billing_day_of_month'] = None
+            return
+        day = attrs.get('billing_day_of_month', getattr(self.instance, 'billing_day_of_month', None))
+        if day is None:
+            raise serializers.ValidationError(
+                {'billing_day_of_month': _('Choose the day of the month to bill on (1-28).')},
+                code='billing_day_required',
+            )
+
+    def _validate_penalty(self, attrs):
         penalty_type = attrs.get(
             'late_payment_penalty_type',
             getattr(self.instance, 'late_payment_penalty_type', PropertySettings.PenaltyType.NONE),

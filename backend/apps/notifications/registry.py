@@ -41,6 +41,15 @@ NOTIFICATION_TYPES = {
         'optional': False,
         'context_vars': ['name', 'amount', 'date', 'mode', 'balance'],
     },
+    # To the Owner / invoice managers after the daily automatic-billing sweep
+    # (Module 08) drafted invoices, flagged drafts for review, or found an
+    # unbilled gap. `gaps` is a comma-separated list of resident names.
+    'invoice_drafts_ready': {
+        'label': 'Invoice Drafts Ready',
+        'channels': ['email', 'push'],
+        'optional': True,
+        'context_vars': ['name', 'property', 'date', 'created', 'scheduled', 'needs_confirmation', 'gaps'],
+    },
 }
 
 # All channels the platform knows how to speak, regardless of which types

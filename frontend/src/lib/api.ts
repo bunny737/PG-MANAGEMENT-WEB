@@ -492,9 +492,16 @@ export interface PropertySettings {
   penalty_grace_days: number;
   penalty_applies_to: "full_invoice" | "outstanding_balance";
   penalty_compounding: "one_time" | "monthly";
+  /** Draft each resident's invoice the day before their billing day and issue it on the day. */
+  auto_billing_enabled: boolean;
+  billing_day_rule: BillingDayRule;
+  /** 1-28; only set for the fixed_day rule. */
+  billing_day_of_month: number | null;
   created_at: string;
   updated_at: string;
 }
+
+export type BillingDayRule = "admission_date" | "fixed_day";
 
 export type PropertySettingsPayload = Partial<Omit<PropertySettings, "id" | "created_at" | "updated_at">>;
 
@@ -1391,9 +1398,29 @@ export interface Invoice extends ResidentContext {
   /** min(amount_paid, total) — sums to analytics' period_collected under ?period= (D0). */
   capped_allocated: string;
   is_overdue: boolean;
+  /** Drafted by the daily automatic-billing sweep (Module 08). */
+  auto_generated: boolean;
+  /** Non-empty = the owner must confirm (issue) it; it is never issued automatically. */
+  review_reasons: InvoiceReviewReason[];
+  due_date_policy: "from_period_start" | "from_issue_date" | "manual";
+  /** The day the sweep issues this draft; null when it won't. */
+  auto_issue_on: string | null;
+  auto_issue_held: boolean;
+  /** Auto draft with nothing to confirm — the owner may hold / resume it. */
+  can_auto_issue: boolean;
   created_at: string;
   updated_at: string;
 }
+
+export type InvoiceReviewReason =
+  | "weekly"
+  | "first_partial"
+  | "transition"
+  | "late"
+  | "vacating"
+  | "no_prior_invoice"
+  | "ineligible"
+  | "rule_changed";
 
 export interface Payment extends ResidentContext {
   id: string;
@@ -1420,6 +1447,8 @@ export interface InvoiceFilters {
   period?: string;
   billing_mode?: string;
   search?: string;
+  /** Automatic-billing drafts: needs_confirmation / scheduled / held. */
+  review?: "needs_confirmation" | "scheduled" | "held";
   [key: string]: string | undefined;
 }
 
@@ -1471,10 +1500,35 @@ export interface InvoiceBulkGeneratePayload {
 }
 
 export function bulkGenerateInvoices(payload: InvoiceBulkGeneratePayload) {
-  return apiFetch<{ created: number; invoices: Invoice[] }>("/api/v1/invoices/bulk-generate/", {
+  return apiFetch<{ created: number; skipped_overlapping: number; invoices: Invoice[] }>(
+    "/api/v1/invoices/bulk-generate/",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export interface InvoiceBulkIssueResult {
+  issued: number;
+  /** result: "issued", "not_found", or the error code that stopped it (e.g. "invoice_not_draft"). */
+  results: { id: string; result: string }[];
+}
+
+/** Confirm (issue) many drafts at once — each succeeds or fails on its own. */
+export function bulkIssueInvoices(ids: string[]) {
+  return apiFetch<InvoiceBulkIssueResult>("/api/v1/invoices/bulk-issue/", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ids }),
   });
+}
+
+export function holdAutoIssue(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/hold-auto-issue/`, { method: "POST" });
+}
+
+export function resumeAutoIssue(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/resume-auto-issue/`, { method: "POST" });
 }
 
 export function updateInvoiceDraft(id: string, payload: { due_date?: string; notes?: string }) {

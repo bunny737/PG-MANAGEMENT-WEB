@@ -29,8 +29,17 @@ Table: property_settings                         (RLS enforced)
   penalty_grace_days        positive smallint, 0-30 (default: 5)
   penalty_applies_to        full_invoice | outstanding_balance  (default: full_invoice)
   penalty_compounding       one_time | monthly    (default: one_time)
+  auto_billing_enabled      bool (default: true)  -- Module 08 automatic invoicing
+  billing_day_rule          admission_date | fixed_day   (default: admission_date)
+  billing_day_of_month      smallint null, 1-28  (required iff fixed_day; cleared otherwise)
   created_at / updated_at
 ```
+`penalty_grace_days` also sets automatic invoices' due date (billing date +
+grace days, Module 08). Changing `auto_billing_enabled`, `billing_day_rule` or
+`billing_day_of_month` moves that property's scheduled auto drafts to review
+(`rule_changed`) in the same transaction, with the settings row locked first
+(the Module 08 lock order). Validation: `fixed_day` without a day ⇒ 400
+`billing_day_required`; a day outside 1–28 ⇒ 400.
 No field exists for PRD Setting 2 ("Shared Invoices") — it's a fixed rule
 (always one invoice per resident), not a toggle. See Decisions.
 
@@ -111,3 +120,9 @@ Nested action on `PropertyViewSet` (not a standalone router) since it's a
 - 2026-10-06  See also `18-pg-features.md`: Settings are billing *behaviour* (one row per
   property); Features are *facts* about what the PG offers (0..n rows). Both are nested
   actions on `PropertyViewSet` — `/settings/` and `/features/`.
+- 2026-10-28  Automatic invoicing settings (owner decision, see Module 08):
+  `auto_billing_enabled` (default on, existing properties included),
+  `billing_day_rule` (default `admission_date`) and `billing_day_of_month`
+  (1–28, for `fixed_day`). The settings PATCH now locks the row and flags
+  scheduled auto drafts for review when any of the three changes. Owner UI:
+  "Automatic Billing" section on the property settings page.

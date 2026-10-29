@@ -2227,6 +2227,8 @@ export interface TutorialVideo {
 
 export interface TutorialVideoList {
   requested_language: string;
+  /** Languages with at least one video this role can see — independent of which UI translations are live. */
+  available_languages: string[];
   videos: TutorialVideo[];
 }
 

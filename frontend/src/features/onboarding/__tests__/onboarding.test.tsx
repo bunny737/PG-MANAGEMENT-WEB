@@ -8,6 +8,7 @@ import { renderWithIntl } from "@/test-utils/renderWithIntl";
 import { Users } from "lucide-react";
 import { FallbackLanguageNote } from "../FallbackLanguageNote";
 import { GettingStartedCard } from "../GettingStartedCard";
+import { HelpPage, videoLanguageOptions } from "../HelpPage";
 import { stepHref } from "../routes";
 import { VideoPlayerDialog } from "../VideoPlayerDialog";
 
@@ -18,6 +19,7 @@ const state = vi.hoisted(() => ({
   api: {
     getOnboardingChecklist: vi.fn(),
     dismissOnboarding: vi.fn(),
+    restoreOnboarding: vi.fn(),
     listTutorialVideos: vi.fn(),
   },
   afterOnboardingDismissChange: vi.fn(),
@@ -100,7 +102,7 @@ beforeEach(() => {
   state.user = { id: "u1", tenant_id: "t1" };
   Object.values(state.api).forEach((fn) => fn.mockReset());
   state.afterOnboardingDismissChange.mockReset();
-  state.api.listTutorialVideos.mockResolvedValue({ requested_language: "en", videos: [] });
+  state.api.listTutorialVideos.mockResolvedValue({ requested_language: "en", available_languages: ["en"], videos: [] });
   state.api.dismissOnboarding.mockResolvedValue(undefined);
 });
 
@@ -222,7 +224,7 @@ describe("GettingStartedCard rows", () => {
   });
 
   test("a done row still offers its tutorial", async () => {
-    state.api.listTutorialVideos.mockResolvedValue({ requested_language: "en", videos: [video()] });
+    state.api.listTutorialVideos.mockResolvedValue({ requested_language: "en", available_languages: ["en"], videos: [video()] });
     state.api.getOnboardingChecklist.mockResolvedValue(checklist());
     renderWithIntl(<GettingStartedCard />);
     const region = await card();
@@ -293,5 +295,29 @@ describe("routes", () => {
 
   test("Help is never a landing page", () => {
     expect(firstAllowedRoute([])).toBe("/profile");
+  });
+});
+
+describe("Help video languages", () => {
+  test("options follow the catalog, not which UI translations are live", () => {
+    // hi and ta have videos but no live UI; te is live but has no videos and isn't the UI language here.
+    expect(videoLanguageOptions(["en", "hi", "ta"], "en").map((o) => o.code)).toEqual(["en", "hi", "ta"]);
+    // The UI language and English are always offered (English stands in for missing topics).
+    expect(videoLanguageOptions([], "te").map((o) => o.code)).toEqual(["en", "te"]);
+  });
+
+  test("a language with videos is selectable and fetched even though its UI isn't live", async () => {
+    state.api.getOnboardingChecklist.mockResolvedValue(checklist());
+    state.api.listTutorialVideos.mockImplementation(async (language: string) => ({
+      requested_language: language,
+      available_languages: ["en", "hi"],
+      videos: [video({ language: language === "hi" ? "hi" : "en", title: `Video ${language}` })],
+    }));
+    renderWithIntl(<HelpPage />);
+    const picker = await screen.findByRole("combobox");
+    await waitFor(() => expect(within(picker).getByRole("option", { name: "हिंदी" })).toBeTruthy());
+    fireEvent.change(picker, { target: { value: "hi" } });
+    await waitFor(() => expect(state.api.listTutorialVideos).toHaveBeenCalledWith("hi"));
+    expect(await screen.findByText("Video hi")).toBeTruthy();
   });
 });

@@ -5136,6 +5136,7 @@ export interface components {
         };
         TutorialVideoList: {
             requested_language: components["schemas"]["LanguageEnum"];
+            available_languages: components["schemas"]["LanguageEnum"][];
             videos: components["schemas"]["TutorialVideo"][];
         };
         /**

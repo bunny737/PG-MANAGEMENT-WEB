@@ -70,7 +70,7 @@ function setUpApi() {
   );
 }
 
-function renderWizard(preselect?: { propertyId: string; bedId: string }) {
+function renderWizard(preselect?: { propertyId: string; bedId?: string }) {
   return render(
     <NextIntlClientProvider locale={LOCALE} messages={{ admissions }}>
       <AdmissionWizard preselect={preselect} />
@@ -133,6 +133,27 @@ describe("AdmissionWizard preselection from the Vacancies screen", () => {
     expect(await screen.findByText(admissions.step2.heading)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.queryByText(/Selected Slot/)).toBeNull();
+  });
+
+  test("a property alone (Getting started checklist) selects that property, not the first one", async () => {
+    renderWizard({ propertyId: "p1" });
+
+    await waitFor(() => expect(api.listBuildings).toHaveBeenCalledWith("p1"));
+    expect(api.listBuildings).not.toHaveBeenCalledWith("p0");
+    expect(api.getPropertyLayout).not.toHaveBeenCalled(); // no bed to resolve
+  });
+
+  test("a stale bed keeps the requested property and selects no bed", async () => {
+    renderWizard({ propertyId: "p1", bedId: "does-not-exist" });
+
+    await waitFor(() => expect(api.listBuildings).toHaveBeenCalledWith("p1"));
+    expect(api.listBuildings).not.toHaveBeenCalledWith("p0");
+  });
+
+  test("a property the user can't see falls back to the first property", async () => {
+    renderWizard({ propertyId: "p-gone" });
+
+    await waitFor(() => expect(api.listBuildings).toHaveBeenCalledWith("p0"));
   });
 
   test("without a preselection nothing changes: the first property, building and floor load as before", async () => {

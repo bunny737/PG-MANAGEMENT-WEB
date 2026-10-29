@@ -73,6 +73,15 @@ class VideoListTests(OnboardingAPITestCase):
         make_video('overview', 'te', is_active=False)
         self.assertEqual([v['topic'] for v in self.videos().data['videos']], ['add_property', 'add_floor'])
 
+    def test_available_languages_follow_the_catalog_not_the_ui(self):
+        make_video('add_property', 'en')
+        make_video('add_property', 'hi', youtube_id='hhhhhhhhhhh')        # Hindi UI isn't live yet
+        make_video('add_floor', 'ta', youtube_id='ttttttttttt', is_active=False)
+        make_video('add_floor', 'ml', youtube_id='mmmmmmmmmmm', audience=['manager'])
+        self.assertEqual(self.videos().data['available_languages'], ['en', 'hi'])
+        data = self.videos(language='hi').data
+        self.assertEqual([v['language'] for v in data['videos']], ['hi'])
+
     def test_no_write_methods(self):
         self.assertEqual(self.client.post(reverse('help-videos'), {}).status_code, 405)
 

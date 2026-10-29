@@ -69,7 +69,9 @@ Checklist response:
 ```
 The response always lists all six steps, in order.
 
-Videos response: `{requested_language, videos: [{topic, language, title, description, youtube_id, duration_seconds}]}`.
+Videos response: `{requested_language, available_languages, videos: [{topic, language, title, description, youtube_id, duration_seconds}]}`.
+`available_languages` lists the languages that have at least one active video this role can see, in
+`settings.LANGUAGES` order.
 When English stood in for a topic, `video.language` differs from `requested_language`. Clients use that to show
 "Shown in English — తెలుగు version coming soon".
 
@@ -140,6 +142,8 @@ Each rule has a test in `apps/onboarding/tests/`. The code is `apps/onboarding/c
     caller can't see never hides an English one they can.
 16. The requested language is `?language=`, or else the user's `language_code`. There is never a third language
     (not even the tenant default). A language outside `settings.LANGUAGES` returns 400.
+    `available_languages` follows the catalog, not which UI translations are live: a Hindi video makes Hindi
+    selectable before the Hindi UI ships.
 17. Videos are managed only in Django admin, by a Super Admin, and every change is audit-logged as a platform
     record. The API has no write methods (405).
 
@@ -173,16 +177,19 @@ Help & tutorials is open to every staff role.
   - `/properties/{p}/buildings/add`
   - `/properties/{p}/buildings/{b}/floors/add`
   - `/properties/{p}/floors/{f}/rooms/add`
-  - `/admissions?property={p}`
+  - `/admissions?property={p}`: the Admissions page accepts a property without a bed and pre-selects it in the
+    wizard (a bed link from Vacancies still pre-selects the whole chain)
   - `/expenses?property={p}`
 - **`EmptyState`** (`components/shared/`) is used on Properties (desktop and phone), Floors, and Residents
   (desktop and phone). Its CTA is gated by `can(permission)`. Expenses adds only the "Watch how" link, because
   its add button opens a sheet. The property overview shows a "Review this property's settings" hint until the
   first bed is occupied, to users with `manage_property_settings`.
-- **`/help`** shows the video grid with a language selector (active locales), the per-video fallback note,
+- **`/help`** shows the video grid with a language selector, the per-video fallback note,
   "Videos coming soon" when there are none, "Show the checklist again" (only when dismissed) and a support
   link. It is the last sidebar item and appears under More on phones. It has `landing: false`, so
-  `firstAllowedRoute` never sends anyone there.
+  `firstAllowedRoute` never sends anyone there. The selector offers `available_languages` plus English and the
+  UI language (`videoLanguageOptions`). It is independent of `LOCALES` status, so videos in a language whose UI
+  isn't live are still reachable.
 - **Player:** `VideoPlayerDialog` uses a lazy `youtube-nocookie.com` iframe and shows an offline notice
   instead when offline.
 - **CSP** additions: `frame-src https://www.youtube-nocookie.com` and `img-src https://i.ytimg.com`.
@@ -219,5 +226,7 @@ Help & tutorials is open to every staff role.
   both.
 
 ## Changelog
+- 2026-10-28  Review fixes: the admission wizard pre-selects a property passed alone; `/help/videos/` returns
+              `available_languages` and the Help picker offers languages that have videos, not only live UI locales.
 - 2026-10-28  Built: TutorialVideo, `users.onboarding_dismissed_at`, the checklist / dismiss / videos endpoints,
               the dashboard card, EmptyState hints, /help, CSP, the Flutter guide.

@@ -14,14 +14,22 @@ import { FallbackLanguageNote } from "./FallbackLanguageNote";
 import { VideoPlayerDialog } from "./VideoPlayerDialog";
 import { durationMinutes, useTutorialVideos } from "./useTutorialVideos";
 
-/** Languages a video can be requested in: the UI's active locales (videos follow the app). */
-const VIDEO_LANGUAGES = LOCALES.filter((locale) => locale.status === "active");
+/** Languages the picker offers: every language that has videos (from the server, so a Hindi video is
+ * selectable before the Hindi UI goes live), plus English and the UI's own language. */
+export function videoLanguageOptions(available: readonly string[], uiLocale: string) {
+  const wanted = new Set([...available, "en", uiLocale]);
+  return LOCALES.filter((option) => wanted.has(option.code));
+}
 
 export function HelpPage() {
   const t = useTranslations("onboarding.help");
   const locale = useLocale();
   const [language, setLanguage] = useState(locale);
   const { query, requestedLanguage } = useTutorialVideos(language);
+  // The UI-locale catalog (cached for the Watch buttons) supplies the options, so they don't flicker
+  // while another language loads.
+  const { query: catalog } = useTutorialVideos();
+  const languageOptions = videoLanguageOptions(catalog.data?.available_languages ?? [], locale);
   const [playing, setPlaying] = useState<TutorialVideo | null>(null);
 
   return (
@@ -38,7 +46,7 @@ export function HelpPage() {
             onChange={(event) => setLanguage(event.target.value)}
             className="rounded-lg border border-border bg-surface-card px-2 py-1.5 text-sm text-ink"
           >
-            {VIDEO_LANGUAGES.map((option) => (
+            {languageOptions.map((option) => (
               <option key={option.code} value={option.code}>
                 {option.nativeName}
               </option>

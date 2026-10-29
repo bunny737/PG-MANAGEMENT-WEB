@@ -91,17 +91,18 @@ class TutorialVideoListView(APIView):
                     'codes': ', '.join(code for code, _name in settings.LANGUAGES)}},
                 code='invalid_language',
             )
-        visible = TutorialVideo.objects.filter(
-            is_active=True, audience__contains=[request.user.role],
-            language__in={language, FALLBACK_LANGUAGE},
-        )
+        visible = TutorialVideo.objects.filter(is_active=True, audience__contains=[request.user.role])
         chosen = {}
-        for video in visible:
+        for video in visible.filter(language__in={language, FALLBACK_LANGUAGE}):
             if video.topic not in chosen or video.language == language:
                 chosen[video.topic] = video
         videos = sorted(chosen.values(), key=lambda v: (v.sort_order, v.topic))
+        # Video languages are independent of which UI translations are live: a Hindi video is
+        # offered as soon as one exists, even while the Hindi UI is not.
+        has_videos = set(visible.values_list('language', flat=True).distinct())
         response = Response({
             'requested_language': language,
+            'available_languages': [code for code, _name in settings.LANGUAGES if code in has_videos],
             'videos': TutorialVideoSerializer(videos, many=True).data,
         })
         response['Cache-Control'] = f'private, max-age={VIDEOS_CACHE_MAX_AGE_SECONDS}'

@@ -55,4 +55,6 @@ class TutorialVideoSerializer(serializers.ModelSerializer):
 
 class TutorialVideoListSerializer(serializers.Serializer):
     requested_language = serializers.ChoiceField(choices=settings.LANGUAGES)
+    # Languages with at least one active video this role can see, in settings.LANGUAGES order.
+    available_languages = serializers.ListField(child=serializers.ChoiceField(choices=settings.LANGUAGES))
     videos = TutorialVideoSerializer(many=True)

@@ -98,7 +98,7 @@
 | `add_building` | Add building for property | `property_id` |
 | `add_floor` | Add floor in building | `property_id`, `building_id` |
 | `add_room` | Add room on floor (with beds) | `property_id`, `floor_id` |
-| `admit_resident` | Admission wizard, preset to the property | `property_id` |
+| `admit_resident` | Admission wizard, preset to the property (no bed preselected) | `property_id` |
 | `record_expense` | Expenses, scoped to the property, add sheet | `property_id` |
 
 If an id a screen needs is missing, the step is blocked anyway. Show no button.
@@ -120,6 +120,7 @@ The app may skip the checklist request when the cached `/auth/me/` says `onboard
 
 ```json
 { "requested_language": "te",
+  "available_languages": ["en", "hi", "te"],
   "videos": [ { "topic": "add_property", "language": "te", "title": "…", "description": "…",
                 "youtube_id": "dQw4w9WgXcQ", "duration_seconds": 120 },
               { "topic": "add_floor", "language": "en", "title": "…", "description": "",
@@ -128,6 +129,8 @@ The app may skip the checklist request when the cached `/auth/me/` says `onboard
 
 - **Request:** send `?language=` set to the app language. If you leave it out, the server uses the user's
   `language_code`.
+- **Language picker:** offer `available_languages` plus English and the app language. A language can have videos
+  before the app's UI is translated into it.
 - **One video per topic:** the server returns the requested language, else English, and never a third language.
 - **Fallback label:** when `video.language != requested_language`, show "Shown in English — తెలుగు version
   coming soon".

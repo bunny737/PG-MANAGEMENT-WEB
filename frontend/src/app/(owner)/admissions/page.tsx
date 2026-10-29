@@ -6,12 +6,13 @@ import { RequirePermission } from "@/components/shared/RequirePermission";
 import { AdmissionWizard } from "@/features/admissions/AdmissionWizard";
 
 function AdmissionsContent() {
-  // A bed chosen on the Vacancies screen arrives as ?property=<id>&bed=<id>.
+  // A bed chosen on the Vacancies screen arrives as ?property=<id>&bed=<id>; the Getting started
+  // checklist (Module 23) sends ?property=<id> alone.
   const searchParams = useSearchParams();
   const property = searchParams.get("property");
   const bed = searchParams.get("bed");
 
-  return <AdmissionWizard preselect={property && bed ? { propertyId: property, bedId: bed } : undefined} />;
+  return <AdmissionWizard preselect={property ? { propertyId: property, bedId: bed ?? undefined } : undefined} />;
 }
 
 export default function AdmissionsPage() {

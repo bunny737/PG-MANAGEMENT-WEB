@@ -149,10 +149,23 @@ def update_holiday(*, holiday, data, actor, request=None):
                          request=request)
     if financial_change:
         credits.recompute_holiday(holiday, actor=actor, request=request)
-    announcement = holiday.announcement
+    announcement = _locked_announcement(holiday)
     if announcement is not None and announcement.is_auto_text and announcement.generated_from != holiday.snapshot():
+        before = {'title': announcement.title, 'body': announcement.body}
         _write_auto_text(announcement, holiday)
+        audit_log.record(action='announcement.regenerated', actor=actor, obj=announcement, before=before,
+                         after={'title': announcement.title, 'body': announcement.body}, request=request)
     return holiday
+
+
+def _locked_announcement(holiday):
+    """The holiday's notice, row-locked and re-read, so an owner's concurrent
+    text edit either commits first (and is seen as customised) or waits —
+    it is never overwritten by regenerated text. Locked last: notice edits
+    take only this lock, so the order can't cycle."""
+    if holiday.announcement_id is None:
+        return None
+    return Announcement.objects.select_for_update().filter(pk=holiday.announcement_id).first()
 
 
 @transaction.atomic
@@ -165,7 +178,7 @@ def delete_holiday(*, holiday, actor, request=None):
             code='holiday_locked',
         )
     credits.delete_holiday_credits(holiday, actor=actor, request=request)
-    announcement = holiday.announcement
+    announcement = _locked_announcement(holiday)
     audit_log.record(action='food_holiday.deleted', actor=actor, obj=holiday, before=_snapshot(holiday),
                      request=request)
     holiday.delete()
@@ -212,9 +225,11 @@ def update_announcement(*, announcement, data, actor, request=None):
     return announcement
 
 
+@transaction.atomic
 def mark_current(*, announcement, actor, request=None):
     """The owner checked a customised holiday notice still reads right after
     the holiday changed: clear the outdated warning without editing it."""
+    announcement = Announcement.objects.select_for_update().get(pk=announcement.pk)
     holiday = getattr(announcement, 'food_holiday', None)
     if holiday is None:
         return announcement

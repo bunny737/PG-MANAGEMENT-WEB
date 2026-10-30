@@ -279,7 +279,7 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     vacate.food_holiday_clawback_recovered = recovered
     vacate.food_holiday_clawback_unrecovered = unrecovered
     vacate.save()
-    food_credits.apply_exit(plan, resident, vacate=vacate)
+    food_credits.apply_exit(plan, resident, vacate=vacate, actor=actor, request=request)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE
@@ -495,7 +495,7 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
         deposit_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
         food_holiday_credit=plan.credit_total, food_holiday_clawback=plan.clawback_total,
     )
-    food_credits.apply_exit(plan, resident, absconded_record=record)
+    food_credits.apply_exit(plan, resident, absconded_record=record, actor=actor, request=request)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE

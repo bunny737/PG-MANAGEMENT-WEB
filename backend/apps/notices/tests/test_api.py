@@ -4,12 +4,18 @@ isolation; plus the daily sweep's isolation per property."""
 from datetime import date
 from decimal import Decimal
 from io import StringIO
+from types import SimpleNamespace
 from unittest import mock
 
+from django.contrib import admin
 from django.core.management import call_command
+from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
 
+from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
+from apps.residents import services as resident_services
+from apps.residents.models import Resident
 
 from apps.notices import sweep
 from apps.notices.models import Announcement, FoodHoliday, FoodHolidayCredit
@@ -317,3 +323,53 @@ class SweepTests(NoticesTestCase):
         call_command('allocate_food_holiday_credits', '--date', '2026-03-24', stdout=out)
         self.assertEqual(self.food_lines(draft), [Decimal('-400.00')])
         self.assertIn('attached=1', out.getvalue())
+
+
+class AdminTests(SimpleTestCase):
+    def test_holidays_notices_and_credits_are_view_only_in_admin(self):
+        request = RequestFactory().get('/admin/')
+        request.user = SimpleNamespace(is_active=True, is_staff=True, is_superuser=True,
+                                       has_perm=lambda *a, **k: True)
+        for model in (Announcement, FoodHoliday, FoodHolidayCredit):
+            model_admin = admin.site._registry[model]
+            self.assertFalse(model_admin.has_add_permission(request), model)
+            self.assertFalse(model_admin.has_change_permission(request), model)
+            self.assertFalse(model_admin.has_delete_permission(request), model)
+
+
+class AuditAttributionTests(NoticesTestCase):
+    def actors(self, action):
+        with tenant_context(self.tenant.id):
+            return list(AuditLog.objects.filter(action=action).order_by('created_at')
+                        .values_list('actor_id', flat=True))
+
+    def test_staff_actions_are_attributed_and_the_sweep_is_not(self):
+        resident = self.admit()
+        draft = self.generate(resident, on=date(2026, 3, 1))
+        self.holiday(on=date(2026, 3, 1))
+        with today(date(2026, 3, 24)):
+            sweep.allocate_food_holiday_credits()  # scheduled: no actor
+        self.assertEqual(self.actors('food_holiday_credit.invoiced'), [None])
+
+        self.authenticate(self.owner)
+        with today(date(2026, 4, 10)):
+            self.client.delete(reverse('invoice-detail', args=[draft.pk]))
+        self.generate(resident)  # by the owner
+        self.assertEqual(self.actors('food_holiday_credit.invoiced'), [None, self.owner.pk])
+
+    def test_recomputed_amounts_and_settlements_name_the_staff_member(self):
+        resident = self.admit()
+        holiday = self.holiday()
+        self.edit_holiday(holiday, rate_per_day=Decimal('150.00'))
+        self.assertEqual(self.actors('food_holiday_credit.recomputed'), [self.owner.pk])
+
+        with tenant_context(self.tenant.id):
+            Resident.objects.filter(pk=resident.pk).update(status=Resident.Status.NOTICE_PERIOD)
+        vacate = self.create_vacate(resident, notice_given_date=date(2026, 3, 1),
+                                    expected_vacate_date=date(2026, 4, 1))
+        with tenant_context(self.tenant.id):
+            resident_services.finalize_vacate(
+                vacate=vacate, actual_vacate_date=date(2026, 4, 5), maintenance_deduction=Decimal('0.00'),
+                maintenance_deduction_note='', refund_date=None, refund_mode='', refund_note='', actor=self.owner,
+            )
+        self.assertEqual(self.actors('food_holiday_credit.settled'), [self.owner.pk])

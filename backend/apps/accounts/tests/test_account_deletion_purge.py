@@ -15,12 +15,13 @@ from django.utils import timezone
 from apps.accounts import deletion
 from apps.accounts.models import AccountDeletionRequest, Tenant, User
 from apps.audit.models import AuditLog
-from apps.billing.models import Invoice
+from apps.billing.models import Invoice, InvoiceLineItem
 from apps.billing.tests.base import BillingAPITestCase
 from apps.core.models import ContactMessage, PlatformConfig, TenantModelMixin
 from apps.core.roles import Role
 from apps.core.tenancy import tenant_context
 from apps.devices.models import AppInstallation
+from apps.notices.models import Announcement, FoodHoliday, FoodHolidayCredit
 from apps.notifications.models import NotificationLog
 from apps.subscriptions.models import (
     Plan, RazorpaySubscription, RazorpayWebhookEvent, Subscription, SubscriptionInvoice, SubscriptionPayment,
@@ -81,6 +82,7 @@ class PurgeTestCase(BillingAPITestCase):
         invoice = self.create_invoice(resident, date(2026, 7, 1))
         self.pay(invoice, Decimal('1000.00'))
         self.create_discount(resident)
+        self.seed_food_holiday(prop, resident, invoice)
         for root in deletion.STORAGE_PREFIXES:
             default_storage.save(f'{root}/{tenant.id}/{uuid.uuid4()}/file.txt', ContentFile(b'x'))
         plan = Plan.objects.create(
@@ -99,6 +101,24 @@ class PurgeTestCase(BillingAPITestCase):
                 period_end=date(2026, 6, 30), total_amount=Decimal('50.00'), billed_bed_count_start=1,
                 billed_bed_count_end=1, razorpay_invoice_id=f'inv_{label}')
         return {'prop': prop, 'resident': resident, 'subscription': subscription, 'sub_invoice': sub_invoice}
+
+    @staticmethod
+    def seed_food_holiday(prop, resident, invoice):
+        """Module 24 rows whose PROTECT links a purge must unwind: a holiday (-> property) with its
+        notice, and a credit on one of the invoice's lines (-> line item, resident, holiday)."""
+        with tenant_context(prop.tenant_id):
+            notice = Announcement.objects.create(
+                tenant_id=prop.tenant_id, property=prop, title='Dasara', body='No food', category='holiday')
+            holiday = FoodHoliday.objects.create(
+                tenant_id=prop.tenant_id, property=prop, name='Dasara', start_date=date(2026, 6, 20),
+                end_date=date(2026, 6, 23), adjust_in_bill=True, rate_per_day=Decimal('100.00'),
+                announcement=notice)
+            line = InvoiceLineItem.objects.create(
+                tenant_id=prop.tenant_id, invoice=invoice, line_type='food_holiday', label='Food holiday',
+                amount=Decimal('-400.00'), order=90)
+            FoodHolidayCredit.objects.create(
+                tenant_id=prop.tenant_id, holiday=holiday, resident=resident, days=4, rate=Decimal('100.00'),
+                amount=Decimal('400.00'), status=FoodHolidayCredit.Status.INVOICED, line_item=line)
 
     def tenant_rows(self, tenant_id, labels):
         out = {}

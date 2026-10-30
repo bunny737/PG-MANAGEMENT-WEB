@@ -154,8 +154,8 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     # Module 24: food-holiday credits for holidays that have ended. The new
     # draft is just one more candidate for the shared allocation rule.
     on_date = on_date or local_today()
-    food_credits.ensure_credits(resident, on_date=on_date)
-    food_credits.allocate_pending(resident, on_date=on_date)
+    food_credits.ensure_credits(resident, on_date=on_date, actor=actor, request=request)
+    food_credits.allocate_pending(resident, on_date=on_date, actor=actor, request=request)
 
     after = {'resident': str(resident.id), 'period_start': period_start.isoformat(),
              'total': str(invoice.total)}

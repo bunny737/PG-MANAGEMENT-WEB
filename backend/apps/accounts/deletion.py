@@ -86,6 +86,9 @@ DISPOSITION = {
     'devices.AppVersionPolicy': (PLATFORM, PLATFORM),
     'expenses.Expense': (PURGE, RETAIN),
     'expenses.ExpenseCategory': (PURGE, RETAIN),
+    'notices.Announcement': (PURGE, RETAIN),
+    'notices.FoodHoliday': (PURGE, RETAIN),
+    'notices.FoodHolidayCredit': (PURGE, RETAIN),
     'notifications.NotificationLog': (PURGE, PURGE),
     'notifications.NotificationPreference': (PURGE, PURGE),
     'notifications.NotificationTemplate': (PLATFORM, PLATFORM),
@@ -129,6 +132,9 @@ DISPOSITION = {
 # rows that PROTECT-reference them (Payment -> Invoice, Admission -> Bed, Resident -> Property ...).
 # A test asserts this is exactly the set of TenantModelMixin models marked PURGE above.
 PURGE_ORDER = [
+    # Food-holiday credits PROTECT invoice lines, residents, vacates and absconded records; holidays
+    # PROTECT the property (Module 24). Notices cascade from the property but go explicitly.
+    'notices.FoodHolidayCredit', 'notices.FoodHoliday', 'notices.Announcement',
     'billing.AutoBillingCycle', 'billing.AutoBillingNotice', 'billing.AutoBillingSummary',
     'billing.Payment', 'billing.InvoiceLineItem', 'billing.Invoice', 'billing.Discount', 'billing.ReceiptCounter',
     'operations.ComplaintComment', 'operations.Complaint', 'operations.Visitor',

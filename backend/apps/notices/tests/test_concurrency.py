@@ -189,6 +189,32 @@ class FoodHolidayRaceTests(TransactionTestCase):
             else:
                 self.assertEqual(credit.amount, Decimal('600.00'))  # edit won, finalize settled the new rate
 
+    def test_holiday_edit_never_overwrites_a_concurrent_notice_edit(self):
+        custom = 'Mess closed — enjoy the festival!'
+        for _ in range(ROUNDS):
+            self.new_property()
+            with tenant_context(self.tenant.id):
+                holiday = services.create_holiday(
+                    data={'property': self.property, 'name': 'Dasara', 'start_date': date(2026, 3, 20),
+                          'end_date': date(2026, 3, 23), 'adjust_in_bill': False},
+                    post_notice=True, actor=self.owner,
+                )
+                notice = holiday.announcement
+
+            edit_holiday = lambda: services.update_holiday(  # noqa: E731
+                holiday=holiday, data={'name': 'Vijayadashami'}, actor=self.owner,
+            )
+            edit_notice = lambda: services.update_announcement(  # noqa: E731
+                announcement=notice, data={'body': custom}, actor=self.owner,
+            )
+            self.race(holiday=edit_holiday, notice=edit_notice)
+
+            with tenant_context(self.tenant.id):
+                notice = Announcement.objects.get(pk=notice.pk)
+            # The owner's text always survives; only the title may have been regenerated first.
+            self.assertEqual(notice.body, custom)
+            self.assertFalse(notice.is_auto_text)
+
     def test_waive_and_daily_allocation_leave_a_consistent_state(self):
         for _ in range(ROUNDS):
             self.new_property()

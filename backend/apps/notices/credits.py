@@ -142,7 +142,7 @@ def detach(credit, *, to, actor=None, request=None):
     return credit
 
 
-def _attach(credit, invoice):
+def _attach(credit, invoice, *, actor=None, request=None):
     from apps.billing.models import InvoiceLineItem
 
     order = InvoiceLineItem.objects.filter(invoice=invoice).aggregate(top=Max('order'))['top']
@@ -153,10 +153,10 @@ def _attach(credit, invoice):
     credit.line_item = line
     credit.status = FoodHolidayCredit.Status.INVOICED
     credit.save(update_fields=['line_item', 'status', 'updated_at'])
-    _audit('food_holiday_credit.invoiced', credit, after=_state(credit))
+    _audit('food_holiday_credit.invoiced', credit, actor=actor, after=_state(credit), request=request)
 
 
-def settle(credit, *, days, vacate=None, absconded_record=None):
+def settle(credit, *, days, vacate=None, absconded_record=None, actor=None, request=None):
     """Pay a pending credit out through a move-out refund or abscond netting.
     Days, amount, status and the one settlement reference are written in a
     single save, so the status CHECK holds at every write."""
@@ -172,11 +172,11 @@ def settle(credit, *, days, vacate=None, absconded_record=None):
     credit.vacate = vacate
     credit.absconded_record = absconded_record
     credit.save(update_fields=['rate', 'days', 'amount', 'status', 'vacate', 'absconded_record', 'updated_at'])
-    _audit('food_holiday_credit.settled', credit, after=_state(credit))
+    _audit('food_holiday_credit.settled', credit, actor=actor, after=_state(credit), request=request)
     return credit
 
 
-def record_clawback(credit, *, clawback_days, vacate=None, absconded_record=None):
+def record_clawback(credit, *, clawback_days, vacate=None, absconded_record=None, actor=None, request=None):
     """An issued credit covered days after the resident left: record what is
     clawed back, linked to the settlement that claws it."""
     credit = _lock(credit)
@@ -189,7 +189,7 @@ def record_clawback(credit, *, clawback_days, vacate=None, absconded_record=None
     credit.vacate = vacate
     credit.absconded_record = absconded_record
     credit.save(update_fields=['clawback_days', 'clawback_amount', 'vacate', 'absconded_record', 'updated_at'])
-    _audit('food_holiday_credit.clawed_back', credit,
+    _audit('food_holiday_credit.clawed_back', credit, actor=actor, request=request,
            after={**_state(credit), 'clawback_days': clawback_days, 'clawback_amount': str(credit.clawback_amount)})
     return credit
 
@@ -216,9 +216,10 @@ def _set_amount(credit, *, days, rate):
     credit.amount = credit_amount(rate, days)
 
 
-def ensure_credits(resident, *, on_date):
+def ensure_credits(resident, *, on_date, actor=None, request=None):
     """Create the missing pending credits of a current resident for every
-    adjust-in-bill holiday of their property that ended before `on_date`."""
+    adjust-in-bill holiday of their property that ended before `on_date`.
+    `actor` is whoever triggered it (None only for the scheduled sweep)."""
     if not _is_current(resident):
         return []
     joining_date, with_food = _terms(resident)
@@ -236,12 +237,12 @@ def ensure_credits(resident, *, on_date):
         credit = FoodHolidayCredit(tenant_id=resident.tenant_id, holiday=holiday, resident=resident)
         _set_amount(credit, days=days, rate=holiday.rate_per_day)
         credit.save()
-        _audit('food_holiday_credit.created', credit, after=_state(credit))
+        _audit('food_holiday_credit.created', credit, actor=actor, after=_state(credit), request=request)
         created.append(credit)
     return created
 
 
-def allocate_pending(resident, *, on_date=None):
+def allocate_pending(resident, *, on_date=None, actor=None, request=None):
     """Put the resident's pending credits on draft invoices (see the module
     docstring). Only ever touches drafts; returns how many were attached."""
     from apps.billing.models import Invoice
@@ -269,7 +270,7 @@ def allocate_pending(resident, *, on_date=None):
         )
         if target is None:
             break  # strict FIFO: a later credit never jumps ahead of this one
-        _attach(credit, target)
+        _attach(credit, target, actor=actor, request=request)
         totals[target.pk] -= credit.amount
         attached += 1
     return attached
@@ -352,7 +353,7 @@ def restore(credit, *, actor, request=None, on_date=None):
     credit.status = FoodHolidayCredit.Status.PENDING
     credit.save(update_fields=['status', 'updated_at'])
     _audit('food_holiday_credit.restored', credit, actor=actor, before=before, after=_state(credit), request=request)
-    allocate_pending(credit.resident, on_date=on_date)
+    allocate_pending(credit.resident, on_date=on_date, actor=actor, request=request)
     return credit
 
 
@@ -400,20 +401,29 @@ def recompute_holiday(holiday, *, actor=None, request=None, on_date=None):
         days = entitled_days(holiday=holiday, joining_date=joining_date, with_food=with_food)
         if credit is not None and credit.status == FoodHolidayCredit.Status.WAIVED:
             if holiday.adjust_in_bill:
-                _set_amount(credit, days=days, rate=holiday.rate_per_day)
-                credit.save(update_fields=['days', 'rate', 'amount', 'updated_at'])
+                _recompute(credit, days=days, rate=holiday.rate_per_day, actor=actor, request=request)
         elif credit is not None:  # pending
             if holiday.adjust_in_bill and ended and days > 0 and _is_current(resident):
-                _set_amount(credit, days=days, rate=holiday.rate_per_day)
-                credit.save(update_fields=['days', 'rate', 'amount', 'updated_at'])
+                _recompute(credit, days=days, rate=holiday.rate_per_day, actor=actor, request=request)
             else:
                 delete_credit(credit, actor=actor, request=request)
         elif holiday.adjust_in_bill and ended and days > 0 and _is_current(resident):
             credit = FoodHolidayCredit(tenant_id=resident.tenant_id, holiday=holiday, resident=resident)
             _set_amount(credit, days=days, rate=holiday.rate_per_day)
             credit.save()
-            _audit('food_holiday_credit.created', credit, after=_state(credit))
-        allocate_pending(resident, on_date=on_date)
+            _audit('food_holiday_credit.created', credit, actor=actor, after=_state(credit), request=request)
+        allocate_pending(resident, on_date=on_date, actor=actor, request=request)
+
+
+def _recompute(credit, *, days, rate, actor=None, request=None):
+    """A pending or waived credit takes the holiday's new days / rate."""
+    if (credit.days, credit.rate) == (days, rate):
+        return
+    before = _state(credit)
+    _set_amount(credit, days=days, rate=rate)
+    credit.save(update_fields=['days', 'rate', 'amount', 'updated_at'])
+    _audit('food_holiday_credit.recomputed', credit, actor=actor, before=before, after=_state(credit),
+           request=request)
 
 
 def delete_holiday_credits(holiday, *, actor=None, request=None):
@@ -488,22 +498,24 @@ def plan_exit(resident, *, through):
     return plan
 
 
-def apply_exit(plan, resident, *, vacate=None, absconded_record=None):
+def apply_exit(plan, resident, *, vacate=None, absconded_record=None, actor=None, request=None):
     """Carry out a plan from plan_exit (caller holds Settings -> Resident ->
     Vacate locks): release draft credits, settle what is owed, record
-    clawbacks, drop the rest."""
+    clawbacks, drop the rest. Every step is audited as `actor`."""
+    audit = {'actor': actor, 'request': request}
     for credit in plan.drop:
-        delete_credit(credit)
+        delete_credit(credit, **audit)
     for holiday, credit, days in plan.settle:
         if credit is None:
             credit = FoodHolidayCredit(tenant_id=resident.tenant_id, holiday=holiday, resident=resident)
             _set_amount(credit, days=days, rate=holiday.rate_per_day)
             credit.save()
+            _audit('food_holiday_credit.created', credit, after=_state(credit), **audit)
         elif credit.status == FoodHolidayCredit.Status.INVOICED:
-            credit = detach(credit, to=FoodHolidayCredit.Status.PENDING)
-        settle(credit, days=days, vacate=vacate, absconded_record=absconded_record)
+            credit = detach(credit, to=FoodHolidayCredit.Status.PENDING, **audit)
+        settle(credit, days=days, vacate=vacate, absconded_record=absconded_record, **audit)
     for credit, extra in plan.clawback:
-        record_clawback(credit, clawback_days=extra, vacate=vacate, absconded_record=absconded_record)
+        record_clawback(credit, clawback_days=extra, vacate=vacate, absconded_record=absconded_record, **audit)
 
 
 def vacate_amounts(vacate, *, maintenance_deduction, plan):

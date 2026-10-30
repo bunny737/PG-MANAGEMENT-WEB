@@ -180,6 +180,18 @@ These orderings are covered by threaded tests against real PostgreSQL (`test_con
   nothing for them; the owner adjusts by hand.
 - [DECISION 2026-10-30] Line labels are stored English text ("Food holiday — Dasara (4 days × ₹100.00)"),
   built like the existing generated labels (`_accommodation_label`, discount label).
+- [DECISION 2026-10-30] Django admin is **view-only** for holidays, notices and credits. A plain admin save
+  would skip the edit lock, overlap check, credit reconciliation and audit trail; `PROTECT` only guards
+  deletes.
+- [DECISION 2026-10-30] Account deletion (Module 22): all three models are `(PURGE, RETAIN)`. A tenant purge
+  deletes credits first (they PROTECT invoice lines, residents and settlements), then holidays (they PROTECT
+  the property), then notices.
+- [DECISION 2026-10-30] Every credit transition is audited as the staff member who triggered it, with the
+  request IP: creation, allocation, recompute, detach/waive/restore, settle, clawback and delete. Only the
+  scheduled sweep writes actor-less entries.
+- [DECISION 2026-10-30] A holiday edit locks and re-reads its notice before regenerating it. A concurrent
+  owner text edit therefore either commits first (and is seen as customised) or waits, and is never
+  overwritten. The notice is locked last; notice edits take only that lock.
 - [OPEN] Telugu translations for the new gettext strings are not in `locale/te` yet.
 - [OPEN] Frontend (FE-24): Notices page (Notices / Food holidays tabs), settings field, invoice line display,
   checkout and absconded rows.
@@ -189,3 +201,10 @@ These orderings are covered by threaded tests against real PostgreSQL (`test_con
   admin, API), plus billing / residents / properties hooks and fields. 84 tests (credits, settlement, API,
   races). The billing, residents, core, properties, reporting, onboarding and module-access suites are green.
   ERD regenerated.
+- 2026-10-30  Review fixes:
+  - (1) registered in account deletion (`DISPOSITION` / `PURGE_ORDER`); the tenant-purge end-to-end test now
+    seeds a holiday, a notice and an invoiced credit;
+  - (2) admin is view-only;
+  - (3) holiday edits and deletes lock the notice before regenerating or deleting it (race test added);
+  - (4) actor and request flow through every credit transition, recomputed amounts are audited, and the
+    sweep stays actor-less (tests added).

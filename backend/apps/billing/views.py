@@ -186,7 +186,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         food_credits.release_invoice(instance, actor=request.user, request=request)
         resident = instance.resident
         instance.delete()
-        food_credits.allocate_pending(resident)
+        food_credits.allocate_pending(resident, actor=request.user, request=request)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
@@ -305,7 +305,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         """After an owner line change: keep the draft's total above zero, then
         offer pending food-holiday credits again (the total may have grown)."""
         food_credits.rebalance(invoice, actor=self.request.user, request=self.request)
-        food_credits.allocate_pending(invoice.resident)
+        food_credits.allocate_pending(invoice.resident, actor=self.request.user, request=self.request)
 
     @action(detail=True, methods=['patch', 'delete'], url_path=r'line-items/(?P<line_pk>[0-9a-f-]+)')
     @transaction.atomic

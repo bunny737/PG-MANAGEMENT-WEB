@@ -10,7 +10,7 @@ can't both slip past it.
 from django.db import transaction
 from django.utils import formats
 from django.utils.translation import gettext as _
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.audit import log as audit_log
 from apps.core.exceptions import Conflict
@@ -149,10 +149,22 @@ def create_holiday(*, data, post_notice, actor, request=None):
     return holiday
 
 
+def _require_bill_permission(holiday, data, can_manage_invoices):
+    """Checked against the LOCKED row: a holiday that adjusts bills — as it
+    is now, or after this change — needs manage_invoices. Checking the row
+    read before the lock would let a change slip through after someone else
+    switched the adjustment on in between."""
+    if can_manage_invoices:
+        return
+    if holiday.adjust_in_bill or data.get('adjust_in_bill'):
+        raise PermissionDenied(_('Adjusting bills needs permission to manage invoices.'))
+
+
 @transaction.atomic
-def update_holiday(*, holiday, data, actor, request=None):
+def update_holiday(*, holiday, data, actor, request=None, can_manage_invoices=True):
     _lock_settings(holiday.property_id, holiday.tenant_id)
     holiday = FoodHoliday.objects.select_for_update(no_key=True).get(pk=holiday.pk)
+    _require_bill_permission(holiday, data, can_manage_invoices)
     before = _snapshot(holiday)
     financial_change = any(field in data and data[field] != getattr(holiday, field) for field in FINANCIAL_FIELDS)
     if financial_change and credits.holiday_is_locked(holiday):
@@ -192,9 +204,10 @@ def _locked_announcement(holiday):
 
 
 @transaction.atomic
-def delete_holiday(*, holiday, actor, request=None):
+def delete_holiday(*, holiday, actor, request=None, can_manage_invoices=True):
     _lock_settings(holiday.property_id, holiday.tenant_id)
     holiday = FoodHoliday.objects.select_for_update(no_key=True).get(pk=holiday.pk)
+    _require_bill_permission(holiday, {}, can_manage_invoices)
     if credits.holiday_is_locked(holiday):
         raise Conflict(
             _('This holiday is already on an issued bill or a settlement, so it cannot be deleted.'),

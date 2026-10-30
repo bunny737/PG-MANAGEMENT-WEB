@@ -11,7 +11,7 @@ from django.contrib import admin
 from django.core.management import call_command
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.audit.models import AuditLog
 from apps.billing import services as billing_services
@@ -19,7 +19,7 @@ from apps.core.tenancy import tenant_context
 from apps.residents import services as resident_services
 from apps.residents.models import Resident
 
-from apps.notices import sweep
+from apps.notices import services, sweep
 from apps.notices.models import Announcement, FoodHoliday, FoodHolidayCredit
 
 from .base import NoticesTestCase, today
@@ -399,3 +399,25 @@ class MergedStateTests(NoticesTestCase):
             Resident.objects.filter(pk=resident.pk).update(status=Resident.Status.VACATED)
         with self.assertRaises(billing_services.ResidentNotBillable):
             self.generate(resident)  # `resident` still says Active: the lock re-read decides
+
+
+class StaleBillPermissionTests(NoticesTestCase):
+    """manage_invoices is checked against the locked holiday, not the copy
+    the request read before the lock."""
+
+    def test_adjustment_switched_on_after_the_read_blocks_a_manager_without_invoice_rights(self):
+        self.admit()
+        holiday = self.holiday(adjust=False, rate=None)
+        with tenant_context(self.tenant.id):
+            stale = FoodHoliday.objects.get(pk=holiday.pk)  # what the manager's request read
+        self.edit_holiday(holiday, adjust_in_bill=True, rate_per_day=Decimal('100.00'))  # owner, meanwhile
+
+        manager = self.create_manager(self.tenant)
+        with today(date(2026, 4, 10)), tenant_context(self.tenant.id):
+            with self.assertRaises(PermissionDenied):
+                services.update_holiday(holiday=stale, data={'end_date': date(2026, 3, 30)}, actor=manager,
+                                        can_manage_invoices=False)
+            with self.assertRaises(PermissionDenied):
+                services.delete_holiday(holiday=stale, actor=manager, can_manage_invoices=False)
+            saved = FoodHoliday.objects.get(pk=holiday.pk)
+        self.assertEqual((saved.end_date, saved.adjust_in_bill), (date(2026, 3, 23), True))

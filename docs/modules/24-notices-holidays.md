@@ -215,3 +215,8 @@ These orderings are covered by threaded tests against real PostgreSQL (`test_con
   - holiday create/update re-validate the merged dates, span and rate under the lock (`invalid_dates`,
     `holiday_too_long`, `rate_required`), so concurrent PATCHes can't combine into reversed dates (a 500)
     or an over-long span (race and unit tests).
+- 2026-10-30  Review fix: the `manage_invoices` requirement for editing or deleting a holiday is checked in
+  `update_holiday` / `delete_holiday` against the **locked** row (current or submitted `adjust_in_bill`),
+  not in the view against the copy read before the lock. An adjustment switched on in between can no longer
+  let a user without invoice rights change or delete it (deterministic stale-read test plus a threaded
+  race).

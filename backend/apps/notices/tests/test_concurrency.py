@@ -235,6 +235,41 @@ class FoodHolidayRaceTests(TransactionTestCase):
                 saved = FoodHoliday.objects.get(pk=holiday.pk)
             self.assertLessEqual(saved.start_date, saved.end_date)
 
+    def test_manager_edit_racing_the_owner_enabling_adjustment_needs_invoice_rights(self):
+        manager = BillingAPITestCase.create_manager(self.tenant, email='race-manager@holidays.example.com')
+        self.addCleanup(manager.delete)
+        for round_no in range(ROUNDS):
+            self.new_property()
+            with tenant_context(self.tenant.id):
+                holiday = services.create_holiday(
+                    data={'property': self.property, 'name': 'Dasara', 'start_date': date(2026, 3, 20),
+                          'end_date': date(2026, 3, 23), 'adjust_in_bill': False},
+                    post_notice=False, actor=self.owner,
+                )
+                stale = FoodHoliday.objects.get(pk=holiday.pk)  # read before either lock
+
+            enable = lambda: services.update_holiday(  # noqa: E731
+                holiday=holiday, data={'adjust_in_bill': True, 'rate_per_day': Decimal('100.00')},
+                actor=self.owner,
+            )
+            manager_edit = lambda: services.update_holiday(  # noqa: E731
+                holiday=stale, data={'end_date': date(2026, 3, 25)}, actor=manager, can_manage_invoices=False,
+            )
+            results = self.race(owner=enable, manager=manager_edit)
+
+            with tenant_context(self.tenant.id):
+                saved = FoodHoliday.objects.get(pk=holiday.pk)
+                manager_audit = AuditLog.objects.filter(
+                    action='food_holiday.updated', actor=manager, object_id=str(holiday.pk)).first()
+            self.assertTrue(saved.adjust_in_bill)
+            if isinstance(results['manager'], APIException):
+                self.assertEqual(results['manager'].status_code, 403)  # owner locked first
+                self.assertEqual(saved.end_date, date(2026, 3, 23))
+            else:
+                # The manager only ever changed a holiday that wasn't adjusting bills at the time.
+                self.assertEqual(manager_audit.before['adjust_in_bill'], 'False')
+                self.assertEqual(saved.end_date, date(2026, 3, 25))
+
     def test_holiday_edit_never_overwrites_a_concurrent_notice_edit(self):
         custom = 'Mess closed — enjoy the festival!'
         for _ in range(ROUNDS):

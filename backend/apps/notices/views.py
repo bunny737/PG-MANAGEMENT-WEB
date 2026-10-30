@@ -108,30 +108,32 @@ class FoodHolidayViewSet(viewsets.ModelViewSet):
             .select_related('property', 'announcement')
         )
 
-    def _require_bill_permission(self, *adjusting):
-        if any(adjusting) and 'manage_invoices' not in set(permissions_for_user(self.request.user)):
-            raise PermissionDenied(_('Adjusting bills needs permission to manage invoices.'))
+    def _can_manage_invoices(self):
+        return 'manage_invoices' in set(permissions_for_user(self.request.user))
 
     def perform_create(self, serializer):
         data = dict(serializer.validated_data)
         post_notice = data.pop('post_notice', True)
-        self._require_bill_permission(data.get('adjust_in_bill'))
+        if data.get('adjust_in_bill') and not self._can_manage_invoices():
+            raise PermissionDenied(_('Adjusting bills needs permission to manage invoices.'))
         serializer.instance = services.create_holiday(
             data=data, post_notice=post_notice, actor=self.request.user, request=self.request,
         )
 
+    # Update / delete: the service checks manage_invoices against the locked
+    # holiday, not the copy read here (the adjustment may change in between).
     def perform_update(self, serializer):
         data = dict(serializer.validated_data)
         data.pop('post_notice', None)
         data.pop('property', None)  # immutable (validated in the serializer)
-        self._require_bill_permission(serializer.instance.adjust_in_bill, data.get('adjust_in_bill'))
         serializer.instance = services.update_holiday(
             holiday=serializer.instance, data=data, actor=self.request.user, request=self.request,
+            can_manage_invoices=self._can_manage_invoices(),
         )
 
     def perform_destroy(self, instance):
-        self._require_bill_permission(instance.adjust_in_bill)
-        services.delete_holiday(holiday=instance, actor=self.request.user, request=self.request)
+        services.delete_holiday(holiday=instance, actor=self.request.user, request=self.request,
+                                can_manage_invoices=self._can_manage_invoices())
 
     @extend_schema(responses=FoodHolidayCreditSerializer(many=True))
     @action(detail=True, methods=['get'], url_path='credits', url_name='credits')

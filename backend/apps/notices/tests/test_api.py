@@ -11,8 +11,10 @@ from django.contrib import admin
 from django.core.management import call_command
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
+from rest_framework.exceptions import ValidationError
 
 from apps.audit.models import AuditLog
+from apps.billing import services as billing_services
 from apps.core.tenancy import tenant_context
 from apps.residents import services as resident_services
 from apps.residents.models import Resident
@@ -373,3 +375,27 @@ class AuditAttributionTests(NoticesTestCase):
                 maintenance_deduction_note='', refund_date=None, refund_mode='', refund_note='', actor=self.owner,
             )
         self.assertEqual(self.actors('food_holiday_credit.settled'), [self.owner.pk])
+
+
+class MergedStateTests(NoticesTestCase):
+    """The service re-checks the merged holiday under the lock, whatever the
+    serializer saw (it validated against the row before any lock)."""
+
+    def test_reversed_dates_are_refused_not_a_500(self):
+        holiday = self.holiday(start=date(2026, 3, 20), end=date(2026, 3, 30))
+        with self.assertRaises(ValidationError) as ctx:
+            self.edit_holiday(holiday, end_date=date(2026, 3, 19))
+        self.assertEqual(ctx.exception.get_codes(), {'end_date': ['invalid_dates']})
+
+    def test_a_span_over_the_limit_is_refused(self):
+        holiday = self.holiday(start=date(2026, 1, 1), end=date(2026, 6, 30), adjust=False, rate=None)
+        with self.assertRaises(ValidationError) as ctx:
+            self.edit_holiday(holiday, start_date=date(2025, 7, 1), end_date=date(2026, 12, 31))
+        self.assertEqual(ctx.exception.get_codes(), {'end_date': ['holiday_too_long']})
+
+    def test_generating_for_a_resident_who_already_left_is_refused(self):
+        resident = self.admit()
+        with tenant_context(self.tenant.id):
+            Resident.objects.filter(pk=resident.pk).update(status=Resident.Status.VACATED)
+        with self.assertRaises(billing_services.ResidentNotBillable):
+            self.generate(resident)  # `resident` still says Active: the lock re-read decides

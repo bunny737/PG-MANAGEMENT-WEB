@@ -10,12 +10,13 @@ can't both slip past it.
 from django.db import transaction
 from django.utils import formats
 from django.utils.translation import gettext as _
+from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.core.exceptions import Conflict
 
 from . import credits
-from .models import Announcement, FoodHoliday
+from .models import MAX_HOLIDAY_DAYS, Announcement, FoodHoliday
 
 FINANCIAL_FIELDS = ('start_date', 'end_date', 'adjust_in_bill', 'rate_per_day')
 HOLIDAY_FIELDS = ('name',) + FINANCIAL_FIELDS
@@ -35,6 +36,26 @@ def lock_holiday_property(holiday):
 def _snapshot(holiday):
     return {field: None if getattr(holiday, field) is None else str(getattr(holiday, field))
             for field in HOLIDAY_FIELDS}
+
+
+def _check_state(holiday):
+    """The serializer validated the request against the row as it was read,
+    before any lock. Re-check the merged values under the lock, so two
+    concurrent PATCHes (one moving the start, one the end) can't combine into
+    reversed dates (an IntegrityError, i.e. a 500) or an over-long span."""
+    if holiday.end_date < holiday.start_date:
+        raise ValidationError(
+            {'end_date': [_('The last day cannot be before the first day.')]}, code='invalid_dates',
+        )
+    if holiday.total_days > MAX_HOLIDAY_DAYS:
+        raise ValidationError(
+            {'end_date': [_('A holiday can be at most %(days)s days long.') % {'days': MAX_HOLIDAY_DAYS}]},
+            code='holiday_too_long',
+        )
+    if holiday.adjust_in_bill and holiday.rate_per_day is None:
+        raise ValidationError(
+            {'rate_per_day': [_('Enter the food charge per day to adjust in the bill.')]}, code='rate_required',
+        )
 
 
 def _check_overlap(holiday):
@@ -106,6 +127,7 @@ def create_holiday(*, data, post_notice, actor, request=None):
     prop = data['property']
     _lock_settings(prop.pk, prop.tenant_id)
     holiday = FoodHoliday(tenant_id=prop.tenant_id, created_by=actor, **data)
+    _check_state(holiday)
     _check_overlap(holiday)
     holiday.save()
     if post_notice:
@@ -141,6 +163,7 @@ def update_holiday(*, holiday, data, actor, request=None):
         )
     for field, value in data.items():
         setattr(holiday, field, value)
+    _check_state(holiday)
     _check_overlap(holiday)
     holiday.save()
     after = _snapshot(holiday)

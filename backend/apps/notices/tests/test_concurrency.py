@@ -189,6 +189,52 @@ class FoodHolidayRaceTests(TransactionTestCase):
             else:
                 self.assertEqual(credit.amount, Decimal('600.00'))  # edit won, finalize settled the new rate
 
+    def test_invoice_generation_racing_a_move_out_never_credits_after_the_settlement(self):
+        for _ in range(ROUNDS):
+            self.new_property()
+            resident = self.resident(status=Resident.Status.NOTICE_PERIOD)
+            vacate = BillingAPITestCase.create_vacate(resident, notice_given_date=date(2026, 3, 1),
+                                                      expected_vacate_date=date(2026, 4, 1))
+            holiday = self.holiday()
+
+            finalize = lambda: resident_services.finalize_vacate(  # noqa: E731
+                vacate=vacate, actual_vacate_date=date(2026, 4, 5), maintenance_deduction=Decimal('0.00'),
+                maintenance_deduction_note='', refund_date=None, refund_mode='', refund_note='', actor=self.owner,
+            )
+            generate = lambda: billing_services.generate_invoice(  # noqa: E731
+                resident=resident, period_start=date(2026, 4, 1), period_end=date(2026, 4, 30),
+                due_date=date(2026, 4, 6), actor=self.owner,
+            )
+            results = self.race(finalize=finalize, generate=generate)
+
+            with tenant_context(self.tenant.id):
+                credit = FoodHolidayCredit.objects.get(holiday=holiday, resident=resident)
+                food_lines = InvoiceLineItem.objects.filter(invoice__resident=resident, line_type='food_holiday')
+                self.assertEqual((credit.status, credit.amount), (S.SETTLED, Decimal('400.00')))
+                self.assertFalse(food_lines.exists())
+                self.assertEqual(Vacate.objects.get(pk=vacate.pk).food_holiday_credit, Decimal('400.00'))
+            if isinstance(results['generate'], APIException):
+                self.assertEqual(results['generate'].get_codes(), {'resident': ['resident_not_billable']})
+
+    def test_concurrent_date_edits_never_combine_into_reversed_dates(self):
+        for _ in range(ROUNDS):
+            self.new_property()
+            holiday = self.holiday(start=date(2026, 3, 20), end=date(2026, 3, 30))
+            move_start = lambda: services.update_holiday(  # noqa: E731
+                holiday=holiday, data={'start_date': date(2026, 3, 28)}, actor=self.owner,
+            )
+            move_end = lambda: services.update_holiday(  # noqa: E731
+                holiday=holiday, data={'end_date': date(2026, 3, 22)}, actor=self.owner,
+            )
+            results = self.race(start=move_start, end=move_end)
+
+            refused = [r for r in results.values() if isinstance(r, APIException)]
+            self.assertEqual(len(refused), 1)
+            self.assertEqual(refused[0].get_codes(), {'end_date': ['invalid_dates']})
+            with tenant_context(self.tenant.id):
+                saved = FoodHoliday.objects.get(pk=holiday.pk)
+            self.assertLessEqual(saved.start_date, saved.end_date)
+
     def test_holiday_edit_never_overwrites_a_concurrent_notice_edit(self):
         custom = 'Mess closed — enjoy the festival!'
         for _ in range(ROUNDS):

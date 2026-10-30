@@ -53,6 +53,12 @@ class InvoiceConflict(ValidationError):
     API answers 400 as before; automatic billing catches it specifically."""
 
 
+class ResidentNotBillable(ValidationError):
+    """Re-checked under the resident lock: the resident left (vacated,
+    absconded...) or lost their bed while the request waited. 400, like the
+    serializer's own pre-check; bulk generation skips them."""
+
+
 @transaction.atomic
 def generate_invoice(*, resident, period_start, period_end, due_date,
                      billing_mode=None, actor, request=None,
@@ -74,8 +80,21 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     from apps.notices import credits as food_credits
     from apps.residents.services import lock_resident
 
+    from apps.residents.models import Allocation, Resident
+
     lock_property_settings(resident.property_id, resident.tenant_id)
-    lock_resident(resident)
+    # Work from the locked re-read, never the caller's copy: a move-out or
+    # abscond that committed while we waited must stop the invoice (and the
+    # food-holiday credits it would create after the settlement).
+    resident = lock_resident(resident)
+    if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+        raise ResidentNotBillable(
+            {'resident': [_('Only active residents can be invoiced.')]}, code='resident_not_billable',
+        )
+    if not Allocation.objects.filter(resident=resident).exists():
+        raise ResidentNotBillable(
+            {'resident': [_('This resident is not allocated to a bed.')]}, code='resident_not_allocated',
+        )
     admission = resident.admission
     allocation = resident.allocation
     if billing_mode is None:

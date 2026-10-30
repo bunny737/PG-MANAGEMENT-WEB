@@ -404,3 +404,7 @@ takes the Resident lock and checks overlap inside it, so every generation path
   add/edit/delete rebalances them. `_locked_draft` takes the Settings lock first. Lock order:
   Settings → FoodHoliday → Resident → Vacate → Invoice → FoodHolidayCredit → Admission. See
   24-notices-holidays.md.
+- 2026-10-30  `generate_invoice` uses the resident row it locks (not the caller's copy) and re-checks
+  billability under the lock. `ResidentNotBillable` (`resident_not_billable` / `resident_not_allocated`, 400)
+  is raised when the resident vacated, absconded or lost their bed while the request waited; bulk
+  generation skips such residents.

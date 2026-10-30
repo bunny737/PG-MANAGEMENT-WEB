@@ -279,6 +279,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 if 'overlapping_invoice' in str(exc.get_codes()):
                     overlapping += 1
                 continue
+            except services.ResidentNotBillable:
+                continue  # left (or lost their bed) after the list above was read
         return Response(
             {'created': len(created), 'skipped_overlapping': overlapping,
              'invoices': InvoiceSerializer(created, many=True).data},

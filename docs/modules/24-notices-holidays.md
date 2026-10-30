@@ -208,3 +208,10 @@ These orderings are covered by threaded tests against real PostgreSQL (`test_con
   - (3) holiday edits and deletes lock the notice before regenerating or deleting it (race test added);
   - (4) actor and request flow through every credit transition, recomputed amounts are audited, and the
     sweep stays actor-less (tests added).
+- 2026-10-30  Review fixes:
+  - `generate_invoice` now works from the locked resident re-read and refuses a resident who left or lost
+    their bed meanwhile (`ResidentNotBillable`, 400; bulk generation skips them), so a generate racing a
+    move-out can't create credits after the settlement (race test);
+  - holiday create/update re-validate the merged dates, span and rate under the lock (`invalid_dates`,
+    `holiday_too_long`, `rate_required`), so concurrent PATCHes can't combine into reversed dates (a 500)
+    or an over-long span (race and unit tests).

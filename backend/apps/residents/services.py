@@ -226,11 +226,17 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     """Step 2 of the vacating workflow (PRD Module 11): move-out settlement —
     Notice Period -> Vacated, bed freed immediately, refund computed from the
     admission's security deposit minus the maintenance deduction."""
-    # Resident -> Vacate lock order (see lock_resident). Re-check everything
-    # inside the locks: the view's guards run unlocked, so two concurrent
-    # finalize calls could both pass them and double-run the settlement (double
-    # refund audit, double bed-free), and a finalize racing a cancel-notice
-    # could settle a notice that was just withdrawn.
+    # Settings -> Resident -> Vacate lock order (see lock_resident; Settings
+    # first serializes the food-holiday credits settled here with every other
+    # credit change in the property — Module 24). Re-check everything inside
+    # the locks: the view's guards run unlocked, so two concurrent finalize
+    # calls could both pass them and double-run the settlement (double refund
+    # audit, double bed-free), and a finalize racing a cancel-notice could
+    # settle a notice that was just withdrawn.
+    from apps.billing.services import lock_property_settings
+    from apps.notices import credits as food_credits
+
+    lock_property_settings(vacate.resident.property_id, vacate.tenant_id)
     resident = lock_resident(vacate.resident)
     vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
     if vacate.is_settled:
@@ -253,6 +259,14 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
 
     before_status = resident.status
 
+    # Food-holiday credits (Module 24): owed days are paid with the refund;
+    # days already credited on an issued invoice after the move-out are clawed
+    # back, as far as the refund can absorb.
+    plan = food_credits.plan_exit(resident, through=actual_vacate_date)
+    credit, clawback, recovered, unrecovered = food_credits.vacate_amounts(
+        vacate, maintenance_deduction=maintenance_deduction, plan=plan,
+    )
+
     vacate.actual_vacate_date = actual_vacate_date
     vacate.maintenance_deduction = maintenance_deduction
     vacate.maintenance_deduction_note = maintenance_deduction_note
@@ -260,7 +274,12 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     vacate.refund_mode = refund_mode
     vacate.refund_note = refund_note
     vacate.settled_by = actor
+    vacate.food_holiday_credit = credit
+    vacate.food_holiday_clawback_calculated = clawback
+    vacate.food_holiday_clawback_recovered = recovered
+    vacate.food_holiday_clawback_unrecovered = unrecovered
     vacate.save()
+    food_credits.apply_exit(plan, resident, vacate=vacate)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE
@@ -273,6 +292,10 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
         action='resident.vacated', actor=actor, obj=vacate,
         after={'actual_vacate_date': actual_vacate_date.isoformat(),
                'maintenance_deduction': str(maintenance_deduction),
+               'food_holiday_credit': str(credit),
+               'food_holiday_clawback_calculated': str(clawback),
+               'food_holiday_clawback_recovered': str(recovered),
+               'food_holiday_clawback_unrecovered': str(unrecovered),
                'refund_amount': str(vacate.refund_amount)},
         request=request,
     )
@@ -284,7 +307,7 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     return vacate
 
 
-def settlement_preview(*, vacate, maintenance_deduction):
+def settlement_preview(*, vacate, maintenance_deduction, actual_vacate_date=None):
     """Move-out settlement breakdown for a not-yet-finalized vacate (owner
     request 2026-10-26: a checkout screen showing the refund before staff
     confirm it). A non-locking, point-in-time estimate — unlike
@@ -298,12 +321,30 @@ def settlement_preview(*, vacate, maintenance_deduction):
 
     `outstanding_dues` is informational only (owner decision 2026-10-26) —
     unlike `mark_absconded`, a normal vacate never nets dues against the
-    refund; the deposit/advance math is exactly `Vacate.refund_for`."""
+    refund; the deposit/advance math is exactly `Vacate.refund_for`.
+
+    Food-holiday figures (Module 24) come from the same read-only plan
+    `finalize_vacate` applies, for `actual_vacate_date` (default: the expected
+    vacate date), so the preview and the settlement can't disagree."""
+    from apps.notices import credits as food_credits
+
+    through = actual_vacate_date or vacate.expected_vacate_date
+    plan = food_credits.plan_exit(vacate.resident, through=through)
+    credit, clawback, recovered, unrecovered = food_credits.vacate_amounts(
+        vacate, maintenance_deduction=maintenance_deduction, plan=plan,
+    )
     return {
         'security_deposit_amount': vacate.resident.admission.security_deposit_amount,
         'advance_refundable': vacate.resident.admission.advance_refundable,
         'maintenance_deduction': maintenance_deduction,
-        'refund_amount': vacate.refund_for(maintenance_deduction),
+        'actual_vacate_date': through,
+        'food_holiday_credit': credit,
+        'food_holiday_clawback_calculated': clawback,
+        'food_holiday_clawback_recovered': recovered,
+        'food_holiday_clawback_unrecovered': unrecovered,
+        'refund_amount': vacate.refund_for(
+            maintenance_deduction, food_holiday_credit=credit, clawback_recovered=recovered,
+        ),
         'outstanding_dues': outstanding_dues_for(vacate.resident),
     }
 
@@ -416,9 +457,14 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
     """PRD Module 11 'Absconded Resident Workflow': bed freed immediately (no
     notice period), security deposit forfeited and applied against outstanding dues,
     any remainder recorded as outstanding (owner can write it off later)."""
-    # Resident lock (see lock_resident) + re-check: Active is now reachable by
-    # cancelling a notice, so an unlocked read here could mark a resident
-    # absconded off a status another request had just changed.
+    # Settings -> Resident lock (see lock_resident; Settings first for the
+    # food-holiday credits settled here — Module 24) + re-check: Active is now
+    # reachable by cancelling a notice, so an unlocked read here could mark a
+    # resident absconded off a status another request had just changed.
+    from apps.billing.services import lock_property_settings
+    from apps.notices import credits as food_credits
+
+    lock_property_settings(resident.property_id, resident.tenant_id)
     resident = lock_resident(resident)
     if not resident.can_transition_to(Resident.Status.ABSCONDED):
         raise ValidationError(
@@ -428,9 +474,18 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     before_status = resident.status
     admission = resident.admission
+    # Food-holiday credit still owed joins the forfeited pool; days already
+    # credited on an issued invoice after the abscond date are added to the
+    # dues (owner decisions 2026-10-30).
+    plan = food_credits.plan_exit(resident, through=absconded_date)
     # An unapplied advance surplus is forfeited together with the deposit.
-    deposit = admission.security_deposit_amount + admission.advance_refundable
-    outstanding = outstanding_dues_for(resident)
+    deposit = food_credits.check_amount(
+        admission.security_deposit_amount + admission.advance_refundable + plan.credit_total,
+        'deposit_applied_to_dues',
+    )
+    outstanding = food_credits.check_amount(
+        outstanding_dues_for(resident) + plan.clawback_total, 'remaining_dues',
+    )
     applied = min(deposit, outstanding)
     remaining = outstanding - applied
 
@@ -438,7 +493,9 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
         tenant_id=resident.tenant_id, resident=resident,
         absconded_date=absconded_date, last_seen_date=last_seen_date, absconded_note=absconded_note,
         deposit_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
+        food_holiday_credit=plan.credit_total, food_holiday_clawback=plan.clawback_total,
     )
+    food_credits.apply_exit(plan, resident, absconded_record=record)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE
@@ -450,7 +507,8 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
     audit_log.record(
         action='resident.absconded', actor=actor, obj=record,
         after={'absconded_date': absconded_date.isoformat(), 'deposit_applied_to_dues': str(applied),
-               'remaining_dues': str(remaining)},
+               'remaining_dues': str(remaining), 'food_holiday_credit': str(plan.credit_total),
+               'food_holiday_clawback': str(plan.clawback_total)},
         request=request,
     )
     audit_log.record(

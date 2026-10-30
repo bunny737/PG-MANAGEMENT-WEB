@@ -58,18 +58,23 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
                      billing_mode=None, actor, request=None,
                      base_amount=None, partial_note='', discount_fraction=None,
                      auto_generated=False, review_reasons=(), auto_issue_on=None,
-                     due_date_policy=Invoice.DueDatePolicy.FROM_PERIOD_START):
-    """Create a draft invoice with its accommodation and discount lines.
+                     due_date_policy=Invoice.DueDatePolicy.FROM_PERIOD_START, on_date=None):
+    """Create a draft invoice with its accommodation and discount lines, plus
+    any food-holiday credits now due (Module 24).
 
     Every generation path (single, bulk, automatic) comes through here, and
-    the resident row lock taken here serializes them, so the overlap check
-    below can't race: a resident never has two invoices covering the same day.
+    the Settings -> Resident locks taken here serialize them, so the overlap
+    check below can't race: a resident never has two invoices covering the
+    same day. The Settings lock also serializes credit allocation per
+    property (see apps.notices.credits); automatic billing already holds it.
 
     Automatic billing passes `base_amount` (and `discount_fraction` for a
     partial period) explicitly; manual generation leaves them unset and keeps
     the original first-invoice / contracted-rent behaviour."""
+    from apps.notices import credits as food_credits
     from apps.residents.services import lock_resident
 
+    lock_property_settings(resident.property_id, resident.tenant_id)
     lock_resident(resident)
     admission = resident.admission
     allocation = resident.allocation
@@ -145,6 +150,12 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
             label=f'{discount.get_reason_display()} discount',
             amount=-discount_amount, order=1,
         )
+
+    # Module 24: food-holiday credits for holidays that have ended. The new
+    # draft is just one more candidate for the shared allocation rule.
+    on_date = on_date or local_today()
+    food_credits.ensure_credits(resident, on_date=on_date)
+    food_credits.allocate_pending(resident, on_date=on_date)
 
     after = {'resident': str(resident.id), 'period_start': period_start.isoformat(),
              'total': str(invoice.total)}

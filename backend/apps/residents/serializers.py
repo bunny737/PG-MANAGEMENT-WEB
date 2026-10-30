@@ -367,7 +367,8 @@ class VacateSerializer(serializers.ModelSerializer):
     is_settled = serializers.BooleanField(read_only=True)
     is_cancelled = serializers.BooleanField(read_only=True)
     is_open = serializers.BooleanField(read_only=True)
-    # Breakdown of refund_amount: deposit - deduction + unapplied advance.
+    # Breakdown of refund_amount: deposit - deduction + unapplied advance
+    # + food-holiday credit - recovered food-holiday clawback (Module 24).
     security_deposit_amount = serializers.SerializerMethodField()
     advance_refundable = serializers.SerializerMethodField()
 
@@ -378,6 +379,8 @@ class VacateSerializer(serializers.ModelSerializer):
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
             'security_deposit_amount', 'advance_refundable',
+            'food_holiday_credit', 'food_holiday_clawback_calculated', 'food_holiday_clawback_recovered',
+            'food_holiday_clawback_unrecovered',
             'cancelled_date', 'cancellation_reason', 'cancelled_by', 'is_cancelled', 'is_open',
             'settled_by', 'created_at', 'updated_at',
         ]
@@ -436,6 +439,9 @@ class VacateSettlementPreviewSerializer(serializers.Serializer):
     maintenance_deduction = serializers.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal('0.00')
     )
+    # Preview only (finalize redeclares it as required): the move-out date the
+    # food-holiday credit/clawback is worked out for. Default: expected date.
+    actual_vacate_date = serializers.DateField(required=False, allow_null=True, default=None)
 
     def validate_maintenance_deduction(self, value):
         if value < 0:
@@ -510,6 +516,7 @@ class AbscondedRecordSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'resident', 'absconded_date', 'last_seen_date', 'absconded_note',
             'deposit_forfeited', 'deposit_applied_to_dues', 'remaining_dues',
+            'food_holiday_credit', 'food_holiday_clawback',
             'dues_recovery_status', 'dues_written_off_by', 'dues_written_off_note',
             'marked_by', 'created_at', 'updated_at',
         ]

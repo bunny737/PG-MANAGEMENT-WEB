@@ -126,3 +126,5 @@ Nested action on `PropertyViewSet` (not a standalone router) since it's a
   (1–28, for `fixed_day`). The settings PATCH now locks the row and flags
   scheduled auto drafts for review when any of the three changes. Owner UI:
   "Automatic Billing" section on the property settings page.
+- 2026-10-30  Module 24: `food_charge_per_day` (decimal, null, CHECK 0–999,999.99), the default
+  food-holiday credit per day that the holiday form prefills. Exposed on the settings API.

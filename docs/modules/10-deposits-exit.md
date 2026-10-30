@@ -471,3 +471,10 @@ checkout screen's refund breakdown before calling `finalize`.
   permission + tenant-isolation scoping, large-aggregate precision). Schema
   completeness test extended to cover the new query parameter and typed
   response.
+- 2026-10-30  Module 24: move-out pays unused food-holiday credit with the refund and claws back days
+  credited on an issued bill after the actual vacate date. Clawback is capped at the refund; calculated,
+  recovered and unrecovered amounts are stored on `vacates`, and `refund_for` = deposit − deduction +
+  advance + credit − recovered. Abscond adds the credit to the netted pool and the clawback to the dues
+  (`absconded_records.food_holiday_credit/_clawback`). `settlement-preview` takes `?actual_vacate_date=`
+  and returns the figures from the same read-only plan. `finalize_vacate` and `mark_absconded` now lock
+  Settings before Resident.

@@ -13,6 +13,7 @@ from apps.audit import log as audit_log
 from apps.core.idempotency import idempotency_key, key_reused
 from apps.core.periods import local_today, month_end, month_start, parse_date, parse_month
 from apps.core.permissions import require_permission, require_permission_by_method
+from apps.notices import credits as food_credits
 from apps.properties.services import scoped_property_ids, visible_property_ids
 from apps.residents.models import Resident
 
@@ -137,8 +138,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     def _locked_draft(self):
         """The scoped invoice, row-locked and re-checked as a draft. Callers
         run in a transaction, so an edit can't interleave with an issue (manual
-        or by the automatic-billing sweep)."""
+        or by the automatic-billing sweep). Settings is locked first (the
+        global billing order), which also serializes the draft's food-holiday
+        credits (Module 24) with every other credit change in the property."""
         invoice = self.get_object()
+        services.lock_property_settings(invoice.resident.property_id, invoice.tenant_id)
         invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
         self._require_draft(invoice)
         return invoice
@@ -177,7 +181,12 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             before={'resident': str(instance.resident_id), 'period_start': instance.period_start.isoformat()},
             request=self.request,
         )
+        # Its food-holiday credits go back to pending first (their lines are
+        # PROTECTed), then are offered to the resident's other drafts.
+        food_credits.release_invoice(instance, actor=request.user, request=request)
+        resident = instance.resident
         instance.delete()
+        food_credits.allocate_pending(resident)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
@@ -289,7 +298,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             action='invoice.line_item_added', actor=request.user, obj=invoice,
             after=serializer.data, request=request,
         )
+        self._rebalance_credits(invoice)
         return self._fresh_response(invoice, status.HTTP_201_CREATED)
+
+    def _rebalance_credits(self, invoice):
+        """After an owner line change: keep the draft's total above zero, then
+        offer pending food-holiday credits again (the total may have grown)."""
+        food_credits.rebalance(invoice, actor=self.request.user, request=self.request)
+        food_credits.allocate_pending(invoice.resident)
 
     @action(detail=True, methods=['patch', 'delete'], url_path=r'line-items/(?P<line_pk>[0-9a-f-]+)')
     @transaction.atomic
@@ -299,12 +315,24 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if line is None:
             raise NotFound(_('Line item not found.'))
 
+        if line.line_type == InvoiceLineItem.LineType.FOOD_HOLIDAY:
+            # System-owned (Module 24): deleting it is the per-resident
+            # waiver; it is never edited by hand.
+            if request.method != 'DELETE':
+                raise ValidationError(
+                    {'detail': _('A food holiday credit cannot be edited. Remove it to waive it.')},
+                    code='line_locked',
+                )
+            food_credits.waive(line.food_holiday_credit, actor=request.user, request=request)
+            return self._fresh_response(invoice)
+
         if request.method == 'DELETE':
             audit_log.record(
                 action='invoice.line_item_removed', actor=request.user, obj=invoice,
                 before={'label': line.label, 'amount': str(line.amount)}, request=request,
             )
             line.delete()
+            self._rebalance_credits(invoice)
             return self._fresh_response(invoice)
 
         serializer = InvoiceLineItemWriteSerializer(line, data=request.data, partial=True)
@@ -314,6 +342,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             action='invoice.line_item_updated', actor=request.user, obj=invoice,
             after=serializer.data, request=request,
         )
+        self._rebalance_credits(invoice)
         return self._fresh_response(invoice)
 
 

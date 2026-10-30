@@ -335,6 +335,22 @@ class Vacate(TenantModelMixin):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='vacates_settled'
     )
 
+    # Module 24, snapshotted at finalize: food-holiday credit paid out with
+    # the refund, and the clawback for holiday days credited on an issued
+    # invoice after the actual move-out. Only the recovered part reduces the
+    # refund; the unrecovered rest is informational (dues are never netted on
+    # a normal move-out).
+    food_holiday_credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    food_holiday_clawback_calculated = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    food_holiday_clawback_recovered = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    food_holiday_clawback_unrecovered = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+
     class Meta:
         db_table = 'vacates'
         # Oldest-first, so Resident.latest_vacate is simply the last row and a
@@ -357,6 +373,16 @@ class Vacate(TenantModelMixin):
                 ),
                 name='vacate_not_both_cancelled_and_settled',
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    food_holiday_credit__gte=0, food_holiday_clawback_recovered__gte=0,
+                    food_holiday_clawback_unrecovered__gte=0,
+                    food_holiday_clawback_calculated=(
+                        models.F('food_holiday_clawback_recovered') + models.F('food_holiday_clawback_unrecovered')
+                    ),
+                ),
+                name='vacate_food_holiday_amounts_consistent',
+            ),
         ]
 
     def __str__(self):
@@ -376,13 +402,24 @@ class Vacate(TenantModelMixin):
         which finalize or cancel may act."""
         return not self.is_settled and not self.is_cancelled
 
-    def refund_for(self, maintenance_deduction):
-        """The refund formula (security deposit - deduction + unapplied
-        advance), shared by `refund_amount` (the settled figure) and the
-        settlement-preview endpoint (an estimate for a not-yet-chosen
-        deduction) so they can never drift apart."""
+    def refund_before_clawback(self, maintenance_deduction, food_holiday_credit=None):
+        """Security deposit - deduction + unapplied advance + food-holiday
+        credit: what a food-holiday clawback can be recovered from."""
         admission = self.resident.admission
-        return admission.security_deposit_amount - maintenance_deduction + admission.advance_refundable
+        if food_holiday_credit is None:
+            food_holiday_credit = self.food_holiday_credit
+        return (admission.security_deposit_amount - maintenance_deduction + admission.advance_refundable
+                + food_holiday_credit)
+
+    def refund_for(self, maintenance_deduction, food_holiday_credit=None, clawback_recovered=None):
+        """The refund formula (security deposit - deduction + unapplied
+        advance + food-holiday credit - recovered clawback), shared by
+        `refund_amount` (the settled figure) and the settlement-preview
+        endpoint (an estimate, which passes its own food-holiday figures) so
+        they can never drift apart."""
+        if clawback_recovered is None:
+            clawback_recovered = self.food_holiday_clawback_recovered
+        return self.refund_before_clawback(maintenance_deduction, food_holiday_credit) - clawback_recovered
 
     @property
     def refund_amount(self):
@@ -418,6 +455,11 @@ class AbscondedRecord(TenantModelMixin):
     deposit_forfeited = models.BooleanField(default=True)
     deposit_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
     remaining_dues = models.DecimalField(max_digits=12, decimal_places=2)
+    # Module 24, snapshotted at marking: food-holiday credit added to the
+    # forfeited pool, and the clawback (holiday days credited on an issued
+    # invoice after the abscond date) added to the dues it is netted against.
+    food_holiday_credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    food_holiday_clawback = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
 
     dues_recovery_status = models.CharField(
         max_length=20, choices=DuesRecoveryStatus.choices, default=DuesRecoveryStatus.OUTSTANDING
@@ -432,6 +474,12 @@ class AbscondedRecord(TenantModelMixin):
 
     class Meta:
         db_table = 'absconded_records'
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(food_holiday_credit__gte=0, food_holiday_clawback__gte=0),
+                name='absconded_food_holiday_amounts_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f'Absconded: {self.resident}'

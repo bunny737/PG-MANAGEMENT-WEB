@@ -295,6 +295,15 @@ class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
         fields = ['id', 'line_type', 'label', 'amount', 'order']
         read_only_fields = ['id']
 
+    def validate_line_type(self, value):
+        # Food-holiday lines are system-owned (Module 24): only
+        # apps.notices.credits creates them.
+        if value == InvoiceLineItem.LineType.FOOD_HOLIDAY:
+            raise serializers.ValidationError(
+                _('Food holiday credits are added automatically.'), code='line_locked',
+            )
+        return value
+
 
 class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):
     resident = serializers.SerializerMethodField()

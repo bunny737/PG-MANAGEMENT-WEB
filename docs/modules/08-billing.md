@@ -397,3 +397,10 @@ takes the Resident lock and checks overlap inside it, so every generation path
   as the draft / flag / gap notice it reports (`note_in_summary`), closing the
   window where a draft committed but its summary failed to save or the worker
   stopped in between — the owner would never have been told.
+- 2026-10-30  Module 24 (food holidays): new `food_holiday` line type (negative and system-owned: it can't
+  be added, retyped or PATCHed by hand, and deleting it waives the credit). `generate_invoice` now takes
+  the Settings lock before the Resident lock and, after the discount line, creates and allocates
+  food-holiday credits (optional `on_date`). Invoice delete releases credits first, and draft line
+  add/edit/delete rebalances them. `_locked_draft` takes the Settings lock first. Lock order:
+  Settings → FoodHoliday → Resident → Vacate → Invoice → FoodHolidayCredit → Admission. See
+  24-notices-holidays.md.

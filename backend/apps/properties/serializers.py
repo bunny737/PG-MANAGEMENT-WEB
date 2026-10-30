@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -542,9 +544,12 @@ class PropertySettingsSerializer(serializers.ModelSerializer):
             'id', 'room_transfer_rent_timing', 'late_payment_penalty_type',
             'penalty_value', 'penalty_grace_days', 'penalty_applies_to',
             'penalty_compounding', 'auto_billing_enabled', 'billing_day_rule',
-            'billing_day_of_month', 'created_at', 'updated_at',
+            'billing_day_of_month', 'food_charge_per_day', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+        # Module 24: default food-holiday credit per day (same bound as the
+        # holiday's own rate — see apps.notices.models.MAX_RATE_PER_DAY).
+        extra_kwargs = {'food_charge_per_day': {'min_value': Decimal('0'), 'max_value': Decimal('999999.99')}}
 
     def validate(self, attrs):
         self._validate_billing_day(attrs)

@@ -381,10 +381,17 @@ class VacateViewSet(viewsets.ModelViewSet):
         return Response(VacateSerializer(vacate).data)
 
     @extend_schema(
-        parameters=[OpenApiParameter(
-            'maintenance_deduction', str, OpenApiParameter.QUERY, required=False, default='0.00',
-            description='Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit).',
-        )],
+        parameters=[
+            OpenApiParameter(
+                'maintenance_deduction', str, OpenApiParameter.QUERY, required=False, default='0.00',
+                description='Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit).',
+            ),
+            OpenApiParameter(
+                'actual_vacate_date', str, OpenApiParameter.QUERY, required=False,
+                description='YYYY-MM-DD the food-holiday credit/clawback is worked out for; '
+                            'default is the expected vacate date.',
+            ),
+        ],
         responses=VacateSettlementPreviewResponseSerializer,
     )
     @action(detail=True, methods=['get'], url_path='settlement-preview', url_name='settlement-preview')
@@ -400,7 +407,8 @@ class VacateViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         preview = services.settlement_preview(
-            vacate=vacate, maintenance_deduction=serializer.validated_data['maintenance_deduction']
+            vacate=vacate, maintenance_deduction=serializer.validated_data['maintenance_deduction'],
+            actual_vacate_date=serializer.validated_data.get('actual_vacate_date'),
         )
         return Response(VacateSettlementPreviewResponseSerializer(preview).data)
 

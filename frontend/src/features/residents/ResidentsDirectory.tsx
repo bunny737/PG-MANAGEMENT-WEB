@@ -7,6 +7,7 @@ import { Search, Phone, Mail, UserPlus, FilterX, Users, ArrowUpDown } from "luci
 import { useTranslations } from "next-intl";
 import { getInitials } from "@/lib/utils";
 import { listResidents } from "@/lib/api";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
@@ -19,6 +20,7 @@ const STATUS_TABS = ["all", "active", "notice_period", "vacated"] as const;
 export function ResidentsDirectory() {
   const t = useTranslations("residents.directory");
   const tStatus = useTranslations("status");
+  const tCta = useTranslations("onboarding.cta");
   const { propertyId } = useActiveProperty();
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -327,17 +329,14 @@ export function ResidentsDirectory() {
             </div>
           ) : (
             /* Empty State */
-            <div className="flex flex-col items-center justify-center p-12 text-center space-y-3">
-              <div className="flex size-12 items-center justify-center rounded-full bg-surface-page text-ink-muted border border-border">
-                <Users className="size-6 text-ink-faint" />
-              </div>
-              <div className="space-y-1 max-w-sm">
-                <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
-                <p className="text-xs text-ink-muted leading-relaxed">
-                  {t("emptyDesc")}
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              icon={Users}
+              title={t("emptyTitle")}
+              body={t("emptyDesc")}
+              cta={{ label: tCta("admit_resident"), href: "/admissions", permission: "manage_admissions" }}
+              videoTopic="admit_resident"
+              className="m-4"
+            />
           )}
         </div>
       )}

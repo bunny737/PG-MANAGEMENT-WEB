@@ -107,6 +107,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=20, choices=Role.choices)
     language_code = models.CharField(max_length=8, choices=settings.LANGUAGES, default='en')
     email_verified = models.BooleanField(default=False)
+    # When this user hid the Getting started checklist (Module 23); NULL = shown.
+    # Per user, so web and the mobile app agree and each staff member gets their own.
+    onboarding_dismissed_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)  # Django admin access only
     created_at = models.DateTimeField(auto_now_add=True)

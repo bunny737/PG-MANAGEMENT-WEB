@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Home, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { getFloor, listFloors, createRoom, type Floor, type Room, ApiError } from "@/lib/api";
 
 export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floorId: string }) {
@@ -101,6 +102,7 @@ export function AddRoomForm({ propertyId, floorId }: { propertyId: string; floor
         rack_rate_without_food: parseFloat(rentWithoutFood).toFixed(2),
         auto_create_beds: true,
       });
+      void afterHierarchyChange({ propertyId });
 
       setCreatedRoom(room);
       setGeneratedBeds((room.beds ?? []).map((bed) => bed.bed_number));

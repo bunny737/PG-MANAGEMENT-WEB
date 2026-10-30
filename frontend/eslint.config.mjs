@@ -49,6 +49,9 @@ const eslintConfig = defineConfig([
               "statuses",
               "anyOf",
               "allOf",
+              // Tutorial-video topic ids (Module 23), not UI text.
+              "topic",
+              "videoTopic",
               // Recharts props: data keys / CSS values, not UI text.
               "dataKey",
               "stroke",
@@ -127,6 +130,9 @@ const eslintConfig = defineConfig([
               "statuses",
               "anyOf",
               "allOf",
+              // Tutorial-video topic ids (Module 23), not UI text.
+              "topic",
+              "videoTopic",
               // Recharts props: data keys / CSS values, not UI text.
               "dataKey",
               "stroke",

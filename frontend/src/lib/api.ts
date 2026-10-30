@@ -1287,6 +1287,8 @@ export interface CurrentUser {
   deletion?: AccountDeletion | null;
   /** How a deletion request can be confirmed right now (password, emailed code). */
   deletion_confirm_methods?: DeletionConfirmMethod[];
+  /** The user hid the Getting started checklist (Module 23). */
+  onboarding_dismissed?: boolean;
 }
 
 export function getCurrentUser() {
@@ -2217,4 +2219,73 @@ export function selectPlan(tenantId: string, planId: string) {
     method: "POST",
     body: JSON.stringify({ plan: planId }),
   });
+}
+
+// --- Getting started (Module 23) ---
+
+export type OnboardingRequiredStep = "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident";
+export type OnboardingStepKey = OnboardingRequiredStep | "record_expense";
+export type TutorialTopic =
+  | "overview"
+  | OnboardingRequiredStep
+  | "property_settings"
+  | "expenses"
+  | "billing"
+  | "staff";
+
+export interface OnboardingStep {
+  key: OnboardingStepKey;
+  /** Optional steps never count toward progress, status or next_step. */
+  required: boolean;
+  done: boolean;
+  /** The caller holds the permission to do this step. */
+  permitted: boolean;
+  /** The earlier required step that must be done first; null when open. */
+  blocked_by: OnboardingRequiredStep | null;
+  params: { property_id?: string; building_id?: string; floor_id?: string };
+  video_topic: TutorialTopic;
+}
+
+export interface OnboardingChecklist {
+  status: "in_progress" | "completed" | "no_actions";
+  /** Set and cleared only by the user (dismiss / restore). */
+  dismissed: boolean;
+  target_property: { id: string; name: string } | null;
+  /** Over the permitted required steps only — the server's numbers, never re-derived. */
+  progress: { done: number; total: number };
+  next_step: OnboardingRequiredStep | null;
+  steps: OnboardingStep[];
+}
+
+export function getOnboardingChecklist(property?: string | null) {
+  return apiFetch<OnboardingChecklist>(`/api/v1/onboarding/checklist/${buildQuery({ property: property ?? undefined })}`);
+}
+
+export function dismissOnboarding() {
+  return apiFetch<void>("/api/v1/onboarding/checklist/dismiss/", { method: "POST" });
+}
+
+export function restoreOnboarding() {
+  return apiFetch<void>("/api/v1/onboarding/checklist/dismiss/", { method: "DELETE" });
+}
+
+export interface TutorialVideo {
+  topic: TutorialTopic;
+  /** The video's own language: differs from `requested_language` when English stood in. */
+  language: string;
+  title: string;
+  description: string;
+  youtube_id: string;
+  duration_seconds: number | null;
+}
+
+export interface TutorialVideoList {
+  requested_language: string;
+  /** Languages with at least one video this role can see — independent of which UI translations are live. */
+  available_languages: string[];
+  videos: TutorialVideo[];
+}
+
+export function listTutorialVideos(language: string) {
+  return apiFetch<TutorialVideoList>(`/api/v1/help/videos/${buildQuery({ language })}`);
 }

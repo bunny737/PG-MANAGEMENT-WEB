@@ -44,7 +44,9 @@ export function hasAccess(can: (code: string) => boolean, rule: AccessRule): boo
 export function firstAllowedRoute(permissions: readonly string[], exclude?: string): string {
   const item = SIDEBAR_NAV_ITEMS.find(
     (entry) =>
-      entry.href !== exclude && (!entry.permission || permissions.includes(entry.permission))
+      entry.href !== exclude &&
+      entry.landing !== false &&
+      (!entry.permission || permissions.includes(entry.permission))
   );
   return item?.href ?? PROFILE_ROUTE;
 }

@@ -4,12 +4,14 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, MapPin, Building, ChevronRight, LoaderCircle, AlertTriangle, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { ApiError, listProperties, type Property } from "@/lib/api";
 import { PropertiesPhoneList } from "./PropertiesPhoneList";
 
 export function PropertyList() {
   const t = useTranslations("properties");
+  const tCta = useTranslations("onboarding.cta");
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [error, setError] = useState("");
 
@@ -76,11 +78,14 @@ export function PropertyList() {
       )}
 
       {!error && properties !== null && properties.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border py-16 text-center">
-          <Building className="size-8 text-ink-faint" />
-          <p className="text-sm font-semibold text-ink">{t("list.emptyTitle")}</p>
-          <p className="text-xs text-ink-muted">{t("list.emptyDesc")}</p>
-        </div>
+        <EmptyState
+          icon={Building}
+          title={t("list.emptyTitle")}
+          body={t("list.emptyDesc")}
+          cta={{ label: tCta("add_property"), href: "/properties/add", permission: "manage_properties" }}
+          videoTopic="add_property"
+          className="py-16"
+        />
       )}
 
       {/* Grid List */}

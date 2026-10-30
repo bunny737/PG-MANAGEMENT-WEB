@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, Plus, Trash2, Building2, Settings, ListChecks, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PermissionGate } from "@/components/shared/PermissionGate";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { getProperty, listBuildings, deleteBuilding, type Property, type Building, ApiError } from "@/lib/api";
 
 export function BuildingList({ propertyId }: { propertyId: string }) {
@@ -41,6 +42,7 @@ export function BuildingList({ propertyId }: { propertyId: string }) {
   const handleDeleteBuilding = async (buildingId: string, name: string) => {
     try {
       await deleteBuilding(buildingId);
+      void afterHierarchyChange({ propertyId });
       setBuildings((prev) => (prev ? prev.filter((b) => b.id !== buildingId) : null));
       setDeleteAlert(t("deletedMsg", { name }));
       setTimeout(() => setDeleteAlert(null), 3000);

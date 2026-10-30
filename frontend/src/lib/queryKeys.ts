@@ -62,4 +62,11 @@ export const queryKeys = {
   dashboard: {
     all: ["dashboard"] as const,
   },
+  onboarding: {
+    all: ["onboarding"] as const,
+    checklist: (propertyId: string | null) => ["onboarding", "checklist", propertyId] as const,
+  },
+  help: {
+    videos: (language: string) => ["help", "videos", language] as const,
+  },
 };

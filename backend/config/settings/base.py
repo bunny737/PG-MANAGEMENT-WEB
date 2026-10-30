@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'apps.reporting',
     'apps.devices',
     'apps.expenses',
+    'apps.onboarding',
 ]
 
 MIDDLEWARE = [
@@ -242,7 +243,13 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     # users.language_code and tenants.default_language share one choice set.
-    'ENUM_NAME_OVERRIDES': {'LanguageEnum': LANGUAGES},
+    # Module 23: video topics and the required checklist steps are each used by
+    # several fields; one name apiece keeps the generated client types stable.
+    'ENUM_NAME_OVERRIDES': {
+        'LanguageEnum': LANGUAGES,
+        'TutorialTopicEnum': 'apps.onboarding.models.TutorialVideo.Topic',
+        'OnboardingRequiredStepEnum': 'apps.onboarding.checklist.REQUIRED_STEPS',
+    },
 }
 
 # PRD §11: bcrypt password hashing.

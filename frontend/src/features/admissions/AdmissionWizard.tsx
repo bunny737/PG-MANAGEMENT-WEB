@@ -36,9 +36,10 @@ import {
 import { findBedChain, type BedChain } from "@/lib/admissionPreselect";
 
 interface AdmissionWizardProps {
-  /** A bed picked on the Vacancies screen. Pre-selects property → building → floor → room → bed for step 2;
-   * the wizard still starts at step 1, so the resident's details are collected first. */
-  preselect?: { propertyId: string; bedId: string };
+  /** A property, optionally with a bed. A bed picked on the Vacancies screen pre-selects property → building →
+   * floor → room → bed for step 2; a property alone (the Getting started checklist) pre-selects just the
+   * property. The wizard still starts at step 1, so the resident's details are collected first. */
+  preselect?: { propertyId: string; bedId?: string };
 }
 
 export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
@@ -101,15 +102,16 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
         if (cancelled) return;
         setProperties(data);
         let propertyId = data[0]?.id ?? "";
-        if (preselectPropertyId && preselectBedId && data.some((property) => property.id === preselectPropertyId)) {
-          try {
-            const chain = findBedChain(await getPropertyLayout(preselectPropertyId), preselectBedId);
-            if (chain) {
-              chainRef.current = chain;
-              propertyId = preselectPropertyId;
+        if (preselectPropertyId && data.some((property) => property.id === preselectPropertyId)) {
+          // A property the user can see is kept even when its bed can't be resolved below.
+          propertyId = preselectPropertyId;
+          if (preselectBedId) {
+            try {
+              const chain = findBedChain(await getPropertyLayout(preselectPropertyId), preselectBedId);
+              if (chain) chainRef.current = chain;
+            } catch {
+              // No layout access or a stale bed link: the property's normal first-of-each defaults apply.
             }
-          } catch {
-            // No layout access or a stale link: fall back to the normal wizard.
           }
         }
         if (!cancelled && propertyId) setSelectedPropertyId(propertyId);

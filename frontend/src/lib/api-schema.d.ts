@@ -1404,6 +1404,28 @@ export interface paths {
         patch: operations["v1_invoices_partial_update"];
         trace?: never;
     };
+    "/api/v1/invoices/{id}/hold-auto-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Invoices (PRD Module 9). Generation builds the accommodation + discount
+         *     lines; ad-hoc charges are added as line items while the invoice is a draft.
+         *     `manage_invoices` excludes Receptionist. Drafts are deletable (regenerate);
+         *     once issued an invoice is a financial record and cannot be edited/deleted.
+         */
+        post: operations["v1_invoices_hold_auto_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/{id}/issue/": {
         parameters: {
             query?: never;
@@ -1476,6 +1498,28 @@ export interface paths {
         patch: operations["v1_invoices_line_items_partial_update"];
         trace?: never;
     };
+    "/api/v1/invoices/{id}/resume-auto-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Invoices (PRD Module 9). Generation builds the accommodation + discount
+         *     lines; ad-hoc charges are added as line items while the invoice is a draft.
+         *     `manage_invoices` excludes Receptionist. Drafts are deletable (regenerate);
+         *     once issued an invoice is a financial record and cannot be edited/deleted.
+         */
+        post: operations["v1_invoices_resume_auto_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/bulk-generate/": {
         parameters: {
             query?: never;
@@ -1492,6 +1536,28 @@ export interface paths {
          *     once issued an invoice is a financial record and cannot be edited/deleted.
          */
         post: operations["v1_invoices_bulk_generate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices/bulk-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Confirm (issue) many drafts at once — e.g. everything in the Needs
+         *     review list. Each invoice is issued in its own transaction; one that
+         *     fails doesn't stop the rest, and the response says what happened to
+         *     each id.
+         */
+        post: operations["v1_invoices_bulk_issue_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3525,6 +3591,13 @@ export interface components {
          */
         DiscountTypeEnum: "fixed" | "percentage";
         /**
+         * @description * `from_period_start` - From the billing date
+         *     * `from_issue_date` - From the issue date
+         *     * `manual` - Set by the owner
+         * @enum {string}
+         */
+        DueDatePolicyEnum: "from_period_start" | "from_issue_date" | "manual";
+        /**
          * @description * `outstanding` - Outstanding
          *     * `partially_recovered` - Partially Recovered
          *     * `written_off` - Written Off
@@ -3718,10 +3791,29 @@ export interface components {
             readonly balance_due: string;
             readonly capped_allocated: string;
             readonly is_overdue: boolean;
+            readonly auto_generated: boolean;
+            readonly review_reasons: components["schemas"]["ReviewReasonsEnum"][];
+            readonly due_date_policy: components["schemas"]["DueDatePolicyEnum"];
+            /** Format: date */
+            readonly auto_issue_on: string | null;
+            readonly auto_issue_held: boolean;
+            readonly can_auto_issue: boolean;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        InvoiceBulkIssue: {
+            ids: string[];
+        };
+        InvoiceBulkIssueResponse: {
+            issued: number;
+            results: components["schemas"]["InvoiceBulkIssueRow"][];
+        };
+        InvoiceBulkIssueRow: {
+            /** Format: uuid */
+            id: string;
+            result: string;
         };
         InvoiceGenerate: {
             /** Format: uuid */
@@ -3952,9 +4044,10 @@ export interface components {
          *     * `trial_expiry_reminder` - Trial Expiry Reminder
          *     * `invoice_issued` - Invoice Issued
          *     * `payment_receipt` - Payment Receipt
+         *     * `invoice_drafts_ready` - Invoice Drafts Ready
          * @enum {string}
          */
-        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt";
+        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt" | "invoice_drafts_ready";
         /** @enum {unknown} */
         NullEnum: null;
         Occupancy: {
@@ -4195,6 +4288,13 @@ export interface components {
             readonly balance_due?: string;
             readonly capped_allocated?: string;
             readonly is_overdue?: boolean;
+            readonly auto_generated?: boolean;
+            readonly review_reasons?: components["schemas"]["ReviewReasonsEnum"][];
+            readonly due_date_policy?: components["schemas"]["DueDatePolicyEnum"];
+            /** Format: date */
+            readonly auto_issue_on?: string | null;
+            readonly auto_issue_held?: boolean;
+            readonly can_auto_issue?: boolean;
             /** Format: date-time */
             readonly created_at?: string;
             /** Format: date-time */
@@ -4796,6 +4896,18 @@ export interface components {
             /** Format: date */
             last_payment_date: string | null;
         };
+        /**
+         * @description * `weekly` - Weekly resident
+         *     * `first_partial` - First partial period
+         *     * `transition` - Billing day changed (transition period)
+         *     * `late` - Drafted after the billing date
+         *     * `vacating` - Resident leaves during this period
+         *     * `no_prior_invoice` - First automatic invoice for this resident
+         *     * `ineligible` - Resident is no longer billable
+         *     * `rule_changed` - Automatic billing settings changed
+         * @enum {string}
+         */
+        ReviewReasonsEnum: "weekly" | "first_partial" | "transition" | "late" | "vacating" | "no_prior_invoice" | "ineligible" | "rule_changed";
         /**
          * @description * `super_admin` - Super Admin
          *     * `owner` - Owner
@@ -7488,6 +7600,7 @@ export interface operations {
                 period?: string;
                 property?: string;
                 resident?: string;
+                review?: string;
                 search?: string;
                 status?: string;
             };
@@ -7603,6 +7716,34 @@ export interface operations {
             };
         };
     };
+    v1_invoices_hold_auto_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this invoice. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Invoice"];
+                "application/x-www-form-urlencoded": components["schemas"]["Invoice"];
+                "multipart/form-data": components["schemas"]["Invoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
     v1_invoices_issue_create: {
         parameters: {
             query?: never;
@@ -7710,6 +7851,34 @@ export interface operations {
             };
         };
     };
+    v1_invoices_resume_auto_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this invoice. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Invoice"];
+                "application/x-www-form-urlencoded": components["schemas"]["Invoice"];
+                "multipart/form-data": components["schemas"]["Invoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
     v1_invoices_bulk_generate_create: {
         parameters: {
             query?: never;
@@ -7731,6 +7900,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
+    v1_invoices_bulk_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceBulkIssue"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvoiceBulkIssue"];
+                "multipart/form-data": components["schemas"]["InvoiceBulkIssue"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkIssueResponse"];
                 };
             };
         };
@@ -7769,8 +7963,9 @@ export interface operations {
                  *     * `trial_expiry_reminder` - Trial Expiry Reminder
                  *     * `invoice_issued` - Invoice Issued
                  *     * `payment_receipt` - Payment Receipt
+                 *     * `invoice_drafts_ready` - Invoice Drafts Ready
                  */
-                notification_type?: "invoice_issued" | "payment_receipt" | "trial_expiry_reminder" | "welcome";
+                notification_type?: "invoice_drafts_ready" | "invoice_issued" | "payment_receipt" | "trial_expiry_reminder" | "welcome";
                 /**
                  * @description * `sent` - Sent
                  *     * `failed` - Failed

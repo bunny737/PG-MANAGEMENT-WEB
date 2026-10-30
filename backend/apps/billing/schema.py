@@ -56,3 +56,14 @@ class ReceiptResponseSerializer(serializers.Serializer):
     invoice_paid = serializers.DecimalField(**MONEY_KWARGS)
     invoice_balance_due = serializers.DecimalField(**MONEY_KWARGS)
     invoice_status = serializers.CharField()
+
+
+class InvoiceBulkIssueRowSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    # 'issued', 'not_found', or the error code that stopped it (e.g. invoice_not_draft).
+    result = serializers.CharField()
+
+
+class InvoiceBulkIssueResponseSerializer(serializers.Serializer):
+    issued = serializers.IntegerField()
+    results = InvoiceBulkIssueRowSerializer(many=True)

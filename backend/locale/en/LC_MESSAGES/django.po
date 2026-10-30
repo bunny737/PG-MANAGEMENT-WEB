@@ -2204,3 +2204,91 @@ msgstr ""
 #: apps/residents/serializers.py
 msgid "Identity document uploads are not enabled yet."
 msgstr ""
+
+#: apps/properties/models.py
+msgid "Resident's admission date"
+msgstr ""
+
+#: apps/properties/models.py
+msgid "Fixed day of the month"
+msgstr ""
+
+#: apps/properties/serializers.py
+msgid "Choose the day of the month to bill on (1-28)."
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Weekly resident"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "First partial period"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Billing day changed (transition period)"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Drafted after the billing date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Resident leaves during this period"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "First automatic invoice for this resident"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Resident is no longer billable"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Automatic billing settings changed"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "From the billing date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "From the issue date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Set by the owner"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Draft created"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Skipped: overlaps an existing invoice"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Unbilled period before a later invoice"
+msgstr ""
+
+#: apps/billing/services.py
+msgid "This period overlaps another invoice for this resident."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Invoice not found."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Only automatically generated drafts that need no confirmation can be scheduled for automatic issue."
+msgstr ""
+
+#: apps/billing/filters.py
+msgid "Unknown review filter. Use needs_confirmation, scheduled or held."
+msgstr ""
+
+#: apps/notifications/models.py
+msgid "Invoice Drafts Ready"
+msgstr ""

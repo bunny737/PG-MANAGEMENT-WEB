@@ -2384,6 +2384,94 @@ msgstr "ఈ తొలగింపు అభ్యర్థనను ఇకపై
 msgid "This account has been deleted; its billing can no longer be changed."
 msgstr "ఈ ఖాతా తొలగించబడింది; దాని బిల్లింగ్‌ను ఇకపై మార్చలేరు."
 
+#: apps/properties/models.py
+msgid "Resident's admission date"
+msgstr "నివాసి చేరిన తేదీ"
+
+#: apps/properties/models.py
+msgid "Fixed day of the month"
+msgstr "నెలలో నిర్ణీత రోజు"
+
+#: apps/properties/serializers.py
+msgid "Choose the day of the month to bill on (1-28)."
+msgstr "బిల్ చేయవలసిన నెల రోజును ఎంచుకోండి (1-28)."
+
+#: apps/billing/models.py
+msgid "Weekly resident"
+msgstr "వారపు నివాసి"
+
+#: apps/billing/models.py
+msgid "First partial period"
+msgstr "మొదటి పాక్షిక కాలం"
+
+#: apps/billing/models.py
+msgid "Billing day changed (transition period)"
+msgstr "బిల్లింగ్ రోజు మారింది (మార్పు కాలం)"
+
+#: apps/billing/models.py
+msgid "Drafted after the billing date"
+msgstr "బిల్లింగ్ తేదీ తర్వాత సిద్ధం చేయబడింది"
+
+#: apps/billing/models.py
+msgid "Resident leaves during this period"
+msgstr "ఈ కాలంలో నివాసి ఖాళీ చేస్తున్నారు"
+
+#: apps/billing/models.py
+msgid "First automatic invoice for this resident"
+msgstr "ఈ నివాసికి మొదటి ఆటోమేటిక్ ఇన్‌వాయిస్"
+
+#: apps/billing/models.py
+msgid "Resident is no longer billable"
+msgstr "ఈ నివాసికి ఇకపై బిల్ చేయలేము"
+
+#: apps/billing/models.py
+msgid "Automatic billing settings changed"
+msgstr "ఆటోమేటిక్ బిల్లింగ్ సెట్టింగ్‌లు మారాయి"
+
+#: apps/billing/models.py
+msgid "From the billing date"
+msgstr "బిల్లింగ్ తేదీ నుండి"
+
+#: apps/billing/models.py
+msgid "From the issue date"
+msgstr "జారీ తేదీ నుండి"
+
+#: apps/billing/models.py
+msgid "Set by the owner"
+msgstr "యజమాని నిర్ణయించినది"
+
+#: apps/billing/models.py
+msgid "Draft created"
+msgstr "డ్రాఫ్ట్ సృష్టించబడింది"
+
+#: apps/billing/models.py
+msgid "Skipped: overlaps an existing invoice"
+msgstr "దాటవేయబడింది: ఉన్న ఇన్‌వాయిస్‌తో అతివ్యాప్తి చెందుతుంది"
+
+#: apps/billing/models.py
+msgid "Unbilled period before a later invoice"
+msgstr "తర్వాతి ఇన్‌వాయిస్‌కు ముందు బిల్ చేయని కాలం"
+
+#: apps/billing/services.py
+msgid "This period overlaps another invoice for this resident."
+msgstr "ఈ కాలం ఈ నివాసి యొక్క మరొక ఇన్‌వాయిస్‌తో అతివ్యాప్తి చెందుతుంది."
+
+#: apps/billing/services.py
+msgid "Invoice not found."
+msgstr "ఇన్‌వాయిస్ కనుగొనబడలేదు."
+
+#: apps/billing/services.py
+msgid "Only automatically generated drafts that need no confirmation can be scheduled for automatic issue."
+msgstr "నిర్ధారణ అవసరం లేని ఆటోమేటిక్‌గా సృష్టించిన డ్రాఫ్ట్‌లను మాత్రమే ఆటోమేటిక్ జారీకి షెడ్యూల్ చేయవచ్చు."
+
+#: apps/billing/filters.py
+msgid "Unknown review filter. Use needs_confirmation, scheduled or held."
+msgstr "తెలియని సమీక్ష ఫిల్టర్. needs_confirmation, scheduled లేదా held ఉపయోగించండి."
+
+#: apps/notifications/models.py
+msgid "Invoice Drafts Ready"
+msgstr "ఇన్‌వాయిస్ డ్రాఫ్ట్‌లు సిద్ధం"
+
 #: apps/onboarding/models.py
 msgid "Overview"
 msgstr "అవలోకనం"

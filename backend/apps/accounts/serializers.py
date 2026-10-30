@@ -517,18 +517,23 @@ class MeSerializer(serializers.ModelSerializer):
     kyc_uploads_enabled = serializers.SerializerMethodField()
     deletion = serializers.SerializerMethodField()
     deletion_confirm_methods = serializers.SerializerMethodField()
+    onboarding_dismissed = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone', 'role',
             'language_code', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
-            'deletion', 'deletion_confirm_methods',
+            'deletion', 'deletion_confirm_methods', 'onboarding_dismissed',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
-            'deletion', 'deletion_confirm_methods',
+            'deletion', 'deletion_confirm_methods', 'onboarding_dismissed',
         ]
+
+    def get_onboarding_dismissed(self, obj) -> bool:
+        """True once the user hid the Getting started checklist (Module 23)."""
+        return obj.onboarding_dismissed_at is not None
 
     def get_permissions(self, obj) -> list[str]:
         return permissions_for_user(obj)

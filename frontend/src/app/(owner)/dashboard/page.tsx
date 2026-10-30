@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ActiveIssuesCard } from "@/features/dashboard/ActiveIssuesCard";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
 import { InstallNudge } from "@/features/pwa/InstallNudge";
+import { GettingStartedCard } from "@/features/onboarding/GettingStartedCard";
 import { PropertyPill } from "@/components/mobile/PropertyPill";
 import { WelcomeCard } from "@/features/dashboard/WelcomeCard";
 import {
@@ -210,6 +211,7 @@ function DashboardContent() {
         <div className="flex flex-col gap-4 px-4">
           <InstallNudge />
           <PropertyPill wide />
+          <GettingStartedCard />
           <WelcomeCard />
           <QuickActions />
           {summaryQuery.isLoading && <SectionSkeleton className="h-40" />}
@@ -238,6 +240,7 @@ function DashboardContent() {
       <div className="hidden md:block">
         <DesktopHeader />
         <div className="flex flex-col gap-6 p-8">
+          <GettingStartedCard />
           <div className={`grid grid-cols-1 items-stretch gap-6 ${canSeeFinance ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
             {summaryQuery.isLoading && <SectionSkeleton className="h-48" />}
             {summaryQuery.isError && <SectionError onRetry={() => summaryQuery.refetch()} />}

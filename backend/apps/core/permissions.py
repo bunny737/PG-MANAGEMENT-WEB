@@ -68,6 +68,21 @@ def require_any_permission(*permissions):
     return HasAnyPermission
 
 
+class IsTenantStaff(BasePermission):
+    """Owner, Manager or Receptionist of a business — the staff app's audience.
+    Residents and Super Admins (no tenant) are refused."""
+
+    message = _('You do not have permission to perform this action.')
+    code = 'permission_denied'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated and user.tenant_id
+            and user.role in (Role.OWNER, Role.MANAGER, Role.RECEPTIONIST)
+        )
+
+
 class IsSuperAdmin(BasePermission):
     message = _('Only platform administrators can perform this action.')
 

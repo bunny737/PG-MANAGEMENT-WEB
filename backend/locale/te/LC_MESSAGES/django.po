@@ -2383,3 +2383,44 @@ msgstr "ఈ తొలగింపు అభ్యర్థనను ఇకపై
 #: apps/subscriptions/services.py
 msgid "This account has been deleted; its billing can no longer be changed."
 msgstr "ఈ ఖాతా తొలగించబడింది; దాని బిల్లింగ్‌ను ఇకపై మార్చలేరు."
+
+#: apps/onboarding/models.py
+msgid "Overview"
+msgstr "అవలోకనం"
+
+#: apps/onboarding/models.py
+msgid "Add a property"
+msgstr "ప్రాపర్టీని జోడించండి"
+
+#: apps/onboarding/models.py
+msgid "Add a building"
+msgstr "భవనాన్ని జోడించండి"
+
+#: apps/onboarding/models.py
+msgid "Add a floor"
+msgstr "అంతస్తును జోడించండి"
+
+#: apps/onboarding/models.py
+msgid "Add rooms and beds"
+msgstr "గదులు మరియు పడకలను జోడించండి"
+
+#: apps/onboarding/models.py
+msgid "Admit a resident"
+msgstr "నివాసిని చేర్చుకోండి"
+
+#: apps/onboarding/models.py
+msgid "Property settings"
+msgstr "ప్రాపర్టీ సెట్టింగ్‌లు"
+
+#: apps/onboarding/models.py
+msgid "Billing"
+msgstr "బిల్లింగ్"
+
+#: apps/onboarding/models.py
+msgid "Staff"
+msgstr "సిబ్బంది"
+
+#: apps/onboarding/views.py
+#, python-format
+msgid "language must be one of: %(codes)s."
+msgstr "భాష వీటిలో ఒకటి అయి ఉండాలి: %(codes)s."

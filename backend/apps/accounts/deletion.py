@@ -88,6 +88,7 @@ DISPOSITION = {
     'notifications.NotificationTemplate': (PLATFORM, PLATFORM),
     'notifications.PushSubscription': (PURGE, PURGE),
     'notifications.ScheduledNotification': (PURGE, PURGE),
+    'onboarding.TutorialVideo': (PLATFORM, PLATFORM),
     'operations.Complaint': (PURGE, RETAIN),
     'operations.ComplaintComment': (PURGE, RETAIN),
     'operations.Visitor': (PURGE, RETAIN),

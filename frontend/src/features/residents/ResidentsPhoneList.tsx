@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Phone, UserPlus } from "lucide-react";
+import { Phone, UserPlus, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Fab } from "@/components/mobile/Fab";
 import { FilterChip } from "@/components/mobile/FilterChip";
@@ -9,6 +9,7 @@ import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { PropertyPill } from "@/components/mobile/PropertyPill";
 import { SearchField } from "@/components/mobile/SearchField";
 import { StatusBadge } from "@/components/mobile/StatusBadge";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import type { Resident } from "@/lib/api";
@@ -66,6 +67,7 @@ export function ResidentsPhoneList({
 }: ResidentsPhoneListProps) {
   const t = useTranslations("residents.directory");
   const tStatus = useTranslations("status");
+  const tCta = useTranslations("onboarding.cta");
   const { can } = useSession();
   const canSeeFinance = can("view_finance");
 
@@ -91,10 +93,13 @@ export function ResidentsPhoneList({
         {isError && <SectionError onRetry={onRetry} message={t("errLoadFailed")} />}
 
         {!isLoading && !isError && residents.length === 0 && (
-          <div className="rounded-2xl border border-m3-outline-variant bg-m3-surface px-4 py-10 text-center">
-            <p className="text-lg font-medium text-m3-on-surface">{t("emptyTitle")}</p>
-            <p className="mt-1 text-base text-m3-on-surface-variant">{t("emptyDesc")}</p>
-          </div>
+          <EmptyState
+            icon={Users}
+            title={t("emptyTitle")}
+            body={t("emptyDesc")}
+            cta={{ label: tCta("admit_resident"), href: "/admissions", permission: "manage_admissions" }}
+            videoTopic="admit_resident"
+          />
         )}
 
         {!isLoading && !isError && residents.length > 0 && (

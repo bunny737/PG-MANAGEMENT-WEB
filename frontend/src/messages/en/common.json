@@ -14,7 +14,8 @@
     "expenses": "Expenses",
     "reports": "Reports",
     "settings": "Settings",
-    "more": "More"
+    "more": "More",
+    "help": "Help"
   },
   "roles": {
     "owner": "Owner",

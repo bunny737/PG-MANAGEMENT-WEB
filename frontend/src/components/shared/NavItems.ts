@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BarChart3,
   LayoutDashboard,
+  LifeBuoy,
   Menu,
   Receipt,
   Settings,
@@ -18,6 +19,8 @@ export interface NavItem {
   labelKey: string;
   icon: LucideIcon;
   permission?: string;
+  /** False keeps the item out of `firstAllowedRoute` — a page anyone can open, but not a home. */
+  landing?: boolean;
 }
 
 /** Desktop sidebar — gated by permission matrix where applicable. */
@@ -32,6 +35,8 @@ export const SIDEBAR_NAV_ITEMS: readonly NavItem[] = [
   { href: "/expenses", labelKey: "nav.expenses", icon: Wallet, permission: "view_expenses" },
   { href: "/reports", labelKey: "nav.reports", icon: BarChart3, permission: "view_reports" },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, permission: "manage_tenant_settings" },
+  // Every staff role (Module 23). Not a landing page: someone with no other screen still goes to Profile.
+  { href: "/help", labelKey: "nav.help", icon: LifeBuoy, landing: false },
 ];
 
 /** Phone bottom bar (Android parity): these four, permission-filtered, then More. An explicit list

@@ -4,12 +4,15 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Plus, Trash2, Edit, Building2, Settings, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGate } from "@/components/shared/PermissionGate";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { getProperty, getBuilding, listFloors, deleteFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
 
 export function FloorList({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
   const t = useTranslations("properties.floors");
   const tCommon = useTranslations("common");
+  const tCta = useTranslations("onboarding.cta");
   const [property, setProperty] = useState<Property | null>(null);
   const [building, setBuilding] = useState<Building | null>(null);
   const [floors, setFloors] = useState<Floor[] | null>(null);
@@ -52,6 +55,7 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
   const handleDeleteFloor = async (floorId: string, name: string) => {
     try {
       await deleteFloor(floorId);
+      void afterHierarchyChange({ propertyId });
       setFloors((prev) => (prev ? prev.filter((f) => f.id !== floorId) : null));
       setDeleteAlert(t("deletedMsg", { name }));
       setTimeout(() => setDeleteAlert(null), 3000);
@@ -252,17 +256,18 @@ export function FloorList({ propertyId, buildingId }: { propertyId: string; buil
           </div>
         ) : (
           /* Empty State */
-          <div className="flex flex-col items-center justify-center text-center p-12 space-y-4 bg-surface-card">
-            <div className="flex size-14 items-center justify-center rounded-full bg-surface-page text-ink-muted border border-border">
-              <Building2 className="size-6 text-ink-faint animate-pulse" />
-            </div>
-            <div className="space-y-1 max-w-sm">
-              <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
-              <p className="text-xs text-ink-muted leading-relaxed">
-                {t("emptyDesc")}
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            icon={Building2}
+            title={t("emptyTitle")}
+            body={t("emptyDesc")}
+            cta={{
+              label: tCta("add_floor"),
+              href: `/properties/${propertyId}/buildings/${buildingId}/floors/add`,
+              permission: "manage_rooms_beds",
+            }}
+            videoTopic="add_floor"
+            className="m-4 bg-surface-card"
+          />
         )}
       </div>
     </div>

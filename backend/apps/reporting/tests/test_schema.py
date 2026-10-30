@@ -25,6 +25,8 @@ class SchemaCompletenessTests(TestCase):
         ('get', ['expenses', 'attachment']),
         ('get', ['residents', '{']),  # the detail route, not the list
         ('get', ['vacates', 'settlement-preview']),
+        ('get', ['onboarding', 'checklist']),
+        ('get', ['help', 'videos']),
     ]
 
     @classmethod

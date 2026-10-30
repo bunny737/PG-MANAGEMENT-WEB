@@ -1,0 +1,72 @@
+{
+  "card": {
+    "title": "Set up {name}",
+    "titleGeneric": "Set up your PG",
+    "subtitle": "{done} of {total} steps done",
+    "progressLabel": "Setup progress",
+    "alsoTry": "Also try",
+    "hide": "Hide checklist",
+    "hideConfirm": "Hide this checklist? You can bring it back from Help.",
+    "hideYes": "Hide",
+    "cancel": "Cancel",
+    "allSetTitle": "You're all set",
+    "allSetBody": "{name} is ready. Help has videos on billing, staff and more.",
+    "allSetBodyGeneric": "Your PG is ready. Help has videos on billing, staff and more.",
+    "openHelp": "Open Help",
+    "askOwner": "Ask your owner",
+    "after": "After: {step}",
+    "done": "Done"
+  },
+  "steps": {
+    "add_property": "Add your property",
+    "add_building": "Add a building",
+    "add_floor": "Add a floor",
+    "add_room": "Add rooms and beds",
+    "admit_resident": "Admit your first resident",
+    "record_expense": "Record an expense"
+  },
+  "cta": {
+    "add_property": "Add property",
+    "add_building": "Add building",
+    "add_floor": "Add floor",
+    "add_room": "Add room",
+    "admit_resident": "Admit resident",
+    "record_expense": "Add expense"
+  },
+  "topics": {
+    "overview": "Overview",
+    "add_property": "Properties",
+    "add_building": "Buildings",
+    "add_floor": "Floors",
+    "add_room": "Rooms and beds",
+    "admit_resident": "Admissions",
+    "property_settings": "Property settings",
+    "expenses": "Expenses",
+    "billing": "Billing",
+    "staff": "Staff"
+  },
+  "video": {
+    "watch": "Watch how",
+    "watchMinutes": "Watch how ({minutes} min)",
+    "offline": "Videos play when you're back online.",
+    "fallbackNote": "Shown in {shown} — {requested} version coming soon."
+  },
+  "help": {
+    "title": "Help & tutorials",
+    "subtitle": "Short videos on setting up and running your PG.",
+    "language": "Video language",
+    "videosLabel": "Tutorial videos",
+    "empty": "Videos coming soon.",
+    "minutes": "{minutes} min",
+    "checklistTitle": "Getting started checklist",
+    "showChecklist": "Show the checklist on the dashboard again",
+    "contactTitle": "Still stuck?",
+    "contactBody": "Our support team can walk you through it.",
+    "contactLink": "Contact support"
+  },
+  "hints": {
+    "settingsTitle": "Review this property's settings",
+    "settingsBody": "Late-payment penalty, grace days and how rent changes on a room transfer — set them before your first invoice.",
+    "settingsCta": "Open settings"
+  }
+}

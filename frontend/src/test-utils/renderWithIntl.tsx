@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextIntlClientProvider } from "next-intl";
 import common from "@/messages/en/common.json";
 import dashboard from "@/messages/en/dashboard.json";
+import onboarding from "@/messages/en/onboarding.json";
 import properties from "@/messages/en/properties.json";
 import pwa from "@/messages/en/pwa.json";
 import residents from "@/messages/en/residents.json";
@@ -12,7 +13,7 @@ import vacancies from "@/messages/en/vacancies.json";
 
 const LOCALE = "en";
 
-export const EN_MESSAGES = { common, dashboard, properties, pwa, residents, settings, status, vacancies };
+export const EN_MESSAGES = { common, dashboard, onboarding, properties, pwa, residents, settings, status, vacancies };
 
 /** Renders with the English catalogs and a fresh, non-retrying TanStack client. */
 export function renderWithIntl(ui: React.ReactElement) {

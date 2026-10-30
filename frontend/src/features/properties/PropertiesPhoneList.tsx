@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, ChevronRight, Store } from "lucide-react";
+import { Building, Building2, ChevronRight, Store } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Fab } from "@/components/mobile/Fab";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { PropertyPill } from "@/components/mobile/PropertyPill";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
@@ -26,6 +27,7 @@ interface PropertiesPhoneListProps {
 /** Phone properties screen (< md): top bar with property pill, compact property cards, Add Property FAB. */
 export function PropertiesPhoneList({ properties, error, onRetry }: PropertiesPhoneListProps) {
   const t = useTranslations("properties");
+  const tCta = useTranslations("onboarding.cta");
   const { propertyId } = useActiveProperty();
   const visible = properties ? filterByActiveProperty(properties, propertyId) : null;
 
@@ -37,14 +39,19 @@ export function PropertiesPhoneList({ properties, error, onRetry }: PropertiesPh
         {error && <SectionError onRetry={onRetry} message={error} />}
         {!error && visible === null && <SectionSkeleton className="h-40" />}
 
-        {!error && visible && visible.length === 0 && (
+        {!error && properties && properties.length === 0 && (
+          <EmptyState
+            icon={Building}
+            title={t("list.emptyTitle")}
+            body={t("list.emptyDesc")}
+            cta={{ label: tCta("add_property"), href: "/properties/add", permission: "manage_properties" }}
+            videoTopic="add_property"
+          />
+        )}
+
+        {!error && visible && visible.length === 0 && properties && properties.length > 0 && (
           <div className="rounded-2xl border border-m3-outline-variant bg-m3-surface px-4 py-10 text-center">
-            <p className="text-lg font-medium text-m3-on-surface">
-              {properties && properties.length > 0 ? t("list.noMatch") : t("list.emptyTitle")}
-            </p>
-            {properties && properties.length === 0 && (
-              <p className="mt-1 text-base text-m3-on-surface-variant">{t("list.emptyDesc")}</p>
-            )}
+            <p className="text-lg font-medium text-m3-on-surface">{t("list.noMatch")}</p>
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { queryClient } from "@/lib/queryClient";
 import { queryKeys } from "@/lib/queryKeys";
+import { ensureFreshSession } from "@/lib/session";
 
 /**
  * Mutation -> refresh contract (UX roadmap). One helper per mutation that
@@ -57,14 +58,14 @@ export function afterDiscountChange(opts: { residentId?: string } = {}) {
 
 /** Bed status PATCH, room/bed add or delete. */
 export function afterBedChange(opts: { propertyId?: string } = {}) {
-  const keys: unknown[][] = [[...queryKeys.dashboard.all]];
+  const keys: unknown[][] = [[...queryKeys.dashboard.all], [...queryKeys.onboarding.all]];
   if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
   return invalidate(...keys);
 }
 
 /** Admission into a bed. */
 export function afterAdmission(opts: { propertyId?: string } = {}) {
-  const keys: unknown[][] = [[...queryKeys.residents.all], [...queryKeys.dashboard.all]];
+  const keys: unknown[][] = [[...queryKeys.residents.all], [...queryKeys.dashboard.all], [...queryKeys.onboarding.all]];
   if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
   return invalidate(...keys);
 }
@@ -99,5 +100,24 @@ export function afterVacate(opts: { residentId?: string; propertyId?: string } =
  * "both old and new months" rule, done by invalidating broadly rather
  * than tracking which months were affected. */
 export function afterExpenseChange() {
-  return invalidate([...queryKeys.expenses.all], [...queryKeys.analytics.all]);
+  return invalidate([...queryKeys.expenses.all], [...queryKeys.analytics.all], [...queryKeys.onboarding.all]);
+}
+
+/** Create or delete a property, building, floor or room — the Getting started checklist
+ * (Module 23) ticks and un-ticks on these, plus the property lists and the dashboard's bed totals. */
+export function afterHierarchyChange(opts: { propertyId?: string } = {}) {
+  const keys: unknown[][] = [
+    [...queryKeys.onboarding.all],
+    [...queryKeys.properties.list],
+    [...queryKeys.dashboard.all],
+    [...queryKeys.analytics.all],
+  ];
+  if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
+  return invalidate(...keys);
+}
+
+/** Dismiss or restore the Getting started checklist. The profile carries the flag too
+ * (`onboarding_dismissed`), so it is refreshed alongside the checklist. */
+export function afterOnboardingDismissChange() {
+  return Promise.all([invalidate([...queryKeys.onboarding.all]), ensureFreshSession()]);
 }

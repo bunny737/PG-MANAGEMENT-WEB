@@ -15,7 +15,8 @@
     "laundry": "Laundry",
     "addon": "Add-on service",
     "additional": "Additional charge",
-    "discount": "Discount"
+    "discount": "Discount",
+    "food_holiday": "Food holiday credit"
   },
   "invoices": {
     "title": "Invoices",
@@ -118,7 +119,9 @@
     "editTitle": "Edit line item",
     "submit": "Add",
     "save": "Save",
-    "removeConfirm": "Remove this line?"
+    "removeConfirm": "Remove this line?",
+    "waive": "Waive",
+    "waiveConfirm": "Waive this food-holiday credit? The resident won't get it on this bill. You can restore it from the food holiday's page."
   },
   "recordPayment": {
     "title": "Record payment",

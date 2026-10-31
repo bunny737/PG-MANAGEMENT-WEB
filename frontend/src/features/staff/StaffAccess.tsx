@@ -12,6 +12,7 @@ import {
   Globe,
   LayoutDashboard,
   Loader2,
+  Megaphone,
   Phone,
   Mail,
   Receipt,
@@ -59,6 +60,7 @@ const MODULE_STYLES: Record<string, ModuleStyle> = {
   expenses: { icon: Receipt, tile: "bg-amber-50 text-amber-600", text: "text-amber-600", on: "bg-amber-600" },
   reports: { icon: BarChart3, tile: "bg-orange-50 text-orange-600", text: "text-orange-600", on: "bg-orange-500" },
   complaints: { icon: AlertTriangle, tile: "bg-rose-50 text-rose-600", text: "text-rose-600", on: "bg-rose-500" },
+  notices: { icon: Megaphone, tile: "bg-indigo-50 text-indigo-600", text: "text-indigo-600", on: "bg-indigo-600" },
   visitors: { icon: ClipboardList, tile: "bg-teal-50 text-teal-600", text: "text-teal-600", on: "bg-teal-600" },
 };
 const FALLBACK_STYLE: ModuleStyle = {

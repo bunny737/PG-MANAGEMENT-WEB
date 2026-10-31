@@ -9,6 +9,7 @@ from unittest import mock
 
 from django.contrib import admin
 from django.core.management import call_command
+from django.db import transaction
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -19,7 +20,7 @@ from apps.core.tenancy import tenant_context
 from apps.residents import services as resident_services
 from apps.residents.models import Resident
 
-from apps.notices import services, sweep
+from apps.notices import credits, services, sweep
 from apps.notices.models import Announcement, FoodHoliday, FoodHolidayCredit
 
 from .base import NoticesTestCase, today
@@ -125,8 +126,34 @@ class FoodHolidayApiTests(NoticesTestCase):
             }, format='json').data['id']
         response = self.client.get(reverse('food-holiday-credits', args=[holiday_id]))
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual([(row['status'], row['days'], row['amount']) for row in response.data],
+        self.assertEqual([(row['status'], row['days'], row['amount']) for row in response.data['credits']],
                          [('estimated', 4, '400.00')])
+        self.assertEqual(
+            {key: str(value) for key, value in response.data['totals'].items()},
+            {'credited': '0.00', 'credited_count': '0', 'estimated': '400.00', 'estimated_count': '1',
+             'waived_count': '0', 'clawback': '0.00'},
+        )
+
+    def test_credit_totals_keep_estimates_waivers_and_clawbacks_apart(self):
+        holiday = self.holiday()
+        self.generate(self.resident)  # invoiced: ₹400 credited
+        waived = self.admit()
+        self.generate(waived)
+        with today(date(2026, 4, 10)), tenant_context(self.tenant.id), transaction.atomic():
+            credits.waive(self.credit(holiday, waived), actor=self.owner)
+        self.admit()  # qualifies but has no credit yet: an estimate
+        with today(date(2026, 4, 10)):
+            response = self.client.get(reverse('food-holiday-credits', args=[holiday.pk]))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(sorted(row['status'] for row in response.data['credits']),
+                         ['estimated', 'invoiced', 'waived'])
+        totals = response.data['totals']
+        # "credited" is the holiday's credit_total: waived rows and estimates are not owed money.
+        self.assertEqual((str(totals['credited']), totals['credited_count']), ('400.00', 1))
+        self.assertEqual((str(totals['estimated']), totals['estimated_count']), ('400.00', 1))
+        self.assertEqual((totals['waived_count'], str(totals['clawback'])), (1, '0.00'))
+        detail = self.client.get(reverse('food-holiday-detail', args=[holiday.pk]))
+        self.assertEqual(detail.data['credit_total'], str(totals['credited']))
 
 
 class PermissionAndRedactionTests(NoticesTestCase):

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import django_filters
 from django.db import transaction
 from django.db.models import Q
@@ -16,7 +18,9 @@ from apps.properties.services import visible_property_ids
 
 from . import credits, services
 from .models import Announcement, FoodHoliday, FoodHolidayCredit
-from .serializers import AnnouncementSerializer, FoodHolidayCreditSerializer, FoodHolidaySerializer
+from .serializers import (
+    AnnouncementSerializer, FoodHolidayCreditsSerializer, FoodHolidayCreditSerializer, FoodHolidaySerializer,
+)
 
 
 class AnnouncementFilter(django_filters.FilterSet):
@@ -71,6 +75,26 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         (clears `notice_outdated`)."""
         announcement = services.mark_current(announcement=self.get_object(), actor=request.user, request=request)
         return Response(self.get_serializer(announcement).data)
+
+
+_LIVE_STATUSES = (
+    FoodHolidayCredit.Status.PENDING, FoodHolidayCredit.Status.INVOICED, FoodHolidayCredit.Status.SETTLED,
+)
+
+
+def _credit_totals(rows):
+    """Totals of a holiday's credit rows. Same "live" definition as
+    FoodHolidaySerializer.credit_total, so the list and the detail agree."""
+    credited = [row for row in rows if row['status'] in _LIVE_STATUSES]
+    estimated = [row for row in rows if row['status'] == 'estimated']
+    return {
+        'credited': sum((Decimal(row['amount']) for row in credited), Decimal('0.00')),
+        'credited_count': len(credited),
+        'estimated': sum((Decimal(row['amount']) for row in estimated), Decimal('0.00')),
+        'estimated_count': len(estimated),
+        'waived_count': sum(1 for row in rows if row['status'] == FoodHolidayCredit.Status.WAIVED),
+        'clawback': sum((Decimal(row['clawback_amount']) for row in rows), Decimal('0.00')),
+    }
 
 
 class FoodHolidayFilter(django_filters.FilterSet):
@@ -135,12 +159,15 @@ class FoodHolidayViewSet(viewsets.ModelViewSet):
         services.delete_holiday(holiday=instance, actor=self.request.user, request=self.request,
                                 can_manage_invoices=self._can_manage_invoices())
 
-    @extend_schema(responses=FoodHolidayCreditSerializer(many=True))
+    @extend_schema(responses=FoodHolidayCreditsSerializer)
     @action(detail=True, methods=['get'], url_path='credits', url_name='credits')
     def holiday_credits(self, request, pk=None):
         """Per-resident credits: stored rows, plus "estimated" rows for
         residents who qualify now but have no credit yet (e.g. the holiday
-        hasn't ended). Read-only."""
+        hasn't ended), and the totals of those rows. "credited" counts
+        pending, invoiced and settled rows only (the holiday's
+        `credit_total`); estimates, waived rows and clawbacks are reported
+        apart, so the client never sums money itself. Read-only."""
         holiday = self.get_object()
         rows = []
         stored = (
@@ -164,7 +191,7 @@ class FoodHolidayViewSet(viewsets.ModelViewSet):
                 'amount': credits.credit_amount(holiday.rate_per_day, days),
                 'invoice': None, 'invoice_status': None, 'clawback_amount': '0.00',
             })
-        return Response(FoodHolidayCreditSerializer(rows, many=True).data)
+        return Response(FoodHolidayCreditsSerializer({'credits': rows, 'totals': _credit_totals(rows)}).data)
 
     @extend_schema(request=None, responses=FoodHolidayCreditSerializer)
     @action(detail=True, methods=['post'], url_path=r'credits/(?P<credit_pk>[0-9a-f-]+)/restore',

@@ -1,0 +1,159 @@
+{
+  "title": "Notices",
+  "subtitle": "Post notices for your residents and record days when food isn't served.",
+  "tabs": {
+    "notices": "Notices",
+    "holidays": "Food holidays"
+  },
+  "filters": {
+    "active": "Active",
+    "expired": "Expired",
+    "all": "All",
+    "category": "Category",
+    "allCategories": "All categories"
+  },
+  "categories": {
+    "general": "General",
+    "holiday": "Holiday",
+    "maintenance": "Maintenance",
+    "rules": "Rules",
+    "event": "Event"
+  },
+  "notice": {
+    "add": "Add notice",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this notice? Residents will no longer see it.",
+    "deleteConfirmLinked": "Delete this notice? The food holiday stays; only the notice is removed.",
+    "pinned": "Pinned",
+    "expired": "Expired {date}",
+    "expires": "Expires {date}",
+    "postedBy": "Posted by {name}",
+    "viewHoliday": "View food holiday",
+    "emptyTitle": "No notices here",
+    "emptyDesc": "Notices you post show up here, and in the resident app once it's ready.",
+    "errLoadFailed": "Couldn't load the notices.",
+    "errActionFailed": "That didn't work. Please try again."
+  },
+  "outdated": {
+    "title": "This notice may be out of date",
+    "body": "The food holiday changed after this text was written. Check that the dates and details still read right.",
+    "edit": "Edit notice",
+    "dismiss": "Looks right, dismiss"
+  },
+  "linked": {
+    "title": "Linked notice",
+    "close": "Close",
+    "deleted": "This notice was deleted."
+  },
+  "form": {
+    "addTitle": "Add notice",
+    "editTitle": "Edit notice",
+    "property": "Property",
+    "propertyRequired": "Choose a property.",
+    "noticeTitle": "Title",
+    "titleRequired": "Enter a title.",
+    "titleTooLong": "The title can be at most {max} characters.",
+    "body": "Notice",
+    "bodyRequired": "Write the notice.",
+    "category": "Category",
+    "expiresOn": "Last day shown",
+    "expiresHint": "Optional. Leave empty to keep it up.",
+    "expiryInPast": "Choose today or a later day.",
+    "pinned": "Pin to the top",
+    "pinnedHint": "Pinned notices are listed first.",
+    "autoTextHint": "Editing the text stops this notice from following the food holiday automatically. You'll be told if the holiday changes later.",
+    "errSaveFailed": "Couldn't save the notice. Please try again.",
+    "submit": "Post notice",
+    "save": "Save changes",
+    "submitting": "Saving…"
+  },
+  "holidays": {
+    "intro": "A food holiday is a stretch of days when residents can stay but no food is served. You can credit the food charge on their next bill.",
+    "add": "Add food holiday",
+    "errLoadFailed": "Couldn't load the food holidays.",
+    "emptyTitle": "No food holidays yet",
+    "emptyDesc": "Add a festival or any other days when food won't be served. Residents are told on the notice board.",
+    "adjusted": "Credited on bills",
+    "notAdjusted": "Not credited",
+    "locked": "On a bill",
+    "days": "{count, plural, one {# day} other {# days}}",
+    "credited": "{count, plural, one {# resident} other {# residents}}",
+    "noticeOutdated": "The notice for this holiday may be out of date. Review it."
+  },
+  "holidayForm": {
+    "addTitle": "Add food holiday",
+    "editTitle": "Edit food holiday",
+    "property": "Property",
+    "propertyRequired": "Choose a property.",
+    "name": "Name",
+    "namePlaceholder": "e.g. Dasara",
+    "nameRequired": "Enter a name.",
+    "startDate": "First day",
+    "endDate": "Last day",
+    "startRequired": "Choose the first day.",
+    "endRequired": "Choose the last day.",
+    "endBeforeStart": "The last day can't be before the first day.",
+    "tooLong": "A holiday can be at most {max} days long.",
+    "dayCount": "{count, plural, one {# day, no food} other {# days, no food}}",
+    "adjust": "Adjust food charges in the next bill",
+    "adjustHint": "Each resident with food gets a credit for the holiday days they were here, once the holiday is over.",
+    "rate": "Food charge per day (₹)",
+    "rateRequired": "Enter the food charge per day.",
+    "rateInvalid": "Enter an amount up to 999999.99 with at most two decimals.",
+    "rateNoDefault": "No default set. You can set one in the property's settings.",
+    "postNotice": "Post a notice",
+    "postNoticeHint": "Adds a notice for this holiday to the notice board. It updates itself if you change the holiday.",
+    "lockedNote": "This holiday is already on an issued bill or a settlement, so its dates, rate and bill adjustment can't change. You can still rename it.",
+    "errSaveFailed": "Couldn't save the food holiday. Please try again.",
+    "submit": "Add food holiday",
+    "save": "Save changes",
+    "submitting": "Saving…"
+  },
+  "detail": {
+    "back": "Food holidays",
+    "notFound": "This food holiday no longer exists.",
+    "errLoadFailed": "Couldn't load this food holiday.",
+    "errActionFailed": "That didn't work. Please try again.",
+    "errCreditsFailed": "Couldn't load the credits.",
+    "rate": "Food charge per day",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteLocked": "This holiday is already on an issued bill or a settlement, so it can't be deleted.",
+    "deleteConfirm": "Delete this food holiday? Any credit waiting on a draft bill is removed.",
+    "deleteConfirmWithNotice": "Delete this food holiday? Any credit waiting on a draft bill is removed, and so is its notice, unless you edited the notice text.",
+    "noticeHeading": "Notice",
+    "noNotice": "No notice was posted for this holiday. You can post one from the Notices tab.",
+    "creditsHeading": "Bill credits",
+    "notAdjustedNote": "This holiday isn't credited on bills."
+  },
+  "credits": {
+    "totals": {
+      "credited": "Credited",
+      "estimated": "Estimated, not yet credited",
+      "waived": "Waived credits",
+      "clawback": "Clawed back"
+    },
+    "count": "{count, plural, one {# resident} other {# residents}}",
+    "empty": "No resident qualifies for a credit yet.",
+    "columns": {
+      "resident": "Resident",
+      "days": "Days",
+      "rate": "Per day",
+      "amount": "Credit",
+      "status": "Status",
+      "invoice": "Bill"
+    },
+    "status": {
+      "estimated": "Estimated",
+      "pending": "Waiting for a bill",
+      "invoiced": "On a bill",
+      "settled": "Settled at move-out",
+      "waived": "Waived"
+    },
+    "clawedBack": "Clawed back",
+    "viewInvoice": "View bill",
+    "restore": "Restore",
+    "estimatedLegend": "Estimated: this resident qualifies now, but nothing is credited until the holiday is over and a bill is drafted. Estimates, waived credits and clawbacks are not part of the credited total."
+  }
+}

@@ -15,6 +15,7 @@ const APP_PATHS = [
   "/billing",
   "/admissions",
   "/expenses",
+  "/notices",
   "/reports",
   "/settings",
   "/profile",

@@ -1320,6 +1320,112 @@ export interface paths {
         patch: operations["v1_floors_partial_update"];
         trace?: never;
     };
+    "/api/v1/food-holidays/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        get: operations["v1_food_holidays_list"];
+        put?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        post: operations["v1_food_holidays_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        get: operations["v1_food_holidays_retrieve"];
+        put?: never;
+        post?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        delete: operations["v1_food_holidays_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        patch: operations["v1_food_holidays_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/credits/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Per-resident credits: stored rows, plus "estimated" rows for
+         *     residents who qualify now but have no credit yet (e.g. the holiday
+         *     hasn't ended), and the totals of those rows. "credited" counts
+         *     pending, invoiced and settled rows only (the holiday's
+         *     `credit_total`); estimates, waived rows and clawbacks are reported
+         *     apart, so the client never sums money itself. Read-only.
+         */
+        get: operations["v1_food_holidays_credits_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/credits/{credit_pk}/restore/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Undo a waiver: the credit is owed again and goes on the next draft
+         *     (once the holiday has ended).
+         */
+        post: operations["v1_food_holidays_credits_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/help/videos/": {
         parameters: {
             query?: never;
@@ -1579,6 +1685,83 @@ export interface paths {
         get: operations["v1_invoices_outstanding_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notices/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        get: operations["v1_notices_list"];
+        put?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        post: operations["v1_notices_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notices/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        get: operations["v1_notices_retrieve"];
+        put?: never;
+        post?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        delete: operations["v1_notices_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        patch: operations["v1_notices_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/notices/{id}/mark-current/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Keep a customised holiday notice as it is after its holiday changed
+         *     (clears `notice_outdated`).
+         */
+        post: operations["v1_notices_mark_current_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2990,6 +3173,10 @@ export interface components {
             readonly deposit_applied_to_dues: string;
             /** Format: decimal */
             readonly remaining_dues: string;
+            /** Format: decimal */
+            readonly food_holiday_credit: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback: string;
             readonly dues_recovery_status: components["schemas"]["DuesRecoveryStatusEnum"];
             /** Format: uuid */
             readonly dues_written_off_by: string | null;
@@ -3174,6 +3361,38 @@ export interface components {
             series: components["schemas"]["TrendPoint"][];
             redacted: string[];
         };
+        Announcement: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            property: string;
+            readonly property_name: string;
+            title: string;
+            body: string;
+            category?: components["schemas"]["AnnouncementCategoryEnum"];
+            is_pinned?: boolean;
+            /** Format: date */
+            expires_on?: string | null;
+            readonly is_auto_text: boolean;
+            readonly food_holiday: string | null;
+            readonly notice_outdated: boolean;
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `general` - General
+         *     * `holiday` - Holiday
+         *     * `maintenance` - Maintenance
+         *     * `rules` - Rules
+         *     * `event` - Event
+         * @enum {string}
+         */
+        AnnouncementCategoryEnum: "general" | "holiday" | "maintenance" | "rules" | "event";
         AppInfo: {
             version_name: string;
             build_number: number;
@@ -3739,6 +3958,90 @@ export interface components {
             readonly updated_at: string;
         };
         /**
+         * @description Food holidays. Without view_finance the rate and credit figures are
+         *     removed from the response (not nulled), like the resident money fields.
+         */
+        FoodHoliday: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            property: string;
+            readonly property_name: string;
+            name: string;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            end_date: string;
+            readonly total_days: number;
+            adjust_in_bill?: boolean;
+            /** Format: decimal */
+            rate_per_day?: string | null;
+            /** Format: uuid */
+            readonly announcement: string | null;
+            readonly notice_outdated: boolean;
+            readonly is_locked: boolean;
+            readonly credit_total: string;
+            readonly credit_count: number;
+            /** @default true */
+            post_notice: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description One row of a holiday's credits table: a stored credit, or (status
+         *     "estimated") what a resident who qualifies now would be owed.
+         */
+        FoodHolidayCredit: {
+            /** Format: uuid */
+            id: string | null;
+            /** Format: uuid */
+            resident: string;
+            resident_name: string;
+            status: components["schemas"]["FoodHolidayCreditStatusEnum"];
+            days: number;
+            /** Format: decimal */
+            rate: string;
+            /** Format: decimal */
+            amount: string;
+            /** Format: uuid */
+            invoice: string | null;
+            invoice_status: string | null;
+            /** Format: decimal */
+            clawback_amount: string;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `invoiced` - On an invoice
+         *     * `settled` - Settled at exit
+         *     * `waived` - Waived
+         *     * `estimated` - Estimated
+         * @enum {string}
+         */
+        FoodHolidayCreditStatusEnum: "pending" | "invoiced" | "settled" | "waived" | "estimated";
+        /**
+         * @description Totals of a holiday's credit rows, computed on the server so the
+         *     client never sums money. `credited` is pending + invoiced + settled (the
+         *     holiday's `credit_total`); estimates, waived rows and clawbacks are
+         *     reported separately.
+         */
+        FoodHolidayCreditTotals: {
+            /** Format: decimal */
+            credited: string;
+            credited_count: number;
+            /** Format: decimal */
+            estimated: string;
+            estimated_count: number;
+            waived_count: number;
+            /** Format: decimal */
+            clawback: string;
+        };
+        FoodHolidayCredits: {
+            credits: components["schemas"]["FoodHolidayCredit"][];
+            totals: components["schemas"]["FoodHolidayCreditTotals"];
+        };
+        /**
          * @description * `with_food` - With Food
          *     * `without_food` - Without Food
          * @enum {string}
@@ -3975,9 +4278,10 @@ export interface components {
          *     * `additional` - Additional
          *     * `discount` - Discount
          *     * `penalty` - Late Payment Penalty
+         *     * `food_holiday` - Food Holiday Credit
          * @enum {string}
          */
-        LineTypeEnum: "accommodation" | "food" | "electricity" | "water" | "laundry" | "addon" | "additional" | "discount" | "penalty";
+        LineTypeEnum: "accommodation" | "food" | "electricity" | "water" | "laundry" | "addon" | "additional" | "discount" | "penalty" | "food_holiday";
         Login: {
             email: string;
             password: string;
@@ -4092,6 +4396,29 @@ export interface components {
         PasswordResetRequest: {
             /** Format: email */
             email: string;
+        };
+        PatchedAnnouncement: {
+            /** Format: uuid */
+            readonly id?: string;
+            /** Format: uuid */
+            property?: string;
+            readonly property_name?: string;
+            title?: string;
+            body?: string;
+            category?: components["schemas"]["AnnouncementCategoryEnum"];
+            is_pinned?: boolean;
+            /** Format: date */
+            expires_on?: string | null;
+            readonly is_auto_text?: boolean;
+            readonly food_holiday?: string | null;
+            readonly notice_outdated?: boolean;
+            /** Format: uuid */
+            readonly created_by?: string | null;
+            readonly created_by_name?: string | null;
+            /** Format: date-time */
+            readonly created_at?: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
         };
         PatchedBed: {
             /** Format: uuid */
@@ -4250,6 +4577,38 @@ export interface components {
             order?: number;
             readonly rooms_count?: number;
             readonly occupancy_percent?: number;
+            /** Format: date-time */
+            readonly created_at?: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
+        };
+        /**
+         * @description Food holidays. Without view_finance the rate and credit figures are
+         *     removed from the response (not nulled), like the resident money fields.
+         */
+        PatchedFoodHoliday: {
+            /** Format: uuid */
+            readonly id?: string;
+            /** Format: uuid */
+            property?: string;
+            readonly property_name?: string;
+            name?: string;
+            /** Format: date */
+            start_date?: string;
+            /** Format: date */
+            end_date?: string;
+            readonly total_days?: number;
+            adjust_in_bill?: boolean;
+            /** Format: decimal */
+            rate_per_day?: string | null;
+            /** Format: uuid */
+            readonly announcement?: string | null;
+            readonly notice_outdated?: boolean;
+            readonly is_locked?: boolean;
+            readonly credit_total?: string;
+            readonly credit_count?: number;
+            /** @default true */
+            post_notice: boolean;
             /** Format: date-time */
             readonly created_at?: string;
             /** Format: date-time */
@@ -5278,6 +5637,14 @@ export interface components {
             readonly is_settled: boolean;
             readonly security_deposit_amount: string;
             readonly advance_refundable: string;
+            /** Format: decimal */
+            readonly food_holiday_credit: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_calculated: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_recovered: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_unrecovered: string;
             /** Format: date */
             readonly cancelled_date: string | null;
             readonly cancellation_reason: string;
@@ -5316,6 +5683,16 @@ export interface components {
             advance_refundable: string;
             /** Format: decimal */
             maintenance_deduction: string;
+            /** Format: date */
+            actual_vacate_date: string;
+            /** Format: decimal */
+            food_holiday_credit: string;
+            /** Format: decimal */
+            food_holiday_clawback_calculated: string;
+            /** Format: decimal */
+            food_holiday_clawback_recovered: string;
+            /** Format: decimal */
+            food_holiday_clawback_unrecovered: string;
             /** Format: decimal */
             refund_amount: string;
             /** Format: decimal */
@@ -7566,6 +7943,168 @@ export interface operations {
             };
         };
     };
+    v1_food_holidays_list: {
+        parameters: {
+            query?: {
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"][];
+                };
+            };
+        };
+    };
+    v1_food_holidays_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FoodHoliday"];
+                "application/x-www-form-urlencoded": components["schemas"]["FoodHoliday"];
+                "multipart/form-data": components["schemas"]["FoodHoliday"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_food_holidays_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFoodHoliday"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFoodHoliday"];
+                "multipart/form-data": components["schemas"]["PatchedFoodHoliday"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_credits_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHolidayCredits"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_credits_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credit_pk: string;
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHolidayCredit"];
+                };
+            };
+        };
+    };
     v1_help_videos_retrieve: {
         parameters: {
             query?: {
@@ -7944,6 +8483,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
+    v1_notices_list: {
+        parameters: {
+            query?: {
+                active?: boolean;
+                /**
+                 * @description * `general` - General
+                 *     * `holiday` - Holiday
+                 *     * `maintenance` - Maintenance
+                 *     * `rules` - Rules
+                 *     * `event` - Event
+                 */
+                category?: "event" | "general" | "holiday" | "maintenance" | "rules";
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"][];
+                };
+            };
+        };
+    };
+    v1_notices_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Announcement"];
+                "application/x-www-form-urlencoded": components["schemas"]["Announcement"];
+                "multipart/form-data": components["schemas"]["Announcement"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_notices_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAnnouncement"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAnnouncement"];
+                "multipart/form-data": components["schemas"]["PatchedAnnouncement"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_mark_current_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Announcement"];
+                "application/x-www-form-urlencoded": components["schemas"]["Announcement"];
+                "multipart/form-data": components["schemas"]["Announcement"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
                 };
             };
         };
@@ -9922,6 +10615,8 @@ export interface operations {
     v1_vacates_settlement_preview_retrieve: {
         parameters: {
             query?: {
+                /** @description YYYY-MM-DD the food-holiday credit/clawback is worked out for; default is the expected vacate date. */
+                actual_vacate_date?: string;
                 /** @description Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit). */
                 maintenance_deduction?: string;
             };

@@ -147,3 +147,22 @@ class FoodHolidayCreditSerializer(serializers.Serializer):
     invoice = serializers.UUIDField(allow_null=True)
     invoice_status = serializers.CharField(allow_null=True)
     clawback_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class FoodHolidayCreditTotalsSerializer(serializers.Serializer):
+    """Totals of a holiday's credit rows, computed on the server so the
+    client never sums money. `credited` is pending + invoiced + settled (the
+    holiday's `credit_total`); estimates, waived rows and clawbacks are
+    reported separately."""
+
+    credited = serializers.DecimalField(max_digits=14, decimal_places=2)
+    credited_count = serializers.IntegerField()
+    estimated = serializers.DecimalField(max_digits=14, decimal_places=2)
+    estimated_count = serializers.IntegerField()
+    waived_count = serializers.IntegerField()
+    clawback = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class FoodHolidayCreditsSerializer(serializers.Serializer):
+    credits = FoodHolidayCreditSerializer(many=True)
+    totals = FoodHolidayCreditTotalsSerializer()

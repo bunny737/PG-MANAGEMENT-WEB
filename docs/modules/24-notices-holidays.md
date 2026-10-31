@@ -3,7 +3,7 @@
 > Keep this file in sync with the code AT ALL TIMES.
 > If the code and this file disagree, this file is wrong — fix it in the same commit.
 
-**Status:** In progress — backend done; frontend (FE-24) not started
+**Status:** In progress — backend and web UI done; the move-out / abscond food-holiday rows wait on FE-10 (the web app has no move-out or abscond screen yet)
 **Phase:** 3
 **PRD reference:** PRD §9 Resident App "View notices"; the food-holiday credit is an owner request
 (2026-10-30), not in PRD v2
@@ -69,7 +69,7 @@ GET|PATCH|DELETE /api/v1/notices/{id}/
 POST             /api/v1/notices/{id}/mark-current/       manage_notices — clears notice_outdated
 GET|POST         /api/v1/food-holidays/                   view_notices / manage_notices (+ manage_invoices, below) ?property=
 GET|PATCH|DELETE /api/v1/food-holidays/{id}/
-GET              /api/v1/food-holidays/{id}/credits/      view_notices + view_finance — stored rows + "estimated" rows
+GET              /api/v1/food-holidays/{id}/credits/      view_notices + view_finance — {credits: stored + "estimated" rows, totals}
 POST             /api/v1/food-holidays/{id}/credits/{cid}/restore/   manage_notices + manage_invoices
 ```
 `GET /vacates/{id}/settlement-preview/` also accepts `?actual_vacate_date=` and returns the food-holiday
@@ -192,11 +192,47 @@ These orderings are covered by threaded tests against real PostgreSQL (`test_con
 - [DECISION 2026-10-30] A holiday edit locks and re-reads its notice before regenerating it. A concurrent
   owner text edit therefore either commits first (and is seen as customised) or waits, and is never
   overwritten. The notice is locked last; notice edits take only that lock.
-- [OPEN] Telugu translations for the new gettext strings are not in `locale/te` yet.
-- [OPEN] Frontend (FE-24): Notices page (Notices / Food holidays tabs), settings field, invoice line display,
-  checkout and absconded rows.
+- [DECISION 2026-10-31] `GET .../credits/` returns `{credits: [...], totals: {...}}`, not a bare list. The totals
+  are computed on the server (Decimal): `credited` = pending + invoiced + settled rows (the same definition as the
+  holiday's `credit_total`), with `credited_count`; `estimated` / `estimated_count` (residents who qualify
+  now but have no stored credit); `waived_count` (a count only, a waived credit is not owed); and `clawback`.
+  Estimates, waived rows and clawbacks are never part of `credited`. The web client shows these figures and
+  never adds money up itself (frontend invariant F1).
+- [DECISION 2026-10-31] Web UI (FE-24), at `/notices` (tabs Notices / Food holidays, `?tab=`) and
+  `/notices/holidays/[id]`:
+  - `view_notices` opens the page; `manage_notices` shows add / edit / delete and both buttons of the
+    "notice may be out of date" banner (without it, the warning text alone).
+  - The holiday detail is its own route (credits table, notice, edit, delete). The list rows link to it; edit and
+    delete live there.
+  - A holiday that adjusts bills shows Edit and Delete only with `manage_invoices` (the backend enforces it
+    against the locked row either way). A locked holiday (`is_locked`) disables its dates, adjustment and
+    rate in the form and its Delete; the API gives no reason, so the explanation is client copy, and a 409
+    `holiday_locked` from a change that raced an issued bill is still shown and the holiday refetched.
+  - The default rate (`PropertySettings.food_charge_per_day`) pre-fills a NEW holiday only, and only for a
+    user who can read property settings (`manage_property_settings`). Editing never reads the settings and
+    never sends a field it didn't change, so a saved rate isn't replaced by the current default and a rate
+    withheld from a user without `view_finance` is never sent back. The default is derived from the settings
+    of the property chosen now, never copied into state, so a late response for another property cannot win
+    and a rate the user typed is never overwritten.
+  - A notice deep link (`/notices?tab=notices&notice=<id>`, used by the holiday list's "notice may be out of
+    date" warning) fetches that one notice and shows it above the list whatever the Active / Expired / category
+    filters are. An expired notice can be edited while keeping its expiry (the "not before today" check is a
+    client guard for a newly chosen date only; the backend has no such rule).
+  - On an invoice, a `food_holiday` line is system-owned: no edit, and Delete reads "Waive".
+  - Cache: notices queries are invalidated by the shared refresh helpers (`afterInvoiceChange`,
+    `afterInvoiceIssued`, `afterVacate`), because generating, editing, issuing or deleting an invoice and
+    settling a stay all change credits and the holiday lock, not only the holiday screens.
+- [OPEN] Move-out and abscond screens (FE-10) must show the food-holiday credit and clawback rows. The API
+  already returns them (`food_holiday_credit`, `food_holiday_clawback_*`); `afterVacate` already refreshes
+  notices.
+- [DONE 2026-10-31] Telugu translations for the gettext strings are in `locale/te` (28 entries). The
+  generated auto-notice text is therefore produced in the viewer's language.
 
 ## Changelog
+- 2026-10-31  Web UI built (FE-24): Notices page with Notices and Food holidays tabs, holiday detail with the
+  credits table and Restore, the "food charge per day" setting, and waive-only `food_holiday` invoice lines.
+  Backend: `GET .../credits/` now also returns server-computed totals (see Decisions). Telugu `.po`
+  entries added.
 - 2026-10-30  Backend built: `apps.notices` (models, RLS, credits service, sweep and beat task, command,
   admin, API), plus billing / residents / properties hooks and fields. 84 tests (credits, settlement, API,
   races). The billing, residents, core, properties, reporting, onboarding and module-access suites are green.

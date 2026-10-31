@@ -497,6 +497,8 @@ export interface PropertySettings {
   billing_day_rule: BillingDayRule;
   /** 1-28; only set for the fixed_day rule. */
   billing_day_of_month: number | null;
+  /** Default food-holiday credit per day (₹, Module 24); null until the owner sets one. */
+  food_charge_per_day: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1362,7 +1364,9 @@ export type LineType =
   | "laundry"
   | "addon"
   | "additional"
-  | "discount";
+  | "discount"
+  /** System-owned credit for a food holiday (Module 24): never added or retyped by hand; deleting it waives it. */
+  | "food_holiday";
 
 export interface InvoiceLineItem {
   id: string;
@@ -2288,4 +2292,178 @@ export interface TutorialVideoList {
 
 export function listTutorialVideos(language: string) {
   return apiFetch<TutorialVideoList>(`/api/v1/help/videos/${buildQuery({ language })}`);
+}
+
+// --- Notices & food holidays (Module 24) ---
+
+export type AnnouncementCategory = "general" | "holiday" | "maintenance" | "rules" | "event";
+
+export interface Announcement {
+  id: string;
+  property: string;
+  property_name: string;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  is_pinned: boolean;
+  /** YYYY-MM-DD; null = never expires. A notice is expired once this is before today. */
+  expires_on: string | null;
+  /** True while title and body are still the text generated from the holiday. */
+  is_auto_text: boolean;
+  /** Id of the food holiday this notice announces, if any. */
+  food_holiday: string | null;
+  /** A customised holiday notice whose holiday changed since the owner last confirmed the text. */
+  notice_outdated: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NoticeFilters {
+  property?: string;
+  category?: AnnouncementCategory;
+  /** "true" = not expired, "false" = expired; omit for all. */
+  active?: "true" | "false";
+  [key: string]: string | undefined;
+}
+
+export type NoticePayload = Partial<{
+  property: string;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  is_pinned: boolean;
+  expires_on: string | null;
+}>;
+
+export function listNotices(filters: NoticeFilters = {}) {
+  return apiFetch<Announcement[] | { results: Announcement[] }>(`/api/v1/notices/${buildQuery(filters)}`).then(
+    (data) => (Array.isArray(data) ? data : data.results)
+  );
+}
+
+export function getNotice(id: string) {
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Notice not found" }));
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/`);
+}
+
+export function createNotice(payload: NoticePayload) {
+  return apiFetch<Announcement>("/api/v1/notices/", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateNotice(id: string, payload: NoticePayload) {
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteNotice(id: string) {
+  return apiFetch<void>(`/api/v1/notices/${id}/`, { method: "DELETE" });
+}
+
+/** Keep a customised holiday notice as it is after its holiday changed (clears `notice_outdated`). */
+export function markNoticeCurrent(id: string) {
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/mark-current/`, { method: "POST" });
+}
+
+export interface FoodHoliday {
+  id: string;
+  property: string;
+  property_name: string;
+  name: string;
+  /** YYYY-MM-DD, inclusive. */
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  adjust_in_bill: boolean;
+  /** The finance fields below are absent (not null) without `view_finance`. */
+  rate_per_day?: string | null;
+  /** Id of the linked notice, or null. */
+  announcement: string | null;
+  notice_outdated: boolean;
+  /** Already on an issued bill or a settlement: dates, rate and adjustment can't change. */
+  is_locked: boolean;
+  /** Sum of pending, invoiced and settled credits. */
+  credit_total?: string;
+  credit_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FoodHolidayPayload {
+  property?: string;
+  name?: string;
+  start_date?: string;
+  end_date?: string;
+  adjust_in_bill?: boolean;
+  rate_per_day?: string | null;
+  /** Create only: also post the auto-generated notice. */
+  post_notice?: boolean;
+}
+
+export function listFoodHolidays(filters: { property?: string } = {}) {
+  return apiFetch<FoodHoliday[] | { results: FoodHoliday[] }>(`/api/v1/food-holidays/${buildQuery(filters)}`).then(
+    (data) => (Array.isArray(data) ? data : data.results)
+  );
+}
+
+export function getFoodHoliday(id: string) {
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Holiday not found" }));
+  return apiFetch<FoodHoliday>(`/api/v1/food-holidays/${id}/`);
+}
+
+export function createFoodHoliday(payload: FoodHolidayPayload) {
+  return apiFetch<FoodHoliday>("/api/v1/food-holidays/", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateFoodHoliday(id: string, payload: FoodHolidayPayload) {
+  return apiFetch<FoodHoliday>(`/api/v1/food-holidays/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteFoodHoliday(id: string) {
+  return apiFetch<void>(`/api/v1/food-holidays/${id}/`, { method: "DELETE" });
+}
+
+/** "estimated" rows are residents who qualify now but have no stored credit yet. */
+export type FoodHolidayCreditStatus = "estimated" | "pending" | "invoiced" | "settled" | "waived";
+
+export interface FoodHolidayCredit {
+  /** Null for an estimated row. */
+  id: string | null;
+  resident: string;
+  resident_name: string;
+  status: FoodHolidayCreditStatus;
+  days: number;
+  rate: string;
+  amount: string;
+  invoice: string | null;
+  invoice_status: string | null;
+  clawback_amount: string;
+}
+
+/** Server-computed (invariant F1: the client never sums money). */
+export interface FoodHolidayCreditTotals {
+  /** Pending + invoiced + settled, i.e. the holiday's `credit_total`. */
+  credited: string;
+  credited_count: number;
+  /** Residents who qualify now but have no stored credit yet; not owed until credited. */
+  estimated: string;
+  estimated_count: number;
+  /** A count only: a waived credit is not owed. */
+  waived_count: number;
+  clawback: string;
+}
+
+export interface FoodHolidayCredits {
+  credits: FoodHolidayCredit[];
+  totals: FoodHolidayCreditTotals;
+}
+
+export function listFoodHolidayCredits(holidayId: string) {
+  return apiFetch<FoodHolidayCredits>(`/api/v1/food-holidays/${holidayId}/credits/`);
+}
+
+export function restoreFoodHolidayCredit(holidayId: string, creditId: string) {
+  return apiFetch<FoodHolidayCredit>(`/api/v1/food-holidays/${holidayId}/credits/${creditId}/restore/`, {
+    method: "POST",
+  });
 }

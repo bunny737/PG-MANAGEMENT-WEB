@@ -325,8 +325,9 @@ frontend always reaches a tenant's subscription via
     the flag off every other plan in the same transaction; the current trial
     plan can't be un-flagged or retired (`trial_plan_required`) — hand the
     flag to another plan first. `single_trial_plan` is the database backstop.
-25. **Launch lineup (data, seeded by migration 0006):** Basic — flat ₹149/month,
-    `max_beds=500`, the trial plan; Unlimited — flat ₹249/month,
+25. **Launch lineup (data, seeded by migration 0006, repriced by 0016):** Basic — flat ₹199/month
+    (seeded at ₹149),
+    `max_beds=500`, the trial plan; Unlimited — flat ₹299/month (seeded at ₹249),
     `max_beds=null`. Properties and residents are uncapped on both. The trial
     was 45 days (`PlatformConfig.trial_days`); now 30 (migration `core.0008`, see Decisions).
 26. **A flat plan change is pending until paid, then promoted.** The first
@@ -801,8 +802,35 @@ frontend always reaches a tenant's subscription via
   `True` in `prod.py`; `infra/30-services.sh` sets it back to `False` for a staging deploy, since staging
   intentionally runs on Razorpay test keys (`infra/README.md`). A hardcoded "must be `rzp_live_…`" check in
   prod.py would have made that staging case impossible to express without another settings module.
+- [DECISION 2026-10-31] **Launch plans repriced: Basic ₹149 → ₹199, Unlimited ₹249 → ₹299.** Owner request.
+  Done by data migration `0016_reprice_basic_unlimited_plans`, not by editing 0006 (already applied, and its
+  test still pins the seed). A historical-model update bypasses `Plan.validate_protected_changes()`, the lock
+  that stops a live plan being repriced, so 0016 has its own guard: a plan still at its old price is only
+  repriced when nothing bills against it (no `razorpay_plan_id`, `subscriptions`, `pending_subscriptions` or
+  `razorpay_subscriptions`) — otherwise it raises and tells the operator to create a new plan and retire the
+  old one. Rows that are missing, already at the new price, or hand-edited are skipped. Both plans are
+  validated before either is written. `updated_at` is set explicitly (a queryset `update()` doesn't advance
+  `auto_now`, and the public catalogue's `updated_at` derives from it). Bed caps are unchanged (Basic 500,
+  Unlimited none). The reverse is a deliberate no-op: restoring 149/249 could undo a later price decision.
+  Tests: `test_reprice_migration` (10).
+- [DECISION 2026-10-31] **Plan cards list what every flat plan includes.** Both plans already include every
+  feature (only the bed cap differs), so the pricing page (`PricingSection`) and the in-app chooser
+  (`SubscriptionPanel`) show one shared, translated list under the bed cap: unlimited properties, unlimited
+  rooms, free public listing, residents/admissions/allocation, invoices/payments/deposits,
+  complaints/visitors/notices, manager and receptionist accounts, resident app with push. Keys:
+  `marketing.pricing.features.*` and `settings.subscription.planFeatures.*` (en, te; hi carries English like
+  the rest of its catalogue). Per-bed plans don't show it (their card is a rate table). It is front-end copy,
+  not a `Plan` field — a per-plan editable list would be a schema change; revisit if plans start to differ.
+  **Launch blocker — "free public listing" is not built** (only property gallery photos exist; there is no
+  public listing page or search). The owner chose to advertise it as a normal feature. Release rule: do not
+  deploy this change until public listing ships, or remove the `listing` bullet from the four message files
+  (and `PLAN_FEATURES` in both components) first. Note `landing.test.ts` states the marketing site may only
+  feature functions that work today (frontend-plan §12.5); this bullet is the one exception to that rule.
 
 ## Changelog
+- 2026-10-31  Basic ₹199 / Unlimited ₹299 via migration 0016 (guarded, no-op reverse); plan cards list the
+  shared feature bullets (incl. the not-yet-built free public listing — launch blocker, see Decisions);
+  `test_reprice_migration`, `PricingSection.test.tsx`, `SubscriptionPanel.test.tsx` updated.
 - 2026-10-22  Deploy check E006: a test-mode Razorpay key now fails the check unless
   `RAZORPAY_REQUIRE_LIVE_MODE=false` (staging only; see Decisions).
 - 2026-10-20  Webhook ordering policy (rule 30, migration 0014): events applied by occurrence time with terminal/manual states first, every event stored (`razorpay_webhook_events`), manual `status_hold`, ledger last-event marker, Razorpay verification for undated or contradictory events, arrears-invoice guards, 10 s Razorpay timeout. Tests: `test_webhook_policy` (27), `test_webhook_ordering`, `test_webhook_delivery`. Earlier same day: duplicate and re-ordered *charge* Duplicates are tracked by event id.

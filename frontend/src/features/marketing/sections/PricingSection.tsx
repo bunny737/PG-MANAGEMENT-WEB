@@ -9,6 +9,8 @@ import { getPlanCatalog, type PublicPlan } from "../data/plans";
 import { PrimaryCtaButton } from "../PrimaryCtaButton";
 
 const BILLING_NOTES = ["beds", "billingTiming", "changePlan", "razorpay", "suspended"] as const;
+// Every plan includes all features (docs/modules/13-subscription.md); only the bed cap differs.
+const PLAN_FEATURES = ["properties", "rooms", "listing", "residents", "invoices", "operations", "staff", "app"] as const;
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
@@ -107,12 +109,22 @@ export async function PricingSection({ variant = "full" }: { variant?: "teaser" 
             )}
 
             {plan.pricing_type === "flat_monthly" && (
-              <p className="mt-4 flex items-start gap-2 text-sm">
-                <Check className="mt-0.5 size-4 shrink-0 text-status-good" aria-hidden="true" />
-                <span className="font-semibold text-ink">
-                  {plan.max_beds === null ? t("unlimitedBeds") : t("upToBeds", { beds: plan.max_beds })}
-                </span>
-              </p>
+              <>
+                <p className="mt-4 flex items-start gap-2 text-sm">
+                  <Check className="mt-0.5 size-4 shrink-0 text-status-good" aria-hidden="true" />
+                  <span className="font-semibold text-ink">
+                    {plan.max_beds === null ? t("unlimitedBeds") : t("upToBeds", { beds: plan.max_beds })}
+                  </span>
+                </p>
+                <ul className="mt-2 space-y-2 text-sm">
+                  {PLAN_FEATURES.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 size-4 shrink-0 text-status-good" aria-hidden="true" />
+                      <span className="text-ink-muted">{t(`features.${feature}`)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
 
             <div className="mt-auto pt-7">

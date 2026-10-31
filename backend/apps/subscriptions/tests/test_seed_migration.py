@@ -2,11 +2,13 @@ import importlib
 import uuid
 from decimal import Decimal
 
+from django.apps import apps as django_apps
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 seed = importlib.import_module('apps.subscriptions.migrations.0006_seed_basic_unlimited_plans')
+reprice = importlib.import_module('apps.subscriptions.migrations.0016_reprice_basic_unlimited_plans')
 
 BEFORE = [('subscriptions', '0005_plan_max_beds_subscription_max_beds_override')]
 SEEDED = [('subscriptions', '0006_seed_basic_unlimited_plans')]
@@ -30,6 +32,11 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
         executor.migrate(executor.loader.graph.leaf_nodes())
+        # When 0006 was already applied, the wipe above leaves the DB without its seeded plans
+        # for every later test on a kept DB. Put them back as a fresh migrate leaves them.
+        if not django_apps.get_model('subscriptions', 'Plan').objects.filter(pk=seed.BASIC_ID).exists():
+            seed.seed(django_apps, None)
+            reprice.reprice(django_apps, None)
         super().tearDown()
 
     @staticmethod

@@ -97,6 +97,23 @@ describe("SubscriptionPanel", () => {
     expect(within(planCard("Unlimited")).getByText("Unlimited beds")).toBeTruthy();
   });
 
+  it("lists what every flat plan includes on each plan card", async () => {
+    await renderLoaded(subscription());
+
+    for (const name of ["Basic", "Unlimited"]) {
+      const card = within(planCard(name));
+      expect(card.getByText("Unlimited properties")).toBeTruthy();
+      expect(card.getByText("Unlimited rooms")).toBeTruthy();
+      expect(card.getByText("Free public listing for your PG")).toBeTruthy();
+    }
+  });
+
+  it("does not list the flat-plan features on a per-bed plan card", async () => {
+    await renderLoaded(subscription(), [PER_BED]);
+
+    expect(within(planCard("Per Bed")).queryByText("Unlimited properties")).toBeNull();
+  });
+
   it("disables a plan that is smaller than the tenant's current beds and says why", async () => {
     await renderLoaded(subscription({ plan: UNLIMITED, tenant_status: "active", bed_count: 600, max_beds: null }));
 
@@ -249,13 +266,18 @@ describe("SubscriptionPanel", () => {
 
   it("has a well-formed Telugu string for every English key", () => {
     expect(Object.keys(settingsTe.subscription).sort()).toEqual(Object.keys(settingsEn.subscription).sort());
+    expect(Object.keys(settingsTe.subscription.planFeatures).sort()).toEqual(Object.keys(settingsEn.subscription.planFeatures).sort());
 
     for (const [locale, settings, common] of [["en", settingsEn, commonEn], ["te", settingsTe, commonTe]] as const) {
       const errors: unknown[] = [];
       const translate = createTranslator({
         locale, messages: { settings, common }, namespace: "settings.subscription", onError: (error) => errors.push(error),
       });
-      for (const key of Object.keys(settings.subscription)) {
+      // Nested groups (planFeatures) are translated per leaf key.
+      const leafKeys = Object.entries(settings.subscription).flatMap(([key, value]) =>
+        typeof value === "object" ? Object.keys(value).map((sub) => `${key}.${sub}`) : [key],
+      );
+      for (const key of leafKeys) {
         const text = (translate as unknown as (key: string, values: typeof VALUES) => string)(key, VALUES);
         expect(text, `${locale}.${key}`).not.toContain("settings.subscription");
       }

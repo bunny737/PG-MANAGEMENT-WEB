@@ -85,6 +85,16 @@
     "trialEnded": "Your free trial ended on {date}. Choose a plan to keep using your account.",
     "upToBeds": "Up to {count} beds",
     "unlimitedBeds": "Unlimited beds",
+    "planFeatures": {
+      "properties": "Unlimited properties",
+      "rooms": "Unlimited rooms",
+      "listing": "Free public listing for your PG",
+      "residents": "Residents, admissions and bed allocation",
+      "invoices": "Rent invoices, payments and deposits",
+      "operations": "Complaints, visitors and notices",
+      "staff": "Manager and receptionist accounts",
+      "app": "Resident app with push notifications"
+    },
     "choosePlan": "Choose plan",
     "tooManyBeds": "You have {count} beds, but this plan allows {max}.",
     "confirmTitle": "Switch to {plan}",

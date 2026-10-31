@@ -38,15 +38,26 @@ interface FoodHolidayFormSheetProps {
   onSaved?: (holiday: FoodHoliday) => void;
 }
 
-export function FoodHolidayFormSheet({ initial, defaultProperty, onClose, onSaved }: FoodHolidayFormSheetProps) {
+export function FoodHolidayFormSheet({
+  initial: current,
+  defaultProperty,
+  onClose,
+  onSaved,
+}: FoodHolidayFormSheetProps) {
   const t = useTranslations("notices.holidayForm");
+  // The holiday as it was when the sheet opened. The fields start from it and "what changed" is measured
+  // against it, never against `current`: a background refresh (another manager changed the rate) replaces
+  // `current` but not what the user is looking at, and a save must not send that stale value back.
+  const [initial] = useState(current);
   const { can } = useSession();
   const creating = !initial;
   // The bill-adjustment switch and rate are finance: the backend rejects them without manage_invoices,
   // and the rate is withheld from anyone without view_finance.
   const canAdjust = can("manage_invoices") && can("view_finance");
   const canReadSettings = can("manage_property_settings");
-  const locked = !!initial?.is_locked;
+  // Locking is the one thing read live: it can start while the sheet is open, and a locked holiday's
+  // dates, adjustment and rate are neither editable nor sent.
+  const locked = !!current?.is_locked;
   // A redacted holiday has no rate_per_day key at all; there is then nothing to show or send.
   const rateAvailable = creating || (!!initial && "rate_per_day" in initial);
 

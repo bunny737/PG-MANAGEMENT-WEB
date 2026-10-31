@@ -93,6 +93,19 @@ describe("NoticeFormSheet", () => {
     expect(refresh.afterNoticeChange).toHaveBeenCalled();
   });
 
+  test("a refresh while open doesn't send back text someone else changed meanwhile", async () => {
+    const view = renderWithMessages(
+      <NoticeFormSheet initial={notice({ body: "Water off 6-8am." })} defaultProperty={null} onClose={onClose} />
+    );
+    view.rerenderWith(
+      <NoticeFormSheet initial={notice({ body: "Water off 7-9am." })} defaultProperty={null} onClose={onClose} />
+    );
+    fireEvent.change(screen.getByLabelText(form.noticeTitle), { target: { value: "Water cut on Sunday" } });
+    await submit(form.save);
+
+    expect(api.updateNotice).toHaveBeenCalledWith(expect.any(String), { title: "Water cut on Sunday" });
+  });
+
   test("saving without a change sends nothing", async () => {
     renderWithMessages(<NoticeFormSheet initial={notice()} defaultProperty={null} onClose={onClose} />);
 

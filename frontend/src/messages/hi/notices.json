@@ -125,7 +125,7 @@
     "noticeHeading": "Notice",
     "noNotice": "No notice was posted for this holiday. You can post one from the Notices tab.",
     "creditsHeading": "Bill credits",
-    "notAdjustedNote": "This holiday isn't credited on bills."
+    "notAdjustedNote": "This holiday isn't credited on bills right now. Any waived credits are kept below and come back if you switch it on again."
   },
   "credits": {
     "totals": {

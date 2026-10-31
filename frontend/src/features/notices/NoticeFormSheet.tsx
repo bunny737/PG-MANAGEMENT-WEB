@@ -31,7 +31,11 @@ interface NoticeFormSheetProps {
   onClose: () => void;
 }
 
-export function NoticeFormSheet({ initial, defaultProperty, onClose }: NoticeFormSheetProps) {
+export function NoticeFormSheet({ initial: current, defaultProperty, onClose }: NoticeFormSheetProps) {
+  // The notice as it was when the sheet opened: the fields start from it and "what changed" is measured against
+  // it, not against `current`. A refresh after someone else edited the body must not make this save send the
+  // old body back.
+  const [initial] = useState(current);
   const t = useTranslations("notices.form");
   const tCategory = useTranslations("notices.categories");
   const { data: properties = [] } = useQuery({ queryKey: queryKeys.properties.list, queryFn: listProperties });

@@ -107,6 +107,29 @@ describe("FoodHolidayDetail → credits", () => {
     expect(screen.queryByText(labels.totals.clawback)).toBeNull();
   });
 
+  test("turning the adjustment off keeps the retained waived credits visible, without Restore", async () => {
+    api.getFoodHoliday.mockResolvedValue(holiday({ adjust_in_bill: false }));
+    api.listFoodHolidayCredits.mockResolvedValue(
+      credits([ROWS[4]], { credited: "0.00", credited_count: 0, estimated_count: 0, waived_count: 1, clawback: "0.00" })
+    );
+    renderWithMessages(<FoodHolidayDetail id={HOLIDAY_ID} />);
+
+    expect(await screen.findByText("Waived Wes")).toBeTruthy();
+    expect(screen.getByText(detail.notAdjustedNote)).toBeTruthy();
+    expect(screen.getByText(labels.totals.waived)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: labels.restore })).toBeNull();
+  });
+
+  test("with the adjustment off and nothing retained there is no table, only the note", async () => {
+    api.getFoodHoliday.mockResolvedValue(holiday({ adjust_in_bill: false }));
+    api.listFoodHolidayCredits.mockResolvedValue(credits([], { credited: "0.00", credited_count: 0 }));
+    renderWithMessages(<FoodHolidayDetail id={HOLIDAY_ID} />);
+
+    expect(await screen.findByText(detail.notAdjustedNote)).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText(labels.empty)).toBeNull();
+  });
+
   test("Restore on a waived credit calls the API and refreshes", async () => {
     api.restoreFoodHolidayCredit.mockResolvedValue(credit({ id: "c-wai", status: "pending" }));
     renderWithMessages(<FoodHolidayDetail id={HOLIDAY_ID} />);

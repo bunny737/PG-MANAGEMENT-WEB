@@ -187,11 +187,11 @@ export function FoodHolidayDetail({ id }: { id: string }) {
         <section className="space-y-3">
           <h2 className="text-sm font-bold text-ink">{t("detail.creditsHeading")}</h2>
           {!holiday.adjust_in_bill && <p className="text-sm text-ink-muted">{t("detail.notAdjustedNote")}</p>}
-          {holiday.adjust_in_bill && creditsQuery.isLoading && <SectionSkeleton className="h-40" />}
-          {holiday.adjust_in_bill && creditsQuery.isError && (
+          {creditsQuery.isLoading && <SectionSkeleton className="h-40" />}
+          {creditsQuery.isError && (
             <SectionError onRetry={() => creditsQuery.refetch()} message={t("detail.errCreditsFailed")} />
           )}
-          {holiday.adjust_in_bill && credits && (
+          {credits && (holiday.adjust_in_bill || credits.credits.length > 0) && (
             <>
               <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Total

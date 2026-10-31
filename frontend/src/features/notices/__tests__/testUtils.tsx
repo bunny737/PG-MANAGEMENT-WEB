@@ -114,13 +114,16 @@ export function deferred<T>() {
 
 export function renderWithMessages(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const wrap = (element: React.ReactElement) => (
     <QueryClientProvider client={client}>
       <NextIntlClientProvider locale="en" messages={{ common, notices, status }}>
-        {ui}
+        {element}
       </NextIntlClientProvider>
     </QueryClientProvider>
   );
+  const view = render(wrap(ui));
+  // Re-render with new props under the same providers: what a background refetch does to an open sheet.
+  return { ...view, rerenderWith: (element: React.ReactElement) => view.rerender(wrap(element)) };
 }
 
 export const OWNER = [

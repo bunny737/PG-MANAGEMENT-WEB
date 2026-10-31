@@ -174,6 +174,52 @@ describe("FoodHolidayFormSheet → editing", () => {
   });
 });
 
+describe("FoodHolidayFormSheet → a refresh while the sheet is open", () => {
+  test("a rename doesn't send back the rate or dates another manager changed meanwhile", async () => {
+    const opened = holiday({ rate_per_day: "80.00", end_date: "2026-10-23" });
+    const view = renderWithMessages(<FoodHolidayFormSheet initial={opened} defaultProperty={null} onClose={onClose} />);
+
+    // Someone else raises the rate and extends the holiday; the query refetches and the prop changes.
+    view.rerenderWith(
+      <FoodHolidayFormSheet
+        initial={holiday({ rate_per_day: "100.00", end_date: "2026-10-24" })}
+        defaultProperty={null}
+        onClose={onClose}
+      />
+    );
+    fireEvent.change(screen.getByLabelText(form.name), { target: { value: "Vijayadashami" } });
+    await submit(form.save);
+
+    expect(api.updateFoodHoliday).toHaveBeenCalledWith(expect.any(String), { name: "Vijayadashami" });
+  });
+
+  test("what the user did edit is still sent", async () => {
+    const view = renderWithMessages(
+      <FoodHolidayFormSheet initial={holiday({ rate_per_day: "80.00" })} defaultProperty={null} onClose={onClose} />
+    );
+    view.rerenderWith(
+      <FoodHolidayFormSheet initial={holiday({ rate_per_day: "100.00" })} defaultProperty={null} onClose={onClose} />
+    );
+    fireEvent.change(rateInput(), { target: { value: "90" } });
+    await submit(form.save);
+
+    expect(api.updateFoodHoliday).toHaveBeenCalledWith(expect.any(String), { rate_per_day: "90" });
+  });
+
+  test("a holiday that becomes locked while open stops accepting date and rate changes", async () => {
+    const view = renderWithMessages(
+      <FoodHolidayFormSheet initial={holiday()} defaultProperty={null} onClose={onClose} />
+    );
+    view.rerenderWith(
+      <FoodHolidayFormSheet initial={holiday({ is_locked: true })} defaultProperty={null} onClose={onClose} />
+    );
+
+    expect(screen.getByText(form.lockedNote)).toBeTruthy();
+    expect((screen.getByLabelText(form.endDate) as HTMLInputElement).disabled).toBe(true);
+    expect(rateInput().disabled).toBe(true);
+  });
+});
+
 describe("FoodHolidayFormSheet → rules and errors", () => {
   test("the bill-adjustment switch and rate are hidden without manage_invoices", async () => {
     session.permissions = new Set(["view_notices", "manage_notices", "view_finance"]);

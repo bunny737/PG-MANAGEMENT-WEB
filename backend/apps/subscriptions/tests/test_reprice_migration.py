@@ -1,4 +1,6 @@
+import contextlib
 import importlib
+import io
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -9,6 +11,7 @@ from django.test import TransactionTestCase
 from django.utils import timezone
 
 seed = importlib.import_module('apps.subscriptions.migrations.0006_seed_basic_unlimited_plans')
+reprice = importlib.import_module('apps.subscriptions.migrations.0016_reprice_basic_unlimited_plans')
 
 BASIC_ID, UNLIMITED_ID = seed.BASIC_ID, seed.UNLIMITED_ID
 OLD = {BASIC_ID: Decimal('149.00'), UNLIMITED_ID: Decimal('249.00')}
@@ -33,17 +36,22 @@ class RepriceBasicUnlimitedPlansTests(TransactionTestCase):
         self.executor.migrate(self.before)
         self.old_apps = self.executor.loader.project_state(self.before).apps
         self.Plan = self.old_apps.get_model('subscriptions', 'Plan')
+        self.PlatformConfig = self.old_apps.get_model('core', 'PlatformConfig')
+        self.trial_days = self.PlatformConfig.objects.get(pk=1).trial_days
         self._clean_up_test_rows()
         # Reversing 0016 is a no-op, so the prices are not back at the seeded values by themselves.
         self._reset_seeded_plans()
 
     def tearDown(self):
         # Remove everything that references the plans, then put them back at the seeded values
-        # (re-creating one a test deleted): migrating forward to the leaf runs 0016 again, whose
-        # guard would otherwise refuse the plans these tests made "in use".
+        # (re-creating one a test deleted) so migrating forward to the leaf leaves them repriced.
         self._clean_up_test_rows()
+        self.Plan.objects.filter(name__startswith='Reprice ').delete()
         self._reset_seeded_plans()
         seed.seed(self.old_apps, None)
+        # seed() also resets trial_days to 45, overwriting the later value (core.0008, which
+        # won't run again); with fixture teardown disabled that would leak into other tests.
+        self.PlatformConfig.objects.filter(pk=1).update(trial_days=self.trial_days)
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
         executor.migrate(executor.loader.graph.leaf_nodes())
@@ -120,50 +128,70 @@ class RepriceBasicUnlimitedPlansTests(TransactionTestCase):
         self.assertEqual(self._price(BASIC_ID), Decimal('179.00'))
         self.assertEqual(self._price(UNLIMITED_ID), Decimal('299.00'))
 
-    def test_refuses_a_plan_that_already_has_a_razorpay_plan_id(self):
+    # A plan in use keeps its price (it is live), the migration still completes, and it says so.
+    def _assert_left_alone_with_warning(self, plan_id, reference):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self._migrate_forward()  # must not raise: that would block every later migrate
+        self.assertEqual(self._price(plan_id), OLD[plan_id])
+        self.assertIn('was NOT changed', stderr.getvalue())
+        self.assertIn(reference, stderr.getvalue())
+        self.assertIn('create a new plan', stderr.getvalue())
+
+    def test_leaves_a_plan_with_a_razorpay_plan_id_alone_and_warns(self):
         self.Plan.objects.filter(pk=BASIC_ID).update(razorpay_plan_id='plan_live')
 
-        with self.assertRaises(RuntimeError) as cm:
-            self._migrate_forward()
-        self.assertIn('Razorpay plan ID', str(cm.exception))
-        self.assertEqual(self._price(BASIC_ID), Decimal('149.00'))
+        self._assert_left_alone_with_warning(BASIC_ID, 'a Razorpay plan ID')
 
-    def test_refuses_a_plan_with_a_subscription(self):
+    def test_leaves_a_plan_with_a_subscription_alone_and_warns(self):
         self._subscription(plan=self.Plan.objects.get(pk=BASIC_ID))
 
-        with self.assertRaises(RuntimeError) as cm:
-            self._migrate_forward()
-        self.assertIn('subscriptions', str(cm.exception))
-        self.assertEqual(self._price(BASIC_ID), Decimal('149.00'))
+        self._assert_left_alone_with_warning(BASIC_ID, 'subscriptions')
 
-    def test_refuses_a_plan_that_is_only_a_pending_plan_change(self):
+    def test_leaves_a_plan_that_is_only_a_pending_plan_change_alone_and_warns(self):
         self._subscription(pending_plan=self.Plan.objects.get(pk=UNLIMITED_ID))
 
-        with self.assertRaises(RuntimeError) as cm:
-            self._migrate_forward()
-        self.assertIn('pending plan changes', str(cm.exception))
-        self.assertEqual(self._price(UNLIMITED_ID), Decimal('249.00'))
+        self._assert_left_alone_with_warning(UNLIMITED_ID, 'pending plan changes')
 
-    def test_refuses_a_plan_with_a_razorpay_subscription_record(self):
+    def test_leaves_a_plan_with_a_razorpay_subscription_record_alone_and_warns(self):
         subscription = self._subscription()
         self.old_apps.get_model('subscriptions', 'RazorpaySubscription').objects.create(
             subscription=subscription, plan=self.Plan.objects.get(pk=UNLIMITED_ID),
             razorpay_subscription_id=f'sub_{uuid.uuid4().hex[:10]}',
         )
 
-        with self.assertRaises(RuntimeError) as cm:
-            self._migrate_forward()
-        self.assertIn('Razorpay subscriptions', str(cm.exception))
-        self.assertEqual(self._price(UNLIMITED_ID), Decimal('249.00'))
+        self._assert_left_alone_with_warning(UNLIMITED_ID, 'Razorpay subscriptions')
 
-    def test_a_locked_unlimited_plan_leaves_basic_unchanged(self):
+    def test_a_live_unlimited_plan_does_not_stop_basic_being_repriced(self):
         self.Plan.objects.filter(pk=UNLIMITED_ID).update(razorpay_plan_id='plan_live')
 
-        with self.assertRaises(RuntimeError):
+        with contextlib.redirect_stderr(io.StringIO()):
             self._migrate_forward()
 
-        self.assertEqual(self._price(BASIC_ID), Decimal('149.00'))
+        self.assertEqual(self._price(BASIC_ID), Decimal('199.00'))
         self.assertEqual(self._price(UNLIMITED_ID), Decimal('249.00'))
+
+    def test_the_warned_recovery_path_works_and_the_live_plan_stays_frozen(self):
+        """Create a plan at the new price and retire the old one, as the warning says. The old plan
+        keeps its price and billing references, and re-running the migration code neither raises
+        nor touches it."""
+        self.Plan.objects.filter(pk=BASIC_ID).update(razorpay_plan_id='plan_live')
+        with contextlib.redirect_stderr(io.StringIO()):
+            self._migrate_forward()
+
+        replacement = self.Plan.objects.create(
+            id=uuid.uuid4(), name='Reprice Basic 199', pricing_type='flat_monthly',
+            price_per_month=Decimal('199.00'), max_beds=500,
+        )
+        self.Plan.objects.filter(pk=BASIC_ID).update(is_active=False)
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            reprice.reprice(self.old_apps, None)
+
+        self.assertEqual(self._price(BASIC_ID), Decimal('149.00'))
+        self.assertEqual(self.Plan.objects.get(pk=BASIC_ID).razorpay_plan_id, 'plan_live')
+        self.assertEqual(self._price(replacement.pk), Decimal('199.00'))
+        self.Plan.objects.filter(pk=replacement.pk).delete()
 
     def test_reversing_is_a_no_op(self):
         self._migrate_forward()

@@ -25,6 +25,9 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         self.executor.loader.build_graph()
         self.executor.migrate(BEFORE)
         self.old_apps = self.executor.loader.project_state(BEFORE).apps
+        # The historical state at BEFORE has no core app; core stays at its latest migration anyway.
+        self.PlatformConfig = django_apps.get_model('core', 'PlatformConfig')
+        self.trial_days = self.PlatformConfig.objects.get(pk=1).trial_days
         self._wipe_plans(self.old_apps)
 
     def tearDown(self):
@@ -37,6 +40,9 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         if not django_apps.get_model('subscriptions', 'Plan').objects.filter(pk=seed.BASIC_ID).exists():
             seed.seed(django_apps, None)
             reprice.reprice(django_apps, None)
+        # Both the seed (here and in the tests) set trial_days to 45, overwriting the later value
+        # (core.0008, which won't run again); with fixture teardown disabled that leaks across tests.
+        self.PlatformConfig.objects.filter(pk=1).update(trial_days=self.trial_days)
         super().tearDown()
 
     @staticmethod

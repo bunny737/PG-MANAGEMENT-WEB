@@ -807,12 +807,18 @@ frontend always reaches a tenant's subscription via
   test still pins the seed). A historical-model update bypasses `Plan.validate_protected_changes()`, the lock
   that stops a live plan being repriced, so 0016 has its own guard: a plan still at its old price is only
   repriced when nothing bills against it (no `razorpay_plan_id`, `subscriptions`, `pending_subscriptions` or
-  `razorpay_subscriptions`) — otherwise it raises and tells the operator to create a new plan and retire the
-  old one. Rows that are missing, already at the new price, or hand-edited are skipped. Both plans are
-  validated before either is written. `updated_at` is set explicitly (a queryset `update()` doesn't advance
+  `razorpay_subscriptions`). A plan that *is* in use is **skipped with a warning on stderr, never an error**:
+  raising would fail every future `migrate` with nothing the operator could change to clear it (retiring the
+  plan changes neither its price nor its billing references). Its price stays frozen; the supported way to
+  reach the new price is to create a new plan at it in Django admin, switch the tenants over, and retire the
+  old plan (the warning says so). Each plan is handled independently, so a live Unlimited doesn't stop Basic
+  being repriced. Rows that are missing, already at the new price, or hand-edited are skipped silently.
+  `updated_at` is set explicitly (a queryset `update()` doesn't advance
   `auto_now`, and the public catalogue's `updated_at` derives from it). Bed caps are unchanged (Basic 500,
   Unlimited none). The reverse is a deliberate no-op: restoring 149/249 could undo a later price decision.
-  Tests: `test_reprice_migration` (10).
+  Tests: `test_reprice_migration` (12, including the skip-and-warn cases for each billing reference and the
+  new-plan recovery path); the migration tests restore `PlatformConfig.trial_days` (the seed resets it to 45)
+  so they don't leak the old trial length into other tests on a kept DB.
 - [DECISION 2026-10-31] **Plan cards list what every flat plan includes.** Both plans already include every
   feature (only the bed cap differs), so the pricing page (`PricingSection`) and the in-app chooser
   (`SubscriptionPanel`) show one shared, translated list under the bed cap: unlimited properties, unlimited
@@ -828,7 +834,7 @@ frontend always reaches a tenant's subscription via
   feature functions that work today (frontend-plan §12.5); this bullet is the one exception to that rule.
 
 ## Changelog
-- 2026-10-31  Basic ₹199 / Unlimited ₹299 via migration 0016 (guarded, no-op reverse); plan cards list the
+- 2026-10-31  Basic ₹199 / Unlimited ₹299 via migration 0016 (live plans skipped with a warning, no-op reverse); plan cards list the
   shared feature bullets (incl. the not-yet-built free public listing — launch blocker, see Decisions);
   `test_reprice_migration`, `PricingSection.test.tsx`, `SubscriptionPanel.test.tsx` updated.
 - 2026-10-22  Deploy check E006: a test-mode Razorpay key now fails the check unless

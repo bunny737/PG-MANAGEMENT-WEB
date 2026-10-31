@@ -14,6 +14,9 @@ const api = vi.hoisted(() => ({
   listBuildings: vi.fn(),
   listFloors: vi.fn(),
   listRooms: vi.fn(),
+  createResident: vi.fn(),
+  updateResidentStatus: vi.fn(),
+  createAdmission: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -161,5 +164,62 @@ describe("AdmissionWizard preselection from the Vacancies screen", () => {
 
     await waitFor(() => expect(api.listBuildings).toHaveBeenCalledWith("p0"));
     expect(api.getPropertyLayout).not.toHaveBeenCalled();
+  });
+});
+
+describe("AdmissionWizard completing the admission", () => {
+  const next = () => fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.next) }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setUpApi();
+    api.createResident.mockResolvedValue({ id: "res-1" });
+    api.updateResidentStatus.mockResolvedValue({ id: "res-1", status: "reserved" });
+    api.createAdmission.mockResolvedValue({ id: "adm-1" });
+  });
+
+  // The status API only allows Inquiry -> Reserved -> Active, and creating the admission performs
+  // Reserved -> Active itself, so the wizard must reserve and never set "active" (it used to, and
+  // the API refused with "Cannot move a resident from Inquiry to active").
+  test("reserves the resident and lets the admission check them in, with the fields the API requires", async () => {
+    renderWizard({ propertyId: "p1", bedId: "bed-target" });
+    completeStep1();
+    await screen.findByText(SELECTED("101", "101-B"), undefined, { timeout: 2000 });
+    next(); // step 2 -> 3
+    await screen.findByText(admissions.step3.heading);
+    next(); // step 3 -> 4
+    await screen.findByText(admissions.step4.heading);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.complete) }));
+
+    await waitFor(() => expect(api.createAdmission).toHaveBeenCalledTimes(1));
+    expect(api.createResident).toHaveBeenCalledWith(expect.objectContaining({ property: "p1", first_name: "Rahul", last_name: "Sharma" }));
+    expect(api.updateResidentStatus).toHaveBeenCalledTimes(1);
+    expect(api.updateResidentStatus).toHaveBeenCalledWith("res-1", "reserved");
+    expect(api.updateResidentStatus).not.toHaveBeenCalledWith(expect.anything(), "active");
+    // The status call happens before the admission that needs a Reserved resident.
+    expect(api.updateResidentStatus.mock.invocationCallOrder[0]).toBeLessThan(api.createAdmission.mock.invocationCallOrder[0]);
+    // A collected amount needs its date and a mode the API knows.
+    expect(api.createAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resident: "res-1",
+        bed: "bed-target",
+        advance_collected_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        advance_mode: "upi",
+      })
+    );
+  });
+
+  test("bank transfer is sent as the API's bank_transfer mode", async () => {
+    renderWizard({ propertyId: "p1", bedId: "bed-target" });
+    completeStep1();
+    await screen.findByText(SELECTED("101", "101-B"), undefined, { timeout: 2000 });
+    next();
+    await screen.findByText(admissions.step3.heading);
+    next();
+    await screen.findByText(admissions.step4.heading);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.step4.modeBank) }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.complete) }));
+
+    await waitFor(() => expect(api.createAdmission).toHaveBeenCalledWith(expect.objectContaining({ advance_mode: "bank_transfer" })));
   });
 });

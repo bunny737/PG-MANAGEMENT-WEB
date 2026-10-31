@@ -394,7 +394,7 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1.5 col-span-2 md:col-span-1">
+              <div className="space-y-1.5">
                 <label className="font-semibold text-ink-muted">
                   {t("step1.fullName")} <span className="text-status-critical">*</span>
                 </label>

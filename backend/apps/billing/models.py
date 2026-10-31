@@ -211,6 +211,9 @@ class InvoiceLineItem(TenantModelMixin):
         ADDITIONAL = 'additional', _('Additional')
         DISCOUNT = 'discount', _('Discount')
         PENALTY = 'penalty', _('Late Payment Penalty')
+        # Module 24: a food-holiday credit (negative). System-owned — created
+        # and removed only by apps.notices.credits, never edited by hand.
+        FOOD_HOLIDAY = 'food_holiday', _('Food Holiday Credit')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='line_items')

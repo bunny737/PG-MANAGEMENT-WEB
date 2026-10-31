@@ -194,3 +194,6 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
   deletion tests pin Razorpay to the local stub instead of relying on `.env`.
 - 2026-10-23  `account_deletion_requests` added to `RLS_EXEMPT_TABLES`; its omission failed the first production
   `pglive-check-roles` run after `migrate`.
+- 2026-10-30  Module 24's `notices.Announcement`, `FoodHoliday` and `FoodHolidayCredit` are `(PURGE, RETAIN)`.
+  They come first in `PURGE_ORDER` because credits PROTECT invoice lines, residents and settlements, and
+  holidays PROTECT the property.

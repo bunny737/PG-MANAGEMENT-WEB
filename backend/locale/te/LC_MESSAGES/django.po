@@ -2512,3 +2512,127 @@ msgstr "సిబ్బంది"
 #, python-format
 msgid "language must be one of: %(codes)s."
 msgstr "భాష వీటిలో ఒకటి అయి ఉండాలి: %(codes)s."
+
+#: apps/billing/models.py:216
+msgid "Food Holiday Credit"
+msgstr "భోజన సెలవు క్రెడిట్"
+
+#: apps/billing/serializers.py:303
+msgid "Food holiday credits are added automatically."
+msgstr "భోజన సెలవు క్రెడిట్‌లు ఆటోమేటిక్‌గా జోడించబడతాయి."
+
+#: apps/billing/views.py:325
+msgid "A food holiday credit cannot be edited. Remove it to waive it."
+msgstr "భోజన సెలవు క్రెడిట్‌ను మార్చలేరు. రద్దు చేయడానికి దానిని తొలగించండి."
+
+#: apps/notices/credits.py:61
+msgid "This amount is too large to record."
+msgstr "ఈ మొత్తం నమోదు చేయడానికి చాలా పెద్దది."
+
+#: apps/notices/credits.py:342
+msgid "Only a waived credit can be restored."
+msgstr "రద్దు చేసిన క్రెడిట్‌ను మాత్రమే తిరిగి ఇవ్వవచ్చు."
+
+#: apps/notices/credits.py:345
+msgid "Turn on the bill adjustment for this holiday first."
+msgstr "ముందుగా ఈ సెలవుకు బిల్లు సర్దుబాటును ఆన్ చేయండి."
+
+#: apps/notices/credits.py:349
+msgid "This resident's stay has ended, so the credit can't be restored."
+msgstr "ఈ నివాసి బస ముగిసింది, కాబట్టి క్రెడిట్‌ను తిరిగి ఇవ్వలేరు."
+
+#: apps/notices/models.py:34
+msgid "General"
+msgstr "సాధారణం"
+
+#: apps/notices/models.py:35
+msgid "Holiday"
+msgstr "సెలవు"
+
+#: apps/notices/models.py:37
+msgid "Rules"
+msgstr "నియమాలు"
+
+#: apps/notices/models.py:38
+msgid "Event"
+msgstr "కార్యక్రమం"
+
+#: apps/notices/models.py:132
+msgid "On an invoice"
+msgstr "బిల్లులో ఉంది"
+
+#: apps/notices/models.py:133
+msgid "Settled at exit"
+msgstr "ఖాళీ చేసినప్పుడు సెటిల్ అయింది"
+
+#: apps/notices/models.py:134 apps/subscriptions/models.py:414
+msgid "Waived"
+msgstr "రద్దు చేశారు"
+
+#: apps/notices/serializers.py:17
+msgid "The property cannot be changed. Create a new one instead."
+msgstr "ప్రాపర్టీని మార్చలేరు. బదులుగా కొత్తదాన్ని సృష్టించండి."
+
+#: apps/notices/serializers.py:121 apps/notices/services.py:48
+msgid "The last day cannot be before the first day."
+msgstr "చివరి రోజు మొదటి రోజుకు ముందు ఉండకూడదు."
+
+#: apps/notices/serializers.py:125 apps/notices/services.py:52
+#, python-format
+msgid "A holiday can be at most %(days)s days long."
+msgstr "ఒక సెలవు గరిష్టంగా %(days)s రోజులు ఉండవచ్చు."
+
+#: apps/notices/serializers.py:130 apps/notices/services.py:57
+msgid "Enter the food charge per day to adjust in the bill."
+msgstr "బిల్లులో సర్దుబాటు చేయడానికి రోజుకు భోజన ఛార్జీని నమోదు చేయండి."
+
+#: apps/notices/serializers.py:143
+msgid "Estimated"
+msgstr "అంచనా"
+
+#: apps/notices/services.py:70
+#, python-format
+msgid "These dates overlap \"%(name)s\" (%(start)s – %(end)s)."
+msgstr "ఈ తేదీలు \"%(name)s\" (%(start)s – %(end)s)తో కలుస్తున్నాయి."
+
+#: apps/notices/services.py:88
+#, python-format
+msgid "%(name)s: no food from %(start)s to %(end)s"
+msgstr "%(name)s: %(start)s నుండి %(end)s వరకు భోజనం ఉండదు"
+
+#: apps/notices/services.py:92
+#, python-format
+msgid ""
+"Food will not be served on %(start)s for %(name)s. You can stay as usual."
+msgstr "%(name)s సందర్భంగా %(start)s న భోజనం పెట్టబడదు. మీరు యథావిధిగా ఉండవచ్చు."
+
+#: apps/notices/services.py:96
+#, python-format
+msgid ""
+"Food will not be served from %(start)s to %(end)s (%(days)s days) for "
+"%(name)s. You can stay as usual."
+msgstr "%(name)s సందర్భంగా %(start)s నుండి %(end)s వరకు (%(days)s రోజులు) భోజనం పెట్టబడదు. మీరు యథావిధిగా ఉండవచ్చు."
+
+#: apps/notices/services.py:102
+msgid "Food charges for these days will be adjusted in your next bill."
+msgstr "ఈ రోజుల భోజన ఛార్జీలు మీ తదుపరి బిల్లులో సర్దుబాటు చేయబడతాయి."
+
+#: apps/notices/services.py:160 apps/notices/views.py:142
+msgid "Adjusting bills needs permission to manage invoices."
+msgstr "బిల్లులను సర్దుబాటు చేయడానికి ఇన్‌వాయిస్‌లను నిర్వహించే అనుమతి కావాలి."
+
+#: apps/notices/services.py:172
+msgid ""
+"This holiday is already on an issued bill or a settlement, so its dates, "
+"rate and bill adjustment can no longer change."
+msgstr "ఈ సెలవు ఇప్పటికే జారీ అయిన బిల్లులో లేదా సెటిల్‌మెంట్‌లో ఉంది, కాబట్టి దీని తేదీలు, ఛార్జీ, బిల్లు సర్దుబాటు ఇక మార్చలేరు."
+
+#: apps/notices/services.py:213
+msgid ""
+"This holiday is already on an issued bill or a settlement, so it cannot be "
+"deleted."
+msgstr "ఈ సెలవు ఇప్పటికే జారీ అయిన బిల్లులో లేదా సెటిల్‌మెంట్‌లో ఉంది, కాబట్టి తొలగించలేరు."
+
+#: apps/notices/views.py:205
+msgid "Credit not found."
+msgstr "క్రెడిట్ కనుగొనబడలేదు."

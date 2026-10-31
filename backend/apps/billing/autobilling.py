@@ -327,6 +327,7 @@ def generate_next_draft(*, resident_id, property_id, on_date):
                     Invoice.DueDatePolicy.FROM_ISSUE_DATE if plan.from_issue_date
                     else Invoice.DueDatePolicy.FROM_PERIOD_START
                 ),
+                on_date=on_date,
             )
         except services.InvoiceConflict:
             # Overlaps an invoice the owner created by hand. Mark the cycle

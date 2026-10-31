@@ -15,6 +15,7 @@ import {
   type PropertySettings,
 } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
+import { RATE_PATTERN } from "@/features/notices/helpers";
 
 // The two automatic-billing day rules, with their message keys.
 const BILLING_DAY_OPTIONS = [
@@ -82,6 +83,8 @@ function SettingsFields({
   const [autoBilling, setAutoBilling] = useState(settings.auto_billing_enabled);
   const [billingDayRule, setBillingDayRule] = useState<BillingDayRule>(settings.billing_day_rule);
   const [billingDay, setBillingDay] = useState(settings.billing_day_of_month ? String(settings.billing_day_of_month) : "");
+  // Default food-holiday credit per day (Module 24); empty = none set.
+  const [foodCharge, setFoodCharge] = useState(settings.food_charge_per_day ?? "");
 
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -99,6 +102,10 @@ function SettingsFields({
     const dayOfMonth = parseInt(billingDay, 10);
     if (billingDayRule === "fixed_day" && !(dayOfMonth >= 1 && dayOfMonth <= 28)) {
       newErrors.billingDay = t("errDayOfMonthRange");
+    }
+
+    if (foodCharge.trim() && !RATE_PATTERN.test(foodCharge.trim())) {
+      newErrors.foodCharge = t("errFoodChargeRange");
     }
 
     // Validate penalty value if penalty type is enabled
@@ -133,6 +140,7 @@ function SettingsFields({
         auto_billing_enabled: autoBilling,
         billing_day_rule: billingDayRule,
         billing_day_of_month: billingDayRule === "fixed_day" ? dayOfMonth : null,
+        food_charge_per_day: foodCharge.trim() || null,
       });
       queryClient.setQueryData(queryKeys.properties.settings(propertyId), saved);
       setShowSuccess(true);
@@ -143,6 +151,7 @@ function SettingsFields({
         penaltyValue: apiError?.fieldError("penalty_value") ?? "",
         graceDays: apiError?.fieldError("penalty_grace_days") ?? "",
         billingDay: apiError?.fieldError("billing_day_of_month") ?? "",
+        foodCharge: apiError?.fieldError("food_charge_per_day") ?? "",
         form: apiError ? apiError.message : t("saveError"),
       });
     } finally {
@@ -328,6 +337,31 @@ function SettingsFields({
             </div>
           )}
           <p className="text-xs text-ink-faint">{t("ruleChangeWarning")}</p>
+        </div>
+
+        {/* Section 2b: Food holidays (Module 24) */}
+        <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
+            {t("foodHeading")}
+          </h2>
+          <div className="space-y-1.5">
+            <label htmlFor="foodCharge" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              {t("foodChargeLabel")}
+            </label>
+            <input
+              id="foodCharge"
+              type="text"
+              inputMode="decimal"
+              value={foodCharge}
+              onChange={(e) => setFoodCharge(e.target.value)}
+              className="w-full max-w-xs rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+            />
+            {errors.foodCharge ? (
+              <p className="text-xs text-status-critical">{errors.foodCharge}</p>
+            ) : (
+              <p className="text-xs text-ink-muted leading-relaxed">{t("foodChargeHint")}</p>
+            )}
+          </div>
         </div>
 
         {/* Section 3: Late Payment Penalty configs */}

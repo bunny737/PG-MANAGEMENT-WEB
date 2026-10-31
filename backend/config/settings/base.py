@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'apps.devices',
     'apps.expenses',
     'apps.onboarding',
+    'apps.notices',
 ]
 
 MIDDLEWARE = [

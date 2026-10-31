@@ -53,24 +53,48 @@ class InvoiceConflict(ValidationError):
     API answers 400 as before; automatic billing catches it specifically."""
 
 
+class ResidentNotBillable(ValidationError):
+    """Re-checked under the resident lock: the resident left (vacated,
+    absconded...) or lost their bed while the request waited. 400, like the
+    serializer's own pre-check; bulk generation skips them."""
+
+
 @transaction.atomic
 def generate_invoice(*, resident, period_start, period_end, due_date,
                      billing_mode=None, actor, request=None,
                      base_amount=None, partial_note='', discount_fraction=None,
                      auto_generated=False, review_reasons=(), auto_issue_on=None,
-                     due_date_policy=Invoice.DueDatePolicy.FROM_PERIOD_START):
-    """Create a draft invoice with its accommodation and discount lines.
+                     due_date_policy=Invoice.DueDatePolicy.FROM_PERIOD_START, on_date=None):
+    """Create a draft invoice with its accommodation and discount lines, plus
+    any food-holiday credits now due (Module 24).
 
     Every generation path (single, bulk, automatic) comes through here, and
-    the resident row lock taken here serializes them, so the overlap check
-    below can't race: a resident never has two invoices covering the same day.
+    the Settings -> Resident locks taken here serialize them, so the overlap
+    check below can't race: a resident never has two invoices covering the
+    same day. The Settings lock also serializes credit allocation per
+    property (see apps.notices.credits); automatic billing already holds it.
 
     Automatic billing passes `base_amount` (and `discount_fraction` for a
     partial period) explicitly; manual generation leaves them unset and keeps
     the original first-invoice / contracted-rent behaviour."""
+    from apps.notices import credits as food_credits
     from apps.residents.services import lock_resident
 
-    lock_resident(resident)
+    from apps.residents.models import Allocation, Resident
+
+    lock_property_settings(resident.property_id, resident.tenant_id)
+    # Work from the locked re-read, never the caller's copy: a move-out or
+    # abscond that committed while we waited must stop the invoice (and the
+    # food-holiday credits it would create after the settlement).
+    resident = lock_resident(resident)
+    if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+        raise ResidentNotBillable(
+            {'resident': [_('Only active residents can be invoiced.')]}, code='resident_not_billable',
+        )
+    if not Allocation.objects.filter(resident=resident).exists():
+        raise ResidentNotBillable(
+            {'resident': [_('This resident is not allocated to a bed.')]}, code='resident_not_allocated',
+        )
     admission = resident.admission
     allocation = resident.allocation
     if billing_mode is None:
@@ -145,6 +169,12 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
             label=f'{discount.get_reason_display()} discount',
             amount=-discount_amount, order=1,
         )
+
+    # Module 24: food-holiday credits for holidays that have ended. The new
+    # draft is just one more candidate for the shared allocation rule.
+    on_date = on_date or local_today()
+    food_credits.ensure_credits(resident, on_date=on_date, actor=actor, request=request)
+    food_credits.allocate_pending(resident, on_date=on_date, actor=actor, request=request)
 
     after = {'resident': str(resident.id), 'period_start': period_start.isoformat(),
              'total': str(invoice.total)}

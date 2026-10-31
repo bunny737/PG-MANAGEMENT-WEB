@@ -57,6 +57,12 @@ class VacateSettlementPreviewResponseSerializer(serializers.Serializer):
     security_deposit_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
     advance_refundable = serializers.DecimalField(max_digits=None, decimal_places=2)
     maintenance_deduction = serializers.DecimalField(max_digits=None, decimal_places=2)
+    # Module 24: worked out for this move-out date (default: expected date).
+    actual_vacate_date = serializers.DateField()
+    food_holiday_credit = serializers.DecimalField(max_digits=None, decimal_places=2)
+    food_holiday_clawback_calculated = serializers.DecimalField(max_digits=None, decimal_places=2)
+    food_holiday_clawback_recovered = serializers.DecimalField(max_digits=None, decimal_places=2)
+    food_holiday_clawback_unrecovered = serializers.DecimalField(max_digits=None, decimal_places=2)
     refund_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
     outstanding_dues = serializers.DecimalField(max_digits=None, decimal_places=2)
 

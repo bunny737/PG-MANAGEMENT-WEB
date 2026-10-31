@@ -485,7 +485,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-07 | Discounts | ✅ (report tab on /billing: property/resident/reason/type filters, create, end via valid_until) |
 | FE-08 | Billing | 🟨 (invoice list/detail/line-items/issue/draft-edit/delete, bulk/single generate; invoice PDF and waive-with-note have no backend endpoint yet) |
 | FE-09 | Payments | ✅ (idempotent record-payment dialog, delete-as-reversal, receipt JSON/PDF/share, cash movements; refunds/credits out of scope per owner decision 2026-10-16) |
-| FE-10 | Deposits & exit | ⬜ |
+| FE-10 | Deposits & exit | ⬜ (when built, the vacate wizard and the absconded view must show the food-holiday credit and clawback rows: `food_holiday_credit`, `food_holiday_clawback_*`, API ready since Module 24; `afterVacate` already refreshes notices) |
 | FE-D2 | Financial dashboard | ✅ (analytics/summary/, same per-section rule as FE-D1) |
 | FE-11 | Complaints | ⬜ |
 | FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |
@@ -497,6 +497,7 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-20 | Expenses (Module 20) | ✅ (month nav, category chips from expenses/summary/, add/edit sheet with idempotent create + attachment upload, category manager) |
 | FE-21 | Reports / Analytics (Module 21) | ✅ (/reports: Overview/Collections/Occupancy/Exports tabs, 6-month trend chart) |
 | FE-23 | Getting started (Module 23) | ✅ (GettingStartedCard on the dashboard, `components/shared/EmptyState` on Properties/Floors/Residents + Watch-how on Expenses, settings hint on the property overview, /help with YouTube-nocookie player and offline notice; CSP allows the embed + thumbnails) |
+| FE-24 | Notices & food holidays (Module 24) | 🟨 (/notices with Notices and Food holidays tabs, /notices/holidays/[id] with the credits table, totals and Restore, a notice deep link, "food charge per day" in property settings, waive-only `food_holiday` invoice lines, Telugu and Hindi strings; **still open:** the move-out and absconded credit/clawback rows, which wait on FE-10) |
 | FE-M | Public marketing site (§12) | 🟨 (all routes, en + te, per-surface availability matrix, QR/app page, public plans + support contacts, SEO files built 2026-10-18; **launch blocked** on company identity env vars, real support contacts configured in Super Admin, legal review, the deploy gate and signup (CTA stays "Request early access" until `SIGNUP_ENABLED`)) |
 | FE-P1 | PWA hardening | 🟨 (manifest, Serwist worker, read-only offline, update toast, install UX, iOS polish built 2026-10-19; **still open:** Lighthouse CI gate, verification on a real iPhone, Razorpay Checkout return-to-app check in standalone, iOS splash images; Android-style phone look built 2026-10-20 for Dashboard, Residents, Properties and the new Vacancies screen — other screens follow) |
 | FE-R1 | Resident portal | ⬜ |

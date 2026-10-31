@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -359,9 +360,19 @@ class PropertySettings(TenantModelMixin):
     billing_day_of_month = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(28)]
     )
+    # Module 24: the default food-holiday credit per day, prefilled when the
+    # owner adds a food holiday. Null = no default set.
+    food_charge_per_day = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     class Meta:
         db_table = 'property_settings'
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(food_charge_per_day__isnull=True)
+                | Q(food_charge_per_day__gte=0, food_charge_per_day__lte=Decimal('999999.99')),
+                name='property_settings_food_charge_in_range',
+            ),
+        ]
 
     def __str__(self):
         return f'Settings for {self.property.name}'

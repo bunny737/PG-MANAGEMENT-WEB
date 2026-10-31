@@ -54,6 +54,14 @@ export const queryKeys = {
     summary: (filters: Record<string, unknown> = {}) => ["expenses", "summary", filters] as const,
     categories: ["expenses", "categories"] as const,
   },
+  notices: {
+    all: ["notices"] as const,
+    list: (filters: Record<string, unknown> = {}) => ["notices", "list", filters] as const,
+    detail: (id: string) => ["notices", "detail", id] as const,
+    holidays: (filters: Record<string, unknown> = {}) => ["notices", "holidays", filters] as const,
+    holiday: (id: string) => ["notices", "holiday", id] as const,
+    credits: (id: string) => ["notices", "credits", id] as const,
+  },
   analytics: {
     all: ["analytics"] as const,
     summary: (filters: Record<string, unknown> = {}) => ["analytics", "summary", filters] as const,

@@ -16,6 +16,8 @@ export const MODULES = [
   'complaints',
   'dashboard',
   'expenses',
+  // Notices & food holidays (Module 24).
+  'notices',
   'reports',
   'status',
   'visitors',

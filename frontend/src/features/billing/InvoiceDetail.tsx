@@ -85,13 +85,20 @@ export function InvoiceDetail({ id }: { id: string }) {
     } else if (editingLine) {
       await updateInvoiceLineItem(id, editingLine.id, values);
     }
-    await invalidateDetail();
+    await refreshAfterLineChange();
   }
 
+  // Adding, editing or removing a line can attach, move, waive or release food-holiday credits
+  // (Module 24), so the whole invoice family and the holiday screens refresh, not only this invoice.
+  const refreshAfterLineChange = () =>
+    afterInvoiceChange({ invoiceId: id, residentId: invoice?.resident, propertyId: invoice?.property });
+
   async function handleRemoveLine(line: InvoiceLineItem) {
-    if (!window.confirm(tAddLine("removeConfirm"))) return;
+    // A food-holiday line is system-owned: deleting it waives the credit, and it can be restored.
+    const waiving = line.line_type === "food_holiday";
+    if (!window.confirm(waiving ? tAddLine("waiveConfirm") : tAddLine("removeConfirm"))) return;
     await deleteInvoiceLineItem(id, line.id);
-    await invalidateDetail();
+    await refreshAfterLineChange();
   }
 
   if (isLoading) return <SectionSkeleton className="h-96" />;
@@ -149,20 +156,32 @@ export function InvoiceDetail({ id }: { id: string }) {
                 <MoneyText value={line.amount} className="font-semibold" />
                 {isDraft && (
                   <PermissionGate permission="manage_invoices">
-                    <button
-                      type="button"
-                      onClick={() => setEditingLine(line)}
-                      className="text-ink-faint hover:text-ink cursor-pointer"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLine(line)}
-                      className="text-ink-faint hover:text-status-critical cursor-pointer"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {line.line_type === "food_holiday" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLine(line)}
+                        className="text-xs font-semibold text-ink-muted hover:text-status-critical cursor-pointer"
+                      >
+                        {tAddLine("waive")}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditingLine(line)}
+                          className="text-ink-faint hover:text-ink cursor-pointer"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveLine(line)}
+                          className="text-ink-faint hover:text-status-critical cursor-pointer"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </>
+                    )}
                   </PermissionGate>
                 )}
               </div>

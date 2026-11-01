@@ -254,7 +254,9 @@ be linked, or accept an invite). A Receptionist cannot invite or approve.
   with a password the person chose, so there is no invite-created account to recover or distinguish.
 - [DECISION 2026-11-01] **Password set at email verification, not signup** (review finding): see Auth endpoints. The
   nightly unverified-account cleanup also locks each user and re-checks `email_verified`, links and deletion
-  requests inside the delete transaction, so an account verified after the list was taken is never purged.
+  requests inside the delete transaction, so an account verified after the list was taken is never purged. Code verification also decides
+  "first verification", spends the code and sets the password in one transaction under the user row lock, so a
+  password reset finishing first is never overwritten.
 - [DECISION 2026-10-31] **The join-code lookup is a deliberate, narrow cross-tenant read** (`lookup_join_code`): a
   tenant-less person has no tenant, and the code is what names one. One exact-match query as super admin, four fields
   back; inactive properties and blocked tenants look like unknown codes.

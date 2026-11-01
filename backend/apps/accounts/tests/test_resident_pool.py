@@ -225,6 +225,36 @@ class ResidentSignupTests(ResidentPoolTestCase):
         self.assertTrue(user.email_verified)
         self.assertFalse(user.has_usable_password())
 
+    def test_first_verification_does_not_overwrite_a_password_reset_that_finished_first(self):
+        from unittest import mock
+
+        from django.db.models import QuerySet
+
+        self.signup()
+        code = last_code()
+        original = QuerySet.select_for_update
+        done = []
+
+        def reset_before_lock(queryset, *args, **kwargs):
+            # A password reset completes after the request started, before it holds the user lock.
+            if not done:
+                done.append(True)
+                reset = User.objects.resident_pool().get(email=SHARED)
+                reset.set_password("Reset-Password-5678")
+                reset.email_verified = True
+                reset.save(update_fields=["password", "email_verified", "updated_at"])
+            return original(queryset, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, "select_for_update", reset_before_lock):
+            response = self.client.post(
+                reverse("resident-otp-email-verify"),
+                {"email": SHARED, "code": code, "password": STRONG_PASSWORD},
+            )
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.resident_pool().get(email=SHARED)
+        self.assertTrue(user.check_password("Reset-Password-5678"))
+        self.assertFalse(user.check_password(STRONG_PASSWORD))
+
     def test_a_verified_accounts_password_is_not_changed_by_a_sign_in_code(self):
         user = self.create_resident_account(SHARED, password='Original-Password-12')
         with self.captureOnCommitCallbacks(execute=True):

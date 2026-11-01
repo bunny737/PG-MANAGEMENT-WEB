@@ -127,35 +127,40 @@ class ResidentEmailCodeVerifySerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, required=False, validators=[validate_password])
 
     def validate(self, attrs):
-        user = User.objects.resident_pool().filter(email__iexact=attrs['email'], is_active=True).first()
-        was_unverified = user is not None and not user.email_verified
-        # No outer transaction: verify() commits the failed-attempt counter even though this raises.
-        if user is None or not otp_service.verify(user, attrs['code'], otp_service.Channel.EMAIL):
+        # One transaction under the user row lock: the first-verification decision, spending the code
+        # and establishing the password must see the same state, or a password reset completing in
+        # between would be overwritten. Nothing raises inside the block, so a wrong code still
+        # commits its failed-attempt count (verify() takes the same lock; it is re-entrant here).
+        with transaction.atomic():
+            user = (
+                User.objects.resident_pool().select_for_update()
+                .filter(email__iexact=attrs['email'], is_active=True).first()
+            )
+            first_verification = user is not None and not user.email_verified
+            verified = user is not None and otp_service.verify(user, attrs['code'], otp_service.Channel.EMAIL)
+            if verified and first_verification:
+                self._establish_password(user, attrs.get('password'))
+        if not verified:
             raise AuthenticationFailed(_('The code is incorrect or has expired.'), code='invalid_otp')
         # A correct code proved inbox ownership (verify() marked the email verified).
         _check_user_can_authenticate(user, require_verified_email=False)
-        if was_unverified:
-            self._establish_password(user, attrs.get('password'))
         return _tokens_for(user)
 
     def _establish_password(self, user, password):
         """First verification of an address: whatever password the account held is discarded and
         only the one supplied now (by the verified owner) can sign in. Without one, password
-        sign-in stays off until the person sets it through a password reset."""
-        with transaction.atomic():
-            locked = User.objects.resident_pool().select_for_update().get(pk=user.pk)
-            if password:
-                locked.set_password(password)
-            else:
-                locked.set_unusable_password()
-            locked.save(update_fields=['password', 'updated_at'])
-            audit_log.record(
-                action='resident_account.password_established', actor=None, tenant_id=None, obj=locked,
-                before={}, after={'password_set': bool(password)},
-                request=self.context.get('request'),
-            )
-        user.password = locked.password
-        user.auth_version = locked.auth_version
+        sign-in stays off until the person sets it through a password reset. Runs under the lock
+        taken by validate()."""
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+        user.save(update_fields=['password', 'updated_at'])
+        audit_log.record(
+            action='resident_account.password_established', actor=None, tenant_id=None, obj=user,
+            before={}, after={'password_set': bool(password)},
+            request=self.context.get('request'),
+        )
 
 
 class ResidentPasswordResetRequestSerializer(serializers.Serializer):

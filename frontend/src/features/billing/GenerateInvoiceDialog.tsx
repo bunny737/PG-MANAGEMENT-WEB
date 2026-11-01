@@ -51,7 +51,8 @@ export function GenerateInvoiceDialog({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: residentId ? { resident: residentId } : undefined,
+    // "" (not undefined) so an untouched picker fails min(1), not invalid_type.
+    defaultValues: { resident: residentId ?? "" },
   });
 
   async function onSubmit(values: FormValues) {

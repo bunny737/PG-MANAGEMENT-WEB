@@ -38,8 +38,8 @@ class ResidentPoolTestCase(AuthAPITestCase):
     def create_resident_account(self, email=SHARED, **kwargs):
         return self.create_user(None, Role.RESIDENT, email, **kwargs)
 
-    def signup(self, email=SHARED, password=STRONG_PASSWORD, **extra):
-        payload = {'email': email, 'password': password, 'first_name': 'Asha', **extra}
+    def signup(self, email=SHARED, **extra):
+        payload = {'email': email, 'first_name': 'Asha', **extra}
         with self.captureOnCommitCallbacks(execute=True):
             return self.client.post(reverse('resident-signup'), payload)
 
@@ -176,27 +176,66 @@ class ResidentSignupTests(ResidentPoolTestCase):
         self.assertFalse(User.objects.resident_pool().filter(email=SHARED).exists())
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_weak_password_is_rejected(self):
-        response = self.signup(password='password')
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('password', response.data)
+    def test_a_weak_password_at_verification_is_rejected_without_spending_the_code(self):
+        self.signup()
+        code = last_code()
+        weak = self.client.post(reverse('resident-otp-email-verify'), {'email': SHARED, 'code': code, 'password': 'password'})
+        self.assertEqual(weak.status_code, 400)
+        self.assertIn('password', weak.data)
+        ok = self.client.post(reverse('resident-otp-email-verify'), {'email': SHARED, 'code': code, 'password': STRONG_PASSWORD})
+        self.assertEqual(ok.status_code, 200)
 
     def test_login_is_refused_until_the_email_is_verified(self):
-        self.signup()
+        self.signup(password=STRONG_PASSWORD)  # a password sent at signup is ignored
         response = self.client.post(reverse('resident-login'), {'email': SHARED, 'password': STRONG_PASSWORD})
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.data['code'], 'EMAIL_NOT_VERIFIED')
 
     def test_the_emailed_code_verifies_and_signs_in(self):
         self.signup()
         response = self.client.post(
-            reverse('resident-otp-email-verify'), {'email': SHARED, 'code': last_code()},
+            reverse('resident-otp-email-verify'),
+            {'email': SHARED, 'code': last_code(), 'password': STRONG_PASSWORD},
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn('access', response.data)
         self.assertTrue(User.objects.resident_pool().get(email=SHARED).email_verified)
         login = self.client.post(reverse('resident-login'), {'email': SHARED, 'password': STRONG_PASSWORD})
         self.assertEqual(login.status_code, 200)
+
+    def test_an_attackers_signup_cannot_set_the_password_the_owner_ends_up_with(self):
+        attacker_password = 'Attacker-Password-34'
+        # The attacker signs up with the victim's address first, sending a password of their choice.
+        self.signup(password=attacker_password)
+        # The real owner then signs up and verifies with their own password.
+        self.signup()
+        self.client.post(
+            reverse('resident-otp-email-verify'),
+            {'email': SHARED, 'code': last_code(), 'password': STRONG_PASSWORD},
+        )
+        user = User.objects.resident_pool().get(email=SHARED)
+        self.assertTrue(user.check_password(STRONG_PASSWORD))
+        self.assertFalse(user.check_password(attacker_password))
+        attacker = self.client.post(reverse('resident-login'), {'email': SHARED, 'password': attacker_password})
+        self.assertEqual(attacker.status_code, 401)
+
+    def test_verifying_without_a_password_leaves_password_sign_in_off(self):
+        self.signup(password='Attacker-Password-34')
+        self.client.post(reverse('resident-otp-email-verify'), {'email': SHARED, 'code': last_code()})
+        user = User.objects.resident_pool().get(email=SHARED)
+        self.assertTrue(user.email_verified)
+        self.assertFalse(user.has_usable_password())
+
+    def test_a_verified_accounts_password_is_not_changed_by_a_sign_in_code(self):
+        user = self.create_resident_account(SHARED, password='Original-Password-12')
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('resident-otp-email-request'), {'email': SHARED})
+        response = self.client.post(
+            reverse('resident-otp-email-verify'),
+            {'email': SHARED, 'code': last_code(), 'password': 'Attacker-Password-34'},
+        )
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('Original-Password-12'))
 
     def test_a_wrong_code_does_not_verify(self):
         self.signup()

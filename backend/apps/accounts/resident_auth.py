@@ -11,9 +11,7 @@ Verification and password reset use emailed 6-digit codes, not links: the app ha
 a link in, and a code works the same on the web. Responses never reveal whether an address has an
 account.
 """
-from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
@@ -62,10 +60,13 @@ class _EmailField(serializers.EmailField):
 class ResidentSignupSerializer(serializers.Serializer):
     """Create the person's own app account. The response is the same whether or not the address
     already has an account (no enumeration): a new account gets a verification code by email, an
-    existing verified one gets a "you already have an account" email."""
+    existing verified one gets a "you already have an account" email.
+
+    No password is accepted or stored here. Anyone can sign up with anyone's address, so a password
+    chosen now could later be activated by the real owner's verification. The password is chosen
+    in the verification step, by the person who holds the emailed code."""
 
     email = _EmailField()
-    password = serializers.CharField(write_only=True)
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     language_code = serializers.ChoiceField(
@@ -75,26 +76,17 @@ class ResidentSignupSerializer(serializers.Serializer):
     # and nothing is created.
     website = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
-    def validate(self, attrs):
-        try:
-            validate_password(attrs['password'], user=User(email=attrs['email'], first_name=attrs['first_name']))
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError({'password': list(exc.messages)})
-        return attrs
-
     def save(self, **kwargs):
         data = self.validated_data
         if data.get('website'):
             return None
         email = data['email']
         exists = User.objects.resident_pool().filter(email__iexact=email, is_active=True).exists()
-        if exists:
-            make_password(data['password'])  # spend the same hashing time as a real signup
-        else:
+        if not exists:
             try:
                 with transaction.atomic():
                     User.objects.create_user(
-                        email=email, password=data['password'], tenant=None, role=Role.RESIDENT,
+                        email=email, password=None, tenant=None, role=Role.RESIDENT,
                         first_name=data['first_name'], last_name=data['last_name'],
                         language_code=data['language_code'],
                     )
@@ -129,15 +121,41 @@ class ResidentEmailCodeVerifySerializer(serializers.Serializer):
     email = _EmailField()
     # Malformed codes are a 400 before any lookup, so they never use up one of the code's attempts.
     code = serializers.RegexField(r'^\d{6}$')
+    # The password for password sign-in, chosen by the person holding the code. It only takes effect
+    # when this code is what first verifies the address (a signup); a verified account's password is
+    # never changed here. Strength is checked before the code is spent.
+    password = serializers.CharField(write_only=True, required=False, validators=[validate_password])
 
     def validate(self, attrs):
         user = User.objects.resident_pool().filter(email__iexact=attrs['email'], is_active=True).first()
+        was_unverified = user is not None and not user.email_verified
         # No outer transaction: verify() commits the failed-attempt counter even though this raises.
         if user is None or not otp_service.verify(user, attrs['code'], otp_service.Channel.EMAIL):
             raise AuthenticationFailed(_('The code is incorrect or has expired.'), code='invalid_otp')
         # A correct code proved inbox ownership (verify() marked the email verified).
         _check_user_can_authenticate(user, require_verified_email=False)
+        if was_unverified:
+            self._establish_password(user, attrs.get('password'))
         return _tokens_for(user)
+
+    def _establish_password(self, user, password):
+        """First verification of an address: whatever password the account held is discarded and
+        only the one supplied now (by the verified owner) can sign in. Without one, password
+        sign-in stays off until the person sets it through a password reset."""
+        with transaction.atomic():
+            locked = User.objects.resident_pool().select_for_update().get(pk=user.pk)
+            if password:
+                locked.set_password(password)
+            else:
+                locked.set_unusable_password()
+            locked.save(update_fields=['password', 'updated_at'])
+            audit_log.record(
+                action='resident_account.password_established', actor=None, tenant_id=None, obj=locked,
+                before={}, after={'password_set': bool(password)},
+                request=self.context.get('request'),
+            )
+        user.password = locked.password
+        user.auth_version = locked.auth_version
 
 
 class ResidentPasswordResetRequestSerializer(serializers.Serializer):

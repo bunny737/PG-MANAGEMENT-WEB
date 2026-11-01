@@ -498,6 +498,8 @@ def purge_unverified_resident_accounts():
     self-created, so there is no invite-created special case."""
     from datetime import timedelta
 
+    from django.db import transaction
+
     from apps.core.models import PlatformConfig
     from apps.residents.models import ResidencyLinkRequest, ResidentAccess
 
@@ -508,14 +510,24 @@ def purge_unverified_resident_accounts():
     removed = 0
     stale = User.objects.resident_pool().filter(email_verified=False, created_at__lt=cutoff)
     for user_id in list(stale.values_list('pk', flat=True)):
-        with tenant_context(is_super_admin=True):
-            in_use = (
-                ResidentAccess.objects.filter(user_id=user_id).exists()
-                or ResidencyLinkRequest.objects.filter(requester_id=user_id).exists()
+        # The list above is a snapshot: the person may verify, link or ask for deletion before we get
+        # to them. Lock the row (verify() and the link writers take it too) and decide again inside
+        # the same transaction as the delete.
+        with transaction.atomic():
+            locked = (
+                User.objects.resident_pool().select_for_update()
+                .filter(pk=user_id, email_verified=False, created_at__lt=cutoff).first()
             )
-        if in_use or deletion.active_request_for(User(pk=user_id, role='resident')) is not None:
-            continue
-        deletion.purge_user_rows(user_id, None)
-        removed += 1
+            if locked is None:
+                continue
+            with tenant_context(is_super_admin=True):
+                in_use = (
+                    ResidentAccess.objects.filter(user_id=user_id).exists()
+                    or ResidencyLinkRequest.objects.filter(requester_id=user_id).exists()
+                )
+            if in_use or deletion.active_request_for(locked) is not None:
+                continue
+            deletion.purge_user_rows(user_id, None)
+            removed += 1
     logger.info('purged %s unverified resident account(s)', removed)
     return removed

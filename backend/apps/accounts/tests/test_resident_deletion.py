@@ -233,3 +233,20 @@ class UnverifiedCleanupTests(ResidentDeletionTestCase):
         User.objects.filter(pk=staff.pk).update(created_at=timezone.now() - timedelta(days=400))
         self.assertEqual(purge_unverified_resident_accounts(), 0)
         self.assertTrue(User.objects.filter(pk=staff.pk).exists())
+
+    def test_an_account_verified_after_the_snapshot_is_not_deleted(self):
+        from unittest import mock
+
+        from django.db.models import QuerySet
+
+        account = self.make_account('racing@example.com', 30)
+        original = QuerySet.select_for_update
+
+        def verify_before_lock(queryset, *args, **kwargs):
+            # The person finishes verifying after the nightly list was taken, before the row is locked.
+            User.objects.filter(pk=account.pk).update(email_verified=True)
+            return original(queryset, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, 'select_for_update', verify_before_lock):
+            self.assertEqual(purge_unverified_resident_accounts(), 0)
+        self.assertTrue(User.objects.filter(pk=account.pk).exists())

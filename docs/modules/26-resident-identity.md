@@ -172,10 +172,10 @@ record's status narrows what is left; (3) a suspended/cancelled tenant narrows t
 
 ## Auth endpoints (`/api/v1/auth/resident/…`; own throttle scopes)
 ```
-POST signup/                 {email,password,first_name,last_name?,language_code?,website(honeypot)}  → 201, same answer for any address
-POST login/                  {email,password}  → tokens; 401 EMAIL_NOT_VERIFIED until verified
+POST signup/                 {email,first_name,last_name?,language_code?,website(honeypot)}  → 201, same answer for any address
+POST login/                  {email,password}  → tokens; 401 until the address is verified and a password set
 POST otp/email/request/      {email}           → emails a 6-digit code (also how an unverified address is verified)
-POST otp/email/verify/       {email,code}      → tokens; marks the email verified
+POST otp/email/verify/       {email,code,password?} → tokens; marks the email verified; on FIRST verification sets the password
 POST password-reset/         {email}           → emails a reset code
 POST password-reset/confirm/ {email,code,new_password}  → sets the password, verifies the email, bumps auth_version
 ```
@@ -252,6 +252,9 @@ be linked, or accept an invite). A Receptionist cannot invite or approve.
 - [DECISION 2026-10-31] **Fail-closed default permission.** `IsAuthenticatedStaffPool` is the project default.
 - [DECISION 2026-10-31] **`signup_source` / unusable-password accounts dropped.** Every resident account is self-created
   with a password the person chose, so there is no invite-created account to recover or distinguish.
+- [DECISION 2026-11-01] **Password set at email verification, not signup** (review finding): see Auth endpoints. The
+  nightly unverified-account cleanup also locks each user and re-checks `email_verified`, links and deletion
+  requests inside the delete transaction, so an account verified after the list was taken is never purged.
 - [DECISION 2026-10-31] **The join-code lookup is a deliberate, narrow cross-tenant read** (`lookup_join_code`): a
   tenant-less person has no tenant, and the code is what names one. One exact-match query as super admin, four fields
   back; inactive properties and blocked tenants look like unknown codes.

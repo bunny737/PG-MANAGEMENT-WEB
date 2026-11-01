@@ -24,10 +24,10 @@ All of these are anonymous and throttled; none reveals whether an email has an a
 
 | Step | Call | Notes |
 |---|---|---|
-| Sign up | `POST auth/resident/signup/` `{email, password, first_name, last_name?, language_code?}` | Always `201`. A new address gets a 6-digit code by email; an address that already has a verified account gets a "you already have an account" email instead. Send an empty hidden `website` field only if you add a honeypot; a real client omits it |
-| Verify | `POST auth/resident/otp/email/verify/` `{email, code}` | Returns `{access, refresh}` and marks the email verified, so signup → code → signed in. `401 INVALID_OTP` on a wrong/expired code (5 tries per code) |
+| Sign up | `POST auth/resident/signup/` `{email, first_name, last_name?, language_code?}` (no password: it is chosen at the code step) | Always `201`. A new address gets a 6-digit code by email; an address that already has a verified account gets a "you already have an account" email instead. Send an empty hidden `website` field only if you add a honeypot; a real client omits it |
+| Verify | `POST auth/resident/otp/email/verify/` `{email, code, password?}` | Returns `{access, refresh}` and marks the email verified, so signup → code → signed in. **Send the `password` the person chose on the code screen of a signup**: it takes effect only on first verification; without it password sign-in stays off until a reset (code sign-in still works). `401 INVALID_OTP` on a wrong/expired code (5 tries per code) |
 | Resend a code | `POST auth/resident/otp/email/request/` `{email}` | Always `200`. Also the passwordless sign-in for a verified account |
-| Sign in | `POST auth/resident/login/` `{email, password}` | `401 EMAIL_NOT_VERIFIED` until verified → send the user to the code screen |
+| Sign in | `POST auth/resident/login/` `{email, password}` | `401` until the address is verified and a password set → send the user to the code screen |
 | Forgot password | `POST auth/resident/password-reset/` `{email}` then `POST auth/resident/password-reset/confirm/` `{email, code, new_password}` | Codes, not links. A weak password is rejected **before** the code is spent, so the user can retry the same code |
 | Refresh | `POST auth/token/refresh/` | Shared with staff |
 | Profile | `GET/PATCH auth/me/` | `tenant` is `null` for a resident |

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, CreditCard, Info, LoaderCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, CreditCard, Info, LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatDate } from "@/lib/date";
 import {
@@ -17,6 +17,8 @@ import { useSession } from "@/lib/session";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 
 /** Razorpay confirms a payment by webhook, so after paying we re-read until the plan is active. */
+// Every plan includes all features (docs/modules/13-subscription.md); only the bed cap differs.
+const PLAN_FEATURES = ["properties", "rooms", "listing", "residents", "invoices", "operations", "staff", "app"] as const;
 const ACTIVATION_POLLS = 6;
 const ACTIVATION_POLL_MS = 2000;
 
@@ -321,6 +323,17 @@ export function SubscriptionPanel() {
                 <p className="text-xs text-ink-muted">
                   {plan.max_beds === null ? t("unlimitedBeds") : t("upToBeds", { count: plan.max_beds })}
                 </p>
+
+                {plan.pricing_type === "flat_monthly" && (
+                  <ul className="space-y-1">
+                    {PLAN_FEATURES.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2 text-xs text-ink-muted">
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-status-good" aria-hidden="true" />
+                        {t(`planFeatures.${feature}`)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
                 <div className="mt-auto space-y-2 pt-1">
                   {blocked && <p className="text-xs text-status-critical">{t("tooManyBeds", { count: sub.bed_count, max: plan.max_beds ?? 0 })}</p>}

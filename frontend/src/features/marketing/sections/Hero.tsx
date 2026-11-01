@@ -3,7 +3,7 @@ import { ButtonLink } from "@/components/marketing/ButtonLink";
 import { Container } from "@/components/marketing/Section";
 import { ProgressBar } from "@/components/shared/ProgressBar";
 import { StatTile } from "@/components/shared/StatTile";
-import { formatMoney } from "@/lib/money";
+import { formatMoneyCompact } from "@/lib/money";
 import { getSiteConfig } from "@/lib/site-config";
 import { PrimaryCtaButton } from "../PrimaryCtaButton";
 
@@ -44,8 +44,8 @@ export async function Hero() {
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <StatTile label={t("cardCollected")} value={formatMoney("412000.00")} dot="accent" />
-              <StatTile label={t("cardDue")} value={formatMoney("38500.00")} dot="neutral" />
+              <StatTile label={t("cardCollected")} value={formatMoneyCompact("412000.00")} dot="accent" />
+              <StatTile label={t("cardDue")} value={formatMoneyCompact("38500.00")} dot="neutral" />
             </div>
             <p className="mt-3 text-center text-[11px] text-ink-faint">{t("illustrative")}</p>
           </div>

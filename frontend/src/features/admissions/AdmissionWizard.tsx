@@ -270,18 +270,23 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
         emergency_contact_phone: personalInfo.emergencyPhone
       });
 
-      // 3. Mark Resident as active
-      await updateResidentStatus(residentObj.id, "active");
+      // 3. Reserve the resident: the status graph is Inquiry -> Reserved -> Active, and a new
+      // resident starts as Inquiry. Creating the admission below performs Reserved -> Active
+      // (Check-In), so the wizard must never set "active" itself.
+      await updateResidentStatus(residentObj.id, "reserved");
 
-      // 4. Create Admission record
+      // 4. Create Admission record (checks the resident in)
+      const today = new Date().toISOString().split("T")[0];
       await createAdmission({
         resident: residentObj.id,
         bed: selectedBedId,
-        joining_date: new Date().toISOString().split("T")[0],
+        joining_date: today,
         billing_mode: "monthly",
         expected_stay_duration: leaseTerm,
         food_preference: foodPreference,
         advance_amount: (parseFloat(overrideRate) + parseFloat(deposit)).toFixed(2),
+        // The API requires a collected date and mode whenever an amount is collected.
+        advance_collected_date: today,
         advance_mode: paymentMode
       });
 
@@ -394,7 +399,7 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1.5 col-span-2 md:col-span-1">
+              <div className="space-y-1.5">
                 <label className="font-semibold text-ink-muted">
                   {t("step1.fullName")} <span className="text-status-critical">*</span>
                 </label>
@@ -711,7 +716,7 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
                   { id: "upi", label: t("step4.modeUpi"), icon: Activity },
                   { id: "card", label: t("step4.modeCard"), icon: CreditCard },
                   { id: "cash", label: t("step4.modeCash"), icon: Landmark },
-                  { id: "bank", label: t("step4.modeBank"), icon: Landmark },
+                  { id: "bank_transfer", label: t("step4.modeBank"), icon: Landmark },
                 ].map((mode) => {
                   const isSelected = paymentMode === mode.id;
                   const Icon = mode.icon;

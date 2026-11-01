@@ -47,3 +47,15 @@ class PasswordResetEmailThrottle(EmailBodyThrottle):
     """Password-reset requests (not the confirm step)."""
 
     scope = 'password_reset_request_email'
+
+
+class ResidentOtpEmailThrottle(EmailBodyThrottle):
+    """Resident email code requests (sign-in and verification), per requested email."""
+
+    scope = 'resident_otp_request_email'
+
+
+class ResidentPasswordResetEmailThrottle(EmailBodyThrottle):
+    """Resident password-reset code requests, per requested email."""
+
+    scope = 'resident_password_reset_request_email'

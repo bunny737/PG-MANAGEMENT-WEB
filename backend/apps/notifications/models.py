@@ -30,6 +30,8 @@ class NotificationLog(TenantModelMixin):
         INVOICE_ISSUED = 'invoice_issued', _('Invoice Issued')
         PAYMENT_RECEIPT = 'payment_receipt', _('Payment Receipt')
         INVOICE_DRAFTS_READY = 'invoice_drafts_ready', _('Invoice Drafts Ready')
+        RESIDENCY_LINK_REQUESTED = 'residency_link_requested', _('Residency Link Requested')
+        RESIDENCY_LINK_RESOLVED = 'residency_link_resolved', _('Residency Link Resolved')
 
     class Status(models.TextChoices):
         SENT = 'sent', _('Sent')

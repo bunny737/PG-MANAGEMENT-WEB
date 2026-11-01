@@ -17,7 +17,7 @@ from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 from apps.subscriptions.services import check_resident_limit
 
-from . import services
+from . import access, services
 from .finance import resident_finance
 from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
 from .schema import ResidentDetailResponseSerializer, VacateSettlementPreviewResponseSerializer
@@ -160,6 +160,8 @@ class ResidentViewSet(viewsets.ModelViewSet):
                     and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
                 check_resident_limit(resident.property)
             instance = serializer.save()
+            if instance.status in access.EXIT_STATUSES:
+                access.record_exit(instance)  # starts the app-access window (Module 26)
             audit_log.record(
                 action='resident.status_changed', actor=request.user, obj=instance,
                 before={'status': before_status}, after={'status': instance.status},

@@ -73,10 +73,11 @@ class SchedulingTests(AuthAPITestCase):
 
 class RoleHelperTests(AuthAPITestCase):
     def test_eligibility_is_by_role_never_by_missing_tenant(self):
-        # A tenant-less *resident* (a future account type) must not be mistaken for a Super Admin.
+        # Both a resident (Module 26) and a Super Admin have no tenant, yet only the resident may
+        # delete their own account: eligibility is by role, never by "has no tenant".
         resident = User(role=Role.RESIDENT, tenant=None, first_name='R')
         super_admin = User(role=Role.SUPER_ADMIN, tenant=None, first_name='S')
-        self.assertFalse(deletion.can_request_deletion(resident))
+        self.assertTrue(deletion.can_request_deletion(resident))
         self.assertFalse(deletion.can_request_deletion(super_admin))
         for role in (Role.OWNER, Role.MANAGER, Role.RECEPTIONIST):
             self.assertTrue(deletion.can_request_deletion(User(role=role, first_name='X')))

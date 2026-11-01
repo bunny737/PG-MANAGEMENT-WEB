@@ -2636,3 +2636,225 @@ msgstr "ఈ సెలవు ఇప్పటికే జారీ అయిన �
 #: apps/notices/views.py:205
 msgid "Credit not found."
 msgstr "క్రెడిట్ కనుగొనబడలేదు."
+
+#: apps/accounts/emails.py
+msgid "Your password reset code"
+msgstr "మీ పాస్‌వర్డ్ రీసెట్ కోడ్"
+
+#: apps/accounts/emails.py
+msgid "You already have an account"
+msgstr "మీకు ఇప్పటికే ఖాతా ఉంది"
+
+#: apps/accounts/emails.py
+msgid "%(business)s invited you to its app"
+msgstr "%(business)s మిమ్మల్ని తమ యాప్‌కు ఆహ్వానించింది"
+
+#: apps/accounts/models.py
+msgid "Password reset"
+msgstr "పాస్‌వర్డ్ రీసెట్"
+
+#: apps/accounts/resident_auth.py
+msgid "No active account found with the given credentials."
+msgstr "ఇచ్చిన వివరాలతో క్రియాశీల ఖాతా కనుగొనబడలేదు."
+
+#: apps/accounts/resident_auth.py
+msgid "Check your email for a verification code."
+msgstr "ధృవీకరణ కోడ్ కోసం మీ ఇమెయిల్‌ను చూడండి."
+
+#: apps/accounts/resident_auth.py
+msgid "If that email has an account, a code has been sent."
+msgstr "ఆ ఇమెయిల్‌కు ఖాతా ఉంటే, కోడ్ పంపబడింది."
+
+#: apps/accounts/resident_auth.py
+msgid "If that email has an account, a reset code has been sent."
+msgstr "ఆ ఇమెయిల్‌కు ఖాతా ఉంటే, రీసెట్ కోడ్ పంపబడింది."
+
+#: apps/accounts/resident_auth.py
+msgid "Password updated. You can sign in now."
+msgstr "పాస్‌వర్డ్ నవీకరించబడింది. మీరు ఇప్పుడు సైన్ ఇన్ చేయవచ్చు."
+
+#: apps/core/permissions.py
+msgid "This action is for resident app accounts."
+msgstr "ఈ చర్య నివాసి యాప్ ఖాతాల కోసం మాత్రమే."
+
+#: apps/core/permissions.py
+msgid "Verify your email address first."
+msgstr "ముందుగా మీ ఇమెయిల్ చిరునామాను ధృవీకరించండి."
+
+#: apps/notifications/models.py
+msgid "Residency Link Requested"
+msgstr "నివాస లింక్ అభ్యర్థించబడింది"
+
+#: apps/notifications/models.py
+msgid "Residency Link Resolved"
+msgstr "నివాస లింక్ పరిష్కరించబడింది"
+
+#: apps/residents/access.py
+msgid "This invitation is invalid or has expired."
+msgstr "ఈ ఆహ్వానం చెల్లదు లేదా గడువు ముగిసింది."
+
+#: apps/residents/access.py
+msgid "This invitation was sent to a different email address."
+msgstr "ఈ ఆహ్వానం వేరే ఇమెయిల్ చిరునామాకు పంపబడింది."
+
+#: apps/residents/access.py
+msgid "App access can only be offered to a reserved, active or notice-period resident."
+msgstr "రిజర్వ్ చేసిన, క్రియాశీల లేదా నోటీసు వ్యవధిలో ఉన్న నివాసికి మాత్రమే యాప్ యాక్సెస్ ఇవ్వవచ్చు."
+
+#: apps/residents/access.py
+msgid "Add an email address to this resident's record first."
+msgstr "ముందుగా ఈ నివాసి రికార్డుకు ఇమెయిల్ చిరునామా జోడించండి."
+
+#: apps/residents/access.py
+msgid "That resident does not belong to the property in the request."
+msgstr "ఆ నివాసి అభ్యర్థనలోని ప్రాపర్టీకి చెందినవారు కాదు."
+
+#: apps/residents/access.py
+msgid "The requester's account is no longer available."
+msgstr "అభ్యర్థించిన వారి ఖాతా ఇకపై అందుబాటులో లేదు."
+
+#: apps/residents/access.py
+msgid "This resident already has app access."
+msgstr "ఈ నివాసికి ఇప్పటికే యాప్ యాక్సెస్ ఉంది."
+
+#: apps/residents/access.py
+msgid "This request has already been resolved."
+msgstr "ఈ అభ్యర్థన ఇప్పటికే పరిష్కరించబడింది."
+
+#: apps/residents/access.py
+msgid "Send the residency to act for in the X-Residency-Id header."
+msgstr "ఏ నివాసం తరపున చర్య తీసుకోవాలో X-Residency-Id హెడర్‌లో పంపండి."
+
+#: apps/residents/access.py
+msgid "This residency is not active."
+msgstr "ఈ నివాసం క్రియాశీలంగా లేదు."
+
+#: apps/residents/access.py
+msgid "That join code was not found."
+msgstr "ఆ జాయిన్ కోడ్ కనుగొనబడలేదు."
+
+#: apps/residents/access.py
+msgid "You are already linked to this PG."
+msgstr "మీరు ఇప్పటికే ఈ పిజికి లింక్ అయ్యారు."
+
+#: apps/residents/access.py
+msgid "Request not found."
+msgstr "అభ్యర్థన కనుగొనబడలేదు."
+
+#: apps/residents/access.py
+msgid "That residency is not available."
+msgstr "ఆ నివాసం అందుబాటులో లేదు."
+
+#: apps/residents/access_models.py
+msgid "Staff invite"
+msgstr "సిబ్బంది ఆహ్వానం"
+
+#: apps/residents/access_models.py
+msgid "Link request"
+msgstr "లింక్ అభ్యర్థన"
+
+#: apps/residents/access_models.py
+msgid "Revoked"
+msgstr "రద్దు చేయబడింది"
+
+#: apps/residents/access_models.py
+msgid "Expired"
+msgstr "గడువు ముగిసింది"
+
+#: apps/residents/access_models.py
+msgid "Accepted"
+msgstr "అంగీకరించబడింది"
+
+#: apps/residents/access_models.py
+msgid "Cancelled by staff"
+msgstr "సిబ్బంది రద్దు చేశారు"
+
+#: apps/residents/access_models.py
+msgid "Replaced by a newer invite"
+msgstr "కొత్త ఆహ్వానంతో భర్తీ చేయబడింది"
+
+#: apps/residents/access_models.py
+msgid "Access was granted another way"
+msgstr "మరో విధంగా యాక్సెస్ ఇవ్వబడింది"
+
+#: apps/residents/access_models.py
+msgid "The resident left"
+msgstr "నివాసి వెళ్ళిపోయారు"
+
+#: apps/residents/access_models.py
+msgid "Approved"
+msgstr "ఆమోదించబడింది"
+
+#: apps/residents/access_models.py
+msgid "Rejected"
+msgstr "తిరస్కరించబడింది"
+
+#: apps/residents/access_models.py
+msgid "Cancelled by the requester"
+msgstr "అభ్యర్థించిన వారు రద్దు చేశారు"
+
+#: templates/emails/resident_account_exists.html
+msgid "Sign in, or reset your password if you have forgotten it."
+msgstr "సైన్ ఇన్ చేయండి, లేదా పాస్‌వర్డ్ మర్చిపోతే రీసెట్ చేయండి."
+
+#: templates/emails/resident_account_exists.html
+msgid "Someone tried to create an account with this email address, but one already exists."
+msgstr "ఎవరో ఈ ఇమెయిల్ చిరునామాతో ఖాతా సృష్టించడానికి ప్రయత్నించారు, కానీ ఇప్పటికే ఒక ఖాతా ఉంది."
+
+#: templates/emails/resident_account_exists.html
+msgid "Open the app and sign in. If you have forgotten your password, choose “Forgot password” to reset it."
+msgstr "యాప్ తెరిచి సైన్ ఇన్ చేయండి. పాస్‌వర్డ్ మర్చిపోతే, రీసెట్ చేయడానికి “పాస్‌వర్డ్ మర్చిపోయారా” ఎంచుకోండి."
+
+#: templates/emails/resident_account_exists.html
+msgid "If this wasn't you, you can ignore this email. Nothing has changed."
+msgstr "ఇది మీరు కాకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు. ఏమీ మారలేదు."
+
+#: templates/emails/resident_invite.html
+msgid "Accept the invitation to see your bills and notices in the app."
+msgstr "యాప్‌లో మీ బిల్లులు, నోటీసులు చూడడానికి ఆహ్వానాన్ని అంగీకరించండి."
+
+#: templates/emails/resident_invite.html
+msgid "%(business)s (%(property)s) invited you to use the PGLive app, where you can see your bills and receipts, raise complaints and read notices."
+msgstr "%(business)s (%(property)s) మిమ్మల్ని PGLive యాప్ ఉపయోగించడానికి ఆహ్వానించింది. అందులో మీ బిల్లులు, రసీదులు చూడవచ్చు, ఫిర్యాదులు నమోదు చేయవచ్చు, నోటీసులు చదవవచ్చు."
+
+#: templates/emails/resident_invite.html
+msgid "Create your own account with this email address (or sign in if you already have one), then accept the invitation."
+msgstr "ఈ ఇమెయిల్ చిరునామాతో మీ స్వంత ఖాతాను సృష్టించండి (ఇప్పటికే ఉంటే సైన్ ఇన్ చేయండి), ఆపై ఆహ్వానాన్ని అంగీకరించండి."
+
+#: templates/emails/resident_invite.html
+msgid "This invitation is valid for %(hours)s hour."
+msgid_plural "This invitation is valid for %(hours)s hours."
+msgstr[0] "ఈ ఆహ్వానం %(hours)s గంట పాటు చెల్లుతుంది."
+msgstr[1] "ఈ ఆహ్వానం %(hours)s గంటల పాటు చెల్లుతుంది."
+
+#: templates/emails/resident_invite.html
+msgid "Accept the invitation"
+msgstr "ఆహ్వానాన్ని అంగీకరించండి"
+
+#: templates/emails/resident_invite.html
+msgid "If you weren't expecting this invitation, you can ignore this email. No account is created until you sign up yourself."
+msgstr "ఈ ఆహ్వానం మీరు ఆశించకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు. మీరే సైన్ అప్ చేసే వరకు ఏ ఖాతా సృష్టించబడదు."
+
+#: templates/emails/resident_password_reset_code.html
+msgid "Your password reset code is %(code)s."
+msgstr "మీ పాస్‌వర్డ్ రీసెట్ కోడ్ %(code)s."
+
+#: templates/emails/resident_password_reset_code.html
+msgid "Enter this code in the app to choose a new password:"
+msgstr "కొత్త పాస్‌వర్డ్ ఎంచుకోవడానికి యాప్‌లో ఈ కోడ్‌ను నమోదు చేయండి:"
+
+#: templates/emails/resident_password_reset_code.html
+msgid "If you didn't ask to reset your password, you can ignore this email. Your password has not changed."
+msgstr "మీరు పాస్‌వర్డ్ రీసెట్ కోరకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు. మీ పాస్‌వర్డ్ మారలేదు."
+
+#: templates/emails/resident_verification_code.html
+msgid "Your verification code is %(code)s."
+msgstr "మీ ధృవీకరణ కోడ్ %(code)s."
+
+#: templates/emails/resident_verification_code.html
+msgid "Enter this code in the app to finish creating your account:"
+msgstr "మీ ఖాతా సృష్టిని పూర్తి చేయడానికి యాప్‌లో ఈ కోడ్‌ను నమోదు చేయండి:"
+
+#: templates/emails/resident_verification_code.html
+msgid "If you didn't create an account, you can ignore this email."
+msgstr "మీరు ఖాతా సృష్టించకపోతే, ఈ ఇమెయిల్‌ను విస్మరించవచ్చు."

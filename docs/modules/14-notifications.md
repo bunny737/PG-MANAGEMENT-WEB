@@ -474,3 +474,7 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   (drafted / need confirmation / unbilled gaps), reference
   `auto_billing:<property>:<date>`. en + te templates seeded by migration
   0010; `NotificationLog.notification_type` choices extended (0009).
+- 2026-11-01  Resident app accounts (Module 26) now exist as real `User` rows, so a push or email to a resident can resolve to a login.
+  `residency_link_requested` and `residency_link_resolved` were added (en + te). Resident-facing notification history and push
+  for a tenant-less account are still open (see Module 26 open items); the "Revisit once Module 04 adds resident login" note above
+  is superseded by that spec.

@@ -75,9 +75,14 @@ class TenantJWTAuthentication(JWTAuthentication):
                 _('Password has been changed. Please log in again.'), code='password_changed'
             )
 
+        # A resident-pool account has no tenant: it carries only its own identity (app.user_id),
+        # which admits the rows that are about this person (their links, requests and inquiries).
+        # A tenant is entered later, per request, from a validated X-Residency-Id link
+        # (apps.residents.access). Staff never set app.user_id.
         set_tenant_context(
             tenant_id=user.tenant_id,
             is_super_admin=user.role == Role.SUPER_ADMIN,
+            user_id=user.pk if user.role == Role.RESIDENT else None,
         )
 
         if deletion is not None and not _route_allowed_while_locked(request):

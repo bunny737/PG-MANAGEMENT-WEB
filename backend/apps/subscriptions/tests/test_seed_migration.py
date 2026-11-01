@@ -27,7 +27,9 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         self.old_apps = self.executor.loader.project_state(BEFORE).apps
         # The historical state at BEFORE has no core app; core stays at its latest migration anyway.
         self.PlatformConfig = django_apps.get_model('core', 'PlatformConfig')
-        self.trial_days = self.PlatformConfig.objects.get(pk=1).trial_days
+        # Only this column: rolling back to BEFORE also unapplies later core migrations, so newer
+        # PlatformConfig columns (e.g. core.0010) are absent while this test runs.
+        self.trial_days = self.PlatformConfig.objects.values_list('trial_days', flat=True).get(pk=1)
         self._wipe_plans(self.old_apps)
 
     def tearDown(self):

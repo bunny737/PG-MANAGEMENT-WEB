@@ -50,9 +50,10 @@ HEARTBEAT_SECONDS = 60
 HEARTBEAT_OBJECTS = 100
 
 # Roles that may delete their own account through this flow. Super Admins are platform staff
-# (never self-service); residents have no login yet. Role checks use `user.role`, never
-# `tenant_id is None` (which a future tenant-less resident would also satisfy).
-SELF_SERVICE_ROLES = (Role.OWNER, Role.MANAGER, Role.RECEPTIONIST)
+# (never self-service). A resident-pool account (Module 26) may: deleting it removes the person's
+# login and their own records, never the PG's (the Resident record, invoices and payments stay).
+# Role checks use `user.role`, never `tenant_id is None` (which a Super Admin also satisfies).
+SELF_SERVICE_ROLES = (Role.OWNER, Role.MANAGER, Role.RECEPTIONIST, Role.RESIDENT)
 
 # ---------------------------------------------------------------------------------------------
 # Data inventory
@@ -113,7 +114,13 @@ DISPOSITION = {
     'residents.Admission': (PURGE, RETAIN),
     'residents.Allocation': (PURGE, RETAIN),
     'residents.BlacklistEntry': (PURGE, RETAIN),
+    # Module 26. A tenant purge removes the PG's side of every link; a staff purge leaves them (the
+    # staff reference is SET_NULL). A RESIDENT-account purge is a third case, see
+    # RESIDENT_ACCOUNT_REFERENCES below.
+    'residents.ResidencyLinkRequest': (PURGE, RETAIN),
     'residents.Resident': (PURGE, RETAIN),
+    'residents.ResidentAccess': (PURGE, RETAIN),
+    'residents.ResidentInvite': (PURGE, RETAIN),
     'residents.Transfer': (PURGE, RETAIN),
     'residents.Vacate': (PURGE, RETAIN),
     # Billing history is kept (GST / tax records); only personal payloads are redacted.
@@ -138,6 +145,8 @@ PURGE_ORDER = [
     'billing.AutoBillingCycle', 'billing.AutoBillingNotice', 'billing.AutoBillingSummary',
     'billing.Payment', 'billing.InvoiceLineItem', 'billing.Invoice', 'billing.Discount', 'billing.ReceiptCounter',
     'operations.ComplaintComment', 'operations.Complaint', 'operations.Visitor',
+    # Module 26. Links and invites PROTECT the resident record; requests PROTECT the property.
+    'residents.ResidencyLinkRequest', 'residents.ResidentInvite', 'residents.ResidentAccess',
     'residents.Vacate', 'residents.Transfer', 'residents.Allocation', 'residents.Admission',
     'residents.AbscondedRecord', 'residents.BlacklistEntry',
     'expenses.Expense', 'expenses.ExpenseCategory',
@@ -148,6 +157,21 @@ PURGE_ORDER = [
     'properties.Bed', 'properties.Room', 'properties.Floor', 'properties.Building',
     'residents.Resident', 'properties.Property',
 ]
+
+# What deleting a RESIDENT-pool account does to the Module 26 tables that reference the User. The
+# person's own rows go with them; the PG's records (Resident, invoices, payments, invites) stay, with
+# the reference to the person cleared. A test checks each entry against the model's on_delete.
+CASCADE, SET_NULL = 'CASCADE', 'SET_NULL'
+RESIDENT_ACCOUNT_REFERENCES = {
+    'residents.ResidentAccess.user': CASCADE,
+    'residents.ResidencyLinkRequest.requester': CASCADE,
+    'residents.ResidentInvite.accepted_by': SET_NULL,
+    'residents.ResidentInvite.invited_by': SET_NULL,
+    'residents.ResidentInvite.cancelled_by': SET_NULL,
+    'residents.ResidentAccess.granted_by': SET_NULL,
+    'residents.ResidentAccess.revoked_by': SET_NULL,
+    'residents.ResidencyLinkRequest.resolved_by': SET_NULL,
+}
 
 # Object-storage prefixes that hold a tenant's uploads (see each model's upload_to).
 STORAGE_PREFIXES = ('residents', 'properties', 'complaints', 'expenses')
@@ -589,14 +613,24 @@ def purge_tenant_rows(tenant_id, *, exclude_request=None):
 
 
 def purge_user_rows(user_id, tenant_id):
-    """A Manager's or Receptionist's own purge: their login and personal records; the business's
-    records they created stay, with the user reference nulled (those FKs are SET_NULL)."""
+    """A Manager's, Receptionist's or resident's own purge: their login and personal records; the
+    business's records stay (those FKs are SET_NULL, or the person's own rows cascade).
+
+    For a resident-pool account (Module 26) `tenant_id` is None: the person belongs to no tenant,
+    their links and requests cascade with the User, and the PGs' records they were linked to
+    (Resident, invoices, payments) are untouched. See RESIDENT_ACCOUNT_REFERENCES."""
     counts = Counter()
     user = User.objects.filter(pk=user_id).first() if user_id else None
     if user is None:
         return counts  # already gone: the phase is done
     with tenant_context(tenant_id, is_super_admin=True):
-        _redact_user_audit(user, counts)
+        if user.role == Role.RESIDENT:
+            # Their footprints are in every PG they acted in, not in one tenant's audit log.
+            _redact_user_audit(
+                user, counts, base=AuditLog.objects.filter(action__regex=r'^resident(_account)?\.'),
+            )
+        else:
+            _redact_user_audit(user, counts)
         NotificationLog = _model('notifications.NotificationLog')
         counts['notifications.NotificationLog'] += NotificationLog.objects.filter(recipient_user=user).delete()[0]
         _delete_user_side_records(
@@ -619,12 +653,13 @@ def _delete_user_side_records(user_ids, emails, phones, counts):
         counts['core.ContactMessage'] += ContactMessage.objects.filter(contact).delete()[0]
 
 
-def _redact_user_audit(user, counts):
+def _redact_user_audit(user, counts, base=None):
     """Audit rows keep their action and timing but lose what identifies the user: the IP of actions
     they performed, and any row whose before/after text names them — by value, so legacy rows such as
     property-assignment events (which store the staff email/phone) are covered without listing call
-    sites."""
-    base = AuditLog.objects.filter(tenant_id=user.tenant_id)
+    sites. `base` narrows the rows considered (default: the user's own tenant)."""
+    if base is None:
+        base = AuditLog.objects.filter(tenant_id=user.tenant_id)
     counts['audit.AuditLog(ip)'] += base.filter(actor_id=user.pk).update(ip_address=None)
 
     needles = [str(user.pk)] + [value for value in (user.email, user.phone) if value]

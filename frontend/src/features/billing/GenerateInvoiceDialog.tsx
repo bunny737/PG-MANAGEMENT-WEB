@@ -94,7 +94,11 @@ export function GenerateInvoiceDialog({
               placeholder={t("residentPlaceholder")}
             />
           )}
-          {errors.resident && <p className="text-xs text-status-critical">{errors.resident.message}</p>}
+          {errors.resident && (
+            <p className="text-xs text-status-critical">
+              {errors.resident.type === "too_small" ? t("residentRequired") : errors.resident.message}
+            </p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

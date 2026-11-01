@@ -65,6 +65,7 @@
     "subtitle": "Builds the accommodation and discount lines from the resident's current admission.",
     "resident": "Resident",
     "residentPlaceholder": "Search by name or phone",
+    "residentRequired": "Pick a resident from the list.",
     "periodStart": "Period start",
     "periodEnd": "Period end",
     "dueDate": "Due date",

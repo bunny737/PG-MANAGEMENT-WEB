@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string -- test fixtures, not UI copy */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import residents from "@/messages/en/residents.json";
 import status from "@/messages/en/status.json";
 import { ApiError, type Resident } from "@/lib/api";
@@ -112,5 +112,38 @@ describe("RecordDepositPaymentDialog", () => {
 
     const options = Array.from((screen.getByLabelText(t.mode) as HTMLSelectElement).options).map((o) => o.value);
     expect(options).toEqual(["cash", "upi", "bank_transfer"]);
+  });
+});
+
+describe("RecordDepositPaymentDialog → the payment date is the local calendar day", () => {
+  const originalTZ = process.env.TZ;
+
+  beforeEach(() => {
+    api.createDepositPayment.mockReset().mockResolvedValue({ payment: { id: "p1" }, replayed: false });
+    process.env.TZ = "Asia/Kolkata";
+    // 02:00 IST on 1 Nov is still 31 Oct in UTC: the case where `toISOString()` gave yesterday.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T20:30:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  });
+
+  test("defaults to today in India and lets staff pick today (max)", async () => {
+    renderDialog();
+
+    const date = screen.getByLabelText(t.date) as HTMLInputElement;
+    expect(date.value).toBe("2026-11-01");
+    expect(date.max).toBe("2026-11-01");
+
+    submit();
+    await screen.findByText(t.success);
+    expect(api.createDepositPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_date: "2026-11-01" }),
+      expect.any(String)
+    );
   });
 });

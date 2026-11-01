@@ -35,9 +35,11 @@ import {
 } from "@/lib/api";
 
 import { findBedChain, type BedChain } from "@/lib/admissionPreselect";
+import { localDateKey } from "@/lib/date";
 import { addMoney, compareMoney, formatMoney, isMoneyInput, subtractMoney, toMoneyString, ZERO } from "@/lib/money";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The local calendar day, not UTC: between midnight and 05:30 IST the UTC date is still yesterday.
+const todayISO = () => localDateKey(new Date());
 
 /** The amount as the API's two-place string, "0.00" when blank (an empty input means nothing). */
 const moneyOrZero = (value: string) => (value.trim() === "" ? ZERO : toMoneyString(value.trim()));
@@ -90,10 +92,11 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   const [deposit, setDeposit] = useState("5000.00"); // default deposit amount
 
   // Step 4: Collection. A resident often pays only part on joining, so staff enter what was actually
-  // received now; both start at the full amount. The rest of the rent stays on the first invoice and the
+  // received now. `null` means not edited yet: the full agreed amount is shown (and sent), so it also follows a
+  // later change of food plan. The rest of the rent stays on the first invoice and the
   // rest of the deposit is recorded later from the resident's profile.
-  const [rentPaid, setRentPaid] = useState("");
-  const [depositPaid, setDepositPaid] = useState("");
+  const [rentPaid, setRentPaid] = useState<string | null>(null);
+  const [depositPaid, setDepositPaid] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<DepositMode>("upi");
   const [collectedOn, setCollectedOn] = useState(todayISO);
   const [step3Error, setStep3Error] = useState("");
@@ -257,9 +260,6 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
         return;
       }
       setStep3Error("");
-      // Collection starts at the full amounts; staff lower them to what was actually received.
-      setRentPaid(agreedRent);
-      setDepositPaid(agreedDeposit);
       setStep4Errors({});
       setStep(4);
     } else if (step === 4) {
@@ -272,8 +272,10 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   // rent) and the agreed deposit. What they pay now may be less; see step 4.
   const agreedRent = moneyOrZero(overrideRate);
   const agreedDeposit = moneyOrZero(deposit);
-  const rentPaidAmount = moneyOrZero(rentPaid);
-  const depositPaidAmount = moneyOrZero(depositPaid);
+  const rentPaidText = rentPaid ?? agreedRent;
+  const depositPaidText = depositPaid ?? agreedDeposit;
+  const rentPaidAmount = moneyOrZero(rentPaidText);
+  const depositPaidAmount = moneyOrZero(depositPaidText);
   const rentPending = subtractMoney(agreedRent, rentPaidAmount) ?? ZERO;
   const depositPending = subtractMoney(agreedDeposit, depositPaidAmount) ?? ZERO;
   const totalPaidNow = addMoney(rentPaidAmount, depositPaidAmount) ?? ZERO;
@@ -287,8 +289,8 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       const over = compareMoney(moneyOrZero(raw), agreed) === 1;
       return over ? exceeds : undefined;
     };
-    errs.rent = amountError(rentPaid, agreedRent, t("step4.errRentExceeds"));
-    errs.deposit = amountError(depositPaid, agreedDeposit, t("step4.errDepositExceeds"));
+    errs.rent = amountError(rentPaidText, agreedRent, t("step4.errRentExceeds"));
+    errs.deposit = amountError(depositPaidText, agreedDeposit, t("step4.errDepositExceeds"));
     if (paidSomething && (!collectedOn || collectedOn > todayISO())) errs.date = t("step4.errDate");
     setStep4Errors(errs);
     return !errs.rent && !errs.deposit && !errs.date;
@@ -756,8 +758,8 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
 
               {(
                 [
-                  { key: "rent", label: t("step4.advanceRent"), agreed: agreedRent, value: rentPaid, set: setRentPaid, pending: rentPending, error: step4Errors.rent },
-                  { key: "deposit", label: t("step4.depositHolding"), agreed: agreedDeposit, value: depositPaid, set: setDepositPaid, pending: depositPending, error: step4Errors.deposit },
+                  { key: "rent", label: t("step4.advanceRent"), agreed: agreedRent, value: rentPaidText, set: setRentPaid, pending: rentPending, error: step4Errors.rent },
+                  { key: "deposit", label: t("step4.depositHolding"), agreed: agreedDeposit, value: depositPaidText, set: setDepositPaid, pending: depositPending, error: step4Errors.deposit },
                 ] as const
               ).map((row) => (
                 <div key={row.key} className="space-y-2 border-b border-border/50 pb-4">

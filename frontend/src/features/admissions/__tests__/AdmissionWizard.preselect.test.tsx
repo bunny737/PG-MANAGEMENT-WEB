@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import admissions from "@/messages/en/admissions.json";
 import { AdmissionWizard } from "../AdmissionWizard";
 
@@ -348,5 +348,51 @@ describe("AdmissionWizard collecting only part of the money at admission", () =>
 
     const rent = screen.getByDisplayValue("12000.00") as HTMLInputElement;
     expect(rent.readOnly).toBe(true);
+  });
+});
+
+describe("AdmissionWizard dates are the local calendar day", () => {
+  const originalTZ = process.env.TZ;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setUpApi();
+    api.createResident.mockResolvedValue({ id: "res-1" });
+    api.updateResidentStatus.mockResolvedValue({ id: "res-1", status: "reserved" });
+    api.createAdmission.mockResolvedValue({ id: "adm-1" });
+    process.env.TZ = "Asia/Kolkata";
+    // 02:00 IST on 1 Nov is still 31 Oct in UTC: the case where `toISOString()` gave yesterday.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T20:30:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  });
+
+  test("the joining date and the payment dates are today in India, and today can be picked", async () => {
+    renderWizard({ propertyId: "p1", bedId: "bed-target" });
+    completeStep1();
+    await screen.findByText(SELECTED("101", "101-B"), undefined, { timeout: 2000 });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.next) }));
+    await screen.findByText(admissions.step3.heading);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.next) }));
+    await screen.findByText(admissions.step4.heading);
+
+    const date = document.getElementById("collected-on") as HTMLInputElement;
+    expect(date.value).toBe("2026-11-01");
+    expect(date.max).toBe("2026-11-01");
+
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.complete) }));
+    await waitFor(() => expect(api.createAdmission).toHaveBeenCalledTimes(1));
+    expect(api.createAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        joining_date: "2026-11-01",
+        advance_collected_date: "2026-11-01",
+        security_deposit_collected_date: "2026-11-01",
+      })
+    );
   });
 });

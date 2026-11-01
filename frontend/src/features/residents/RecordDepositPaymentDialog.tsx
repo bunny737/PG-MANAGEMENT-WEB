@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Dialog } from "@/components/ui/Dialog";
 import { ApiError, createDepositPayment, type DepositMode, type Resident } from "@/lib/api";
+import { localDateKey } from "@/lib/date";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import { compareMoney, formatMoney, isAtMost, isMoneyInput, toMoneyString, ZERO } from "@/lib/money";
 
 const MODES: DepositMode[] = ["cash", "upi", "bank_transfer"];
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// The local calendar day, not UTC: between midnight and 05:30 IST the UTC date is still yesterday.
+const todayISO = () => localDateKey(new Date());
 
 interface RecordDepositPaymentDialogProps {
   resident: Resident;

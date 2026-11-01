@@ -25,6 +25,7 @@ import {
   createResident,
   updateResidentStatus,
   createAdmission,
+  type DepositMode,
   type Property,
   type Building,
   type Floor,
@@ -34,6 +35,14 @@ import {
 } from "@/lib/api";
 
 import { findBedChain, type BedChain } from "@/lib/admissionPreselect";
+import { localDateKey } from "@/lib/date";
+import { addMoney, compareMoney, formatMoney, isMoneyInput, subtractMoney, toMoneyString, ZERO } from "@/lib/money";
+
+// The local calendar day, not UTC: between midnight and 05:30 IST the UTC date is still yesterday.
+const todayISO = () => localDateKey(new Date());
+
+/** The amount as the API's two-place string, "0.00" when blank (an empty input means nothing). */
+const moneyOrZero = (value: string) => (value.trim() === "" ? ZERO : toMoneyString(value.trim()));
 
 interface AdmissionWizardProps {
   /** A property, optionally with a bed. A bed picked on the Vacancies screen pre-selects property → building →
@@ -45,7 +54,6 @@ interface AdmissionWizardProps {
 export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   const router = useRouter();
   const t = useTranslations("admissions");
-  const tCommon = useTranslations("common");
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -83,8 +91,16 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   const [overrideRate, setOverrideRate] = useState("0.00");
   const [deposit, setDeposit] = useState("5000.00"); // default deposit amount
 
-  // Step 4: Collection
-  const [paymentMode, setPaymentMode] = useState("upi");
+  // Step 4: Collection. A resident often pays only part on joining, so staff enter what was actually
+  // received now. `null` means not edited yet: the full agreed amount is shown (and sent), so it also follows a
+  // later change of food plan. The rest of the rent stays on the first invoice and the
+  // rest of the deposit is recorded later from the resident's profile.
+  const [rentPaid, setRentPaid] = useState<string | null>(null);
+  const [depositPaid, setDepositPaid] = useState<string | null>(null);
+  const [paymentMode, setPaymentMode] = useState<DepositMode>("upi");
+  const [collectedOn, setCollectedOn] = useState(todayISO);
+  const [step3Error, setStep3Error] = useState("");
+  const [step4Errors, setStep4Errors] = useState<{ rent?: string; deposit?: string; date?: string }>({});
 
   // The requested bed's chain, resolved BEFORE any "pick the first one" default below runs and consumed as
   // each level loads. Without this, those defaults (each loader's data[0]) would overwrite the requested bed
@@ -239,10 +255,45 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       }
       setStep(3);
     } else if (step === 3) {
+      if (!isMoneyInput(moneyOrZero(deposit)) || !isMoneyInput(moneyOrZero(overrideRate))) {
+        setStep3Error(t("step3.errAmount"));
+        return;
+      }
+      setStep3Error("");
+      setStep4Errors({});
       setStep(4);
     } else if (step === 4) {
+      if (!validateStep4()) return;
       await handleCompleteAdmission();
     }
+  };
+
+  // What the resident owes: the room rate for the chosen food plan (the server snapshots it as the contracted
+  // rent) and the agreed deposit. What they pay now may be less; see step 4.
+  const agreedRent = moneyOrZero(overrideRate);
+  const agreedDeposit = moneyOrZero(deposit);
+  const rentPaidText = rentPaid ?? agreedRent;
+  const depositPaidText = depositPaid ?? agreedDeposit;
+  const rentPaidAmount = moneyOrZero(rentPaidText);
+  const depositPaidAmount = moneyOrZero(depositPaidText);
+  const rentPending = subtractMoney(agreedRent, rentPaidAmount) ?? ZERO;
+  const depositPending = subtractMoney(agreedDeposit, depositPaidAmount) ?? ZERO;
+  const totalPaidNow = addMoney(rentPaidAmount, depositPaidAmount) ?? ZERO;
+  const totalPending = addMoney(rentPending, depositPending) ?? ZERO;
+  const paidSomething = compareMoney(totalPaidNow, ZERO) === 1;
+
+  const validateStep4 = () => {
+    const errs: { rent?: string; deposit?: string; date?: string } = {};
+    const amountError = (raw: string, agreed: string, exceeds: string) => {
+      if (raw.trim() !== "" && !isMoneyInput(raw.trim())) return t("step4.errInvalidAmount");
+      const over = compareMoney(moneyOrZero(raw), agreed) === 1;
+      return over ? exceeds : undefined;
+    };
+    errs.rent = amountError(rentPaidText, agreedRent, t("step4.errRentExceeds"));
+    errs.deposit = amountError(depositPaidText, agreedDeposit, t("step4.errDepositExceeds"));
+    if (paidSomething && (!collectedOn || collectedOn > todayISO())) errs.date = t("step4.errDate");
+    setStep4Errors(errs);
+    return !errs.rent && !errs.deposit && !errs.date;
   };
 
   const handlePrevStep = () => {
@@ -276,18 +327,23 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       await updateResidentStatus(residentObj.id, "reserved");
 
       // 4. Create Admission record (checks the resident in)
-      const today = new Date().toISOString().split("T")[0];
+      // Rent paid now is the "advance" applied to the first invoice (any shortfall stays due on it); the
+      // deposit is its own amount, with the agreed total so the rest can be recorded later. The API needs a
+      // date and mode whenever an amount is collected, so they are sent only for amounts actually paid.
+      const paidRent = compareMoney(rentPaidAmount, ZERO) === 1;
+      const paidDeposit = compareMoney(depositPaidAmount, ZERO) === 1;
       await createAdmission({
         resident: residentObj.id,
         bed: selectedBedId,
-        joining_date: today,
+        joining_date: todayISO(),
         billing_mode: "monthly",
         expected_stay_duration: leaseTerm,
         food_preference: foodPreference,
-        advance_amount: (parseFloat(overrideRate) + parseFloat(deposit)).toFixed(2),
-        // The API requires a collected date and mode whenever an amount is collected.
-        advance_collected_date: today,
-        advance_mode: paymentMode
+        advance_amount: rentPaidAmount,
+        ...(paidRent ? { advance_collected_date: collectedOn, advance_mode: paymentMode } : {}),
+        security_deposit_agreed: agreedDeposit,
+        security_deposit_amount: depositPaidAmount,
+        ...(paidDeposit ? { security_deposit_collected_date: collectedOn, security_deposit_mode: paymentMode } : {}),
       });
 
       setShowSuccess(true);
@@ -656,22 +712,28 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
 
               <div className="space-y-1.5">
                 <label className="font-semibold text-ink-muted">{t("step3.agreedRent")}</label>
+                {/* Read-only: the contracted rent is the room's rate for the chosen food plan, snapshotted
+                    by the server at admission (invariant 2). Discounts are set separately (Module 07). */}
                 <input
-                  type="number"
+                  type="text"
                   value={overrideRate}
-                  onChange={(e) => setOverrideRate(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 font-mono text-ink outline-none focus:ring-2 focus:ring-accent"
+                  readOnly
+                  aria-readonly="true"
+                  className="w-full rounded-xl border border-border bg-surface-page px-3.5 py-2.5 font-mono text-ink-muted outline-none"
                 />
+                <p className="text-[11px] text-ink-faint">{t("step3.agreedRentHint")}</p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="font-semibold text-ink-muted">{t("step3.securityDeposit")}</label>
                 <input
                   type="number"
+                  min="0"
                   value={deposit}
                   onChange={(e) => setDeposit(e.target.value)}
                   className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 font-mono text-ink outline-none focus:ring-2 focus:ring-accent"
                 />
+                {step3Error && <p className="text-[11px] text-status-critical">{step3Error}</p>}
               </div>
             </div>
           </div>
@@ -687,57 +749,111 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
               </p>
             </div>
 
-            {/* Dues Breakdown Card */}
-            <div className="bg-surface-page/60 border border-border rounded-2xl p-5 space-y-3 text-xs">
+            {/* What is owed vs what is received now. Residents often pay part on joining; the rest of the rent
+                stays due on the first invoice and the rest of the deposit is recorded later. */}
+            <div className="bg-surface-page/60 border border-border rounded-2xl p-5 space-y-5 text-xs">
               <h3 className="font-bold text-ink uppercase tracking-wider text-[11px]">
                 {t("step4.summaryTitle")}
               </h3>
-              <div className="flex justify-between items-center pb-2 border-b border-border/50">
-                <span className="text-ink-muted">{t("step4.advanceRent")}</span>
-                <span className="font-mono font-semibold text-ink">{tCommon("labels.rupeeSymbol")}{parseFloat(overrideRate || "0").toFixed(2)}</span>
+
+              {(
+                [
+                  { key: "rent", label: t("step4.advanceRent"), agreed: agreedRent, value: rentPaidText, set: setRentPaid, pending: rentPending, error: step4Errors.rent },
+                  { key: "deposit", label: t("step4.depositHolding"), agreed: agreedDeposit, value: depositPaidText, set: setDepositPaid, pending: depositPending, error: step4Errors.deposit },
+                ] as const
+              ).map((row) => (
+                <div key={row.key} className="space-y-2 border-b border-border/50 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-ink">{row.label}</span>
+                    <span className="text-ink-muted">
+                      {t("step4.agreed")} <span className="font-mono font-semibold text-ink">{formatMoney(row.agreed)}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1 space-y-1">
+                      <label htmlFor={`paid-now-${row.key}`} className="font-semibold text-ink-muted">
+                        {t("step4.paidNow")}
+                      </label>
+                      <input
+                        id={`paid-now-${row.key}`}
+                        type="text"
+                        inputMode="decimal"
+                        value={row.value}
+                        onChange={(e) => row.set(e.target.value)}
+                        className={`w-full rounded-xl border ${
+                          row.error ? "border-status-critical" : "border-border"
+                        } bg-surface-card px-3.5 py-2.5 font-mono text-ink outline-none focus:ring-2 focus:ring-accent`}
+                      />
+                    </div>
+                    <div className="pb-2.5 text-right">
+                      <p className="text-ink-muted">{t("step4.pending")}</p>
+                      <p className="font-mono font-semibold text-ink">{formatMoney(row.pending)}</p>
+                    </div>
+                  </div>
+                  {row.error && <p className="text-[11px] text-status-critical">{row.error}</p>}
+                </div>
+              ))}
+
+              <div className="space-y-1.5 pt-1 font-bold text-sm text-ink">
+                <div className="flex justify-between items-center">
+                  <span>{t("step4.totalPaidNow")}</span>
+                  <span className="font-mono text-accent text-base">{formatMoney(totalPaidNow)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs font-semibold text-ink-muted">
+                  <span>{t("step4.totalPending")}</span>
+                  <span className="font-mono">{formatMoney(totalPending)}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-border/50">
-                <span className="text-ink-muted">{t("step4.depositHolding")}</span>
-                <span className="font-mono font-semibold text-ink">{tCommon("labels.rupeeSymbol")}{parseFloat(deposit || "0").toFixed(2)}</span>
-              </div>
-              <div className="pt-2 flex justify-between items-center font-bold text-sm text-ink">
-                <span>{t("step4.totalDue")}</span>
-                <span className="font-mono text-accent text-base">
-                  {tCommon("labels.rupeeSymbol")}{(parseFloat(overrideRate || "0") + parseFloat(deposit || "0")).toFixed(2)}
-                </span>
-              </div>
+              <p className="text-[11px] text-ink-faint">{t("step4.pendingNote")}</p>
             </div>
 
-            {/* Payment Mode Selector */}
-            <div className="space-y-2 text-xs">
-              <label className="font-semibold text-ink-muted">{t("step4.paymentMethod")}</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { id: "upi", label: t("step4.modeUpi"), icon: Activity },
-                  { id: "card", label: t("step4.modeCard"), icon: CreditCard },
-                  { id: "cash", label: t("step4.modeCash"), icon: Landmark },
-                  { id: "bank_transfer", label: t("step4.modeBank"), icon: Landmark },
-                ].map((mode) => {
-                  const isSelected = paymentMode === mode.id;
-                  const Icon = mode.icon;
-                  return (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => setPaymentMode(mode.id)}
-                      className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center gap-1.5 transition-all cursor-pointer ${
-                        isSelected
-                          ? "bg-accent text-ink-inverse border-accent shadow-md"
-                          : "bg-surface-card text-ink border-border hover:bg-surface-page"
-                      }`}
-                    >
-                      <Icon className="size-4" />
-                      <span className="font-bold text-[11px]">{mode.label}</span>
-                    </button>
-                  );
-                })}
+            {/* Payment mode and date: only meaningful when something is received now */}
+            {paidSomething && (
+              <div className="space-y-4 text-xs">
+                <div className="space-y-2">
+                  <label className="font-semibold text-ink-muted">{t("step4.paymentMethod")}</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { id: "upi", label: t("step4.modeUpi"), icon: Activity },
+                      { id: "cash", label: t("step4.modeCash"), icon: Landmark },
+                      { id: "bank_transfer", label: t("step4.modeBank"), icon: CreditCard },
+                    ].map((mode) => {
+                      const isSelected = paymentMode === mode.id;
+                      const Icon = mode.icon;
+                      return (
+                        <button
+                          key={mode.id}
+                          type="button"
+                          onClick={() => setPaymentMode(mode.id as DepositMode)}
+                          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center gap-1.5 transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-accent text-ink-inverse border-accent shadow-md"
+                              : "bg-surface-card text-ink border-border hover:bg-surface-page"
+                          }`}
+                        >
+                          <Icon className="size-4" />
+                          <span className="font-bold text-[11px]">{mode.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="collected-on" className="font-semibold text-ink-muted">
+                    {t("step4.paymentDate")}
+                  </label>
+                  <input
+                    id="collected-on"
+                    type="date"
+                    value={collectedOn}
+                    max={todayISO()}
+                    onChange={(e) => setCollectedOn(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-ink outline-none focus:ring-2 focus:ring-accent"
+                  />
+                  {step4Errors.date && <p className="text-[11px] text-status-critical">{step4Errors.date}</p>}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

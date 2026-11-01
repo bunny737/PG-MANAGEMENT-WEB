@@ -16,6 +16,7 @@ from .models import (
     Admission,
     Allocation,
     BlacklistEntry,
+    DepositPayment,
     Resident,
     Transfer,
     Vacate,
@@ -35,7 +36,10 @@ class ResidentSerializer(serializers.ModelSerializer):
             if 'view_finance' not in user_permissions:
                 hidden += ['contracted_rent', 'billing_mode']
             if not user_permissions & {'view_finance', 'manage_deposits'}:
-                hidden += ['security_deposit_amount', 'advance_amount', 'advance_refundable']
+                hidden += [
+                    'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
+                    'advance_amount', 'advance_refundable',
+                ]
             for field in hidden:
                 self.fields.pop(field, None)
 
@@ -50,6 +54,8 @@ class ResidentSerializer(serializers.ModelSerializer):
     billing_mode = serializers.SerializerMethodField()
     joining_date = serializers.SerializerMethodField()
     security_deposit_amount = serializers.SerializerMethodField()
+    security_deposit_agreed = serializers.SerializerMethodField()
+    security_deposit_pending = serializers.SerializerMethodField()
     advance_amount = serializers.SerializerMethodField()
     advance_refundable = serializers.SerializerMethodField()
     room_number = serializers.SerializerMethodField()
@@ -66,7 +72,8 @@ class ResidentSerializer(serializers.ModelSerializer):
             'passport_number', 'employee_id', 'student_id',
             'unit', 'block', 'move_in_date',
             'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
-            'security_deposit_amount', 'advance_amount', 'advance_refundable',
+            'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
+            'advance_amount', 'advance_refundable',
             'room_number', 'bed_number',
             'created_at', 'updated_at',
         ]
@@ -100,6 +107,12 @@ class ResidentSerializer(serializers.ModelSerializer):
 
     def get_security_deposit_amount(self, obj) -> str | None:
         return self._admission_value(obj, 'security_deposit_amount', as_str=True)
+
+    def get_security_deposit_agreed(self, obj) -> str | None:
+        return self._admission_value(obj, 'security_deposit_agreed', as_str=True)
+
+    def get_security_deposit_pending(self, obj) -> str | None:
+        return self._admission_value(obj, 'security_deposit_pending', as_str=True)
 
     def get_advance_amount(self, obj) -> str | None:
         return self._admission_value(obj, 'advance_amount', as_str=True)
@@ -210,6 +223,7 @@ def bed_admits(bed, resident):
 
 class AdmissionSerializer(serializers.ModelSerializer):
     advance_refundable = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    security_deposit_pending = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
     class Meta:
         model = Admission
@@ -217,7 +231,10 @@ class AdmissionSerializer(serializers.ModelSerializer):
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
             'advance_amount', 'advance_collected_date', 'advance_mode',
-            'security_deposit_amount', 'security_deposit_collected_date', 'security_deposit_mode',
+            # `security_deposit_amount` is the amount COLLECTED now; `_agreed` is the full deposit
+            # (defaults to the collected amount when omitted, so older clients are unaffected).
+            'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
+            'security_deposit_collected_date', 'security_deposit_mode',
             'first_month_billing_amount', 'first_month_billing_note',
             'advance_applied_amount', 'advance_refundable',
             'recorded_by', 'created_at', 'updated_at',
@@ -226,12 +243,13 @@ class AdmissionSerializer(serializers.ModelSerializer):
         # (invariant 2/3) — never accepted as client input.
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
-            'advance_applied_amount', 'advance_refundable',
+            'advance_applied_amount', 'advance_refundable', 'security_deposit_pending',
             'recorded_by', 'created_at', 'updated_at',
         ]
         extra_kwargs = {
             'advance_amount': {'min_value': Decimal('0.00')},
             'security_deposit_amount': {'min_value': Decimal('0.00')},
+            'security_deposit_agreed': {'min_value': Decimal('0.00'), 'required': False},
         }
 
     def validate(self, attrs):
@@ -263,6 +281,16 @@ class AdmissionSerializer(serializers.ModelSerializer):
                 code='property_not_assigned',
             )
 
+        # The agreed deposit defaults to what is collected now (clients that don't know about
+        # partial collection send only the amount); it can never be less than what is collected.
+        collected = attrs.get('security_deposit_amount', Decimal('0.00'))
+        agreed = attrs.setdefault('security_deposit_agreed', collected)
+        if collected > agreed:
+            raise serializers.ValidationError(
+                {'security_deposit_amount': _('The deposit collected cannot exceed the agreed deposit.')},
+                code='deposit_exceeds_agreed',
+            )
+
         # A collected amount needs its date and mode (the advance is recorded
         # as a payment against the first invoice, which requires both).
         for prefix in ('advance', 'security_deposit'):
@@ -273,6 +301,51 @@ class AdmissionSerializer(serializers.ModelSerializer):
                             {f'{prefix}_{suffix}': _('This field is required when an amount is collected.')},
                             code='required',
                         )
+        return attrs
+
+
+class DepositPaymentSerializer(serializers.ModelSerializer):
+    """Read shape of one security-deposit collection."""
+    resident = serializers.UUIDField(source='admission.resident_id', read_only=True)
+
+    class Meta:
+        model = DepositPayment
+        fields = [
+            'id', 'resident', 'amount', 'payment_date', 'payment_mode', 'reference',
+            'recorded_by', 'created_at',
+        ]
+        read_only_fields = fields
+
+
+class DepositPaymentWriteSerializer(serializers.Serializer):
+    """Input for recording a later deposit collection. The authoritative checks run under the
+    row locks in `services.record_deposit_payment`; these are for a friendly early error."""
+    resident = serializers.PrimaryKeyRelatedField(queryset=Resident.objects.all())
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    payment_date = serializers.DateField()
+    payment_mode = serializers.ChoiceField(choices=Admission.AdvanceMode.choices)
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+
+    def validate_resident(self, resident):
+        request = self.context['request']
+        if not can_view_property(request.user, resident.property_id):
+            raise serializers.ValidationError(
+                _('You are not assigned to this property.'), code='property_not_assigned',
+            )
+        if not hasattr(resident, 'admission'):
+            raise serializers.ValidationError(
+                _('This resident has not been admitted yet.'), code='resident_not_admitted',
+            )
+        return resident
+
+    def validate(self, attrs):
+        admission = attrs['resident'].admission
+        if attrs['amount'] > admission.security_deposit_pending:
+            raise serializers.ValidationError(
+                {'amount': _('This exceeds the pending security deposit of %(pending)s.')
+                 % {'pending': admission.security_deposit_pending}},
+                code='deposit_overpaid',
+            )
         return attrs
 
 

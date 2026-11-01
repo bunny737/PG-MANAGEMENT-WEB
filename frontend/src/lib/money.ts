@@ -64,4 +64,42 @@ export function isAtMost(amount: string, balance: string): boolean {
   return cmp !== null && cmp <= 0;
 }
 
+/** `a - b` as a Decimal string ("12000.00" - "3000" => "9000.00"), computed in integer paise.
+ * Display-only, like the rest of this file (the server decides every real amount). Null if either
+ * side isn't a plain Decimal string. */
+export function subtractMoney(a: string, b: string): string | null {
+  const pa = toPaise(a);
+  const pb = toPaise(b);
+  if (pa === null || pb === null) return null;
+  return fromPaise(pa - pb);
+}
+
+/** `a + b` as a Decimal string, in integer paise. Null if either side isn't a plain Decimal string. */
+export function addMoney(a: string, b: string): string | null {
+  const pa = toPaise(a);
+  const pb = toPaise(b);
+  if (pa === null || pb === null) return null;
+  return fromPaise(pa + pb);
+}
+
+/** A plain non-negative Decimal string of at most two places ("5000", "5000.5", "0.00"): what an
+ * amount input must hold before it can be sent. */
+export function isMoneyInput(value: string): boolean {
+  const paise = toPaise(value);
+  return paise !== null && paise >= 0;
+}
+
+/** Rewrites a valid amount in the API's two-place form ("5000" => "5000.00"); anything else is
+ * returned unchanged so it still fails validation. */
+export function toMoneyString(value: string): string {
+  const paise = toPaise(value);
+  return paise === null ? value : fromPaise(paise);
+}
+
+function fromPaise(paise: number): string {
+  const sign = paise < 0 ? "-" : "";
+  const abs = Math.abs(paise);
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
 export const ZERO = "0.00";

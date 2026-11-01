@@ -189,3 +189,10 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
 - 2026-10-20: `property` filter on `GET /admissions/` (`AdmissionFilter`, UUID filter on the bed's property) so the
   phone dashboard's activity feed follows the property selector. Narrows the caller's visible set only; a malformed
   id is a 400. Tests: `AdmissionPropertyFilterTests`.
+- 2026-11-01: partial collection at check-in. `security_deposit_agreed` (the full deposit; defaults to the collected
+  amount when omitted) and read-only `security_deposit_pending`; `security_deposit_amount` stays the amount collected
+  now and may be less than agreed (`deposit_exceeds_agreed` otherwise); `advance_amount` may be `0.00`; the deposit
+  collected at check-in is the first `DepositPayment` row. The rest is recorded later via
+  `POST /api/v1/deposit-payments/`, see [10-deposits-exit.md](10-deposits-exit.md) "Update 2026-11-01". The wizard
+  now reserves the resident and lets the admission check them in (it used to ask the status API for Inquiry → Active,
+  which the transition graph refuses). Tests: `residents/tests/test_deposit_payments.py`.

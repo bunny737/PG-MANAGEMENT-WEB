@@ -867,6 +867,32 @@ export interface paths {
         patch: operations["v1_complaints_status_partial_update"];
         trace?: never;
     };
+    "/api/v1/deposit-payments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Collections of a resident's security deposit (Module 10). A resident may pay the agreed
+         *     deposit in parts; the first part is recorded at admission, this records the rest. Append-only:
+         *     no update/delete. `?resident=` filters. Needs `manage_deposits`.
+         */
+        get: operations["v1_deposit_payments_list"];
+        put?: never;
+        /**
+         * @description Collections of a resident's security deposit (Module 10). A resident may pay the agreed
+         *     deposit in parts; the first part is recorded at admission, this records the rest. Append-only:
+         *     no update/delete. `?resident=` filters. Needs `manage_deposits`.
+         */
+        post: operations["v1_deposit_payments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/": {
         parameters: {
             query?: never;
@@ -3255,12 +3281,16 @@ export interface components {
             advance_amount?: string;
             /** Format: date */
             advance_collected_date?: string | null;
-            advance_mode?: components["schemas"]["RefundModeEnum"] | components["schemas"]["BlankEnum"];
+            advance_mode?: components["schemas"]["AdvanceModeEnum"] | components["schemas"]["BlankEnum"];
             /** Format: decimal */
             security_deposit_amount?: string;
+            /** Format: decimal */
+            security_deposit_agreed?: string;
+            /** Format: decimal */
+            readonly security_deposit_pending: string;
             /** Format: date */
             security_deposit_collected_date?: string | null;
-            security_deposit_mode?: components["schemas"]["RefundModeEnum"] | components["schemas"]["BlankEnum"];
+            security_deposit_mode?: components["schemas"]["SecurityDepositModeEnum"] | components["schemas"]["BlankEnum"];
             /** Format: decimal */
             first_month_billing_amount?: string | null;
             first_month_billing_note?: string;
@@ -3275,6 +3305,13 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        AdvanceModeEnum: "upi" | "cash" | "bank_transfer";
         Allocation: {
             /** Format: uuid */
             readonly id: string;
@@ -3740,6 +3777,38 @@ export interface components {
          * @enum {string}
          */
         CurrentPeriodStatusEnum: "no_invoice" | "paid" | "partially_paid" | "unpaid" | "overdue";
+        /** @description Read shape of one security-deposit collection. */
+        DepositPayment: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly resident: string;
+            /** Format: decimal */
+            readonly amount: string;
+            /** Format: date */
+            readonly payment_date: string;
+            readonly payment_mode: components["schemas"]["PaymentModeFfbEnum"];
+            readonly reference: string;
+            /** Format: uuid */
+            readonly recorded_by: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description Input for recording a later deposit collection. The authoritative checks run under the
+         *     row locks in `services.record_deposit_payment`; these are for a friendly early error.
+         */
+        DepositPaymentWrite: {
+            /** Format: uuid */
+            resident: string;
+            /** Format: decimal */
+            amount: string;
+            /** Format: date */
+            payment_date: string;
+            payment_mode: components["schemas"]["PaymentModeFfbEnum"];
+            /** @default  */
+            reference: string;
+        };
         DeviceInfo: {
             manufacturer: string;
             model: string;
@@ -4758,6 +4827,8 @@ export interface components {
             readonly billing_mode?: string | null;
             readonly joining_date?: string | null;
             readonly security_deposit_amount?: string | null;
+            readonly security_deposit_agreed?: string | null;
+            readonly security_deposit_pending?: string | null;
             readonly advance_amount?: string | null;
             readonly advance_refundable?: string | null;
             readonly room_number?: string | null;
@@ -4898,6 +4969,13 @@ export interface components {
          * @enum {string}
          */
         PaymentMode2f4Enum: "upi" | "cash" | "bank_transfer" | "card" | "cheque";
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        PaymentModeFfbEnum: "upi" | "cash" | "bank_transfer";
         /**
          * @description Record a manual payment against an invoice (PRD Module 10). recorded_by
          *     is stamped from the request user server-side.
@@ -5187,6 +5265,8 @@ export interface components {
             readonly billing_mode: string | null;
             readonly joining_date: string | null;
             readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
             readonly advance_refundable: string | null;
             readonly room_number: string | null;
@@ -5233,6 +5313,8 @@ export interface components {
             readonly billing_mode: string | null;
             readonly joining_date: string | null;
             readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
             readonly advance_refundable: string | null;
             readonly room_number: string | null;
@@ -5315,6 +5397,13 @@ export interface components {
             /** Format: double */
             pixel_ratio: number;
         };
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        SecurityDepositModeEnum: "upi" | "cash" | "bank_transfer";
         /**
          * @description * `1` - 1-sharing
          *     * `2` - 2-sharing
@@ -7122,6 +7211,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Complaint"];
+                };
+            };
+        };
+    };
+    v1_deposit_payments_list: {
+        parameters: {
+            query?: {
+                admission__resident?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositPayment"][];
+                };
+            };
+        };
+    };
+    v1_deposit_payments_create: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description <= 100 chars; one per user intent. A retry with the same key and body returns 200 with `Idempotent-Replayed: true` and the original payment. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositPaymentWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepositPaymentWrite"];
+                "multipart/form-data": components["schemas"]["DepositPaymentWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositPayment"];
                 };
             };
         };

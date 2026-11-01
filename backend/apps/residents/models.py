@@ -176,7 +176,12 @@ class Admission(TenantModelMixin):
     advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
+    # `security_deposit_amount` is what has actually been COLLECTED (the running total of the
+    # DepositPayment ledger), so every refund/forfeit/report that reads it can never count
+    # money that was not received. `security_deposit_agreed` is the full amount the resident
+    # owes; the rest may be paid later (Module 10, 2026-11-01).
     security_deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    security_deposit_agreed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     security_deposit_collected_date = models.DateField(null=True, blank=True)
     security_deposit_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
     # Partial first-month adjustment set manually by management (PRD: "amount
@@ -208,6 +213,44 @@ class Admission(TenantModelMixin):
     def advance_refundable(self):
         """Advance not consumed by the first invoice — refunded at vacate."""
         return self.advance_amount - self.advance_applied_amount
+
+    @property
+    def security_deposit_pending(self):
+        """Agreed deposit not yet collected. Never negative: an admission created before the
+        agreed amount existed (or outside the API) may have collected more than `agreed`."""
+        return max(self.security_deposit_agreed - self.security_deposit_amount, Decimal('0.00'))
+
+
+class DepositPayment(TenantModelMixin):
+    """One collection of an admission's security deposit (the first at check-in, any later
+    ones when the resident pays the rest). `Admission.security_deposit_amount` is the running
+    total, updated under the admission row lock by `services.record_deposit_payment`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    admission = models.ForeignKey(Admission, on_delete=models.PROTECT, related_name='deposit_payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_date = models.DateField()
+    payment_mode = models.CharField(max_length=15, choices=Admission.AdvanceMode.choices)
+    reference = models.CharField(max_length=100, blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='deposit_payments_recorded'
+    )
+    # Client-supplied Idempotency-Key of the POST that created this row (apps/core/idempotency.py).
+    idempotency_key = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        db_table = 'deposit_payments'
+        ordering = ['-payment_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant_id', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False),
+                name='unique_deposit_payment_idempotency_key',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Deposit {self.amount} via {self.get_payment_mode_display()} on {self.payment_date}'
 
 
 class Allocation(TenantModelMixin):

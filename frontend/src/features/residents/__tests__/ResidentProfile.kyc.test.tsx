@@ -9,12 +9,18 @@ import status from "@/messages/en/status.json";
 const mocks = vi.hoisted(() => ({
   getResident: vi.fn(),
   listComplaints: vi.fn(),
+  createDepositPayment: vi.fn(),
   user: { value: null as { kyc_uploads_enabled?: boolean } | null },
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
-  return { ...actual, getResident: mocks.getResident, listComplaints: mocks.listComplaints };
+  return {
+    ...actual,
+    getResident: mocks.getResident,
+    listComplaints: mocks.listComplaints,
+    createDepositPayment: mocks.createDepositPayment,
+  };
 });
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ can: () => true, user: mocks.user.value }),
@@ -81,5 +87,73 @@ describe("ResidentProfile → documents tab and the KYC upload gate", () => {
 
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
     expect(screen.queryByText(residents.profile.documents.uploadsDisabled)).toBeNull();
+  });
+});
+
+describe("ResidentProfile → security deposit paid in parts", () => {
+  beforeEach(() => {
+    mocks.user.value = {};
+    mocks.listComplaints.mockReset().mockResolvedValue([]);
+  });
+
+  const renderProfile = async (resident: object) => {
+    mocks.getResident.mockReset().mockResolvedValue({ ...RESIDENT, ...resident });
+    render(
+      <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+        <ResidentProfile id="r1" />
+      </NextIntlClientProvider>
+    );
+    await act(async () => {});
+  };
+
+  test("shows agreed, collected and pending, with a button to record the rest", async () => {
+    await renderProfile({
+      security_deposit_agreed: "5000.00", security_deposit_amount: "2000.00", security_deposit_pending: "3000.00",
+    });
+
+    expect(screen.getByText(residents.profile.overview.depositAgreed)).toBeTruthy();
+    expect(screen.getByText("₹5,000.00")).toBeTruthy();
+    expect(screen.getByText("₹2,000.00")).toBeTruthy();
+    expect(screen.getByText("₹3,000.00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: residents.profile.overview.recordDeposit })).toBeTruthy();
+  });
+
+  test("nothing pending: no pending row and no record button", async () => {
+    await renderProfile({
+      security_deposit_agreed: "5000.00", security_deposit_amount: "5000.00", security_deposit_pending: "0.00",
+    });
+
+    expect(screen.queryByText(residents.profile.overview.depositPending)).toBeNull();
+    expect(screen.queryByRole("button", { name: residents.profile.overview.recordDeposit })).toBeNull();
+  });
+
+  test("a vacated resident can't pay a deposit, so there is no record button", async () => {
+    await renderProfile({
+      status: "vacated", security_deposit_agreed: "5000.00", security_deposit_amount: "2000.00", security_deposit_pending: "3000.00",
+    });
+
+    expect(screen.queryByRole("button", { name: residents.profile.overview.recordDeposit })).toBeNull();
+  });
+
+  test("an older API without the agreed amount still shows what was collected", async () => {
+    await renderProfile({ security_deposit_amount: "1500.00" });
+
+    expect(screen.getAllByText("₹1,500.00").length).toBe(2); // agreed falls back to collected
+    expect(screen.queryByRole("button", { name: residents.profile.overview.recordDeposit })).toBeNull();
+  });
+
+  test("the button opens the record-deposit dialog; recording reloads the profile", async () => {
+    await renderProfile({
+      security_deposit_agreed: "5000.00", security_deposit_amount: "2000.00", security_deposit_pending: "3000.00",
+    });
+    fireEvent.click(screen.getByRole("button", { name: residents.profile.overview.recordDeposit }));
+
+    const submit = await screen.findByRole("button", { name: residents.profile.depositDialog.submit });
+    mocks.getResident.mockClear();
+    mocks.createDepositPayment.mockResolvedValue({ payment: { id: "p1" }, replayed: false });
+    fireEvent.click(submit);
+
+    expect(await screen.findByText(residents.profile.depositDialog.success)).toBeTruthy();
+    expect(mocks.getResident).toHaveBeenCalledWith("r1");
   });
 });

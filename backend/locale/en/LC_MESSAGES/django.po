@@ -2292,3 +2292,22 @@ msgstr ""
 #: apps/notifications/models.py
 msgid "Invoice Drafts Ready"
 msgstr ""
+
+#: apps/residents/serializers.py
+msgid "The deposit collected cannot exceed the agreed deposit."
+msgstr ""
+
+#: apps/residents/serializers.py
+msgid "This resident has not been admitted yet."
+msgstr ""
+
+#: apps/residents/serializers.py apps/residents/services.py
+#, python-format
+msgid "This exceeds the pending security deposit of %(pending)s."
+msgstr ""
+
+#: apps/residents/services.py
+msgid ""
+"A deposit can only be collected from a resident who is Active or on Notice "
+"Period."
+msgstr ""

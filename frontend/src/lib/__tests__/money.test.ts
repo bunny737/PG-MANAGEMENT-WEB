@@ -1,5 +1,34 @@
 import { describe, expect, test } from "vitest";
-import { compareMoney, formatMoney, formatMoneyCompact, isAtMost } from "../money";
+import { addMoney, compareMoney, formatMoney, formatMoneyCompact, isAtMost, isMoneyInput, subtractMoney, toMoneyString } from "../money";
+
+describe("subtractMoney / addMoney / toMoneyString", () => {
+  test("work in integer paise, so there is no float drift", () => {
+    expect(subtractMoney("12000.00", "3000")).toBe("9000.00");
+    expect(subtractMoney("0.3", "0.1")).toBe("0.20");
+    expect(addMoney("0.1", "0.2")).toBe("0.30");
+    expect(addMoney("12000.00", "5000.00")).toBe("17000.00");
+  });
+
+  test("a negative result keeps its sign", () => {
+    expect(subtractMoney("100.00", "250.50")).toBe("-150.50");
+  });
+
+  test("anything that is not a plain Decimal string gives null", () => {
+    expect(subtractMoney("abc", "1")).toBeNull();
+    expect(addMoney("1", "")).toBeNull();
+  });
+
+  test("toMoneyString writes the API's two-place form and leaves junk alone", () => {
+    expect(toMoneyString("5000")).toBe("5000.00");
+    expect(toMoneyString("5000.5")).toBe("5000.50");
+    expect(toMoneyString("12x")).toBe("12x");
+  });
+
+  test("isMoneyInput accepts non-negative amounts of at most two places", () => {
+    for (const ok of ["0", "0.00", "5000", "12.5"]) expect(isMoneyInput(ok), ok).toBe(true);
+    for (const bad of ["", "-1", "1.234", "1e3", "abc", " "]) expect(isMoneyInput(bad), bad).toBe(false);
+  });
+});
 
 describe("formatMoney", () => {
   test("formats a Decimal string as INR", () => {

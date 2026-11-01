@@ -37,8 +37,10 @@ import {
   ApiError,
 } from "@/lib/api";
 import { formatDate } from "@/lib/date";
+import { compareMoney, ZERO } from "@/lib/money";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { FinanceCard } from "./FinanceCard";
+import { RecordDepositPaymentDialog } from "./RecordDepositPaymentDialog";
 import { TransferRoomDialog } from "./TransferRoomDialog";
 
 /** The two KYC files the backend stores on a resident. */
@@ -90,6 +92,7 @@ export function ResidentProfile({ id }: { id: string }) {
   const [formError, setFormError] = useState("");
 
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isRecordingDeposit, setIsRecordingDeposit] = useState(false);
 
   // KYC document upload
   const [uploadingField, setUploadingField] = useState<ResidentDocumentField | null>(null);
@@ -221,6 +224,10 @@ export function ResidentProfile({ id }: { id: string }) {
 
   const fullName = `${resident.first_name} ${resident.last_name}`.trim();
   const initials = getInitials(fullName);
+  // A deposit can be collected in parts; the rest is recordable only while the resident is still here.
+  const hasPendingDeposit =
+    resident.security_deposit_pending != null && compareMoney(resident.security_deposit_pending, ZERO) === 1;
+  const canRecordDeposit = resident.status === "active" || resident.status === "notice_period";
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -431,10 +438,39 @@ export function ResidentProfile({ id }: { id: string }) {
                   <span className="font-semibold text-ink">{resident.block || t("overview.mainBuilding")}</span>
                 </div>
                 {resident.security_deposit_amount != null && (
-                  <div className="flex justify-between items-center pb-2 border-b border-border/40">
-                    <span className="text-ink-muted">{t("overview.securityDeposit")}</span>
-                    <MoneyText value={resident.security_deposit_amount} className="font-semibold text-ink" />
-                  </div>
+                  <>
+                    {/* The deposit may be paid in parts: agreed (what is owed), collected so far, and pending. */}
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.depositAgreed")}</span>
+                      <MoneyText
+                        value={resident.security_deposit_agreed ?? resident.security_deposit_amount}
+                        className="font-semibold text-ink"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.depositCollected")}</span>
+                      <MoneyText value={resident.security_deposit_amount} className="font-semibold text-ink" />
+                    </div>
+                    {hasPendingDeposit && (
+                      <div className="flex flex-wrap justify-between items-center gap-2 pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("overview.depositPending")}</span>
+                        <span className="flex items-center gap-3">
+                          <MoneyText value={resident.security_deposit_pending!} className="font-semibold text-status-critical" />
+                          {canRecordDeposit && (
+                            <PermissionGate permission="manage_deposits">
+                              <button
+                                type="button"
+                                onClick={() => setIsRecordingDeposit(true)}
+                                className="rounded-lg border border-accent/30 bg-accent-soft px-2.5 py-1 text-[11px] font-bold text-accent hover:bg-accent hover:text-ink-inverse transition-colors cursor-pointer"
+                              >
+                                {t("overview.recordDeposit")}
+                              </button>
+                            </PermissionGate>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
                 {resident.food_preference && (
                   <div className="flex justify-between items-center">
@@ -606,6 +642,17 @@ export function ResidentProfile({ id }: { id: string }) {
             )}
           </div>
         </div>
+      )}
+
+      {isRecordingDeposit && (
+        <RecordDepositPaymentDialog
+          resident={resident}
+          onClose={() => setIsRecordingDeposit(false)}
+          onRecorded={() => {
+            // Re-read the detail: the collected and pending deposit changed.
+            getResident(id).then(setResident).catch(() => {});
+          }}
+        />
       )}
 
       {isTransferring && (

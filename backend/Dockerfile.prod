@@ -3,7 +3,7 @@
 # worker VM, and the Cloud Run Jobs (migrate, bootstrap, scheduled commands)
 # — each just overrides the command. The dev image is ./Dockerfile.
 
-FROM python:3.12-slim-bookworm AS deps
+FROM python:3.15-slim-bookworm AS deps
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libpq-dev \
@@ -12,7 +12,7 @@ COPY requirements/ /tmp/requirements/
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r /tmp/requirements/prod.txt
 
 
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \

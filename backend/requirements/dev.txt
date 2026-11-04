@@ -1,6 +1,6 @@
 -r base.txt
 pytest-django==4.*
-pytest-cov==5.*
+pytest-cov==7.*
 factory-boy==3.*
 faker==26.*
 ipython

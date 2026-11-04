@@ -1,4 +1,4 @@
-Django==5.2.*
+Django==6.1.*
 djangorestframework==3.16.*
 djangorestframework-simplejwt==5.4.*
 bcrypt==4.*

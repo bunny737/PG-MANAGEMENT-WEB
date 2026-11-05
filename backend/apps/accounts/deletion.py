@@ -113,6 +113,7 @@ DISPOSITION = {
     'residents.AbscondedRecord': (PURGE, RETAIN),
     'residents.Admission': (PURGE, RETAIN),
     'residents.Allocation': (PURGE, RETAIN),
+    'residents.DepositPayment': (PURGE, RETAIN),
     'residents.BlacklistEntry': (PURGE, RETAIN),
     # Module 26. A tenant purge removes the PG's side of every link; a staff purge leaves them (the
     # staff reference is SET_NULL). A RESIDENT-account purge is a third case, see
@@ -147,7 +148,7 @@ PURGE_ORDER = [
     'operations.ComplaintComment', 'operations.Complaint', 'operations.Visitor',
     # Module 26. Links and invites PROTECT the resident record; requests PROTECT the property.
     'residents.ResidencyLinkRequest', 'residents.ResidentInvite', 'residents.ResidentAccess',
-    'residents.Vacate', 'residents.Transfer', 'residents.Allocation', 'residents.Admission',
+    'residents.Vacate', 'residents.Transfer', 'residents.Allocation', 'residents.DepositPayment', 'residents.Admission',
     'residents.AbscondedRecord', 'residents.BlacklistEntry',
     'expenses.Expense', 'expenses.ExpenseCategory',
     'notifications.NotificationLog', 'notifications.ScheduledNotification',

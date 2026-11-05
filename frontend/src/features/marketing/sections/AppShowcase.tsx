@@ -4,14 +4,9 @@ import { ButtonLink } from "@/components/marketing/ButtonLink";
 import { Section, SectionHeading } from "@/components/marketing/Section";
 import { getSiteConfig } from "@/lib/site-config";
 import { getSupportContacts } from "../data/support";
-import {
-  ComplaintPreview,
-  InvoicePreview,
-  OwnerDashboardPreview,
-  ResidentHomePreview,
-} from "../previews/screens";
+import { AppScreens } from "../previews/AppScreens";
 
-/** Android section: concept previews, the permanent QR code and the download state.
+/** Android section: app screenshots, the permanent QR code and the download state.
  * The QR encodes https://pglive.in/app, never the Play URL, so it can be printed
  * today and keeps working after launch. */
 export async function AppShowcase({ isPage = false }: { isPage?: boolean }) {
@@ -37,24 +32,16 @@ export async function AppShowcase({ isPage = false }: { isPage?: boolean }) {
         subtitle={live ? t("subtitleLive") : t("subtitle")}
       />
 
-      <div className="mt-8 flex justify-center">
-        <span
-          className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${
-            live ? "bg-status-good-soft text-status-good" : "bg-status-warn-soft text-status-warn"
-          }`}
-        >
-          <Smartphone className="size-4" aria-hidden="true" />
-          {live ? t("badgeLive") : t("badgeComingSoon")}
-        </span>
-      </div>
+      {live && (
+        <div className="mt-8 flex justify-center">
+          <span className="inline-flex items-center gap-2 rounded-full bg-status-good-soft px-4 py-1.5 text-sm font-semibold text-status-good">
+            <Smartphone className="size-4" aria-hidden="true" />
+            {t("badgeLive")}
+          </span>
+        </div>
+      )}
 
-      <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-        <ResidentHomePreview />
-        <InvoicePreview />
-        <ComplaintPreview />
-        <OwnerDashboardPreview />
-      </div>
-      <p className="mt-6 text-center text-sm text-ink-muted">{t("previewNote")}</p>
+      <AppScreens />
 
       <div className="mx-auto mt-12 grid max-w-3xl items-center gap-8 rounded-3xl border border-border bg-surface-card p-6 shadow-md sm:grid-cols-[auto_1fr] sm:p-8">
         {/* eslint-disable-next-line @next/next/no-img-element -- static SVG, no optimisation needed */}

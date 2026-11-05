@@ -118,7 +118,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <h1 className="text-xl font-bold text-ink">{invoice.resident_name}</h1>
           <p className="text-sm text-ink-muted">
             {invoice.room_number ? `${invoice.room_number} / ${invoice.bed_number} · ` : ""}
-            {t("period")}: {invoice.period_start} – {invoice.period_end}
+            {t("period")}: {formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -276,7 +276,7 @@ export function InvoiceDetail({ id }: { id: string }) {
                 className="flex items-center justify-between py-2 text-sm transition-colors hover:text-accent"
               >
                 <div>
-                  <p className="font-medium text-ink">{payment.payment_date}</p>
+                  <p className="font-medium text-ink">{formatDate(payment.payment_date)}</p>
                   <p className="text-xs text-ink-muted">{payment.receipt_number ?? "—"}</p>
                 </div>
                 <MoneyText value={payment.amount} className="font-semibold" />

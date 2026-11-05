@@ -9,6 +9,7 @@ import { MoneyText } from "@/components/shared/MoneyText";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { queryKeys } from "@/lib/queryKeys";
+import { formatDate } from "@/lib/date";
 import { currentMonthKey } from "@/lib/period";
 
 export function CashMovementsList() {
@@ -75,7 +76,7 @@ export function CashMovementsList() {
                   <div key={row.id} className="grid grid-cols-1 gap-2 px-5 py-3.5 text-sm md:grid-cols-12 md:items-center md:gap-4">
                     <div className="col-span-3 flex items-center gap-1.5 text-ink-muted">
                       <ArrowDownLeft className="size-3.5 text-status-good" />
-                      {row.date}
+                      {formatDate(row.date)}
                     </div>
                     <div className="col-span-4 font-medium text-ink">{row.resident_name}</div>
                     <div className="col-span-2 text-right">

@@ -639,8 +639,10 @@ prop. Spam controls: hidden honeypot (its input is not named `website`/`url`, wh
 `features/marketing/content/features.ts` is the single source for what is usable, per surface
 (`ownerWeb`, `residentWeb`, `mobileApp`) with states `available | preview | comingSoon | notPlanned`; copy lives in
 `messages/<locale>/marketing.json`. **Update it whenever a §7 status changes.** Tests forbid marking the Android app
-or the resident web portal `available` until that is deliberately changed. App screens are labelled
-"Concept preview", name their role, and say where that experience exists today.
+or the resident web portal `available` until that is deliberately changed. The app screens on `/app` are real
+screenshots of the Android app (`public/app-screens/`, rendered by `previews/AppScreens.tsx`); each names its role
+(currently all owner/staff). Replace the PNGs when the app UI changes, and keep the resident-screens-planned
+note in `marketing.app.requirements` until a resident app ships.
 
 ### 12.6 Android app page (`/app`)
 Permanent landing page, never a redirect. QR (`public/qr-app.svg`) encodes `https://pglive.in/app`, so it can be

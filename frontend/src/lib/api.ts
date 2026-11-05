@@ -863,8 +863,11 @@ export interface Resident {
   billing_mode?: string | null;
   food_preference?: string | null;
   joining_date?: string | null;
-  /** Present only with view_finance or manage_deposits. */
+  /** Present only with view_finance or manage_deposits. `security_deposit_amount` is what has been
+   * COLLECTED so far; `_agreed` is the full deposit and `_pending` the part still to pay. */
   security_deposit_amount?: string | null;
+  security_deposit_agreed?: string | null;
+  security_deposit_pending?: string | null;
   advance_amount?: string | null;
   advance_refundable?: boolean | null;
   room_number?: string | null;
@@ -1006,9 +1009,16 @@ export interface CreateAdmissionPayload {
   billing_mode: "monthly" | "weekly" | "daily";
   expected_stay_duration?: string;
   food_preference: "with_food" | "without_food";
+  /** Rent paid upfront for the first period, applied to the first invoice. May be "0.00". */
   advance_amount: string;
   advance_collected_date?: string | null;
-  advance_mode?: string;
+  advance_mode?: DepositMode;
+  /** The full security deposit the resident owes. Defaults server-side to the amount collected. */
+  security_deposit_agreed?: string;
+  /** The part of the deposit collected now (the rest is recorded later via createDepositPayment). */
+  security_deposit_amount?: string;
+  security_deposit_collected_date?: string | null;
+  security_deposit_mode?: DepositMode;
 }
 
 export function createAdmission(payload: CreateAdmissionPayload) {
@@ -1016,6 +1026,40 @@ export function createAdmission(payload: CreateAdmissionPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** The modes the admission and deposit endpoints accept (narrower than PaymentMode). */
+export type DepositMode = "upi" | "cash" | "bank_transfer";
+
+export interface DepositPayment {
+  id: string;
+  resident: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: DepositMode;
+  reference: string;
+  recorded_by: string | null;
+  created_at: string;
+}
+
+export interface DepositPaymentCreatePayload {
+  resident: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: DepositMode;
+  reference?: string;
+}
+
+/** Records a later collection of a resident's security deposit with the given Idempotency-Key.
+ * Both a 201 and a 200 replay of the same key resolve here (like createPayment); validation errors
+ * (overpaid, resident not current) and a reused key (409) throw. Needs manage_deposits. */
+export async function createDepositPayment(payload: DepositPaymentCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<DepositPayment>("/api/v1/deposit-payments/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
 }
 
 export interface StaffUser {

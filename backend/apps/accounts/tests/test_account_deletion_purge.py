@@ -20,6 +20,7 @@ from apps.billing.tests.base import BillingAPITestCase
 from apps.core.models import ContactMessage, PlatformConfig, TenantModelMixin
 from apps.core.roles import Role
 from apps.core.tenancy import tenant_context
+from apps.residents.models import DepositPayment
 from apps.devices.models import AppInstallation
 from apps.notices.models import Announcement, FoodHoliday, FoodHolidayCredit
 from apps.notifications.models import NotificationLog
@@ -79,6 +80,11 @@ class PurgeTestCase(BillingAPITestCase):
         bed = self.create_bed(room)
         resident = self.create_resident(prop, phone=f'90000{label.encode()[0]:05d}')
         self.check_in(resident, bed)
+        with tenant_context(tenant.id):  # a deposit ledger row PROTECTs its admission: the purge must order it first
+            DepositPayment.objects.create(
+                tenant_id=tenant.id, admission=resident.admission, amount=Decimal('500.00'),
+                payment_date=date(2026, 7, 1), payment_mode='cash',
+            )
         invoice = self.create_invoice(resident, date(2026, 7, 1))
         self.pay(invoice, Decimal('1000.00'))
         self.create_discount(resident)

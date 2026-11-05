@@ -10,17 +10,27 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
+from apps.core.idempotency import key_reused
 from apps.properties.models import Bed, PropertySettings
 
 from .access import record_exit
-from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
+from .models import (
+    AbscondedRecord,
+    Admission,
+    Allocation,
+    BlacklistEntry,
+    DepositPayment,
+    Resident,
+    Transfer,
+    Vacate,
+)
 
 
 def _first_of_next_month(d):
@@ -149,6 +159,113 @@ def add_one_month(d):
     month = (month - 1) % 12 + 1
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, min(d.day, last_day))
+
+
+def create_initial_deposit_payment(admission, *, actor):
+    """The deposit collected at check-in becomes the first ledger row. Called inside the
+    admission-create transaction, after the admission row exists."""
+    if admission.security_deposit_amount <= 0:
+        return None
+    return DepositPayment.objects.create(
+        tenant_id=admission.tenant_id, admission=admission, amount=admission.security_deposit_amount,
+        payment_date=admission.security_deposit_collected_date, payment_mode=admission.security_deposit_mode,
+        recorded_by=actor,
+    )
+
+
+def deposit_payment_matches(existing, *, admission_id, amount, payment_date, payment_mode, reference):
+    """True when a request carries exactly the inputs `existing` persisted."""
+    return (
+        str(existing.admission_id) == str(admission_id)
+        and existing.amount == amount
+        and existing.payment_date == payment_date
+        and existing.payment_mode == payment_mode
+        and existing.reference == reference
+    )
+
+
+def find_replayed_deposit_payment(*, tenant_id, idempotency_key, **inputs):
+    """The payment an earlier request with this key created, or None. A key reused with any
+    different persisted input is a client bug: 409."""
+    existing = DepositPayment.objects.filter(tenant_id=tenant_id, idempotency_key=idempotency_key).first()
+    if existing is None:
+        return None
+    if not deposit_payment_matches(existing, **inputs):
+        raise key_reused()
+    return existing
+
+
+@transaction.atomic
+def record_deposit_payment(*, admission, amount, payment_date, payment_mode, reference='',
+                           actor, request=None, idempotency_key=None):
+    """Record a later collection of the security deposit (Module 10, 2026-11-01).
+
+    Lock order is Resident -> Admission (the resident first, like every workflow that touches
+    the resident; see `lock_resident`). The serializer pre-checks the same rules for a friendly
+    error, but only the checks made under these locks are authoritative: two concurrent
+    payments each within the pending amount could otherwise overpay.
+
+    With an `idempotency_key`, a retry of a request that already succeeded returns the original
+    payment (`replayed = True`) instead of failing the pending check or recording it twice."""
+    resident = lock_resident(admission.resident)
+    admission = Admission.objects.select_for_update(of=('self',)).get(pk=admission.pk)
+    inputs = dict(
+        admission_id=admission.pk, amount=amount, payment_date=payment_date,
+        payment_mode=payment_mode, reference=reference,
+    )
+
+    if idempotency_key:
+        existing = find_replayed_deposit_payment(
+            tenant_id=admission.tenant_id, idempotency_key=idempotency_key, **inputs,
+        )
+        if existing is not None:
+            existing.replayed = True
+            return existing
+
+    if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+        raise ValidationError(
+            {'resident': _('A deposit can only be collected from a resident who is Active or on Notice Period.')},
+            code='resident_not_current',
+        )
+    pending = admission.security_deposit_pending
+    if amount > pending:
+        raise ValidationError(
+            {'amount': _('This exceeds the pending security deposit of %(pending)s.') % {'pending': pending}},
+            code='deposit_overpaid',
+        )
+
+    try:
+        with transaction.atomic():
+            payment = DepositPayment.objects.create(
+                tenant_id=admission.tenant_id, admission=admission, amount=amount,
+                payment_date=payment_date, payment_mode=payment_mode, reference=reference,
+                recorded_by=actor, idempotency_key=idempotency_key,
+            )
+    except IntegrityError:
+        # unique_deposit_payment_idempotency_key: lost a race to a request with the same key.
+        if not idempotency_key:
+            raise
+        existing = find_replayed_deposit_payment(
+            tenant_id=admission.tenant_id, idempotency_key=idempotency_key, **inputs,
+        )
+        if existing is None:
+            raise
+        existing.replayed = True
+        return existing
+    payment.replayed = False
+
+    before = admission.security_deposit_amount
+    admission.security_deposit_amount = before + amount
+    admission.save(update_fields=['security_deposit_amount', 'updated_at'])
+    audit_log.record(
+        action='deposit.payment_recorded', actor=actor, tenant_id=admission.tenant_id, obj=payment,
+        before={'security_deposit_collected': str(before)},
+        after={'resident': str(resident.id), 'amount': str(amount), 'mode': payment_mode,
+               'security_deposit_collected': str(admission.security_deposit_amount),
+               'security_deposit_pending': str(admission.security_deposit_pending)},
+        request=request,
+    )
+    return payment
 
 
 def lock_resident(resident):

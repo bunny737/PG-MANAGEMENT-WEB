@@ -7,6 +7,7 @@ from .views import (
     AdmissionViewSet,
     AllocationViewSet,
     BlacklistEntryViewSet,
+    DepositPaymentViewSet,
     ResidentViewSet,
     TransferViewSet,
     VacateViewSet,
@@ -15,6 +16,7 @@ from .views import (
 router = SimpleRouter()
 router.register('residents', ResidentViewSet, basename='resident')
 router.register('admissions', AdmissionViewSet, basename='admission')
+router.register('deposit-payments', DepositPaymentViewSet, basename='deposit-payment')
 router.register('allocations', AllocationViewSet, basename='allocation')
 router.register('transfers', TransferViewSet, basename='transfer')
 router.register('vacates', VacateViewSet, basename='vacate')

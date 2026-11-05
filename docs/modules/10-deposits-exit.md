@@ -478,3 +478,55 @@ checkout screen's refund breakdown before calling `finalize`.
   (`absconded_records.food_holiday_credit/_clawback`). `settlement-preview` takes `?actual_vacate_date=`
   and returns the figures from the same read-only plan. `finalize_vacate` and `mark_absconded` now lock
   Settings before Resident.
+
+## Update 2026-11-01 — security deposit paid in parts (owner request)
+Residents often pay only part of the money on joining (₹3,000–4,000 of ₹12,000 rent + ₹5,000 deposit) and the
+rest days later. The admission wizard used to show one "Total Due" and record everything as paid, and it sent
+rent + deposit as the *rent advance* (so the deposit was applied to the first invoice and `security_deposit_amount`
+stayed ₹0 — a money bug, fixed here). Rent paid late already worked (the advance is applied to the first
+invoice; a shortfall stays due on it). The deposit had one fixed number and admissions are immutable, so a later
+deposit payment could not be recorded. Now it can.
+
+- [DECISION] **`security_deposit_amount` keeps meaning "collected so far"; the agreed total is new.**
+  `Admission.security_deposit_agreed` (default 0) is what the resident owes;
+  `security_deposit_pending = max(agreed − collected, 0)` is a property, never stored. Every existing reader
+  (vacate refund, settlement preview, the `deduction_exceeds_deposit` cap, the absconded forfeit, the "deposits
+  held" report) already reads `security_deposit_amount`, so each one automatically counts only money that was
+  received. **A pending deposit is not a due**: it is never invoiced, it only lowers what can be refunded or
+  forfeited. (An admission created before this field, or outside the API, can have collected > agreed; pending
+  is then 0, never negative.)
+- **Ledger.** New `DepositPayment` (table `deposit_payments`, RLS-enforced; `admission` PROTECT FK, `amount`,
+  `payment_date`, `payment_mode` upi/cash/bank_transfer, `reference`, `recorded_by`, `idempotency_key` with a
+  partial unique constraint per tenant, like payments). `security_deposit_amount` is its running total, updated
+  under the admission row lock. The deposit collected at check-in becomes the first ledger row (same
+  transaction as the admission).
+- **Admission create** accepts `security_deposit_agreed`. Omitted, it defaults to `security_deposit_amount`, so
+  older clients (the Flutter app, a cached PWA) behave as before. `security_deposit_amount > agreed` is rejected
+  (`deposit_exceeds_agreed`). `advance_amount` may be `0.00`. A collected amount still needs its date and mode.
+- **`POST /api/v1/deposit-payments/`** `{resident, amount, payment_date, payment_mode, reference?}` records the
+  rest; `GET` lists (`?resident=`). `manage_deposits`, property-scoped like admissions, append-only (no
+  update/delete), `Idempotency-Key` honoured (same key + same body = 200 replay with
+  `Idempotent-Replayed: true`; same key + different body = 409). `services.record_deposit_payment` locks
+  **Resident → Admission** (resident first, like every workflow that touches the resident), then re-checks under
+  the locks: resident Active or Notice Period (`resident_not_current`), `0 < amount ≤ pending`
+  (`deposit_overpaid`). Audit-logged as `deposit.payment_recorded` with the collected amount before and after.
+- `ResidentSerializer` and `AdmissionSerializer` return `security_deposit_agreed` / `_pending`; the resident
+  fields are hidden from roles without `view_finance`/`manage_deposits`, like `security_deposit_amount`.
+- **Migration 0010** adds the field and table, enables RLS, and backfills under the super-admin GUC (the lesson
+  of 0007): `agreed = collected`, and one ledger row per admission that had collected a deposit (its own date and
+  mode; a legacy row with no mode becomes cash). Reverse of the backfill is a no-op.
+- **Account deletion (Module 22):** `residents.DepositPayment` is in `DISPOSITION` and `PURGE_ORDER` ahead of
+  `Admission` (the PROTECT FK would otherwise block the purge); the purge end-to-end test now seeds one.
+- **Frontend.** Wizard step 4 shows Agreed / Paid now / Pending for rent and deposit (both start at the full
+  amount, editable down to 0; paid > agreed is blocked), asks for mode and date only when something is paid, and
+  sends `advance_amount` = rent paid now, `security_deposit_agreed`, `security_deposit_amount` = deposit paid now.
+  **Card is removed** (the API only accepts upi/cash/bank_transfer). The step-3 agreed-rent field is read-only:
+  the contracted rent is the room's rate, snapshotted server-side (invariant 2), so editing it never did anything.
+  The resident profile shows agreed / collected / pending and a "Record deposit payment" dialog (needs
+  `manage_deposits`; Active/Notice Period only).
+- Tests: `residents/tests/test_deposit_payments.py` (30: partial admission, defaults, rejection, later payment,
+  audit, idempotency, permissions and scoping, refund/forfeit use collected only, backfill under RLS, tenant
+  isolation). Frontend: `AdmissionWizard.preselect.test.tsx` (the collection step), `RecordDepositPaymentDialog.test.tsx`,
+  `ResidentProfile.kyc.test.tsx` (the deposit block) and `money.test.ts`.
+- Not done: nothing reminds staff of a pending deposit, and it is not shown in the dues list or on
+  receipts; a pending deposit is visible on the resident profile only. Ask the owner before adding either.

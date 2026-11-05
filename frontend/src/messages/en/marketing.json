@@ -244,17 +244,14 @@
   "app": {
     "eyebrow": "Android app",
     "title": "PGLive on your phone",
-    "subtitle": "Our Android app is in review and launching soon. These are concept previews of what we are building.",
+    "subtitle": "Our Android app is in review and launching soon. Here is a look at the screens.",
     "subtitleLive": "Download the PGLive Android app from Google Play.",
-    "badgeComingSoon": "Launching soon",
     "badgeLive": "Available on Google Play",
     "scanTitle": "Scan to open the download page",
     "scanBody": "Point your phone camera at the code. It always opens pglive.in/app, so it keeps working after launch.",
     "qrAlt": "QR code that opens the PGLive Android app page",
     "openPage": "Open the app page",
     "getOnPlay": "Get it on Google Play",
-    "previewLabel": "Concept preview",
-    "previewNote": "Illustrative screens, not current app screenshots. Final screens will differ.",
     "notifyTitle": "Want to know when it launches?",
     "notifyBody": "Message us and we will tell you the day it is live.",
     "notifyCta": "Notify me",
@@ -264,55 +261,29 @@
     "requirements": [
       "Android only for now. An iPhone app is not available yet.",
       "You sign in with the same account you use on the web.",
-      "Some screens shown here are planned for the app, not yet built. The owner dashboard already works on the web."
+      "The screens shown are the owner and staff experience. Resident screens are planned."
     ],
     "screens": {
-      "residentHome": {
-        "role": "Resident view",
-        "title": "Home",
-        "availability": "Resident mobile experience is planned."
-      },
-      "invoice": {
-        "role": "Resident view",
-        "title": "Invoice",
-        "availability": "Resident mobile experience is planned."
-      },
-      "complaint": {
-        "role": "Resident view",
-        "title": "Complaint",
-        "availability": "Resident mobile experience is planned."
-      },
-      "ownerDashboard": {
+      "dashboard": {
         "role": "Owner view",
         "title": "Dashboard",
-        "availability": "The owner dashboard is available on the web today."
-      }
-    },
-    "sample": {
-      "greeting": "Hello, Ravi",
-      "rentDue": "Rent due",
-      "dueOn": "Due 5 Nov",
-      "status": {
-        "due": "Due",
-        "paid": "Paid",
-        "assigned": "Assigned"
+        "alt": "PGLive app dashboard showing occupancy, monthly collections, outstanding dues and security deposits"
       },
-      "recent": "Recent payments",
-      "october": "October rent",
-      "invoiceTitle": "Invoice, November",
-      "lineRent": "Rent",
-      "lineDiscount": "Discount",
-      "lineElectricity": "Electricity",
-      "lineTotal": "Total",
-      "complaintTitle": "Fan not working",
-      "complaintRoom": "Room 204",
-      "stepOpen": "Opened",
-      "stepAssigned": "Assigned to maintenance",
-      "stepProgress": "In progress",
-      "occupancy": "Occupancy",
-      "occupiedBeds": "82 of 100 beds occupied",
-      "collected": "Collected",
-      "pending": "Pending"
+      "residents": {
+        "role": "Owner view",
+        "title": "Residents",
+        "alt": "Residents list with search and status filters"
+      },
+      "billing": {
+        "role": "Owner view",
+        "title": "Billing",
+        "alt": "Invoices list showing paid and draft invoices"
+      },
+      "property": {
+        "role": "Owner view",
+        "title": "Rooms & beds",
+        "alt": "Property screen showing rooms and beds with occupancy"
+      }
     }
   },
   "pricing": {

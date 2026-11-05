@@ -28,7 +28,7 @@ from apps.accounts.serializers import LoginSerializer
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.properties.models import Property
-from apps.residents.models import Admission, Allocation, Resident
+from apps.residents.models import Admission, Allocation, DepositPayment, Resident
 from apps.subscriptions.models import Plan, Subscription
 from apps.subscriptions.tests.base import SubscriptionAPITestCase
 
@@ -67,6 +67,7 @@ class AdmissionVsStatusLockOrderTests(TransactionTestCase):
     def tearDown(self):
         with tenant_context(is_super_admin=True):
             Allocation.objects.filter(tenant_id=self.tenant.id).delete()
+            DepositPayment.objects.filter(tenant_id=self.tenant.id).delete()  # PROTECTs its admission
             Admission.objects.filter(tenant_id=self.tenant.id).delete()
             Resident.objects.filter(tenant_id=self.tenant.id).delete()
             Property.objects.filter(pk=self.property.pk).delete()

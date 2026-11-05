@@ -117,6 +117,10 @@
       "joiningDate": "Move-In Date",
       "contractedRent": "Contracted Rent",
       "securityDeposit": "Security Deposit",
+      "depositAgreed": "Agreed Deposit",
+      "depositCollected": "Deposit Collected",
+      "depositPending": "Deposit Pending",
+      "recordDeposit": "Record deposit payment",
       "rentType": "Billing Preference",
       "withFood": "With Food",
       "withoutFood": "Without Food",
@@ -195,6 +199,22 @@
       "cancel": "Cancel",
       "updatedToast": "Profile Updated Successfully",
       "updatedToastSub": "Resident records have been updated."
+    },
+    "depositDialog": {
+      "title": "Record deposit payment",
+      "subtitle": "{resident} · {pending} pending",
+      "amount": "Amount",
+      "mode": "Payment mode",
+      "date": "Payment date",
+      "reference": "Reference (optional)",
+      "submit": "Record payment",
+      "submitting": "Recording...",
+      "success": "Deposit payment recorded.",
+      "replayed": "This payment was already recorded.",
+      "close": "Close",
+      "errAmount": "Enter a valid amount greater than zero.",
+      "errExceeds": "This is more than the pending deposit.",
+      "errReused": "This request was already used for a different payment. Close this window and try again."
     }
   }
 }

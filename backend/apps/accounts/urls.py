@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import resident_auth, views
 
 urlpatterns = [
     path('signup/', views.SignupView.as_view(), name='auth-signup'),
@@ -19,4 +19,12 @@ urlpatterns = [
     path('me/', views.MeView.as_view(), name='auth-me'),
     path('account/deletion/', views.AccountDeletionView.as_view(), name='auth-account-deletion'),
     path('account/deletion/otp/', views.AccountDeletionOtpView.as_view(), name='auth-account-deletion-otp'),
+
+    # Resident app accounts (Module 26): their own pool, endpoints and throttles.
+    path('resident/signup/', resident_auth.ResidentSignupView.as_view(), name='resident-signup'),
+    path('resident/login/', resident_auth.ResidentLoginView.as_view(), name='resident-login'),
+    path('resident/otp/email/request/', resident_auth.ResidentEmailCodeRequestView.as_view(), name='resident-otp-email-request'),
+    path('resident/otp/email/verify/', resident_auth.ResidentEmailCodeVerifyView.as_view(), name='resident-otp-email-verify'),
+    path('resident/password-reset/', resident_auth.ResidentPasswordResetRequestView.as_view(), name='resident-password-reset'),
+    path('resident/password-reset/confirm/', resident_auth.ResidentPasswordResetConfirmView.as_view(), name='resident-password-reset-confirm'),
 ]

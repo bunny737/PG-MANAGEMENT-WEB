@@ -75,6 +75,13 @@ class PlatformConfig(models.Model):
     # gets before it is parked as `failed` for a Super Admin.
     account_deletion_grace_days = models.PositiveIntegerField(default=7, validators=[MinValueValidator(1)])
     account_deletion_max_attempts = models.PositiveIntegerField(default=5, validators=[MinValueValidator(1)])
+    # Module 26 (resident app access): how long a staff invite stays valid; how long a resident who
+    # has left (Vacated / Absconded / Blacklisted) can still see their own bills and receipts,
+    # counted from the exit (0 = access ends at exit); and how long an app account that never
+    # verified its email is kept before the nightly tidy removes it.
+    resident_invite_ttl_hours = models.PositiveIntegerField(default=168, validators=[MinValueValidator(1)])
+    resident_post_exit_access_days = models.PositiveIntegerField(default=90)
+    unverified_resident_purge_days = models.PositiveIntegerField(default=14, validators=[MinValueValidator(1)])
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

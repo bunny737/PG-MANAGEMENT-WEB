@@ -20,6 +20,7 @@ from apps.audit.models import AuditLog
 from apps.core.idempotency import key_reused
 from apps.properties.models import Bed, PropertySettings
 
+from .access import record_exit
 from .models import (
     AbscondedRecord,
     Admission,
@@ -404,6 +405,7 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
 
     resident.status = Resident.Status.VACATED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # starts the app-access window (Module 26)
 
     audit_log.record(
         action='resident.vacated', actor=actor, obj=vacate,
@@ -620,6 +622,7 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     resident.status = Resident.Status.ABSCONDED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # starts the app-access window (Module 26)
 
     audit_log.record(
         action='resident.absconded', actor=actor, obj=record,
@@ -677,6 +680,7 @@ def confirm_blacklist(*, resident, reason, actor, request=None):
     )
     resident.status = Resident.Status.BLACKLISTED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # a no-op for access already on the clock: Absconded -> Blacklisted never extends it
 
     audit_log.record(
         action='resident.blacklisted', actor=actor, obj=entry,

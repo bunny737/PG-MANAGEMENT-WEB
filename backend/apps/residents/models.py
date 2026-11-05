@@ -88,6 +88,11 @@ class Resident(TenantModelMixin):
 
     class Meta:
         db_table = 'residents'
+        constraints = [
+            # Target of the (resident_id, tenant_id) composite foreign keys on resident_access and
+            # resident_invites (Module 26): a link's recorded tenant must be its record's tenant.
+            models.UniqueConstraint(fields=['id', 'tenant_id'], name='residents_id_tenant_uniq'),
+        ]
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'.strip()
@@ -564,3 +569,8 @@ def vacate_prefetch(lookup='vacates'):
         queryset=Vacate.objects.order_by('notice_given_date', 'created_at'),
         to_attr='prefetched_vacates',
     )
+
+
+# Module 26: how a person's own login account is linked to a resident record. Imported here so
+# Django registers the models with this app.
+from .access_models import ResidencyLinkRequest, ResidentAccess, ResidentInvite  # noqa: E402,F401

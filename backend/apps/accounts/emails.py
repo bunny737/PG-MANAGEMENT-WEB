@@ -59,11 +59,14 @@ def send_password_reset_email(user):
 
 
 def send_password_changed_email(user):
+    # A resident account resets with a code in the app; the staff web's forgot-password page
+    # would not find it, so point them at the site instead.
+    reset_path = '' if user.role == 'resident' else '/forgot-password'
     _send(
         user,
         subject=lambda: _('Your password was changed'),
         template='password_changed',
-        context={'reset_url': f'{settings.FRONTEND_BASE_URL}/forgot-password'},
+        context={'reset_url': f'{settings.FRONTEND_BASE_URL}{reset_path}'},
     )
 
 
@@ -140,4 +143,49 @@ def send_account_deletion_code_email(user, code):
         subject=lambda: _('Your account deletion code'),
         template='account_deletion_code',
         context={'code': code, 'minutes': max(1, settings.OTP_TTL_SECONDS // 60)},
+    )
+
+
+# --- Resident app accounts (Module 26) -------------------------------------------------------
+# Residents use short codes, not links: the app has no page to open a reset or verification link
+# in, and a code works the same on the web.
+def send_resident_verification_code_email(user, code):
+    _send(
+        user,
+        subject=lambda: _('Verify your email address'),
+        template='resident_verification_code',
+        context={'code': code, 'minutes': max(1, settings.OTP_TTL_SECONDS // 60)},
+    )
+
+
+def send_resident_password_reset_code_email(user, code):
+    _send(
+        user,
+        subject=lambda: _('Your password reset code'),
+        template='resident_password_reset_code',
+        context={'code': code, 'minutes': max(1, settings.OTP_TTL_SECONDS // 60)},
+    )
+
+
+def send_resident_account_exists_email(user):
+    _send(
+        user,
+        subject=lambda: _('You already have an account'),
+        template='resident_account_exists',
+        context={},
+    )
+
+
+def send_resident_invite_email(*, to, name, business, property_name, token, language, hours):
+    """Sent by address: an invite is for an email, and no User exists for it. The token rides in
+    the URL fragment, so it stays out of server access logs."""
+    send_templated_email(
+        to=to,
+        subject=lambda: _('%(business)s invited you to its app') % {'business': business},
+        template='resident_invite',
+        context={
+            'name': name, 'business': business, 'property': property_name, 'hours': hours,
+            'cta_url': f'{settings.FRONTEND_BASE_URL}/join#token={token}',
+        },
+        language=language or 'en',
     )

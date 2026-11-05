@@ -35,6 +35,10 @@ class AuthAPITestCase(APITestCase):
         kwargs.setdefault('email_verified', True)
         if role in STAFF_ROLES and 'phone' not in kwargs:
             kwargs['phone'] = cls._next_phone()
+        if role == Role.RESIDENT:
+            # A resident account is a person's own login and belongs to no tenant (Module 26).
+            # Tests that only need "a resident-role caller" keep passing a tenant for symmetry.
+            tenant = None
         return User.objects.create_user(
             email=email, password=password, tenant=tenant, role=role, **kwargs
         )

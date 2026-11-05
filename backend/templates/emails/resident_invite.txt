@@ -1,0 +1,14 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% blocktrans trimmed %}{{ business }} invited you to its app{% endblocktrans %}{% endblock %}
+{% block content %}{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}
+
+{% blocktrans trimmed %}{{ business }} ({{ property }}) invited you to use the PGLive app, where you can see your bills and receipts, raise complaints and read notices.{% endblocktrans %}
+
+{% trans "Create your own account with this email address (or sign in if you already have one), then accept the invitation." %}
+
+{% blocktrans trimmed count hours=hours %}This invitation is valid for {{ hours }} hour.{% plural %}This invitation is valid for {{ hours }} hours.{% endblocktrans %}
+{% endblock %}
+{% block cta_label %}{% trans "Accept the invitation" %}{% endblock %}
+{% block footnote %}
+{% trans "If you weren't expecting this invitation, you can ignore this email. No account is created until you sign up yourself." %}
+{% endblock %}

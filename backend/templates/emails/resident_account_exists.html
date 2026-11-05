@@ -1,0 +1,9 @@
+{% extends "emails/base.html" %}{% load i18n %}
+{% block title %}{% trans "You already have an account" %}{% endblock %}
+{% block preheader %}{% trans "Sign in, or reset your password if you have forgotten it." %}{% endblock %}
+{% block heading %}{% trans "You already have an account" %}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px 0;">{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}</p>
+<p style="margin:0 0 12px 0;">{% trans "Someone tried to create an account with this email address, but one already exists." %} {% trans "Open the app and sign in. If you have forgotten your password, choose “Forgot password” to reset it." %}</p>
+{% endblock %}
+{% block footnote %}{% trans "If this wasn't you, you can ignore this email. Nothing has changed." %}{% endblock %}

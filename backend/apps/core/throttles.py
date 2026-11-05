@@ -51,3 +51,14 @@ class ContactEmailThrottle(SimpleRateThrottle):
             return None
         digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()
         return self.cache_format % {'scope': self.scope, 'ident': digest}
+
+
+class JoinCodeLookupIPThrottle(SimpleRateThrottle):
+    """Per-client-IP limit on join-code lookups (Module 26). The lookup is authenticated, so the
+    per-user scope already bounds one account; this bounds one address using many accounts to
+    probe codes. Trusted IP, apps.core.net."""
+
+    scope = 'resident_join_code_lookup_ip'
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}

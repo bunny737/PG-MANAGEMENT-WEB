@@ -89,3 +89,42 @@ class IsSuperAdmin(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         return bool(user and user.is_authenticated and user.role == Role.SUPER_ADMIN)
+
+
+class IsAuthenticatedStaffPool(BasePermission):
+    """The project-wide default (REST_FRAMEWORK DEFAULT_PERMISSION_CLASSES): signed in AND not a
+    resident-pool account (Module 26).
+
+    A resident account is a person's own login, linked to residencies by ResidentAccess, with
+    no tenant of its own. Every endpoint that predates residents was written for staff, so the
+    default fails closed: a resident reaches only views that name `IsAuthenticated` (or a
+    resident permission) explicitly, which is a decision a reviewer can see."""
+
+    message = _('You do not have permission to perform this action.')
+    code = 'permission_denied'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.role != Role.RESIDENT)
+
+
+class IsResidentAccount(BasePermission):
+    """A signed-in resident-pool account (a person's own app login, Module 26)."""
+
+    message = _('This action is for resident app accounts.')
+    code = 'resident_account_required'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.role == Role.RESIDENT)
+
+
+class IsVerifiedResidentAccount(IsResidentAccount):
+    """A resident-pool account whose email is verified. Contact and linking actions need it, so
+    an anonymous throw-away signup can't reveal numbers or create requests."""
+
+    message = _('Verify your email address first.')
+    code = 'email_not_verified'
+
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and request.user.email_verified

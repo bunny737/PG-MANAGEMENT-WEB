@@ -75,6 +75,8 @@ residents, billing, and operations through a single system.
 → 22 account-deletion (Google Play requirement 2026-10-23, not in PRD v2; deps 01/13/14/15/19; spec: docs/modules/22-account-deletion.md)
 → 23 getting-started (owner request 2026-10-28, not in PRD v2; deps 01/02/03/04/05/20; spec: docs/modules/23-getting-started.md)
 → 24 notices-holidays (owner request 2026-10-30, not in PRD v2; deps 02/03/08/10/15; spec: docs/modules/24-notices-holidays.md)
+→ 26 resident-identity (owner request 2026-10-31, not in PRD v2; 26a deps 01/04/10/14/22, 26b adds 08/09/11/12/13/19/24; spec: docs/modules/26-resident-identity.md)
+→ 25 pg-discovery (owner request 2026-10-31, not in PRD v2; deps 01/02/03/05/13/14/18/22 + 26a; spec: docs/modules/25-pg-discovery.md)
 
 ## Per-task workflow
 1. Read this file + the relevant docs/modules/<nn>.md spec

@@ -61,7 +61,15 @@ export function ResidentPicker({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 100)}
+        onBlur={() => {
+          // Typed a name but never clicked the row: if it narrows to exactly
+          // one resident, that's the intended pick.
+          if (!value && query.trim() && filtered.length === 1) {
+            onChange(filtered[0].id);
+            setQuery("");
+          }
+          setTimeout(() => setOpen(false), 100);
+        }}
         placeholder={placeholder}
         className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
       />

@@ -609,3 +609,10 @@ to the role defaults are stored as NULL. Changing a staff member's role clears t
   `GET|DELETE /auth/account/deletion/` (403 `ACCOUNT_DELETION_PENDING` / `TENANT_DELETION_PENDING`); login and refresh share
   the same lookup so a locked user can still sign in to view or cancel. `BLOCKED_TENANT_STATUSES` includes `deleted`.
   See [22-account-deletion.md](22-account-deletion.md).
+- 2026-11-01  **Two account pools.** `role=resident` users are tenant-less (a person's own app account, Module 26); email and phone are
+  unique per pool (`unique_active_email_lower` / `unique_active_phone` now cover the staff pool, with matching
+  `unique_active_resident_*` constraints), so one address can hold a staff and a resident login. Every email/phone lookup
+  names its pool (`User.objects.staff_pool()` / `.resident_pool()`); `ActiveEmailBackend` (the only registered backend) is
+  staff-only. The default DRF permission is now `IsAuthenticatedStaffPool`, so a view that never opted in is closed to
+  residents. New session GUC `app.user_id` (resident accounts only) beside `app.tenant_id` / `app.is_super_admin`. See
+  `docs/modules/26-resident-identity.md`; migration `accounts.0013` refuses to run if a `role=resident` user exists.

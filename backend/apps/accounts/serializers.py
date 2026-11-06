@@ -84,7 +84,7 @@ class SignupSerializer(serializers.Serializer):
             raise serializers.ValidationError(_('Invalid email format.'), code='invalid_email')
         if not normalized:
             raise serializers.ValidationError(_('Email is required.'), code='invalid_email')
-        if User.objects.filter(email__iexact=normalized, is_active=True).exists():
+        if User.objects.staff_pool().filter(email__iexact=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this email already exists.'), code='email_taken'
             )
@@ -97,7 +97,7 @@ class SignupSerializer(serializers.Serializer):
             normalized = normalize_phone(value)
         except ValueError:
             raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
-        if normalized and User.objects.filter(phone=normalized, is_active=True).exists():
+        if normalized and User.objects.staff_pool().filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
@@ -164,7 +164,7 @@ class EmailVerificationSerializer(serializers.Serializer):
         # between the check and the update and get the new address verified by
         # a link sent to the old one.
         user = (
-            User.objects.select_for_update()
+            User.objects.staff_pool().select_for_update()
             .filter(pk=self.validated_data['user_id'])
             .first()
         )
@@ -249,7 +249,7 @@ class OtpRequestSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         # Always succeed — never reveal whether a phone is registered.
-        user = User.objects.filter(phone=self.validated_data['phone'], is_active=True).first()
+        user = User.objects.staff_pool().filter(phone=self.validated_data["phone"], is_active=True).first()
         if user:
             code = otp_service.issue(user, otp_service.Channel.PHONE)
             if code:
@@ -270,7 +270,7 @@ class OtpVerifySerializer(serializers.Serializer):
     def validate(self, attrs):
         phone = attrs['phone']
         user = (
-            User.objects.select_related('tenant')
+            User.objects.staff_pool().select_related('tenant')
             .filter(phone=phone, is_active=True)
             .first()
         )
@@ -308,7 +308,7 @@ class EmailOtpVerifySerializer(serializers.Serializer):
 
     def validate(self, attrs):
         user = (
-            User.objects.select_related('tenant')
+            User.objects.staff_pool().select_related('tenant')
             .filter(email__iexact=attrs['email'], is_active=True, tenant__isnull=False)
             .first()
         )
@@ -350,7 +350,7 @@ class PhoneLoginSerializer(serializers.Serializer):
 
         try:
             user = (
-                User.objects.select_related('tenant')
+                User.objects.staff_pool().select_related('tenant')
                 .get(phone=phone, is_active=True)
             )
         except User.DoesNotExist:
@@ -417,7 +417,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     def validate(self, attrs):
         # Cheap early rejection; save() repeats the check under a row lock.
         user_id = read_password_reset_uid(attrs['uid'])
-        user = User.objects.filter(pk=user_id, is_active=True).first() if user_id else None
+        user = User.objects.staff_pool().filter(pk=user_id, is_active=True).first() if user_id else None
         if user is None or not check_password_reset_token(user, attrs['token']):
             raise self._invalid_token()
         attrs['user'] = user
@@ -429,7 +429,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         # immediately before changing the password: the second request then
         # sees the first one's new hash and is rejected.
         with transaction.atomic():
-            user = User.objects.select_for_update().filter(
+            user = User.objects.staff_pool().select_for_update().filter(
                 pk=self.validated_data['user'].pk, is_active=True
             ).first()
             if user is None or not check_password_reset_token(user, self.validated_data['token']):
@@ -517,18 +517,23 @@ class MeSerializer(serializers.ModelSerializer):
     kyc_uploads_enabled = serializers.SerializerMethodField()
     deletion = serializers.SerializerMethodField()
     deletion_confirm_methods = serializers.SerializerMethodField()
+    onboarding_dismissed = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone', 'role',
             'language_code', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
-            'deletion', 'deletion_confirm_methods',
+            'deletion', 'deletion_confirm_methods', 'onboarding_dismissed',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'email_verified', 'tenant', 'permissions', 'kyc_uploads_enabled',
-            'deletion', 'deletion_confirm_methods',
+            'deletion', 'deletion_confirm_methods', 'onboarding_dismissed',
         ]
+
+    def get_onboarding_dismissed(self, obj) -> bool:
+        """True once the user hid the Getting started checklist (Module 23)."""
+        return obj.onboarding_dismissed_at is not None
 
     def get_permissions(self, obj) -> list[str]:
         return permissions_for_user(obj)
@@ -628,7 +633,7 @@ class MeUpdateSerializer(serializers.ModelSerializer):
             normalized = normalize_phone(value)
         except ValueError:
             raise serializers.ValidationError(_('Invalid phone number.'), code='invalid_phone')
-        if normalized and User.objects.exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
+        if normalized and User.objects.pool_of(self.instance).exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
@@ -676,7 +681,7 @@ class StaffCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(_('Invalid email format.'), code='invalid_email')
         if not normalized:
             return None
-        if User.objects.filter(email__iexact=normalized, is_active=True).exists():
+        if User.objects.staff_pool().filter(email__iexact=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this email already exists.'), code='email_taken'
             )
@@ -697,7 +702,7 @@ class StaffCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 _('Phone number is required.'), code='invalid_phone'
             )
-        if User.objects.filter(phone=normalized, is_active=True).exists():
+        if User.objects.staff_pool().filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
@@ -802,7 +807,7 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 _('Phone number is required for staff.'), code='invalid_phone'
             )
-        if User.objects.exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
+        if User.objects.staff_pool().exclude(pk=self.instance.pk).filter(phone=normalized, is_active=True).exists():
             raise serializers.ValidationError(
                 _('An account with this phone number already exists.'), code='phone_taken'
             )
@@ -812,7 +817,7 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
         # Reactivation safety check: when is_active flips False -> True
         if attrs.get('is_active') is True and self.instance and not self.instance.is_active:
             email_to_check = normalize_email(self.instance.email)
-            if email_to_check and User.objects.exclude(pk=self.instance.pk).filter(email__iexact=email_to_check, is_active=True).exists():
+            if email_to_check and User.objects.staff_pool().exclude(pk=self.instance.pk).filter(email__iexact=email_to_check, is_active=True).exists():
                 raise serializers.ValidationError(
                     {'email': [_('An account with this email already exists.')]},
                     code='email_taken',
@@ -822,7 +827,7 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
                 if 'phone' in attrs
                 else normalize_phone(self.instance.phone)
             )
-            if phone_to_check and User.objects.exclude(pk=self.instance.pk).filter(phone=phone_to_check, is_active=True).exists():
+            if phone_to_check and User.objects.staff_pool().exclude(pk=self.instance.pk).filter(phone=phone_to_check, is_active=True).exists():
                 raise serializers.ValidationError(
                     {'phone': [_('An account with this phone number already exists.')]},
                     code='phone_taken',

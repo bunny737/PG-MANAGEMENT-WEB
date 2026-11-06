@@ -31,6 +31,7 @@ export function buildCsp(nonce: string, reportUri?: string): string {
       // Fallbacks for browsers without 'strict-dynamic' (CSP2); ignored by CSP3 browsers.
       "https://checkout.razorpay.com",
       "https://maps.googleapis.com",
+      "https://www.googletagmanager.com", // Google Analytics (marketing pages only)
     ],
     // Tailwind/Next and the Maps widget inject inline styles.
     "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
@@ -42,14 +43,25 @@ export function buildCsp(nonce: string, reportUri?: string): string {
       "https://*.googleapis.com",
       "https://*.gstatic.com",
       "https://*.razorpay.com",
+      "https://i.ytimg.com", // tutorial video thumbnails (Help, Module 23)
+      "https://*.google-analytics.com", // GA4 beacon fallback
+      "https://www.googletagmanager.com",
     ],
     "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
     "connect-src": [
       "'self'",
       "https://*.googleapis.com", // Maps, FCM registration, Firebase installations
       "https://*.razorpay.com",
+      // Google Analytics 4 collection endpoints
+      "https://*.google-analytics.com",
+      "https://*.analytics.google.com",
+      "https://www.googletagmanager.com",
     ],
-    "frame-src": ["https://api.razorpay.com", "https://checkout.razorpay.com"],
+    "frame-src": [
+      "https://api.razorpay.com",
+      "https://checkout.razorpay.com",
+      "https://www.youtube-nocookie.com", // tutorial videos (Module 23), privacy-enhanced embed
+    ],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],

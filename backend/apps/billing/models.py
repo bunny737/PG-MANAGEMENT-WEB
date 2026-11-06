@@ -2,6 +2,7 @@ import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -79,6 +80,28 @@ class Invoice(TenantModelMixin):
         PARTIALLY_PAID = 'partially_paid', _('Partially Paid')
         PAID = 'paid', _('Paid')
 
+    class ReviewReason(models.TextChoices):
+        """Why an automatically generated draft needs the owner to confirm it.
+        Any reason at all means it is never auto-issued (see autobilling)."""
+        WEEKLY = 'weekly', _('Weekly resident')
+        FIRST_PARTIAL = 'first_partial', _('First partial period')
+        TRANSITION = 'transition', _('Billing day changed (transition period)')
+        LATE = 'late', _('Drafted after the billing date')
+        VACATING = 'vacating', _('Resident leaves during this period')
+        NO_PRIOR_INVOICE = 'no_prior_invoice', _('First automatic invoice for this resident')
+        INELIGIBLE = 'ineligible', _('Resident is no longer billable')
+        RULE_CHANGED = 'rule_changed', _('Automatic billing settings changed')
+
+    class DueDatePolicy(models.TextChoices):
+        # Keep the due date the draft was created with (billing date + grace).
+        FROM_PERIOD_START = 'from_period_start', _('From the billing date')
+        # Recompute it on issue as issue date + grace, so an invoice issued
+        # late is never overdue the moment the resident receives it.
+        FROM_ISSUE_DATE = 'from_issue_date', _('From the issue date')
+        # The owner typed this due date on the draft: automation never
+        # changes it.
+        MANUAL = 'manual', _('Set by the owner')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     resident = models.ForeignKey(Resident, on_delete=models.PROTECT, related_name='invoices')
     period_start = models.DateField()
@@ -93,6 +116,21 @@ class Invoice(TenantModelMixin):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='invoices_created'
     )
+    # Automatic billing (see apps.billing.autobilling). Manual invoices keep
+    # the defaults and behave exactly as before.
+    auto_generated = models.BooleanField(default=False)
+    review_reasons = ArrayField(
+        models.CharField(max_length=20, choices=ReviewReason.choices), default=list, blank=True,
+    )
+    due_date_policy = models.CharField(
+        max_length=20, choices=DueDatePolicy.choices, default=DueDatePolicy.FROM_PERIOD_START,
+    )
+    # The day the sweep issues this draft. Only ever set while review_reasons
+    # is empty; null = never auto-issued.
+    auto_issue_on = models.DateField(null=True, blank=True)
+    # The owner's hold — separate from review_reasons so Resume can't bypass
+    # a confirmation the system requires.
+    auto_issue_held = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'invoices'
@@ -108,6 +146,12 @@ class Invoice(TenantModelMixin):
 
     def __str__(self):
         return f'Invoice {self.resident} {self.period_start}'
+
+    @property
+    def can_auto_issue(self):
+        """An auto draft the owner may hold/resume: nothing requires a manual
+        confirmation."""
+        return self.status == self.Status.DRAFT and self.auto_generated and not self.review_reasons
 
     @property
     def total(self):
@@ -167,6 +211,9 @@ class InvoiceLineItem(TenantModelMixin):
         ADDITIONAL = 'additional', _('Additional')
         DISCOUNT = 'discount', _('Discount')
         PENALTY = 'penalty', _('Late Payment Penalty')
+        # Module 24: a food-holiday credit (negative). System-owned — created
+        # and removed only by apps.notices.credits, never edited by hand.
+        FOOD_HOLIDAY = 'food_holiday', _('Food Holiday Credit')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='line_items')
@@ -181,6 +228,98 @@ class InvoiceLineItem(TenantModelMixin):
 
     def __str__(self):
         return f'{self.label}: {self.amount}'
+
+
+class AutoBillingCycle(TenantModelMixin):
+    """Marks a billing cycle automatic billing has already handled for a
+    resident, so the sweep never handles it twice — a draft the owner
+    deletes is not recreated, and its period still counts as covered when the
+    next cycle is worked out. Written in the same transaction as its invoice,
+    and only when the cycle was handled successfully."""
+
+    class Outcome(models.TextChoices):
+        CREATED = 'created', _('Draft created')
+        SKIPPED_OVERLAP = 'skipped_overlap', _('Skipped: overlaps an existing invoice')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.ForeignKey(Resident, on_delete=models.CASCADE, related_name='auto_billing_cycles')
+    period_start = models.DateField()
+    period_end = models.DateField()
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    invoice = models.ForeignKey(
+        Invoice, null=True, blank=True, on_delete=models.SET_NULL, related_name='auto_billing_cycles',
+    )
+    # The sweep's effective date: at most one cycle per resident per day.
+    created_on = models.DateField()
+
+    class Meta:
+        db_table = 'auto_billing_cycles'
+        ordering = ['-period_start']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['resident', 'period_start'], name='unique_auto_billing_cycle_per_resident',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Auto billing {self.resident} {self.period_start} ({self.outcome})'
+
+
+class AutoBillingNotice(TenantModelMixin):
+    """A warning the sweep has already sent the owner, so the next daily run
+    doesn't repeat it."""
+
+    class Kind(models.TextChoices):
+        # Today is not covered by any invoice, but a later period is — the
+        # sweep only bills forward, so the owner has to bill the gap by hand.
+        COVERAGE_GAP = 'coverage_gap', _('Unbilled period before a later invoice')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    resident = models.ForeignKey(Resident, on_delete=models.CASCADE, related_name='auto_billing_notices')
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    key_date = models.DateField()
+
+    class Meta:
+        db_table = 'auto_billing_notices'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['resident', 'kind', 'key_date'], name='unique_auto_billing_notice',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.kind} notice for {self.resident} ({self.key_date})'
+
+
+class AutoBillingSummary(TenantModelMixin):
+    """The owner summary a sweep owes for one property and day, kept until it
+    reaches every recipient. Written in its own transaction after the drafts
+    commit, then delivered by the sweep and retried by
+    `billing.retry_auto_billing_summaries` — so a failed email/push is resent
+    (ideally before the drafts auto-issue) instead of lost."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    property = models.ForeignKey(
+        'properties.Property', on_delete=models.CASCADE, related_name='auto_billing_summaries',
+    )
+    on_date = models.DateField()
+    created = models.PositiveIntegerField(default=0)
+    scheduled = models.PositiveIntegerField(default=0)
+    needs_confirmation = models.PositiveIntegerField(default=0)
+    gaps = models.TextField(blank=True)  # comma-separated resident names
+    # Users the summary has reached (a channel sent it, or none could).
+    delivered_to = ArrayField(models.UUIDField(), default=list, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'auto_billing_summaries'
+        constraints = [
+            models.UniqueConstraint(fields=['property', 'on_date'], name='unique_auto_billing_summary'),
+        ]
+
+    def __str__(self):
+        return f'Auto billing summary {self.property_id} {self.on_date}'
 
 
 class Payment(TenantModelMixin):

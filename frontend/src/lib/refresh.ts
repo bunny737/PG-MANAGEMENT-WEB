@@ -1,5 +1,6 @@
 import { queryClient } from "@/lib/queryClient";
 import { queryKeys } from "@/lib/queryKeys";
+import { ensureFreshSession } from "@/lib/session";
 
 /**
  * Mutation -> refresh contract (UX roadmap). One helper per mutation that
@@ -30,15 +31,20 @@ export function afterPayment(opts: { invoiceId?: string; residentId?: string; pr
 }
 
 /** Issuing an invoice auto-records the admission advance as a payment, so
- * this refreshes everything afterPayment does too. */
+ * this refreshes everything afterPayment does too. It also locks the food
+ * holidays whose credits sit on the invoice (Module 24 `is_locked`), so the
+ * notices family refreshes as well. */
 export function afterInvoiceIssued(opts: { invoiceId?: string; residentId?: string; propertyId?: string } = {}) {
-  return afterPayment(opts);
+  return Promise.all([afterPayment(opts), invalidate([...queryKeys.notices.all])]);
 }
 
-/** Create/edit/delete a draft invoice, or add/edit/remove a line item. */
+/** Create/edit/delete a draft invoice, or add/edit/remove a line item. Food-holiday
+ * credits (Module 24) are attached, moved, waived or released by all of these, so
+ * the notices family (credit statuses, totals) refreshes too. */
 export function afterInvoiceChange(opts: { invoiceId?: string; residentId?: string; propertyId?: string } = {}) {
   const keys: unknown[][] = [
     [...queryKeys.invoices.all],
+    [...queryKeys.notices.all],
     [...queryKeys.analytics.all],
     [...queryKeys.dashboard.all],
   ];
@@ -57,14 +63,14 @@ export function afterDiscountChange(opts: { residentId?: string } = {}) {
 
 /** Bed status PATCH, room/bed add or delete. */
 export function afterBedChange(opts: { propertyId?: string } = {}) {
-  const keys: unknown[][] = [[...queryKeys.dashboard.all]];
+  const keys: unknown[][] = [[...queryKeys.dashboard.all], [...queryKeys.onboarding.all]];
   if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
   return invalidate(...keys);
 }
 
 /** Admission into a bed. */
 export function afterAdmission(opts: { propertyId?: string } = {}) {
-  const keys: unknown[][] = [[...queryKeys.residents.all], [...queryKeys.dashboard.all]];
+  const keys: unknown[][] = [[...queryKeys.residents.all], [...queryKeys.dashboard.all], [...queryKeys.onboarding.all]];
   if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
   return invalidate(...keys);
 }
@@ -87,7 +93,12 @@ export function afterTransfer(opts: {
 
 /** Notice given/cancelled, vacate finalized, or absconded. */
 export function afterVacate(opts: { residentId?: string; propertyId?: string } = {}) {
-  const keys: unknown[][] = [[...queryKeys.residents.all], [...queryKeys.dashboard.all]];
+  // Move-out and abscond also settle the resident's food-holiday credits (Module 24).
+  const keys: unknown[][] = [
+    [...queryKeys.residents.all],
+    [...queryKeys.dashboard.all],
+    [...queryKeys.notices.all],
+  ];
   if (opts.residentId) keys.push([...queryKeys.residents.detail(opts.residentId)]);
   if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
   return invalidate(...keys);
@@ -99,5 +110,35 @@ export function afterVacate(opts: { residentId?: string; propertyId?: string } =
  * "both old and new months" rule, done by invalidating broadly rather
  * than tracking which months were affected. */
 export function afterExpenseChange() {
-  return invalidate([...queryKeys.expenses.all], [...queryKeys.analytics.all]);
+  return invalidate([...queryKeys.expenses.all], [...queryKeys.analytics.all], [...queryKeys.onboarding.all]);
+}
+
+/** Create or delete a property, building, floor or room — the Getting started checklist
+ * (Module 23) ticks and un-ticks on these, plus the property lists and the dashboard's bed totals. */
+export function afterHierarchyChange(opts: { propertyId?: string } = {}) {
+  const keys: unknown[][] = [
+    [...queryKeys.onboarding.all],
+    [...queryKeys.properties.list],
+    [...queryKeys.dashboard.all],
+    [...queryKeys.analytics.all],
+  ];
+  if (opts.propertyId) keys.push([...queryKeys.properties.layout(opts.propertyId)]);
+  return invalidate(...keys);
+}
+
+/** Dismiss or restore the Getting started checklist. The profile carries the flag too
+ * (`onboarding_dismissed`), so it is refreshed alongside the checklist. */
+export function afterOnboardingDismissChange() {
+  return Promise.all([invalidate([...queryKeys.onboarding.all]), ensureFreshSession()]);
+}
+
+/** Create/edit/delete a notice, or dismiss its "outdated" warning. */
+export function afterNoticeChange() {
+  return invalidate([...queryKeys.notices.all]);
+}
+
+/** Create/edit/delete a food holiday or restore a waived credit. These recompute credits, which add,
+ * move and remove draft invoice lines, so this is the invoice refresh (which also covers notices). */
+export function afterFoodHolidayChange(opts: { residentId?: string; propertyId?: string } = {}) {
+  return afterInvoiceChange(opts);
 }

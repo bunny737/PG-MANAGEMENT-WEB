@@ -3,20 +3,52 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { FileText, FilterX, Plus, Search } from "lucide-react";
-import { type Invoice, type InvoiceFilters, listInvoicesFiltered } from "@/lib/api";
+import { bulkIssueInvoices, type Invoice, type InvoiceFilters, listInvoicesFiltered } from "@/lib/api";
 import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { formatDate } from "@/lib/date";
 import { queryKeys } from "@/lib/queryKeys";
+import { afterInvoiceIssued } from "@/lib/refresh";
+import { useSession } from "@/lib/session";
 import { GenerateInvoiceDialog } from "./GenerateInvoiceDialog";
 import { BulkGenerateDialog } from "./BulkGenerateDialog";
 
-const STATUS_CHOICES = ["all", "outstanding", "overdue", "draft", "issued", "partially_paid", "paid"] as const;
+const STATUS_CHOICES = [
+  "all",
+  "needs_review",
+  "scheduled",
+  "outstanding",
+  "overdue",
+  "draft",
+  "issued",
+  "partially_paid",
+  "paid",
+] as const;
+
+// Automatic-billing views map to ?review= rather than ?status= (both are drafts).
+const REVIEW_CHOICES: Record<string, InvoiceFilters["review"]> = {
+  needs_review: "needs_confirmation",
+  scheduled: "scheduled",
+};
+// Lists whose draft rows can be selected and issued together.
+const SELECTABLE_CHOICES = new Set(["needs_review", "scheduled", "draft"]);
+
+/** The automatic-billing badge for a draft, if any. */
+function autoBillingBadge(invoice: Invoice, t: ReturnType<typeof useTranslations>) {
+  if (invoice.status !== "draft" || !invoice.auto_generated) return null;
+  if (invoice.review_reasons.length > 0) return { label: t("badge.needsConfirmation"), tone: "warn" as const };
+  if (invoice.auto_issue_held) return { label: t("badge.onHold"), tone: "neutral" as const };
+  if (invoice.auto_issue_on) {
+    return { label: t("badge.autoIssuesOn", { date: formatDate(invoice.auto_issue_on) }), tone: "accent" as const };
+  }
+  return null;
+}
 
 function dueLabel(invoice: Invoice, t: ReturnType<typeof useTranslations>): { label: string; critical: boolean } {
   if (invoice.status === "paid") return { label: "", critical: false };
@@ -42,6 +74,10 @@ function statusChoiceLabel(
       return t("filters.statusOutstanding");
     case "overdue":
       return t("filters.statusOverdue");
+    case "needs_review":
+      return t("filters.statusNeedsReview");
+    case "scheduled":
+      return t("filters.statusScheduled");
     default:
       return tStatus(choice);
   }
@@ -59,13 +95,19 @@ export function InvoiceList() {
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [showGenerate, setShowGenerate] = useState(false);
   const [showBulkGenerate, setShowBulkGenerate] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [issueResult, setIssueResult] = useState<string | null>(null);
+  const { can } = useSession();
 
+  const review = REVIEW_CHOICES[status];
   const filters: InvoiceFilters = {
     property: propertyId ?? undefined,
-    status: status === "all" ? undefined : status,
+    status: status === "all" || review ? undefined : status,
+    review,
     period: period || undefined,
     search: search || undefined,
   };
+  const selectable = SELECTABLE_CHOICES.has(status) && can("manage_invoices");
 
   const { data: invoices = [], isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.invoices.list(filters),
@@ -73,6 +115,32 @@ export function InvoiceList() {
   });
 
   const hasFilters = status !== "all" || period || search;
+  const chosen = invoices.filter((invoice) => invoice.status === "draft" && selected.has(invoice.id)).map((i) => i.id);
+
+  const issueMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkIssueInvoices(ids),
+    onSuccess: async (result, ids) => {
+      setSelected(new Set());
+      setIssueResult(t("issueSelectedResult", { issued: result.issued, total: ids.length }));
+      await afterInvoiceIssued({ propertyId: propertyId ?? undefined });
+    },
+  });
+
+  function toggle(id: string) {
+    setIssueResult(null);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function changeStatus(value: string) {
+    setStatus(value);
+    setSelected(new Set());
+    setIssueResult(null);
+  }
 
   return (
     <div className="space-y-4">
@@ -106,7 +174,7 @@ export function InvoiceList() {
         <PropertyFilter />
         <select
           value={status}
-          onChange={(event) => setStatus(event.target.value)}
+          onChange={(event) => changeStatus(event.target.value)}
           className="rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
         >
           {STATUS_CHOICES.map((choice) => (
@@ -135,7 +203,7 @@ export function InvoiceList() {
           <button
             type="button"
             onClick={() => {
-              setStatus("all");
+              changeStatus("all");
               setPeriod("");
               setSearch("");
             }}
@@ -146,6 +214,28 @@ export function InvoiceList() {
           </button>
         )}
       </div>
+
+      {selectable && (chosen.length > 0 || issueResult) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {chosen.length > 0 && (
+            <button
+              type="button"
+              disabled={issueMutation.isPending}
+              onClick={() => {
+                if (window.confirm(t("issueSelectedConfirm", { count: chosen.length }))) issueMutation.mutate(chosen);
+              }}
+              className="rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-ink-inverse transition-colors hover:bg-accent-hover disabled:opacity-50 cursor-pointer"
+            >
+              {t("issueSelected", { count: chosen.length })}
+            </button>
+          )}
+          {issueResult && (
+            <p role="status" className="text-sm text-ink-muted">
+              {issueResult}
+            </p>
+          )}
+        </div>
+      )}
 
       {isLoading && <SectionSkeleton className="h-64" />}
       {isError && <SectionError onRetry={() => refetch()} message={t("errLoadFailed")} />}
@@ -171,11 +261,12 @@ export function InvoiceList() {
           <div className="divide-y divide-border">
             {invoices.map((invoice) => {
               const due = dueLabel(invoice, t);
-              return (
+              const badge = autoBillingBadge(invoice, t);
+              const row = (
                 <Link
                   key={invoice.id}
                   href={`/billing/invoices/${invoice.id}`}
-                  className="grid grid-cols-1 gap-2 px-5 py-3.5 text-sm transition-colors hover:bg-surface-page md:grid-cols-12 md:items-center md:gap-4"
+                  className="grid flex-1 grid-cols-1 gap-2 px-5 py-3.5 text-sm transition-colors hover:bg-surface-page md:grid-cols-12 md:items-center md:gap-4"
                 >
                   <div className="col-span-3 font-semibold text-ink">{invoice.resident_name}</div>
                   <div className="col-span-2 text-ink-muted">
@@ -188,10 +279,24 @@ export function InvoiceList() {
                   <div className={due.critical ? "col-span-2 text-status-critical" : "col-span-2 text-ink-muted"}>
                     {due.label}
                   </div>
-                  <div className="col-span-1 flex md:justify-end">
+                  <div className="col-span-1 flex flex-wrap gap-1 md:justify-end">
                     <StatusPill label={tStatus(invoice.status)} tone={getStatusTone(invoice.status)} />
+                    {badge && <StatusPill label={badge.label} tone={badge.tone} />}
                   </div>
                 </Link>
+              );
+              if (!selectable || invoice.status !== "draft") return row;
+              return (
+                <div key={invoice.id} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(invoice.id)}
+                    onChange={() => toggle(invoice.id)}
+                    aria-label={t("selectRow", { name: invoice.resident_name })}
+                    className="ml-5 size-4 shrink-0 accent-accent"
+                  />
+                  {row}
+                </div>
               );
             })}
           </div>

@@ -492,9 +492,18 @@ export interface PropertySettings {
   penalty_grace_days: number;
   penalty_applies_to: "full_invoice" | "outstanding_balance";
   penalty_compounding: "one_time" | "monthly";
+  /** Draft each resident's invoice the day before their billing day and issue it on the day. */
+  auto_billing_enabled: boolean;
+  billing_day_rule: BillingDayRule;
+  /** 1-28; only set for the fixed_day rule. */
+  billing_day_of_month: number | null;
+  /** Default food-holiday credit per day (₹, Module 24); null until the owner sets one. */
+  food_charge_per_day: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type BillingDayRule = "admission_date" | "fixed_day";
 
 export type PropertySettingsPayload = Partial<Omit<PropertySettings, "id" | "created_at" | "updated_at">>;
 
@@ -854,8 +863,11 @@ export interface Resident {
   billing_mode?: string | null;
   food_preference?: string | null;
   joining_date?: string | null;
-  /** Present only with view_finance or manage_deposits. */
+  /** Present only with view_finance or manage_deposits. `security_deposit_amount` is what has been
+   * COLLECTED so far; `_agreed` is the full deposit and `_pending` the part still to pay. */
   security_deposit_amount?: string | null;
+  security_deposit_agreed?: string | null;
+  security_deposit_pending?: string | null;
   advance_amount?: string | null;
   advance_refundable?: boolean | null;
   room_number?: string | null;
@@ -997,9 +1009,16 @@ export interface CreateAdmissionPayload {
   billing_mode: "monthly" | "weekly" | "daily";
   expected_stay_duration?: string;
   food_preference: "with_food" | "without_food";
+  /** Rent paid upfront for the first period, applied to the first invoice. May be "0.00". */
   advance_amount: string;
   advance_collected_date?: string | null;
-  advance_mode?: string;
+  advance_mode?: DepositMode;
+  /** The full security deposit the resident owes. Defaults server-side to the amount collected. */
+  security_deposit_agreed?: string;
+  /** The part of the deposit collected now (the rest is recorded later via createDepositPayment). */
+  security_deposit_amount?: string;
+  security_deposit_collected_date?: string | null;
+  security_deposit_mode?: DepositMode;
 }
 
 export function createAdmission(payload: CreateAdmissionPayload) {
@@ -1007,6 +1026,40 @@ export function createAdmission(payload: CreateAdmissionPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** The modes the admission and deposit endpoints accept (narrower than PaymentMode). */
+export type DepositMode = "upi" | "cash" | "bank_transfer";
+
+export interface DepositPayment {
+  id: string;
+  resident: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: DepositMode;
+  reference: string;
+  recorded_by: string | null;
+  created_at: string;
+}
+
+export interface DepositPaymentCreatePayload {
+  resident: string;
+  amount: string;
+  payment_date: string;
+  payment_mode: DepositMode;
+  reference?: string;
+}
+
+/** Records a later collection of a resident's security deposit with the given Idempotency-Key.
+ * Both a 201 and a 200 replay of the same key resolve here (like createPayment); validation errors
+ * (overpaid, resident not current) and a reused key (409) throw. Needs manage_deposits. */
+export async function createDepositPayment(payload: DepositPaymentCreatePayload, idempotencyKey: string) {
+  const { data, headers } = await apiFetchWithMeta<DepositPayment>("/api/v1/deposit-payments/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
 }
 
 export interface StaffUser {
@@ -1280,6 +1333,8 @@ export interface CurrentUser {
   deletion?: AccountDeletion | null;
   /** How a deletion request can be confirmed right now (password, emailed code). */
   deletion_confirm_methods?: DeletionConfirmMethod[];
+  /** The user hid the Getting started checklist (Module 23). */
+  onboarding_dismissed?: boolean;
 }
 
 export function getCurrentUser() {
@@ -1353,7 +1408,9 @@ export type LineType =
   | "laundry"
   | "addon"
   | "additional"
-  | "discount";
+  | "discount"
+  /** System-owned credit for a food holiday (Module 24): never added or retyped by hand; deleting it waives it. */
+  | "food_holiday";
 
 export interface InvoiceLineItem {
   id: string;
@@ -1391,9 +1448,29 @@ export interface Invoice extends ResidentContext {
   /** min(amount_paid, total) — sums to analytics' period_collected under ?period= (D0). */
   capped_allocated: string;
   is_overdue: boolean;
+  /** Drafted by the daily automatic-billing sweep (Module 08). */
+  auto_generated: boolean;
+  /** Non-empty = the owner must confirm (issue) it; it is never issued automatically. */
+  review_reasons: InvoiceReviewReason[];
+  due_date_policy: "from_period_start" | "from_issue_date" | "manual";
+  /** The day the sweep issues this draft; null when it won't. */
+  auto_issue_on: string | null;
+  auto_issue_held: boolean;
+  /** Auto draft with nothing to confirm — the owner may hold / resume it. */
+  can_auto_issue: boolean;
   created_at: string;
   updated_at: string;
 }
+
+export type InvoiceReviewReason =
+  | "weekly"
+  | "first_partial"
+  | "transition"
+  | "late"
+  | "vacating"
+  | "no_prior_invoice"
+  | "ineligible"
+  | "rule_changed";
 
 export interface Payment extends ResidentContext {
   id: string;
@@ -1420,6 +1497,8 @@ export interface InvoiceFilters {
   period?: string;
   billing_mode?: string;
   search?: string;
+  /** Automatic-billing drafts: needs_confirmation / scheduled / held. */
+  review?: "needs_confirmation" | "scheduled" | "held";
   [key: string]: string | undefined;
 }
 
@@ -1471,10 +1550,35 @@ export interface InvoiceBulkGeneratePayload {
 }
 
 export function bulkGenerateInvoices(payload: InvoiceBulkGeneratePayload) {
-  return apiFetch<{ created: number; invoices: Invoice[] }>("/api/v1/invoices/bulk-generate/", {
+  return apiFetch<{ created: number; skipped_overlapping: number; invoices: Invoice[] }>(
+    "/api/v1/invoices/bulk-generate/",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export interface InvoiceBulkIssueResult {
+  issued: number;
+  /** result: "issued", "not_found", or the error code that stopped it (e.g. "invoice_not_draft"). */
+  results: { id: string; result: string }[];
+}
+
+/** Confirm (issue) many drafts at once — each succeeds or fails on its own. */
+export function bulkIssueInvoices(ids: string[]) {
+  return apiFetch<InvoiceBulkIssueResult>("/api/v1/invoices/bulk-issue/", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ids }),
   });
+}
+
+export function holdAutoIssue(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/hold-auto-issue/`, { method: "POST" });
+}
+
+export function resumeAutoIssue(id: string) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}/resume-auto-issue/`, { method: "POST" });
 }
 
 export function updateInvoiceDraft(id: string, payload: { due_date?: string; notes?: string }) {
@@ -2162,5 +2266,248 @@ export function selectPlan(tenantId: string, planId: string) {
   return apiFetch<Subscription>(`/api/v1/subscriptions/${tenantId}/select-plan/`, {
     method: "POST",
     body: JSON.stringify({ plan: planId }),
+  });
+}
+
+// --- Getting started (Module 23) ---
+
+export type OnboardingRequiredStep = "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident";
+export type OnboardingStepKey = OnboardingRequiredStep | "record_expense";
+export type TutorialTopic =
+  | "overview"
+  | OnboardingRequiredStep
+  | "property_settings"
+  | "expenses"
+  | "billing"
+  | "staff";
+
+export interface OnboardingStep {
+  key: OnboardingStepKey;
+  /** Optional steps never count toward progress, status or next_step. */
+  required: boolean;
+  done: boolean;
+  /** The caller holds the permission to do this step. */
+  permitted: boolean;
+  /** The earlier required step that must be done first; null when open. */
+  blocked_by: OnboardingRequiredStep | null;
+  params: { property_id?: string; building_id?: string; floor_id?: string };
+  video_topic: TutorialTopic;
+}
+
+export interface OnboardingChecklist {
+  status: "in_progress" | "completed" | "no_actions";
+  /** Set and cleared only by the user (dismiss / restore). */
+  dismissed: boolean;
+  target_property: { id: string; name: string } | null;
+  /** Over the permitted required steps only — the server's numbers, never re-derived. */
+  progress: { done: number; total: number };
+  next_step: OnboardingRequiredStep | null;
+  steps: OnboardingStep[];
+}
+
+export function getOnboardingChecklist(property?: string | null) {
+  return apiFetch<OnboardingChecklist>(`/api/v1/onboarding/checklist/${buildQuery({ property: property ?? undefined })}`);
+}
+
+export function dismissOnboarding() {
+  return apiFetch<void>("/api/v1/onboarding/checklist/dismiss/", { method: "POST" });
+}
+
+export function restoreOnboarding() {
+  return apiFetch<void>("/api/v1/onboarding/checklist/dismiss/", { method: "DELETE" });
+}
+
+export interface TutorialVideo {
+  topic: TutorialTopic;
+  /** The video's own language: differs from `requested_language` when English stood in. */
+  language: string;
+  title: string;
+  description: string;
+  youtube_id: string;
+  duration_seconds: number | null;
+}
+
+export interface TutorialVideoList {
+  requested_language: string;
+  /** Languages with at least one video this role can see — independent of which UI translations are live. */
+  available_languages: string[];
+  videos: TutorialVideo[];
+}
+
+export function listTutorialVideos(language: string) {
+  return apiFetch<TutorialVideoList>(`/api/v1/help/videos/${buildQuery({ language })}`);
+}
+
+// --- Notices & food holidays (Module 24) ---
+
+export type AnnouncementCategory = "general" | "holiday" | "maintenance" | "rules" | "event";
+
+export interface Announcement {
+  id: string;
+  property: string;
+  property_name: string;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  is_pinned: boolean;
+  /** YYYY-MM-DD; null = never expires. A notice is expired once this is before today. */
+  expires_on: string | null;
+  /** True while title and body are still the text generated from the holiday. */
+  is_auto_text: boolean;
+  /** Id of the food holiday this notice announces, if any. */
+  food_holiday: string | null;
+  /** A customised holiday notice whose holiday changed since the owner last confirmed the text. */
+  notice_outdated: boolean;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NoticeFilters {
+  property?: string;
+  category?: AnnouncementCategory;
+  /** "true" = not expired, "false" = expired; omit for all. */
+  active?: "true" | "false";
+  [key: string]: string | undefined;
+}
+
+export type NoticePayload = Partial<{
+  property: string;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  is_pinned: boolean;
+  expires_on: string | null;
+}>;
+
+export function listNotices(filters: NoticeFilters = {}) {
+  return apiFetch<Announcement[] | { results: Announcement[] }>(`/api/v1/notices/${buildQuery(filters)}`).then(
+    (data) => (Array.isArray(data) ? data : data.results)
+  );
+}
+
+export function getNotice(id: string) {
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Notice not found" }));
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/`);
+}
+
+export function createNotice(payload: NoticePayload) {
+  return apiFetch<Announcement>("/api/v1/notices/", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateNotice(id: string, payload: NoticePayload) {
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteNotice(id: string) {
+  return apiFetch<void>(`/api/v1/notices/${id}/`, { method: "DELETE" });
+}
+
+/** Keep a customised holiday notice as it is after its holiday changed (clears `notice_outdated`). */
+export function markNoticeCurrent(id: string) {
+  return apiFetch<Announcement>(`/api/v1/notices/${id}/mark-current/`, { method: "POST" });
+}
+
+export interface FoodHoliday {
+  id: string;
+  property: string;
+  property_name: string;
+  name: string;
+  /** YYYY-MM-DD, inclusive. */
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  adjust_in_bill: boolean;
+  /** The finance fields below are absent (not null) without `view_finance`. */
+  rate_per_day?: string | null;
+  /** Id of the linked notice, or null. */
+  announcement: string | null;
+  notice_outdated: boolean;
+  /** Already on an issued bill or a settlement: dates, rate and adjustment can't change. */
+  is_locked: boolean;
+  /** Sum of pending, invoiced and settled credits. */
+  credit_total?: string;
+  credit_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FoodHolidayPayload {
+  property?: string;
+  name?: string;
+  start_date?: string;
+  end_date?: string;
+  adjust_in_bill?: boolean;
+  rate_per_day?: string | null;
+  /** Create only: also post the auto-generated notice. */
+  post_notice?: boolean;
+}
+
+export function listFoodHolidays(filters: { property?: string } = {}) {
+  return apiFetch<FoodHoliday[] | { results: FoodHoliday[] }>(`/api/v1/food-holidays/${buildQuery(filters)}`).then(
+    (data) => (Array.isArray(data) ? data : data.results)
+  );
+}
+
+export function getFoodHoliday(id: string) {
+  if (!isUUID(id)) return Promise.reject(new ApiError(404, { detail: "Holiday not found" }));
+  return apiFetch<FoodHoliday>(`/api/v1/food-holidays/${id}/`);
+}
+
+export function createFoodHoliday(payload: FoodHolidayPayload) {
+  return apiFetch<FoodHoliday>("/api/v1/food-holidays/", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateFoodHoliday(id: string, payload: FoodHolidayPayload) {
+  return apiFetch<FoodHoliday>(`/api/v1/food-holidays/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteFoodHoliday(id: string) {
+  return apiFetch<void>(`/api/v1/food-holidays/${id}/`, { method: "DELETE" });
+}
+
+/** "estimated" rows are residents who qualify now but have no stored credit yet. */
+export type FoodHolidayCreditStatus = "estimated" | "pending" | "invoiced" | "settled" | "waived";
+
+export interface FoodHolidayCredit {
+  /** Null for an estimated row. */
+  id: string | null;
+  resident: string;
+  resident_name: string;
+  status: FoodHolidayCreditStatus;
+  days: number;
+  rate: string;
+  amount: string;
+  invoice: string | null;
+  invoice_status: string | null;
+  clawback_amount: string;
+}
+
+/** Server-computed (invariant F1: the client never sums money). */
+export interface FoodHolidayCreditTotals {
+  /** Pending + invoiced + settled, i.e. the holiday's `credit_total`. */
+  credited: string;
+  credited_count: number;
+  /** Residents who qualify now but have no stored credit yet; not owed until credited. */
+  estimated: string;
+  estimated_count: number;
+  /** A count only: a waived credit is not owed. */
+  waived_count: number;
+  clawback: string;
+}
+
+export interface FoodHolidayCredits {
+  credits: FoodHolidayCredit[];
+  totals: FoodHolidayCreditTotals;
+}
+
+export function listFoodHolidayCredits(holidayId: string) {
+  return apiFetch<FoodHolidayCredits>(`/api/v1/food-holidays/${holidayId}/credits/`);
+}
+
+export function restoreFoodHolidayCredit(holidayId: string, creditId: string) {
+  return apiFetch<FoodHolidayCredit>(`/api/v1/food-holidays/${holidayId}/credits/${creditId}/restore/`, {
+    method: "POST",
   });
 }

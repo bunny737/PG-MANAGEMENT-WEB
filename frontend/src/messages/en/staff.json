@@ -129,6 +129,12 @@
         "full": "Full access",
         "hint": "View only shows the PG's expenses and their totals. Full access can also record, edit and delete them."
       },
+      "notices": {
+        "name": "Notices",
+        "view": "View only",
+        "full": "Full access",
+        "hint": "View only shows notices and food holidays. Full access can also post, edit and delete them. Crediting food on bills also needs Finance access."
+      },
       "reports": {
         "name": "Reports",
         "full": "Full view",

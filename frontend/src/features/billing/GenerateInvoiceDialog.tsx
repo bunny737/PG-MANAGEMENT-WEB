@@ -51,7 +51,8 @@ export function GenerateInvoiceDialog({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: residentId ? { resident: residentId } : undefined,
+    // "" (not undefined) so an untouched picker fails min(1), not invalid_type.
+    defaultValues: { resident: residentId ?? "" },
   });
 
   async function onSubmit(values: FormValues) {
@@ -94,7 +95,11 @@ export function GenerateInvoiceDialog({
               placeholder={t("residentPlaceholder")}
             />
           )}
-          {errors.resident && <p className="text-xs text-status-critical">{errors.resident.message}</p>}
+          {errors.resident && (
+            <p className="text-xs text-status-critical">
+              {errors.resident.type === "too_small" ? t("residentRequired") : errors.resident.message}
+            </p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

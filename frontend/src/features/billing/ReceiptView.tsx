@@ -8,6 +8,7 @@ import { downloadReceiptPdf, getReceipt } from "@/lib/api";
 import { MoneyText } from "@/components/shared/MoneyText";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
+import { formatDate } from "@/lib/date";
 import { queryKeys } from "@/lib/queryKeys";
 import { triggerDownload } from "@/lib/download";
 
@@ -41,9 +42,9 @@ export function ReceiptView({ id }: { id: string }) {
     [t("resident"), receipt.resident],
     [t("property"), receipt.property_name],
     [t("roomBed"), receipt.room_number ? `${receipt.room_number} / ${receipt.bed_number}` : "—"],
-    [t("period"), `${receipt.period_start} – ${receipt.period_end}`],
+    [t("period"), `${formatDate(receipt.period_start)} – ${formatDate(receipt.period_end)}`],
     [t("mode"), tStatus(receipt.payment_mode)],
-    [t("date"), receipt.payment_date],
+    [t("date"), formatDate(receipt.payment_date)],
     [t("reference"), receipt.reference || "—"],
     [t("recordedBy"), receipt.recorded_by_name ?? "—"],
     [t("invoiceStatus"), <StatusPill key="s" label={tStatus(receipt.invoice_status)} tone={getStatusTone(receipt.invoice_status)} />],

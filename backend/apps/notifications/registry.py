@@ -41,6 +41,29 @@ NOTIFICATION_TYPES = {
         'optional': False,
         'context_vars': ['name', 'amount', 'date', 'mode', 'balance'],
     },
+    # To the Owner / invoice managers after the daily automatic-billing sweep
+    # (Module 08) drafted invoices, flagged drafts for review, or found an
+    # unbilled gap. `gaps` is a comma-separated list of resident names.
+    'invoice_drafts_ready': {
+        'label': 'Invoice Drafts Ready',
+        'channels': ['email', 'push'],
+        'optional': True,
+        'context_vars': ['name', 'property', 'date', 'created', 'scheduled', 'needs_confirmation', 'gaps'],
+    },
+    # Module 26. To the Owner / managers of a property when a person asks to be linked to the PG
+    # (with its join code); and to that person when staff approve or reject.
+    'residency_link_requested': {
+        'label': 'Residency Link Requested',
+        'channels': ['email', 'push'],
+        'optional': True,
+        'context_vars': ['name', 'requester', 'property', 'message'],
+    },
+    'residency_link_resolved': {
+        'label': 'Residency Link Resolved',
+        'channels': ['email', 'push'],
+        'optional': False,
+        'context_vars': ['name', 'property', 'approved', 'note'],
+    },
 }
 
 # All channels the platform knows how to speak, regardless of which types

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Landmark, Eye, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { getProperty, getBuilding, createFloor, type Property, type Building, type Floor, ApiError } from "@/lib/api";
 
 export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; buildingId: string }) {
@@ -62,6 +63,7 @@ export function AddFloorForm({ propertyId, buildingId }: { propertyId: string; b
         building: buildingId,
         name: floorName.trim(),
       });
+      void afterHierarchyChange({ propertyId });
       setCreatedFloor(result);
       setIsLoading(false);
       setShowSuccess(true);

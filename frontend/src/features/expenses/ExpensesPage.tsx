@@ -17,7 +17,9 @@ import { MonthNavigator } from "@/components/shared/MonthNavigator";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
+import { WatchVideoButton } from "@/features/onboarding/WatchVideoButton";
 import { afterExpenseChange } from "@/lib/refresh";
+import { formatDate } from "@/lib/date";
 import { currentMonthKey } from "@/lib/period";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSession } from "@/lib/session";
@@ -168,6 +170,7 @@ export function ExpensesPage() {
           <Receipt className="size-8 text-ink-faint" />
           <h3 className="text-sm font-bold text-ink">{t("emptyTitle")}</h3>
           <p className="text-xs text-ink-muted">{t("emptyDesc")}</p>
+          <WatchVideoButton topic="expenses" />
         </div>
       )}
 
@@ -176,7 +179,7 @@ export function ExpensesPage() {
           {groupedByDate.map(([date, rows]) => (
             <div key={date} className="overflow-hidden rounded-2xl border border-border bg-surface-card">
               <div className="border-b border-border bg-surface-page px-5 py-2 text-xs font-bold uppercase tracking-wider text-ink-muted">
-                {date}
+                {formatDate(date)}
               </div>
               <div className="divide-y divide-border">
                 {rows.map((expense) => (

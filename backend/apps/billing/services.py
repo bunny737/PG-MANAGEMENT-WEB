@@ -7,16 +7,19 @@ by a temporary allocation), then the active discount as its own negative line
 as more line items. Management has full manual control while the invoice is a
 draft.
 """
+from datetime import timedelta
 from decimal import Decimal
+from fractions import Fraction
 
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.audit import log as audit_log
 from apps.core.idempotency import key_reused
+from apps.core.periods import local_today
 from apps.core.tasks import enqueue
-from apps.notifications.tasks import send_payment_receipt_email_task
+from apps.notifications.tasks import send_invoice_issued_email_task, send_payment_receipt_email_task
 from apps.residents.models import Admission
 
 from .models import Invoice, InvoiceLineItem, Payment, ReceiptCounter
@@ -44,24 +47,82 @@ def _accommodation_label(billing_mode, with_food, partial_note):
     return label
 
 
+class InvoiceConflict(ValidationError):
+    """The period clashes with one of the resident's existing invoices
+    (`duplicate_invoice` / `overlapping_invoice`). A ValidationError, so the
+    API answers 400 as before; automatic billing catches it specifically."""
+
+
+class ResidentNotBillable(ValidationError):
+    """Re-checked under the resident lock: the resident left (vacated,
+    absconded...) or lost their bed while the request waited. 400, like the
+    serializer's own pre-check; bulk generation skips them."""
+
+
 @transaction.atomic
 def generate_invoice(*, resident, period_start, period_end, due_date,
-                     billing_mode=None, actor, request=None):
-    """Create a draft invoice with its accommodation and discount lines."""
+                     billing_mode=None, actor, request=None,
+                     base_amount=None, partial_note='', discount_fraction=None,
+                     auto_generated=False, review_reasons=(), auto_issue_on=None,
+                     due_date_policy=Invoice.DueDatePolicy.FROM_PERIOD_START, on_date=None):
+    """Create a draft invoice with its accommodation and discount lines, plus
+    any food-holiday credits now due (Module 24).
+
+    Every generation path (single, bulk, automatic) comes through here, and
+    the Settings -> Resident locks taken here serialize them, so the overlap
+    check below can't race: a resident never has two invoices covering the
+    same day. The Settings lock also serializes credit allocation per
+    property (see apps.notices.credits); automatic billing already holds it.
+
+    Automatic billing passes `base_amount` (and `discount_fraction` for a
+    partial period) explicitly; manual generation leaves them unset and keeps
+    the original first-invoice / contracted-rent behaviour."""
+    from apps.notices import credits as food_credits
+    from apps.residents.services import lock_resident
+
+    from apps.residents.models import Allocation, Resident
+
+    lock_property_settings(resident.property_id, resident.tenant_id)
+    # Work from the locked re-read, never the caller's copy: a move-out or
+    # abscond that committed while we waited must stop the invoice (and the
+    # food-holiday credits it would create after the settlement).
+    resident = lock_resident(resident)
+    if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+        raise ResidentNotBillable(
+            {'resident': [_('Only active residents can be invoiced.')]}, code='resident_not_billable',
+        )
+    if not Allocation.objects.filter(resident=resident).exists():
+        raise ResidentNotBillable(
+            {'resident': [_('This resident is not allocated to a bed.')]}, code='resident_not_allocated',
+        )
     admission = resident.admission
     allocation = resident.allocation
     if billing_mode is None:
         billing_mode = admission.billing_mode
 
-    # First-ever invoice for this resident may use the manual partial-month
-    # amount captured at admission; otherwise the current contracted rent.
-    is_first = not resident.invoices.exists()
-    if is_first and admission.first_month_billing_amount is not None:
-        base_amount = admission.first_month_billing_amount
-        partial_note = admission.first_month_billing_note
-    else:
-        base_amount = allocation.contracted_rent
-        partial_note = ''
+    explicit_base = base_amount is not None
+    if not explicit_base:
+        # First-ever invoice for this resident may use the manual partial-month
+        # amount captured at admission; otherwise the current contracted rent.
+        is_first = not resident.invoices.exists()
+        if is_first and admission.first_month_billing_amount is not None:
+            base_amount = admission.first_month_billing_amount
+            partial_note = admission.first_month_billing_note
+        else:
+            base_amount = allocation.contracted_rent
+            partial_note = ''
+
+    existing = Invoice.objects.filter(resident=resident)
+    if existing.filter(period_start=period_start).exists():
+        raise InvoiceConflict(
+            {'period_start': [_('This resident already has an invoice for this period.')]},
+            code='duplicate_invoice',
+        )
+    if existing.filter(period_start__lte=period_end, period_end__gte=period_start).exists():
+        raise InvoiceConflict(
+            {'period_start': [_('This period overlaps another invoice for this resident.')]},
+            code='overlapping_invoice',
+        )
 
     try:
         with transaction.atomic():
@@ -70,12 +131,14 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
                 period_start=period_start, period_end=period_end,
                 billing_mode=billing_mode, due_date=due_date,
                 status=Invoice.Status.DRAFT, created_by=actor,
+                auto_generated=auto_generated, review_reasons=list(review_reasons),
+                auto_issue_on=auto_issue_on, due_date_policy=due_date_policy,
             )
     except IntegrityError:
-        # unique_invoice_per_resident_period — another request generated this
-        # period's invoice first (the serializer's .exists() pre-check raced).
-        raise ValidationError(
-            {'period_start': _('This resident already has an invoice for this period.')},
+        # unique_invoice_per_resident_period — a backstop for writers that
+        # bypass this service (admin, scripts); the lock above covers the rest.
+        raise InvoiceConflict(
+            {'period_start': [_('This resident already has an invoice for this period.')]},
             code='duplicate_invoice',
         )
 
@@ -90,21 +153,234 @@ def generate_invoice(*, resident, period_start, period_end, due_date,
     # Discount is applied on the accommodation charged this period (invariant 4:
     # on contracted rent, not rack rate; for a normal month base == contracted).
     discount = active_discount(resident, period_start)
-    if discount is not None:
+    if explicit_base:
+        from .autobilling import partial_discount
+
+        discount_amount = partial_discount(
+            discount, base_amount=base_amount, contracted_rent=allocation.contracted_rent,
+            fraction=discount_fraction if discount_fraction is not None else Fraction(1),
+        )
+    else:
+        discount_amount = discount.computed_amount(base_amount) if discount is not None else None
+    if discount_amount is not None:
         InvoiceLineItem.objects.create(
             tenant_id=resident.tenant_id, invoice=invoice,
             line_type=InvoiceLineItem.LineType.DISCOUNT,
             label=f'{discount.get_reason_display()} discount',
-            amount=-discount.computed_amount(base_amount), order=1,
+            amount=-discount_amount, order=1,
         )
 
+    # Module 24: food-holiday credits for holidays that have ended. The new
+    # draft is just one more candidate for the shared allocation rule.
+    on_date = on_date or local_today()
+    food_credits.ensure_credits(resident, on_date=on_date, actor=actor, request=request)
+    food_credits.allocate_pending(resident, on_date=on_date, actor=actor, request=request)
+
+    after = {'resident': str(resident.id), 'period_start': period_start.isoformat(),
+             'total': str(invoice.total)}
+    if auto_generated:
+        after.update({
+            'auto_generated': True, 'review_reasons': list(review_reasons),
+            'auto_issue_on': auto_issue_on.isoformat() if auto_issue_on else None,
+        })
     audit_log.record(
-        action='invoice.generated', actor=actor, obj=invoice,
-        after={'resident': str(resident.id), 'period_start': period_start.isoformat(),
-               'total': str(invoice.total)},
-        request=request,
+        action='invoice.generated', actor=actor, tenant_id=resident.tenant_id, obj=invoice,
+        after=after, request=request,
     )
     return invoice
+
+
+# issue_invoice outcomes
+ISSUED, FLAGGED, SKIPPED = 'issued', 'flagged', 'skipped'
+
+# A scheduled draft is still auto-issued if the sweep missed one daily run;
+# anything older goes to the owner for review instead.
+AUTO_ISSUE_GRACE_DAYS = 1
+
+
+def require_draft(invoice):
+    if invoice.status != Invoice.Status.DRAFT:
+        raise ValidationError(
+            {'detail': _('Only draft invoices can be modified.')}, code='invoice_not_draft'
+        )
+
+
+def lock_property_settings(property_id, tenant_id=None):
+    """First lock of every issue / automatic-generation path: Settings ->
+    Resident -> Invoice -> Admission (see the Module 08 spec, "Locking").
+    Grace days and the automation switch are read under it, so a concurrent
+    settings change can't interleave. Creates the row with defaults if the
+    property has never had one (settings are lazily created)."""
+    from apps.properties.models import Property, PropertySettings
+
+    if tenant_id is None:
+        tenant_id = Property.objects.values_list('tenant_id', flat=True).get(pk=property_id)
+    PropertySettings.objects.get_or_create(property_id=property_id, defaults={'tenant_id': tenant_id})
+    return PropertySettings.objects.select_for_update().get(property_id=property_id)
+
+
+def _auto_issue_blockers(invoice, *, resident, settings_obj, on_date):
+    """Reasons an auto draft due today must go to the owner instead."""
+    from apps.residents.models import Allocation, Resident
+
+    reasons = []
+    if (on_date - invoice.auto_issue_on).days > AUTO_ISSUE_GRACE_DAYS:
+        reasons.append(Invoice.ReviewReason.LATE)
+    if not settings_obj.auto_billing_enabled:
+        reasons.append(Invoice.ReviewReason.RULE_CHANGED)
+    if (resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD)
+            or not Allocation.objects.filter(resident=resident).exists()):
+        reasons.append(Invoice.ReviewReason.INELIGIBLE)
+    else:
+        vacate = resident.open_vacate
+        if vacate is not None and vacate.expected_vacate_date < invoice.period_end:
+            reasons.append(Invoice.ReviewReason.VACATING)
+    return reasons
+
+
+@transaction.atomic
+def issue_invoice(*, invoice_id, actor, on_date=None, auto=False, request=None):
+    """Issue a draft: draft -> issued, apply the admission advance to a first
+    invoice, notify the resident. Returns ISSUED, or for the sweep (`auto`)
+    FLAGGED (needs the owner now — eligibility changed or it's stale) or
+    SKIPPED (no longer due: held, issued or edited meanwhile).
+
+    Locks Settings -> Resident -> Invoice -> Admission and re-reads everything
+    under them, so it can't race a hold, a second issue, a settings change or
+    a notice to vacate."""
+    from apps.residents.models import Resident
+    from apps.residents.services import lock_resident
+
+    on_date = on_date or local_today()
+    ref = Invoice.objects.filter(pk=invoice_id).values('resident_id', 'resident__property_id', 'tenant_id').first()
+    if ref is None:
+        if auto:
+            return SKIPPED
+        raise NotFound(_('Invoice not found.'))
+    settings_obj = lock_property_settings(ref['resident__property_id'], ref['tenant_id'])
+    resident = lock_resident(Resident(pk=ref['resident_id']))
+    invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+
+    if auto:
+        if (invoice.status != Invoice.Status.DRAFT or invoice.review_reasons or invoice.auto_issue_held
+                or invoice.auto_issue_on is None or invoice.auto_issue_on > on_date):
+            return SKIPPED
+        blockers = _auto_issue_blockers(invoice, resident=resident, settings_obj=settings_obj, on_date=on_date)
+        if blockers:
+            before = {'review_reasons': list(invoice.review_reasons),
+                      'auto_issue_on': invoice.auto_issue_on.isoformat()}
+            invoice.review_reasons = list(invoice.review_reasons) + blockers
+            invoice.auto_issue_on = None
+            if Invoice.ReviewReason.LATE in blockers:
+                _due_from_issue_date(invoice)
+            invoice.save(update_fields=['review_reasons', 'auto_issue_on', 'due_date_policy', 'updated_at'])
+            audit_log.record(
+                action='invoice.flagged_for_review', actor=None, tenant_id=invoice.tenant_id, obj=invoice,
+                before=before, after={'review_reasons': invoice.review_reasons},
+            )
+            return FLAGGED
+        if on_date > invoice.period_start:
+            # Issued after its billing date (one missed sweep): the resident
+            # still gets the full grace period from the day they receive it.
+            _due_from_issue_date(invoice)
+    else:
+        require_draft(invoice)
+
+    if invoice.due_date_policy == Invoice.DueDatePolicy.FROM_ISSUE_DATE:
+        invoice.due_date = on_date + timedelta(days=settings_obj.penalty_grace_days)
+    invoice.status = Invoice.Status.ISSUED
+    invoice.issue_date = on_date
+    invoice.save(update_fields=['status', 'issue_date', 'due_date', 'due_date_policy', 'updated_at'])
+    audit_log.record(
+        action='invoice.issued', actor=actor, tenant_id=invoice.tenant_id, obj=invoice,
+        after={'status': invoice.status, 'issue_date': invoice.issue_date.isoformat(),
+               'due_date': invoice.due_date.isoformat(), 'automatic': auto},
+        request=request,
+    )
+    # The advance (rent paid upfront at admission) settles the first invoice.
+    apply_advance_to_first_invoice(invoice=invoice, actor=actor, request=request)
+    # Module 14: "Invoice generated notification to resident" (PRD).
+    # Issuing (not the draft) is when it becomes a real obligation the
+    # resident should be told about — see the Module 14 spec's Decisions.
+    invoice_id = str(invoice.id)
+    transaction.on_commit(lambda: enqueue(send_invoice_issued_email_task, invoice_id))
+    return ISSUED
+
+
+def _due_from_issue_date(invoice):
+    """The draft is (or will be) issued after its billing date: recompute the
+    due date from the issue date — unless the owner set it by hand."""
+    if invoice.due_date_policy != Invoice.DueDatePolicy.MANUAL:
+        invoice.due_date_policy = Invoice.DueDatePolicy.FROM_ISSUE_DATE
+
+
+def _require_auto_issuable(invoice):
+    require_draft(invoice)
+    if not invoice.can_auto_issue:
+        raise ValidationError(
+            {'detail': _('Only automatically generated drafts that need no confirmation can be '
+                         'scheduled for automatic issue.')},
+            code='not_auto_issuable',
+        )
+
+
+@transaction.atomic
+def hold_auto_issue(*, invoice_id, actor, request=None):
+    invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+    _require_auto_issuable(invoice)
+    if not invoice.auto_issue_held:
+        invoice.auto_issue_held = True
+        invoice.save(update_fields=['auto_issue_held', 'updated_at'])
+        audit_log.record(
+            action='invoice.auto_issue_held', actor=actor, tenant_id=invoice.tenant_id, obj=invoice,
+            before={'auto_issue_on': invoice.auto_issue_on.isoformat() if invoice.auto_issue_on else None},
+            request=request,
+        )
+    return invoice
+
+
+@transaction.atomic
+def resume_auto_issue(*, invoice_id, actor, on_date=None, request=None):
+    """Lift the owner's hold. The draft is issued no earlier than the next
+    calendar day's sweep (a calendar-day boundary, not 24 hours); issued after
+    its billing date, the due date is recomputed from the issue date."""
+    on_date = on_date or local_today()
+    invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+    _require_auto_issuable(invoice)
+    before = {'auto_issue_held': invoice.auto_issue_held,
+              'auto_issue_on': invoice.auto_issue_on.isoformat() if invoice.auto_issue_on else None}
+    invoice.auto_issue_held = False
+    invoice.auto_issue_on = max(invoice.period_start, on_date + timedelta(days=1))
+    if invoice.auto_issue_on > invoice.period_start:
+        _due_from_issue_date(invoice)
+    invoice.save(update_fields=['auto_issue_held', 'auto_issue_on', 'due_date_policy', 'updated_at'])
+    audit_log.record(
+        action='invoice.auto_issue_resumed', actor=actor, tenant_id=invoice.tenant_id, obj=invoice,
+        before=before, after={'auto_issue_on': invoice.auto_issue_on.isoformat()}, request=request,
+    )
+    return invoice
+
+
+def flag_scheduled_drafts(*, property_id, actor, request=None):
+    """The property's automatic-billing settings changed: every draft still
+    waiting to be auto-issued (held ones included) goes to the owner for
+    confirmation instead. Call with the PropertySettings row locked (Settings
+    -> Invoice is the lock order)."""
+    drafts = list(
+        Invoice.objects.select_for_update(of=('self',)).filter(
+            resident__property_id=property_id, status=Invoice.Status.DRAFT,
+            auto_generated=True, auto_issue_on__isnull=False,
+        )
+    )
+    for invoice in drafts:
+        invoice.review_reasons = list(invoice.review_reasons) + [Invoice.ReviewReason.RULE_CHANGED]
+        invoice.auto_issue_on = None
+        invoice.save(update_fields=['review_reasons', 'auto_issue_on', 'updated_at'])
+        audit_log.record(
+            action='invoice.flagged_for_review', actor=actor, tenant_id=invoice.tenant_id, obj=invoice,
+            after={'review_reasons': invoice.review_reasons}, request=request,
+        )
+    return len(drafts)
 
 
 @transaction.atomic
@@ -260,7 +536,7 @@ def record_payment(*, invoice, amount, payment_date, payment_mode, reference='',
     payment.replayed = False
     invoice.recompute_status()
     audit_log.record(
-        action='payment.recorded', actor=actor, obj=payment,
+        action='payment.recorded', actor=actor, tenant_id=invoice.tenant_id, obj=payment,
         after={'invoice': str(invoice.id), 'amount': str(amount),
                'mode': payment_mode, 'invoice_status': invoice.status,
                'receipt_number': payment.receipt_number},
@@ -287,7 +563,7 @@ def delete_payment(*, payment, actor, request=None):
         )
         admission.save(update_fields=['advance_applied_amount', 'updated_at'])
     audit_log.record(
-        action='payment.deleted', actor=actor, obj=payment,
+        action='payment.deleted', actor=actor, tenant_id=invoice.tenant_id, obj=payment,
         before={'invoice': str(invoice.id), 'amount': str(payment.amount),
                 'mode': payment.payment_mode},
         request=request,

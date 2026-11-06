@@ -867,6 +867,32 @@ export interface paths {
         patch: operations["v1_complaints_status_partial_update"];
         trace?: never;
     };
+    "/api/v1/deposit-payments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Collections of a resident's security deposit (Module 10). A resident may pay the agreed
+         *     deposit in parts; the first part is recorded at admission, this records the rest. Append-only:
+         *     no update/delete. `?resident=` filters. Needs `manage_deposits`.
+         */
+        get: operations["v1_deposit_payments_list"];
+        put?: never;
+        /**
+         * @description Collections of a resident's security deposit (Module 10). A resident may pay the agreed
+         *     deposit in parts; the first part is recorded at admission, this records the rest. Append-only:
+         *     no update/delete. `?resident=` filters. Needs `manage_deposits`.
+         */
+        post: operations["v1_deposit_payments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/": {
         parameters: {
             query?: never;
@@ -1320,6 +1346,134 @@ export interface paths {
         patch: operations["v1_floors_partial_update"];
         trace?: never;
     };
+    "/api/v1/food-holidays/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        get: operations["v1_food_holidays_list"];
+        put?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        post: operations["v1_food_holidays_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        get: operations["v1_food_holidays_retrieve"];
+        put?: never;
+        post?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        delete: operations["v1_food_holidays_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description Food holidays (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; a holiday that adjusts bills — now or after the
+         *     request — also needs `manage_invoices`. Rates and credits need
+         *     `view_finance` to be seen.
+         */
+        patch: operations["v1_food_holidays_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/credits/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Per-resident credits: stored rows, plus "estimated" rows for
+         *     residents who qualify now but have no credit yet (e.g. the holiday
+         *     hasn't ended), and the totals of those rows. "credited" counts
+         *     pending, invoiced and settled rows only (the holiday's
+         *     `credit_total`); estimates, waived rows and clawbacks are reported
+         *     apart, so the client never sums money itself. Read-only.
+         */
+        get: operations["v1_food_holidays_credits_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/food-holidays/{id}/credits/{credit_pk}/restore/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Undo a waiver: the credit is owed again and goes on the next draft
+         *     (once the holiday has ended).
+         */
+        post: operations["v1_food_holidays_credits_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/help/videos/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Active tutorial videos the caller's role may see, one per topic, in
+         *     ?language= (default: the user's language), falling back to English only.
+         *     Role filtering happens before the fallback, so a video the caller can't see
+         *     never hides an English one they can.
+         */
+        get: operations["v1_help_videos_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/": {
         parameters: {
             query?: never;
@@ -1380,6 +1534,28 @@ export interface paths {
          *     once issued an invoice is a financial record and cannot be edited/deleted.
          */
         patch: operations["v1_invoices_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/invoices/{id}/hold-auto-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Invoices (PRD Module 9). Generation builds the accommodation + discount
+         *     lines; ad-hoc charges are added as line items while the invoice is a draft.
+         *     `manage_invoices` excludes Receptionist. Drafts are deletable (regenerate);
+         *     once issued an invoice is a financial record and cannot be edited/deleted.
+         */
+        post: operations["v1_invoices_hold_auto_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/invoices/{id}/issue/": {
@@ -1454,6 +1630,28 @@ export interface paths {
         patch: operations["v1_invoices_line_items_partial_update"];
         trace?: never;
     };
+    "/api/v1/invoices/{id}/resume-auto-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Invoices (PRD Module 9). Generation builds the accommodation + discount
+         *     lines; ad-hoc charges are added as line items while the invoice is a draft.
+         *     `manage_invoices` excludes Receptionist. Drafts are deletable (regenerate);
+         *     once issued an invoice is a financial record and cannot be edited/deleted.
+         */
+        post: operations["v1_invoices_resume_auto_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/bulk-generate/": {
         parameters: {
             query?: never;
@@ -1476,6 +1674,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invoices/bulk-issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Confirm (issue) many drafts at once — e.g. everything in the Needs
+         *     review list. Each invoice is issued in its own transaction; one that
+         *     fails doesn't stop the rest, and the response says what happened to
+         *     each id.
+         */
+        post: operations["v1_invoices_bulk_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invoices/outstanding/": {
         parameters: {
             query?: never;
@@ -1491,6 +1711,83 @@ export interface paths {
         get: operations["v1_invoices_outstanding_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notices/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        get: operations["v1_notices_list"];
+        put?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        post: operations["v1_notices_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notices/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        get: operations["v1_notices_retrieve"];
+        put?: never;
+        post?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        delete: operations["v1_notices_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description The notice board (Module 24). Reads need `view_notices`, writes
+         *     `manage_notices`; scoped to the caller's properties. Pinned first, then
+         *     newest. ?active=true hides expired notices.
+         */
+        patch: operations["v1_notices_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/notices/{id}/mark-current/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Keep a customised holiday notice as it is after its holiday changed
+         *     (clears `notice_outdated`).
+         */
+        post: operations["v1_notices_mark_current_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1632,6 +1929,52 @@ export interface paths {
          *     don't send it (the mobile app) get the plain delete.
          */
         delete: operations["v1_notifications_push_subscriptions_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/checklist/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The Getting started checklist for ?property= (default: the visible
+         *     property the caller can best act on now). See apps/onboarding/checklist.py.
+         */
+        get: operations["v1_onboarding_checklist_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/checklist/dismiss/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST hides the checklist for this user, DELETE shows it again. Both are
+         *     idempotent: a repeat POST keeps the first timestamp, and only a real change
+         *     is audit-logged.
+         */
+        post: operations["v1_onboarding_checklist_dismiss_create"];
+        /**
+         * @description POST hides the checklist for this user, DELETE shows it again. Both are
+         *     idempotent: a repeat POST keeps the first timestamp, and only a real change
+         *     is audit-logged.
+         */
+        delete: operations["v1_onboarding_checklist_dismiss_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2856,6 +3199,10 @@ export interface components {
             readonly deposit_applied_to_dues: string;
             /** Format: decimal */
             readonly remaining_dues: string;
+            /** Format: decimal */
+            readonly food_holiday_credit: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback: string;
             readonly dues_recovery_status: components["schemas"]["DuesRecoveryStatusEnum"];
             /** Format: uuid */
             readonly dues_written_off_by: string | null;
@@ -2934,12 +3281,16 @@ export interface components {
             advance_amount?: string;
             /** Format: date */
             advance_collected_date?: string | null;
-            advance_mode?: components["schemas"]["RefundModeEnum"] | components["schemas"]["BlankEnum"];
+            advance_mode?: components["schemas"]["AdvanceModeEnum"] | components["schemas"]["BlankEnum"];
             /** Format: decimal */
             security_deposit_amount?: string;
+            /** Format: decimal */
+            security_deposit_agreed?: string;
+            /** Format: decimal */
+            readonly security_deposit_pending: string;
             /** Format: date */
             security_deposit_collected_date?: string | null;
-            security_deposit_mode?: components["schemas"]["RefundModeEnum"] | components["schemas"]["BlankEnum"];
+            security_deposit_mode?: components["schemas"]["SecurityDepositModeEnum"] | components["schemas"]["BlankEnum"];
             /** Format: decimal */
             first_month_billing_amount?: string | null;
             first_month_billing_note?: string;
@@ -2954,6 +3305,13 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        AdvanceModeEnum: "upi" | "cash" | "bank_transfer";
         Allocation: {
             /** Format: uuid */
             readonly id: string;
@@ -3040,6 +3398,38 @@ export interface components {
             series: components["schemas"]["TrendPoint"][];
             redacted: string[];
         };
+        Announcement: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            property: string;
+            readonly property_name: string;
+            title: string;
+            body: string;
+            category?: components["schemas"]["AnnouncementCategoryEnum"];
+            is_pinned?: boolean;
+            /** Format: date */
+            expires_on?: string | null;
+            readonly is_auto_text: boolean;
+            readonly food_holiday: string | null;
+            readonly notice_outdated: boolean;
+            /** Format: uuid */
+            readonly created_by: string | null;
+            readonly created_by_name: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `general` - General
+         *     * `holiday` - Holiday
+         *     * `maintenance` - Maintenance
+         *     * `rules` - Rules
+         *     * `event` - Event
+         * @enum {string}
+         */
+        AnnouncementCategoryEnum: "general" | "holiday" | "maintenance" | "rules" | "event";
         AppInfo: {
             version_name: string;
             build_number: number;
@@ -3219,6 +3609,47 @@ export interface components {
          * @enum {string}
          */
         ChannelEnum: "email" | "sms" | "whatsapp" | "push";
+        Checklist: {
+            status: components["schemas"]["ChecklistStatusEnum"];
+            dismissed: boolean;
+            target_property: components["schemas"]["ChecklistTargetProperty"] | null;
+            progress: components["schemas"]["ChecklistProgress"];
+            next_step: (components["schemas"]["OnboardingRequiredStepEnum"] | components["schemas"]["NullEnum"]) | null;
+            steps: components["schemas"]["ChecklistStep"][];
+        };
+        ChecklistProgress: {
+            done: number;
+            total: number;
+        };
+        /**
+         * @description * `in_progress` - in_progress
+         *     * `completed` - completed
+         *     * `no_actions` - no_actions
+         * @enum {string}
+         */
+        ChecklistStatusEnum: "in_progress" | "completed" | "no_actions";
+        ChecklistStep: {
+            key: components["schemas"]["KeyEnum"];
+            required: boolean;
+            done: boolean;
+            permitted: boolean;
+            blocked_by: (components["schemas"]["OnboardingRequiredStepEnum"] | components["schemas"]["NullEnum"]) | null;
+            params: components["schemas"]["ChecklistStepParams"];
+            video_topic: components["schemas"]["TutorialTopicEnum"];
+        };
+        ChecklistStepParams: {
+            /** Format: uuid */
+            property_id?: string;
+            /** Format: uuid */
+            building_id?: string;
+            /** Format: uuid */
+            floor_id?: string;
+        };
+        ChecklistTargetProperty: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         Complaint: {
             /** Format: uuid */
             readonly id: string;
@@ -3346,6 +3777,38 @@ export interface components {
          * @enum {string}
          */
         CurrentPeriodStatusEnum: "no_invoice" | "paid" | "partially_paid" | "unpaid" | "overdue";
+        /** @description Read shape of one security-deposit collection. */
+        DepositPayment: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly resident: string;
+            /** Format: decimal */
+            readonly amount: string;
+            /** Format: date */
+            readonly payment_date: string;
+            readonly payment_mode: components["schemas"]["PaymentModeFfbEnum"];
+            readonly reference: string;
+            /** Format: uuid */
+            readonly recorded_by: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description Input for recording a later deposit collection. The authoritative checks run under the
+         *     row locks in `services.record_deposit_payment`; these are for a friendly early error.
+         */
+        DepositPaymentWrite: {
+            /** Format: uuid */
+            resident: string;
+            /** Format: decimal */
+            amount: string;
+            /** Format: date */
+            payment_date: string;
+            payment_mode: components["schemas"]["PaymentModeFfbEnum"];
+            /** @default  */
+            reference: string;
+        };
         DeviceInfo: {
             manufacturer: string;
             model: string;
@@ -3415,6 +3878,13 @@ export interface components {
          * @enum {string}
          */
         DiscountTypeEnum: "fixed" | "percentage";
+        /**
+         * @description * `from_period_start` - From the billing date
+         *     * `from_issue_date` - From the issue date
+         *     * `manual` - Set by the owner
+         * @enum {string}
+         */
+        DueDatePolicyEnum: "from_period_start" | "from_issue_date" | "manual";
         /**
          * @description * `outstanding` - Outstanding
          *     * `partially_recovered` - Partially Recovered
@@ -3557,6 +4027,90 @@ export interface components {
             readonly updated_at: string;
         };
         /**
+         * @description Food holidays. Without view_finance the rate and credit figures are
+         *     removed from the response (not nulled), like the resident money fields.
+         */
+        FoodHoliday: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            property: string;
+            readonly property_name: string;
+            name: string;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            end_date: string;
+            readonly total_days: number;
+            adjust_in_bill?: boolean;
+            /** Format: decimal */
+            rate_per_day?: string | null;
+            /** Format: uuid */
+            readonly announcement: string | null;
+            readonly notice_outdated: boolean;
+            readonly is_locked: boolean;
+            readonly credit_total: string;
+            readonly credit_count: number;
+            /** @default true */
+            post_notice: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description One row of a holiday's credits table: a stored credit, or (status
+         *     "estimated") what a resident who qualifies now would be owed.
+         */
+        FoodHolidayCredit: {
+            /** Format: uuid */
+            id: string | null;
+            /** Format: uuid */
+            resident: string;
+            resident_name: string;
+            status: components["schemas"]["FoodHolidayCreditStatusEnum"];
+            days: number;
+            /** Format: decimal */
+            rate: string;
+            /** Format: decimal */
+            amount: string;
+            /** Format: uuid */
+            invoice: string | null;
+            invoice_status: string | null;
+            /** Format: decimal */
+            clawback_amount: string;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `invoiced` - On an invoice
+         *     * `settled` - Settled at exit
+         *     * `waived` - Waived
+         *     * `estimated` - Estimated
+         * @enum {string}
+         */
+        FoodHolidayCreditStatusEnum: "pending" | "invoiced" | "settled" | "waived" | "estimated";
+        /**
+         * @description Totals of a holiday's credit rows, computed on the server so the
+         *     client never sums money. `credited` is pending + invoiced + settled (the
+         *     holiday's `credit_total`); estimates, waived rows and clawbacks are
+         *     reported separately.
+         */
+        FoodHolidayCreditTotals: {
+            /** Format: decimal */
+            credited: string;
+            credited_count: number;
+            /** Format: decimal */
+            estimated: string;
+            estimated_count: number;
+            waived_count: number;
+            /** Format: decimal */
+            clawback: string;
+        };
+        FoodHolidayCredits: {
+            credits: components["schemas"]["FoodHolidayCredit"][];
+            totals: components["schemas"]["FoodHolidayCreditTotals"];
+        };
+        /**
          * @description * `with_food` - With Food
          *     * `without_food` - Without Food
          * @enum {string}
@@ -3609,10 +4163,29 @@ export interface components {
             readonly balance_due: string;
             readonly capped_allocated: string;
             readonly is_overdue: boolean;
+            readonly auto_generated: boolean;
+            readonly review_reasons: components["schemas"]["ReviewReasonsEnum"][];
+            readonly due_date_policy: components["schemas"]["DueDatePolicyEnum"];
+            /** Format: date */
+            readonly auto_issue_on: string | null;
+            readonly auto_issue_held: boolean;
+            readonly can_auto_issue: boolean;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        InvoiceBulkIssue: {
+            ids: string[];
+        };
+        InvoiceBulkIssueResponse: {
+            issued: number;
+            results: components["schemas"]["InvoiceBulkIssueRow"][];
+        };
+        InvoiceBulkIssueRow: {
+            /** Format: uuid */
+            id: string;
+            result: string;
         };
         InvoiceGenerate: {
             /** Format: uuid */
@@ -3651,6 +4224,16 @@ export interface components {
             due_date: string;
             notes?: string;
         };
+        /**
+         * @description * `add_property` - add_property
+         *     * `add_building` - add_building
+         *     * `add_floor` - add_floor
+         *     * `add_room` - add_room
+         *     * `admit_resident` - admit_resident
+         *     * `record_expense` - record_expense
+         * @enum {string}
+         */
+        KeyEnum: "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident" | "record_expense";
         /**
          * @description * `en` - English
          *     * `hi` - Hindi
@@ -3764,9 +4347,10 @@ export interface components {
          *     * `additional` - Additional
          *     * `discount` - Discount
          *     * `penalty` - Late Payment Penalty
+         *     * `food_holiday` - Food Holiday Credit
          * @enum {string}
          */
-        LineTypeEnum: "accommodation" | "food" | "electricity" | "water" | "laundry" | "addon" | "additional" | "discount" | "penalty";
+        LineTypeEnum: "accommodation" | "food" | "electricity" | "water" | "laundry" | "addon" | "additional" | "discount" | "penalty" | "food_holiday";
         Login: {
             email: string;
             password: string;
@@ -3798,6 +4382,8 @@ export interface components {
             } | null;
             /** @description Which of 'password' / 'otp_email' / 'otp_phone' can confirm a deletion request right now. */
             readonly deletion_confirm_methods: string[];
+            /** @description True once the user hid the Getting started checklist (Module 23). */
+            readonly onboarding_dismissed: boolean;
         };
         MeUpdate: {
             first_name: string;
@@ -3831,9 +4417,12 @@ export interface components {
          *     * `trial_expiry_reminder` - Trial Expiry Reminder
          *     * `invoice_issued` - Invoice Issued
          *     * `payment_receipt` - Payment Receipt
+         *     * `invoice_drafts_ready` - Invoice Drafts Ready
          * @enum {string}
          */
-        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt";
+        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt" | "invoice_drafts_ready";
+        /** @enum {unknown} */
+        NullEnum: null;
         Occupancy: {
             total: number;
             occupied: number;
@@ -3843,6 +4432,15 @@ export interface components {
             /** Format: double */
             occupancy_rate: number | null;
         };
+        /**
+         * @description * `add_property` - add_property
+         *     * `add_building` - add_building
+         *     * `add_floor` - add_floor
+         *     * `add_room` - add_room
+         *     * `admit_resident` - admit_resident
+         * @enum {string}
+         */
+        OnboardingRequiredStepEnum: "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident";
         OsInfo: {
             name: string;
             version: string;
@@ -3867,6 +4465,29 @@ export interface components {
         PasswordResetRequest: {
             /** Format: email */
             email: string;
+        };
+        PatchedAnnouncement: {
+            /** Format: uuid */
+            readonly id?: string;
+            /** Format: uuid */
+            property?: string;
+            readonly property_name?: string;
+            title?: string;
+            body?: string;
+            category?: components["schemas"]["AnnouncementCategoryEnum"];
+            is_pinned?: boolean;
+            /** Format: date */
+            expires_on?: string | null;
+            readonly is_auto_text?: boolean;
+            readonly food_holiday?: string | null;
+            readonly notice_outdated?: boolean;
+            /** Format: uuid */
+            readonly created_by?: string | null;
+            readonly created_by_name?: string | null;
+            /** Format: date-time */
+            readonly created_at?: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
         };
         PatchedBed: {
             /** Format: uuid */
@@ -4031,6 +4652,38 @@ export interface components {
             readonly updated_at?: string;
         };
         /**
+         * @description Food holidays. Without view_finance the rate and credit figures are
+         *     removed from the response (not nulled), like the resident money fields.
+         */
+        PatchedFoodHoliday: {
+            /** Format: uuid */
+            readonly id?: string;
+            /** Format: uuid */
+            property?: string;
+            readonly property_name?: string;
+            name?: string;
+            /** Format: date */
+            start_date?: string;
+            /** Format: date */
+            end_date?: string;
+            readonly total_days?: number;
+            adjust_in_bill?: boolean;
+            /** Format: decimal */
+            rate_per_day?: string | null;
+            /** Format: uuid */
+            readonly announcement?: string | null;
+            readonly notice_outdated?: boolean;
+            readonly is_locked?: boolean;
+            readonly credit_total?: string;
+            readonly credit_count?: number;
+            /** @default true */
+            post_notice: boolean;
+            /** Format: date-time */
+            readonly created_at?: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
+        };
+        /**
          * @description Who/where columns for finance lists, so a row renders without a
          *     second lookup. `_resident(obj)` returns the row's resident.
          */
@@ -4063,6 +4716,13 @@ export interface components {
             readonly balance_due?: string;
             readonly capped_allocated?: string;
             readonly is_overdue?: boolean;
+            readonly auto_generated?: boolean;
+            readonly review_reasons?: components["schemas"]["ReviewReasonsEnum"][];
+            readonly due_date_policy?: components["schemas"]["DueDatePolicyEnum"];
+            /** Format: date */
+            readonly auto_issue_on?: string | null;
+            readonly auto_issue_held?: boolean;
+            readonly can_auto_issue?: boolean;
             /** Format: date-time */
             readonly created_at?: string;
             /** Format: date-time */
@@ -4167,6 +4827,8 @@ export interface components {
             readonly billing_mode?: string | null;
             readonly joining_date?: string | null;
             readonly security_deposit_amount?: string | null;
+            readonly security_deposit_agreed?: string | null;
+            readonly security_deposit_pending?: string | null;
             readonly advance_amount?: string | null;
             readonly advance_refundable?: string | null;
             readonly room_number?: string | null;
@@ -4307,6 +4969,13 @@ export interface components {
          * @enum {string}
          */
         PaymentMode2f4Enum: "upi" | "cash" | "bank_transfer" | "card" | "cheque";
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        PaymentModeFfbEnum: "upi" | "cash" | "bank_transfer";
         /**
          * @description Record a manual payment against an invoice (PRD Module 10). recorded_by
          *     is stamped from the request user server-side.
@@ -4596,6 +5265,8 @@ export interface components {
             readonly billing_mode: string | null;
             readonly joining_date: string | null;
             readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
             readonly advance_refundable: string | null;
             readonly room_number: string | null;
@@ -4642,6 +5313,8 @@ export interface components {
             readonly billing_mode: string | null;
             readonly joining_date: string | null;
             readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
             readonly advance_refundable: string | null;
             readonly room_number: string | null;
@@ -4664,6 +5337,18 @@ export interface components {
             /** Format: date */
             last_payment_date: string | null;
         };
+        /**
+         * @description * `weekly` - Weekly resident
+         *     * `first_partial` - First partial period
+         *     * `transition` - Billing day changed (transition period)
+         *     * `late` - Drafted after the billing date
+         *     * `vacating` - Resident leaves during this period
+         *     * `no_prior_invoice` - First automatic invoice for this resident
+         *     * `ineligible` - Resident is no longer billable
+         *     * `rule_changed` - Automatic billing settings changed
+         * @enum {string}
+         */
+        ReviewReasonsEnum: "weekly" | "first_partial" | "transition" | "late" | "vacating" | "no_prior_invoice" | "ineligible" | "rule_changed";
         /**
          * @description * `super_admin` - Super Admin
          *     * `owner` - Owner
@@ -4712,6 +5397,13 @@ export interface components {
             /** Format: double */
             pixel_ratio: number;
         };
+        /**
+         * @description * `upi` - UPI
+         *     * `cash` - Cash
+         *     * `bank_transfer` - Bank Transfer
+         * @enum {string}
+         */
+        SecurityDepositModeEnum: "upi" | "cash" | "bank_transfer";
         /**
          * @description * `1` - 1-sharing
          *     * `2` - 2-sharing
@@ -4980,6 +5672,34 @@ export interface components {
             cash_flow: components["schemas"]["TrendCashFlow"] | null;
         };
         /**
+         * @description * `overview` - Overview
+         *     * `add_property` - Add a property
+         *     * `add_building` - Add a building
+         *     * `add_floor` - Add a floor
+         *     * `add_room` - Add rooms and beds
+         *     * `admit_resident` - Admit a resident
+         *     * `property_settings` - Property settings
+         *     * `expenses` - Expenses
+         *     * `billing` - Billing
+         *     * `staff` - Staff
+         * @enum {string}
+         */
+        TutorialTopicEnum: "overview" | "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident" | "property_settings" | "expenses" | "billing" | "staff";
+        TutorialVideo: {
+            readonly topic: components["schemas"]["TutorialTopicEnum"];
+            readonly language: components["schemas"]["LanguageEnum"];
+            readonly title: string;
+            readonly description: string;
+            /** @description The id from the video link, e.g. dQw4w9WgXcQ in youtu.be/dQw4w9WgXcQ. */
+            readonly youtube_id: string;
+            readonly duration_seconds: number | null;
+        };
+        TutorialVideoList: {
+            requested_language: components["schemas"]["LanguageEnum"];
+            available_languages: components["schemas"]["LanguageEnum"][];
+            videos: components["schemas"]["TutorialVideo"][];
+        };
+        /**
          * @description * `payment` - payment
          * @enum {string}
          */
@@ -5006,6 +5726,14 @@ export interface components {
             readonly is_settled: boolean;
             readonly security_deposit_amount: string;
             readonly advance_refundable: string;
+            /** Format: decimal */
+            readonly food_holiday_credit: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_calculated: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_recovered: string;
+            /** Format: decimal */
+            readonly food_holiday_clawback_unrecovered: string;
             /** Format: date */
             readonly cancelled_date: string | null;
             readonly cancellation_reason: string;
@@ -5044,6 +5772,16 @@ export interface components {
             advance_refundable: string;
             /** Format: decimal */
             maintenance_deduction: string;
+            /** Format: date */
+            actual_vacate_date: string;
+            /** Format: decimal */
+            food_holiday_credit: string;
+            /** Format: decimal */
+            food_holiday_clawback_calculated: string;
+            /** Format: decimal */
+            food_holiday_clawback_recovered: string;
+            /** Format: decimal */
+            food_holiday_clawback_unrecovered: string;
             /** Format: decimal */
             refund_amount: string;
             /** Format: decimal */
@@ -6477,6 +7215,55 @@ export interface operations {
             };
         };
     };
+    v1_deposit_payments_list: {
+        parameters: {
+            query?: {
+                admission__resident?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositPayment"][];
+                };
+            };
+        };
+    };
+    v1_deposit_payments_create: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description <= 100 chars; one per user intent. A retry with the same key and body returns 200 with `Idempotent-Replayed: true` and the original payment. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositPaymentWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepositPaymentWrite"];
+                "multipart/form-data": components["schemas"]["DepositPaymentWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositPayment"];
+                };
+            };
+        };
+    };
     v1_devices_create: {
         parameters: {
             query?: never;
@@ -7294,6 +8081,190 @@ export interface operations {
             };
         };
     };
+    v1_food_holidays_list: {
+        parameters: {
+            query?: {
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"][];
+                };
+            };
+        };
+    };
+    v1_food_holidays_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FoodHoliday"];
+                "application/x-www-form-urlencoded": components["schemas"]["FoodHoliday"];
+                "multipart/form-data": components["schemas"]["FoodHoliday"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_food_holidays_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFoodHoliday"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFoodHoliday"];
+                "multipart/form-data": components["schemas"]["PatchedFoodHoliday"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHoliday"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_credits_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHolidayCredits"];
+                };
+            };
+        };
+    };
+    v1_food_holidays_credits_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credit_pk: string;
+                /** @description A UUID string identifying this food holiday. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodHolidayCredit"];
+                };
+            };
+        };
+    };
+    v1_help_videos_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Language code; default is the user’s. */
+                language?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TutorialVideoList"];
+                };
+            };
+        };
+    };
     v1_invoices_list: {
         parameters: {
             query?: {
@@ -7306,6 +8277,7 @@ export interface operations {
                 period?: string;
                 property?: string;
                 resident?: string;
+                review?: string;
                 search?: string;
                 status?: string;
             };
@@ -7421,6 +8393,34 @@ export interface operations {
             };
         };
     };
+    v1_invoices_hold_auto_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this invoice. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Invoice"];
+                "application/x-www-form-urlencoded": components["schemas"]["Invoice"];
+                "multipart/form-data": components["schemas"]["Invoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
     v1_invoices_issue_create: {
         parameters: {
             query?: never;
@@ -7528,6 +8528,34 @@ export interface operations {
             };
         };
     };
+    v1_invoices_resume_auto_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this invoice. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Invoice"];
+                "application/x-www-form-urlencoded": components["schemas"]["Invoice"];
+                "multipart/form-data": components["schemas"]["Invoice"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+        };
+    };
     v1_invoices_bulk_generate_create: {
         parameters: {
             query?: never;
@@ -7553,6 +8581,31 @@ export interface operations {
             };
         };
     };
+    v1_invoices_bulk_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceBulkIssue"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvoiceBulkIssue"];
+                "multipart/form-data": components["schemas"]["InvoiceBulkIssue"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceBulkIssueResponse"];
+                };
+            };
+        };
+    };
     v1_invoices_outstanding_retrieve: {
         parameters: {
             query?: never;
@@ -7572,6 +8625,160 @@ export interface operations {
             };
         };
     };
+    v1_notices_list: {
+        parameters: {
+            query?: {
+                active?: boolean;
+                /**
+                 * @description * `general` - General
+                 *     * `holiday` - Holiday
+                 *     * `maintenance` - Maintenance
+                 *     * `rules` - Rules
+                 *     * `event` - Event
+                 */
+                category?: "event" | "general" | "holiday" | "maintenance" | "rules";
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"][];
+                };
+            };
+        };
+    };
+    v1_notices_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Announcement"];
+                "application/x-www-form-urlencoded": components["schemas"]["Announcement"];
+                "multipart/form-data": components["schemas"]["Announcement"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_notices_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAnnouncement"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAnnouncement"];
+                "multipart/form-data": components["schemas"]["PatchedAnnouncement"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
+    v1_notices_mark_current_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this announcement. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Announcement"];
+                "application/x-www-form-urlencoded": components["schemas"]["Announcement"];
+                "multipart/form-data": components["schemas"]["Announcement"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+        };
+    };
     v1_notifications_history_list: {
         parameters: {
             query?: {
@@ -7587,8 +8794,9 @@ export interface operations {
                  *     * `trial_expiry_reminder` - Trial Expiry Reminder
                  *     * `invoice_issued` - Invoice Issued
                  *     * `payment_receipt` - Payment Receipt
+                 *     * `invoice_drafts_ready` - Invoice Drafts Ready
                  */
-                notification_type?: "invoice_issued" | "payment_receipt" | "trial_expiry_reminder" | "welcome";
+                notification_type?: "invoice_drafts_ready" | "invoice_issued" | "payment_receipt" | "trial_expiry_reminder" | "welcome";
                 /**
                  * @description * `sent` - Sent
                  *     * `failed` - Failed
@@ -7744,6 +8952,64 @@ export interface operations {
                 /** @description A UUID string identifying this push subscription. */
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_onboarding_checklist_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Property UUID; default picks one. */
+                property?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+        };
+    };
+    v1_onboarding_checklist_dismiss_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_onboarding_checklist_dismiss_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -9487,6 +10753,8 @@ export interface operations {
     v1_vacates_settlement_preview_retrieve: {
         parameters: {
             query?: {
+                /** @description YYYY-MM-DD the food-holiday credit/clawback is worked out for; default is the expected vacate date. */
+                actual_vacate_date?: string;
                 /** @description Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit). */
                 maintenance_deduction?: string;
             };

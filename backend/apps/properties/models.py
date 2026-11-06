@@ -1,13 +1,16 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
+
+from . import join_codes
 
 
 class Property(TenantModelMixin):
@@ -59,10 +62,20 @@ class Property(TenantModelMixin):
         validators=[MinValueValidator(-180), MaxValueValidator(180)],
     )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    # Module 26: a short random code residents enter to ask to be linked to this PG. It
+    # IDENTIFIES the property and nothing else: it never grants access, it only lets a person
+    # create a pending link request that staff must approve. Always upper-case. Staff rotate it
+    # (the old code stops working at once). Generated on first save; see apps.properties.join_codes.
+    join_code = models.CharField(max_length=8, null=True, blank=True, editable=False)
+    join_code_rotated_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         db_table = 'properties'
         constraints = [
+            models.UniqueConstraint(
+                fields=['join_code'], condition=Q(join_code__isnull=False),
+                name='property_join_code_unique',
+            ),
             models.CheckConstraint(
                 condition=(
                     Q(latitude__isnull=True, longitude__isnull=True)
@@ -74,6 +87,23 @@ class Property(TenantModelMixin):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        # A new property gets its join code here so every creation path (API, admin, scripts)
+        # has one. Uniqueness is global but RLS hides other tenants' rows from a pre-check, so
+        # the unique index is the authority: on a (vanishingly rare) collision, draw again.
+        if self.join_code is not None or not self._state.adding:
+            return super().save(*args, **kwargs)
+        for _attempt in range(5):
+            self.join_code = join_codes.generate_join_code()
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError as exc:
+                if 'property_join_code_unique' not in str(exc):
+                    raise
+                self.join_code = None
+        raise RuntimeError('Could not allocate a unique property join code.')
 
 
 def property_image_path(instance, filename):
@@ -324,6 +354,10 @@ class PropertySettings(TenantModelMixin):
         ONE_TIME = 'one_time', _('One-time')
         MONTHLY = 'monthly', _('Monthly')
 
+    class BillingDayRule(models.TextChoices):
+        ADMISSION_DATE = 'admission_date', _("Resident's admission date")
+        FIXED_DAY = 'fixed_day', _('Fixed day of the month')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     property = models.OneToOneField(Property, on_delete=models.CASCADE, related_name='settings')
     room_transfer_rent_timing = models.CharField(
@@ -344,9 +378,30 @@ class PropertySettings(TenantModelMixin):
     penalty_compounding = models.CharField(
         max_length=10, choices=PenaltyCompounding.choices, default=PenaltyCompounding.ONE_TIME
     )
+    # Automatic invoicing (Module 08, owner decision 2026-10-28): drafts the
+    # day before each resident's billing day, issues them on it. On by
+    # default, existing properties included.
+    auto_billing_enabled = models.BooleanField(default=True)
+    billing_day_rule = models.CharField(
+        max_length=20, choices=BillingDayRule.choices, default=BillingDayRule.ADMISSION_DATE
+    )
+    # Only meaningful for FIXED_DAY. Capped at 28 so every month has the day.
+    billing_day_of_month = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(28)]
+    )
+    # Module 24: the default food-holiday credit per day, prefilled when the
+    # owner adds a food holiday. Null = no default set.
+    food_charge_per_day = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     class Meta:
         db_table = 'property_settings'
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(food_charge_per_day__isnull=True)
+                | Q(food_charge_per_day__gte=0, food_charge_per_day__lte=Decimal('999999.99')),
+                name='property_settings_food_charge_in_range',
+            ),
+        ]
 
     def __str__(self):
         return f'Settings for {self.property.name}'

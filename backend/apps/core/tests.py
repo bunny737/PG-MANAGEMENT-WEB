@@ -84,6 +84,7 @@ class PermissionMatrixTests(TestCase):
                 'manage_visitors', 'view_resident_profile',
                 'view_own_notifications', 'manage_notification_preferences',
                 'view_property_features',  # read-only: answers "do you have parking?" at the desk
+                'view_notices',  # read-only notice board (Module 24)
             ]),
         )
 

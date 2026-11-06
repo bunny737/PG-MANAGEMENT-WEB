@@ -12,9 +12,11 @@
     "financials": "वित्तीय विवरण",
     "billing": "Billing",
     "expenses": "Expenses",
+    "notices": "Notices",
     "reports": "Reports",
     "settings": "सेटिंग्स",
-    "more": "अधिक"
+    "more": "अधिक",
+    "help": "सहायता"
   },
   "roles": {
     "owner": "मालिक",

@@ -10,16 +10,27 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import ValidationError
 
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
+from apps.core.idempotency import key_reused
 from apps.properties.models import Bed, PropertySettings
 
-from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
+from .access import record_exit
+from .models import (
+    AbscondedRecord,
+    Admission,
+    Allocation,
+    BlacklistEntry,
+    DepositPayment,
+    Resident,
+    Transfer,
+    Vacate,
+)
 
 
 def _first_of_next_month(d):
@@ -150,6 +161,113 @@ def add_one_month(d):
     return date(year, month, min(d.day, last_day))
 
 
+def create_initial_deposit_payment(admission, *, actor):
+    """The deposit collected at check-in becomes the first ledger row. Called inside the
+    admission-create transaction, after the admission row exists."""
+    if admission.security_deposit_amount <= 0:
+        return None
+    return DepositPayment.objects.create(
+        tenant_id=admission.tenant_id, admission=admission, amount=admission.security_deposit_amount,
+        payment_date=admission.security_deposit_collected_date, payment_mode=admission.security_deposit_mode,
+        recorded_by=actor,
+    )
+
+
+def deposit_payment_matches(existing, *, admission_id, amount, payment_date, payment_mode, reference):
+    """True when a request carries exactly the inputs `existing` persisted."""
+    return (
+        str(existing.admission_id) == str(admission_id)
+        and existing.amount == amount
+        and existing.payment_date == payment_date
+        and existing.payment_mode == payment_mode
+        and existing.reference == reference
+    )
+
+
+def find_replayed_deposit_payment(*, tenant_id, idempotency_key, **inputs):
+    """The payment an earlier request with this key created, or None. A key reused with any
+    different persisted input is a client bug: 409."""
+    existing = DepositPayment.objects.filter(tenant_id=tenant_id, idempotency_key=idempotency_key).first()
+    if existing is None:
+        return None
+    if not deposit_payment_matches(existing, **inputs):
+        raise key_reused()
+    return existing
+
+
+@transaction.atomic
+def record_deposit_payment(*, admission, amount, payment_date, payment_mode, reference='',
+                           actor, request=None, idempotency_key=None):
+    """Record a later collection of the security deposit (Module 10, 2026-11-01).
+
+    Lock order is Resident -> Admission (the resident first, like every workflow that touches
+    the resident; see `lock_resident`). The serializer pre-checks the same rules for a friendly
+    error, but only the checks made under these locks are authoritative: two concurrent
+    payments each within the pending amount could otherwise overpay.
+
+    With an `idempotency_key`, a retry of a request that already succeeded returns the original
+    payment (`replayed = True`) instead of failing the pending check or recording it twice."""
+    resident = lock_resident(admission.resident)
+    admission = Admission.objects.select_for_update(of=('self',)).get(pk=admission.pk)
+    inputs = dict(
+        admission_id=admission.pk, amount=amount, payment_date=payment_date,
+        payment_mode=payment_mode, reference=reference,
+    )
+
+    if idempotency_key:
+        existing = find_replayed_deposit_payment(
+            tenant_id=admission.tenant_id, idempotency_key=idempotency_key, **inputs,
+        )
+        if existing is not None:
+            existing.replayed = True
+            return existing
+
+    if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
+        raise ValidationError(
+            {'resident': _('A deposit can only be collected from a resident who is Active or on Notice Period.')},
+            code='resident_not_current',
+        )
+    pending = admission.security_deposit_pending
+    if amount > pending:
+        raise ValidationError(
+            {'amount': _('This exceeds the pending security deposit of %(pending)s.') % {'pending': pending}},
+            code='deposit_overpaid',
+        )
+
+    try:
+        with transaction.atomic():
+            payment = DepositPayment.objects.create(
+                tenant_id=admission.tenant_id, admission=admission, amount=amount,
+                payment_date=payment_date, payment_mode=payment_mode, reference=reference,
+                recorded_by=actor, idempotency_key=idempotency_key,
+            )
+    except IntegrityError:
+        # unique_deposit_payment_idempotency_key: lost a race to a request with the same key.
+        if not idempotency_key:
+            raise
+        existing = find_replayed_deposit_payment(
+            tenant_id=admission.tenant_id, idempotency_key=idempotency_key, **inputs,
+        )
+        if existing is None:
+            raise
+        existing.replayed = True
+        return existing
+    payment.replayed = False
+
+    before = admission.security_deposit_amount
+    admission.security_deposit_amount = before + amount
+    admission.save(update_fields=['security_deposit_amount', 'updated_at'])
+    audit_log.record(
+        action='deposit.payment_recorded', actor=actor, tenant_id=admission.tenant_id, obj=payment,
+        before={'security_deposit_collected': str(before)},
+        after={'resident': str(resident.id), 'amount': str(amount), 'mode': payment_mode,
+               'security_deposit_collected': str(admission.security_deposit_amount),
+               'security_deposit_pending': str(admission.security_deposit_pending)},
+        request=request,
+    )
+    return payment
+
+
 def lock_resident(resident):
     """Re-read a resident under a row lock, for the exit/status workflows.
 
@@ -226,11 +344,17 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     """Step 2 of the vacating workflow (PRD Module 11): move-out settlement —
     Notice Period -> Vacated, bed freed immediately, refund computed from the
     admission's security deposit minus the maintenance deduction."""
-    # Resident -> Vacate lock order (see lock_resident). Re-check everything
-    # inside the locks: the view's guards run unlocked, so two concurrent
-    # finalize calls could both pass them and double-run the settlement (double
-    # refund audit, double bed-free), and a finalize racing a cancel-notice
-    # could settle a notice that was just withdrawn.
+    # Settings -> Resident -> Vacate lock order (see lock_resident; Settings
+    # first serializes the food-holiday credits settled here with every other
+    # credit change in the property — Module 24). Re-check everything inside
+    # the locks: the view's guards run unlocked, so two concurrent finalize
+    # calls could both pass them and double-run the settlement (double refund
+    # audit, double bed-free), and a finalize racing a cancel-notice could
+    # settle a notice that was just withdrawn.
+    from apps.billing.services import lock_property_settings
+    from apps.notices import credits as food_credits
+
+    lock_property_settings(vacate.resident.property_id, vacate.tenant_id)
     resident = lock_resident(vacate.resident)
     vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
     if vacate.is_settled:
@@ -253,6 +377,14 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
 
     before_status = resident.status
 
+    # Food-holiday credits (Module 24): owed days are paid with the refund;
+    # days already credited on an issued invoice after the move-out are clawed
+    # back, as far as the refund can absorb.
+    plan = food_credits.plan_exit(resident, through=actual_vacate_date)
+    credit, clawback, recovered, unrecovered = food_credits.vacate_amounts(
+        vacate, maintenance_deduction=maintenance_deduction, plan=plan,
+    )
+
     vacate.actual_vacate_date = actual_vacate_date
     vacate.maintenance_deduction = maintenance_deduction
     vacate.maintenance_deduction_note = maintenance_deduction_note
@@ -260,7 +392,12 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     vacate.refund_mode = refund_mode
     vacate.refund_note = refund_note
     vacate.settled_by = actor
+    vacate.food_holiday_credit = credit
+    vacate.food_holiday_clawback_calculated = clawback
+    vacate.food_holiday_clawback_recovered = recovered
+    vacate.food_holiday_clawback_unrecovered = unrecovered
     vacate.save()
+    food_credits.apply_exit(plan, resident, vacate=vacate, actor=actor, request=request)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE
@@ -268,11 +405,16 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
 
     resident.status = Resident.Status.VACATED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # starts the app-access window (Module 26)
 
     audit_log.record(
         action='resident.vacated', actor=actor, obj=vacate,
         after={'actual_vacate_date': actual_vacate_date.isoformat(),
                'maintenance_deduction': str(maintenance_deduction),
+               'food_holiday_credit': str(credit),
+               'food_holiday_clawback_calculated': str(clawback),
+               'food_holiday_clawback_recovered': str(recovered),
+               'food_holiday_clawback_unrecovered': str(unrecovered),
                'refund_amount': str(vacate.refund_amount)},
         request=request,
     )
@@ -284,7 +426,7 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     return vacate
 
 
-def settlement_preview(*, vacate, maintenance_deduction):
+def settlement_preview(*, vacate, maintenance_deduction, actual_vacate_date=None):
     """Move-out settlement breakdown for a not-yet-finalized vacate (owner
     request 2026-10-26: a checkout screen showing the refund before staff
     confirm it). A non-locking, point-in-time estimate — unlike
@@ -298,12 +440,30 @@ def settlement_preview(*, vacate, maintenance_deduction):
 
     `outstanding_dues` is informational only (owner decision 2026-10-26) —
     unlike `mark_absconded`, a normal vacate never nets dues against the
-    refund; the deposit/advance math is exactly `Vacate.refund_for`."""
+    refund; the deposit/advance math is exactly `Vacate.refund_for`.
+
+    Food-holiday figures (Module 24) come from the same read-only plan
+    `finalize_vacate` applies, for `actual_vacate_date` (default: the expected
+    vacate date), so the preview and the settlement can't disagree."""
+    from apps.notices import credits as food_credits
+
+    through = actual_vacate_date or vacate.expected_vacate_date
+    plan = food_credits.plan_exit(vacate.resident, through=through)
+    credit, clawback, recovered, unrecovered = food_credits.vacate_amounts(
+        vacate, maintenance_deduction=maintenance_deduction, plan=plan,
+    )
     return {
         'security_deposit_amount': vacate.resident.admission.security_deposit_amount,
         'advance_refundable': vacate.resident.admission.advance_refundable,
         'maintenance_deduction': maintenance_deduction,
-        'refund_amount': vacate.refund_for(maintenance_deduction),
+        'actual_vacate_date': through,
+        'food_holiday_credit': credit,
+        'food_holiday_clawback_calculated': clawback,
+        'food_holiday_clawback_recovered': recovered,
+        'food_holiday_clawback_unrecovered': unrecovered,
+        'refund_amount': vacate.refund_for(
+            maintenance_deduction, food_holiday_credit=credit, clawback_recovered=recovered,
+        ),
         'outstanding_dues': outstanding_dues_for(vacate.resident),
     }
 
@@ -416,9 +576,14 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
     """PRD Module 11 'Absconded Resident Workflow': bed freed immediately (no
     notice period), security deposit forfeited and applied against outstanding dues,
     any remainder recorded as outstanding (owner can write it off later)."""
-    # Resident lock (see lock_resident) + re-check: Active is now reachable by
-    # cancelling a notice, so an unlocked read here could mark a resident
-    # absconded off a status another request had just changed.
+    # Settings -> Resident lock (see lock_resident; Settings first for the
+    # food-holiday credits settled here — Module 24) + re-check: Active is now
+    # reachable by cancelling a notice, so an unlocked read here could mark a
+    # resident absconded off a status another request had just changed.
+    from apps.billing.services import lock_property_settings
+    from apps.notices import credits as food_credits
+
+    lock_property_settings(resident.property_id, resident.tenant_id)
     resident = lock_resident(resident)
     if not resident.can_transition_to(Resident.Status.ABSCONDED):
         raise ValidationError(
@@ -428,9 +593,18 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     before_status = resident.status
     admission = resident.admission
+    # Food-holiday credit still owed joins the forfeited pool; days already
+    # credited on an issued invoice after the abscond date are added to the
+    # dues (owner decisions 2026-10-30).
+    plan = food_credits.plan_exit(resident, through=absconded_date)
     # An unapplied advance surplus is forfeited together with the deposit.
-    deposit = admission.security_deposit_amount + admission.advance_refundable
-    outstanding = outstanding_dues_for(resident)
+    deposit = food_credits.check_amount(
+        admission.security_deposit_amount + admission.advance_refundable + plan.credit_total,
+        'deposit_applied_to_dues',
+    )
+    outstanding = food_credits.check_amount(
+        outstanding_dues_for(resident) + plan.clawback_total, 'remaining_dues',
+    )
     applied = min(deposit, outstanding)
     remaining = outstanding - applied
 
@@ -438,7 +612,9 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
         tenant_id=resident.tenant_id, resident=resident,
         absconded_date=absconded_date, last_seen_date=last_seen_date, absconded_note=absconded_note,
         deposit_applied_to_dues=applied, remaining_dues=remaining, marked_by=actor,
+        food_holiday_credit=plan.credit_total, food_holiday_clawback=plan.clawback_total,
     )
+    food_credits.apply_exit(plan, resident, absconded_record=record, actor=actor, request=request)
 
     bed = resident.allocation.allocated_bed
     bed.status = Bed.Status.AVAILABLE
@@ -446,11 +622,13 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
 
     resident.status = Resident.Status.ABSCONDED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # starts the app-access window (Module 26)
 
     audit_log.record(
         action='resident.absconded', actor=actor, obj=record,
         after={'absconded_date': absconded_date.isoformat(), 'deposit_applied_to_dues': str(applied),
-               'remaining_dues': str(remaining)},
+               'remaining_dues': str(remaining), 'food_holiday_credit': str(plan.credit_total),
+               'food_holiday_clawback': str(plan.clawback_total)},
         request=request,
     )
     audit_log.record(
@@ -502,6 +680,7 @@ def confirm_blacklist(*, resident, reason, actor, request=None):
     )
     resident.status = Resident.Status.BLACKLISTED
     resident.save(update_fields=['status', 'updated_at'])
+    record_exit(resident)  # a no-op for access already on the clock: Absconded -> Blacklisted never extends it
 
     audit_log.record(
         action='resident.blacklisted', actor=actor, obj=entry,

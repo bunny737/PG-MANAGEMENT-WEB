@@ -22,6 +22,7 @@ import {
   type PropertyPayload,
   type TenantFeature,
 } from "@/lib/api";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { FeaturePicker, toFeatureRefs, type FeatureSelection } from "./FeaturePicker";
 import { PropertyMapPicker } from "./PropertyMapPicker";
 
@@ -214,6 +215,7 @@ export function PropertyForm({ propertyId }: PropertyFormProps) {
       const property = isEditMode && propertyId
         ? await updateProperty(propertyId, payload)
         : await createProperty(payload);
+      if (!isEditMode) void afterHierarchyChange({ propertyId: property.id });
 
       const uploadResults = await Promise.allSettled(
         images.map((img) => uploadPropertyImage(property.id, img.file))

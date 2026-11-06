@@ -49,6 +49,10 @@ MODULES = {
         VIEW: ('view_expenses',),
         FULL: ('manage_expenses',),
     },
+    'notices': {
+        VIEW: ('view_notices',),
+        FULL: ('manage_notices',),
+    },
     'reports': {FULL: ('view_reports',)},
     'complaints': {FULL: ('manage_complaints',)},
     'visitors': {FULL: ('manage_visitors',)},
@@ -84,6 +88,7 @@ ROLE_DEFAULT_LEVELS = {
         'tenants': VIEW,
         'finance': OFF,
         'expenses': OFF,
+        'notices': VIEW,
         'reports': OFF,
         'complaints': OFF,
         'visitors': FULL,

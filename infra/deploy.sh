@@ -3,7 +3,7 @@
 #   infra/deploy.sh <prod|staging> <git-sha>
 # Expects gcloud already authenticated (Workload Identity Federation) and these env vars from the workflow:
 #   PROJECT, REGION, COMPANY_NAME, COMPANY_ADDRESS, plus optional SITE_URL, APP_STATUS, PLAY_STORE_URL,
-#   SIGNUP_ENABLED, CSP_MODE, CSP_REPORT_URI, NEXT_PUBLIC_* (build args), TRAFFIC_STEPS.
+#   SIGNUP_ENABLED, CSP_MODE, CSP_REPORT_URI, GA_MEASUREMENT_ID, NEXT_PUBLIC_* (build args), TRAFFIC_STEPS.
 # STATUS: not yet run against a real project (see env.sh).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

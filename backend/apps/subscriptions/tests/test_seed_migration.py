@@ -2,11 +2,13 @@ import importlib
 import uuid
 from decimal import Decimal
 
+from django.apps import apps as django_apps
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 seed = importlib.import_module('apps.subscriptions.migrations.0006_seed_basic_unlimited_plans')
+reprice = importlib.import_module('apps.subscriptions.migrations.0016_reprice_basic_unlimited_plans')
 
 BEFORE = [('subscriptions', '0005_plan_max_beds_subscription_max_beds_override')]
 SEEDED = [('subscriptions', '0006_seed_basic_unlimited_plans')]
@@ -23,6 +25,11 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         self.executor.loader.build_graph()
         self.executor.migrate(BEFORE)
         self.old_apps = self.executor.loader.project_state(BEFORE).apps
+        # The historical state at BEFORE has no core app; core stays at its latest migration anyway.
+        self.PlatformConfig = django_apps.get_model('core', 'PlatformConfig')
+        # Only this column: rolling back to BEFORE also unapplies later core migrations, so newer
+        # PlatformConfig columns (e.g. core.0010) are absent while this test runs.
+        self.trial_days = self.PlatformConfig.objects.values_list('trial_days', flat=True).get(pk=1)
         self._wipe_plans(self.old_apps)
 
     def tearDown(self):
@@ -30,6 +37,14 @@ class SeedBasicUnlimitedPlansTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
         executor.migrate(executor.loader.graph.leaf_nodes())
+        # When 0006 was already applied, the wipe above leaves the DB without its seeded plans
+        # for every later test on a kept DB. Put them back as a fresh migrate leaves them.
+        if not django_apps.get_model('subscriptions', 'Plan').objects.filter(pk=seed.BASIC_ID).exists():
+            seed.seed(django_apps, None)
+            reprice.reprice(django_apps, None)
+        # Both the seed (here and in the tests) set trial_days to 45, overwriting the later value
+        # (core.0008, which won't run again); with fixture teardown disabled that leaks across tests.
+        self.PlatformConfig.objects.filter(pk=1).update(trial_days=self.trial_days)
         super().tearDown()
 
     @staticmethod

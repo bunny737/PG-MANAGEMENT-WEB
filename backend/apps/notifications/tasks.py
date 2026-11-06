@@ -176,3 +176,63 @@ def _mark_scheduled_failed(scheduled_id, tenant_id):
         ScheduledNotification.objects.filter(
             pk=scheduled_id, status=ScheduledNotification.Status.PENDING,
         ).update(status=ScheduledNotification.Status.FAILED, updated_at=timezone.now())
+
+
+# --- Residency links (Module 26) -------------------------------------------------------------
+@shared_task
+def notify_link_requested_task(tenant_id, link_request_id):
+    """Tell the people who manage a property that someone asked to be linked to it."""
+    from apps.residents.access import link_request_recipients
+    from apps.residents.models import ResidencyLinkRequest
+
+    with tenant_context(tenant_id):
+        link_request = (
+            ResidencyLinkRequest.objects.select_related('property', 'requester')
+            .filter(pk=link_request_id, status=ResidencyLinkRequest.Status.PENDING)
+            .first()
+        )
+        if link_request is None:
+            return
+        requester = link_request.requester
+        shown = ' '.join(filter(None, [requester.first_name, requester.last_name]))
+        for user in link_request_recipients(link_request.property):
+            try:
+                services.notify(
+                    tenant_id=link_request.tenant_id, notification_type='residency_link_requested',
+                    recipient_user=user,
+                    context={
+                        'name': user.first_name, 'requester': link_request.claimed_name or shown,
+                        'property': link_request.property.name, 'message': link_request.message,
+                    },
+                    reference=f'link_request:{link_request.pk}',
+                )
+            except Exception:  # one recipient's failure must not stop the others
+                logger.exception('Link request %s: notifying user %s failed', link_request.pk, user.pk)
+
+
+@shared_task
+def notify_link_resolved_task(tenant_id, link_request_id):
+    """Tell the requester their request was approved or rejected."""
+    from apps.residents.models import ResidencyLinkRequest
+
+    with tenant_context(tenant_id):
+        link_request = (
+            ResidencyLinkRequest.objects.select_related('property', 'requester')
+            .filter(pk=link_request_id, status__in=[
+                ResidencyLinkRequest.Status.APPROVED, ResidencyLinkRequest.Status.REJECTED,
+            ])
+            .first()
+        )
+        if link_request is None:
+            return
+        requester = link_request.requester
+        services.notify(
+            tenant_id=link_request.tenant_id, notification_type='residency_link_resolved',
+            recipient_user=requester,
+            context={
+                'name': requester.first_name, 'property': link_request.property.name,
+                'approved': link_request.status == ResidencyLinkRequest.Status.APPROVED,
+                'note': link_request.resolution_note,
+            },
+            reference=f'link_request:{link_request.pk}',
+        )

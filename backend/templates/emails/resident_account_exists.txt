@@ -1,0 +1,9 @@
+{% extends "emails/base.txt" %}{% load i18n %}
+{% block heading %}{% trans "You already have an account" %}{% endblock %}
+{% block content %}{% if name %}{% blocktrans trimmed %}Hi {{ name }},{% endblocktrans %}{% else %}{% trans "Hello," %}{% endif %}
+
+{% trans "Someone tried to create an account with this email address, but one already exists." %} {% trans "Open the app and sign in. If you have forgotten your password, choose “Forgot password” to reset it." %}
+{% endblock %}
+{% block footnote %}
+{% trans "If this wasn't you, you can ignore this email. Nothing has changed." %}
+{% endblock %}

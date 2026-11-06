@@ -10,10 +10,18 @@ import {
   getProperty,
   getPropertySettings,
   updatePropertySettings,
+  type BillingDayRule,
   type Property,
   type PropertySettings,
 } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
+import { RATE_PATTERN } from "@/features/notices/helpers";
+
+// The two automatic-billing day rules, with their message keys.
+const BILLING_DAY_OPTIONS = [
+  { rule: "admission_date", title: "admissionDateTitle", desc: "admissionDateDesc" },
+  { rule: "fixed_day", title: "fixedDayTitle", desc: "fixedDayDesc" },
+] as const satisfies readonly { rule: BillingDayRule; title: string; desc: string }[];
 
 export function PropertySettingsForm({ propertyId }: { propertyId: string }) {
   const t = useTranslations("settings.propertySettings");
@@ -72,6 +80,11 @@ function SettingsFields({
   const [graceDays, setGraceDays] = useState(settings.penalty_grace_days);
   const [appliesTo, setAppliesTo] = useState(settings.penalty_applies_to);
   const [compounding, setCompounding] = useState(settings.penalty_compounding);
+  const [autoBilling, setAutoBilling] = useState(settings.auto_billing_enabled);
+  const [billingDayRule, setBillingDayRule] = useState<BillingDayRule>(settings.billing_day_rule);
+  const [billingDay, setBillingDay] = useState(settings.billing_day_of_month ? String(settings.billing_day_of_month) : "");
+  // Default food-holiday credit per day (Module 24); empty = none set.
+  const [foodCharge, setFoodCharge] = useState(settings.food_charge_per_day ?? "");
 
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -84,6 +97,15 @@ function SettingsFields({
     // Validate grace days cap
     if (graceDays < 0 || graceDays > 30) {
       newErrors.graceDays = t("errGraceDaysRange");
+    }
+
+    const dayOfMonth = parseInt(billingDay, 10);
+    if (billingDayRule === "fixed_day" && !(dayOfMonth >= 1 && dayOfMonth <= 28)) {
+      newErrors.billingDay = t("errDayOfMonthRange");
+    }
+
+    if (foodCharge.trim() && !RATE_PATTERN.test(foodCharge.trim())) {
+      newErrors.foodCharge = t("errFoodChargeRange");
     }
 
     // Validate penalty value if penalty type is enabled
@@ -115,6 +137,10 @@ function SettingsFields({
         penalty_grace_days: graceDays,
         penalty_applies_to: appliesTo,
         penalty_compounding: compounding,
+        auto_billing_enabled: autoBilling,
+        billing_day_rule: billingDayRule,
+        billing_day_of_month: billingDayRule === "fixed_day" ? dayOfMonth : null,
+        food_charge_per_day: foodCharge.trim() || null,
       });
       queryClient.setQueryData(queryKeys.properties.settings(propertyId), saved);
       setShowSuccess(true);
@@ -124,6 +150,8 @@ function SettingsFields({
       setErrors({
         penaltyValue: apiError?.fieldError("penalty_value") ?? "",
         graceDays: apiError?.fieldError("penalty_grace_days") ?? "",
+        billingDay: apiError?.fieldError("billing_day_of_month") ?? "",
+        foodCharge: apiError?.fieldError("food_charge_per_day") ?? "",
         form: apiError ? apiError.message : t("saveError"),
       });
     } finally {
@@ -237,7 +265,106 @@ function SettingsFields({
           </div>
         </div>
 
-        {/* Section 2: Late Payment Penalty configs */}
+        {/* Section 2: Automatic billing (Module 08) */}
+        <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
+            {t("autoBillingHeading")}
+          </h2>
+          <label htmlFor="autoBilling" className="flex items-start gap-3 cursor-pointer">
+            <input
+              id="autoBilling"
+              type="checkbox"
+              checked={autoBilling}
+              onChange={(e) => setAutoBilling(e.target.checked)}
+              className="mt-0.5 size-4 accent-accent"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-ink">{t("autoBillingToggle")}</span>
+              <span className="mt-1 block text-xs text-ink-muted leading-relaxed">{t("autoBillingDesc")}</span>
+            </span>
+          </label>
+
+          {autoBilling && (
+            <div className="space-y-3 animate-fade-in">
+              <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{t("billingDayLabel")}</span>
+              <div role="radiogroup" aria-label={t("billingDayLabel")} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {BILLING_DAY_OPTIONS.map(({ rule, title, desc }) => (
+                  <label
+                    key={rule}
+                    className={`border rounded-xl p-4 cursor-pointer transition-all flex flex-col justify-between ${
+                      billingDayRule === rule
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-border hover:bg-surface-page text-ink-muted"
+                    }`}
+                  >
+                    <span className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-ink">{t(title)}</span>
+                      <input
+                        type="radio"
+                        name="billingDayRule"
+                        value={rule}
+                        checked={billingDayRule === rule}
+                        onChange={() => setBillingDayRule(rule)}
+                        className="accent-accent"
+                      />
+                    </span>
+                    <span className="text-[10px] text-ink-muted mt-2 leading-relaxed">{t(desc)}</span>
+                  </label>
+                ))}
+              </div>
+
+              {billingDayRule === "fixed_day" && (
+                <div className="space-y-1.5 sm:max-w-xs">
+                  <label htmlFor="billingDay" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                    {t("dayOfMonthLabel")}
+                  </label>
+                  <input
+                    id="billingDay"
+                    type="number"
+                    min="1"
+                    max="28"
+                    value={billingDay}
+                    onChange={(e) => setBillingDay(e.target.value)}
+                    className={`w-full rounded-xl border ${
+                      errors.billingDay ? "border-status-critical" : "border-border"
+                    } bg-surface-card px-4 py-2.5 text-sm text-ink outline-none focus:ring-4 focus:ring-accent/15 focus:border-accent`}
+                  />
+                  {errors.billingDay && <p className="text-xs text-status-critical">{errors.billingDay}</p>}
+                </div>
+              )}
+
+              <p className="text-xs text-ink-muted">{t("dueDateHint", { days: graceDays })}</p>
+            </div>
+          )}
+          <p className="text-xs text-ink-faint">{t("ruleChangeWarning")}</p>
+        </div>
+
+        {/* Section 2b: Food holidays (Module 24) */}
+        <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
+            {t("foodHeading")}
+          </h2>
+          <div className="space-y-1.5">
+            <label htmlFor="foodCharge" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              {t("foodChargeLabel")}
+            </label>
+            <input
+              id="foodCharge"
+              type="text"
+              inputMode="decimal"
+              value={foodCharge}
+              onChange={(e) => setFoodCharge(e.target.value)}
+              className="w-full max-w-xs rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+            />
+            {errors.foodCharge ? (
+              <p className="text-xs text-status-critical">{errors.foodCharge}</p>
+            ) : (
+              <p className="text-xs text-ink-muted leading-relaxed">{t("foodChargeHint")}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Section 3: Late Payment Penalty configs */}
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-ink border-b border-border pb-2.5">
             {t("penaltyPolicyHeading")}

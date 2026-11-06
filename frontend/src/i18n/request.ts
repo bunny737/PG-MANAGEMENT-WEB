@@ -16,6 +16,8 @@ export const MODULES = [
   'complaints',
   'dashboard',
   'expenses',
+  // Notices & food holidays (Module 24).
+  'notices',
   'reports',
   'status',
   'visitors',
@@ -24,6 +26,8 @@ export const MODULES = [
   'errors',
   // Account deletion (Module 22): profile card, confirm dialog and the pending screen.
   'accountDeletion',
+  // Getting started checklist, empty-state hints and Help & tutorials (Module 23).
+  'onboarding',
   // Public pglive.in site (server-rendered; see app/(marketing)).
   'marketing',
 ];

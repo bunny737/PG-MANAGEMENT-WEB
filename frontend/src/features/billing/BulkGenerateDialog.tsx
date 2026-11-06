@@ -38,9 +38,10 @@ export function BulkGenerateDialog({ onClose }: { onClose: () => void }) {
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
-      const { created } = await bulkGenerateInvoices(values);
+      const { created, skipped_overlapping: skipped } = await bulkGenerateInvoices(values);
       await afterInvoiceChange({ propertyId: values.property });
-      setResult(t("success", { count: created }));
+      const summary = t("success", { count: created });
+      setResult(skipped ? `${summary} ${t("skippedOverlapping", { count: skipped })}` : summary);
     } catch (error) {
       setServerError(error instanceof ApiError ? error.message : String(error));
     }

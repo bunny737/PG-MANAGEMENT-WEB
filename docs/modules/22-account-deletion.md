@@ -7,7 +7,7 @@
 **Phase:** 3 (Google Play requirement, 2026-10-23 — not in PRD v2)
 **PRD reference:** PRD §4 "Deleted accounts" (superseded for self-service deletion, Decision 2)
 **Depends on:** 01 (users, OTP, JWT auth), 13 (Razorpay ledger, `status_hold`), 14 (notifications), 15 (audit log), 19 (app installations)
-**Blocks:** none. A future resident account type (docs: "Resident Passport" idea) must add its own rows to `DISPOSITION`.
+**Blocks:** none. Resident accounts (Module 26) added their own `DISPOSITION` rows and a resident purge path (see "Resident accounts" below).
 **App:** `apps.accounts` (`deletion.py`), with changes in `apps.core`, `apps.subscriptions`, `apps.audit` consumers, and the Next.js frontend.
 
 ## Purpose
@@ -60,7 +60,7 @@ back-fill from legacy `subscription.payment_needs_refund` audit rows under the s
 ```
 GET    /auth/account/deletion/        the ACTIVE request locking this account (own, or the business's); 404 if none
 POST   /auth/account/deletion/        request.  Owner ⇒ scope=tenant; Manager/Receptionist ⇒ scope=user;
-                                      Super Admin/Resident ⇒ 403. Body: password | otp, confirm=true, reason?
+                                      Resident ⇒ scope=user (Module 26); Super Admin ⇒ 403. Body: password | otp, confirm=true, reason?
                                       → 201 {deletion, access, refresh}  (a fresh token pair: the request ends every session)
 POST   /auth/account/deletion/otp/    emails a deletion-purpose code (202). Phone codes ⇒ 400 while there is no SMS backend
 DELETE /auth/account/deletion/        cancel (204): the requester, or the business's Owner; 409 unless still pending
@@ -121,8 +121,7 @@ Tests: `apps/accounts/tests/test_account_deletion.py`, `test_account_deletion_pu
 17. **Isolation**: purging tenant A leaves tenant B's rows, files and webhook events untouched.
 
 ## Permissions
-Self-service roles: `owner`, `manager`, `receptionist` (by `user.role`, never by a missing tenant — a future
-tenant-less resident must not be mistaken for a Super Admin). Super Admins use Django admin: *Account deletion
+Self-service roles: `owner`, `manager`, `receptionist`, `resident` (by `user.role`, never by a missing tenant — a tenant-less resident and a Super Admin both lack one, and only the resident may delete themselves). Super Admins use Django admin: *Account deletion
 requests* (read-only; actions **Retry now** — failed or already-due only, it must not skip the grace period —
 and **Resolve as cancelled**, needing a note), and the User action **Create account deletion request
 (identity verified)** for an Owner who cannot sign in because the business was suspended.
@@ -180,8 +179,7 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
 - **Accounting**: confirm the retained set (legal name, amounts, dates, Razorpay ids) satisfies GST record rules.
 - **Alerting**: create the Cloud Monitoring log-based alert on `account_deletion_failed` (`docs/deployment.md`).
 - **SMS**: with no SMS backend, phone-only staff confirm by password and receive no notice.
-- **Resident Passport** (separate idea): its tables need `DISPOSITION` entries and an `app.user_id` RLS context in
-  the purge; as a later module its number should be 23.
+- **Resident accounts** are built (Module 26, see the changelog below). The "Resident Passport" idea became Module 26's tenant-less, one-person-many-PGs account.
 
 ## Changelog
 - 2026-10-23  Module created: request/cancel API with OTP purpose binding and a method-aware lock; durable, resumable
@@ -194,3 +192,7 @@ and **Resolve as cancelled**, needing a note), and the User action **Create acco
   deletion tests pin Razorpay to the local stub instead of relying on `.env`.
 - 2026-10-23  `account_deletion_requests` added to `RLS_EXEMPT_TABLES`; its omission failed the first production
   `pglive-check-roles` run after `migrate`.
+- 2026-10-30  Module 24's `notices.Announcement`, `FoodHoliday` and `FoodHolidayCredit` are `(PURGE, RETAIN)`.
+  They come first in `PURGE_ORDER` because credits PROTECT invoice lines, residents and settlements, and
+  holidays PROTECT the property.
+- 2026-11-01  **Resident accounts (Module 26).** `SELF_SERVICE_ROLES` gained `resident`; a resident request is user-scope with no tenant. The purge (`purge_user_rows`) removes the person's login and own rows (their links and link requests cascade) and leaves the PG's records (Resident, invoices, payments, invites with the reference cleared). Audit rows the person acted in, in any PG, lose the IP and any text naming them. `DISPOSITION` gained `ResidentAccess`, `ResidentInvite` and `ResidencyLinkRequest` (`PURGE` for a tenant purge, `RETAIN` for a staff purge); `RESIDENT_ACCOUNT_REFERENCES` records the third case and a test checks it against each FK's `on_delete`. A nightly job also removes resident accounts that never verified their email (`unverified_resident_purge_days`).

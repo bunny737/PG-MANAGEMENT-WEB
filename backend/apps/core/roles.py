@@ -57,6 +57,12 @@ PERMISSION_MATRIX = {
     # Same audience as Finance: a Receptionist doesn't see the PG's spending.
     'view_expenses': _OPS,
     'manage_expenses': _OPS,
+    # Module 24 (Notices & food holidays, owner request 2026-10-30). A
+    # Receptionist reads the notice board at the desk but doesn't post to it.
+    # Food-holiday money (rates, credits) stays behind view_finance /
+    # manage_invoices on top of these.
+    'view_notices': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
+    'manage_notices': _OPS,
     'manage_complaints': _OPS,
     'manage_visitors': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),
     'view_resident_profile': (Role.SUPER_ADMIN, Role.OWNER, Role.MANAGER, Role.RECEPTIONIST),

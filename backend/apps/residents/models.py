@@ -88,6 +88,11 @@ class Resident(TenantModelMixin):
 
     class Meta:
         db_table = 'residents'
+        constraints = [
+            # Target of the (resident_id, tenant_id) composite foreign keys on resident_access and
+            # resident_invites (Module 26): a link's recorded tenant must be its record's tenant.
+            models.UniqueConstraint(fields=['id', 'tenant_id'], name='residents_id_tenant_uniq'),
+        ]
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'.strip()
@@ -176,7 +181,12 @@ class Admission(TenantModelMixin):
     advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
+    # `security_deposit_amount` is what has actually been COLLECTED (the running total of the
+    # DepositPayment ledger), so every refund/forfeit/report that reads it can never count
+    # money that was not received. `security_deposit_agreed` is the full amount the resident
+    # owes; the rest may be paid later (Module 10, 2026-11-01).
     security_deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    security_deposit_agreed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     security_deposit_collected_date = models.DateField(null=True, blank=True)
     security_deposit_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
     # Partial first-month adjustment set manually by management (PRD: "amount
@@ -208,6 +218,44 @@ class Admission(TenantModelMixin):
     def advance_refundable(self):
         """Advance not consumed by the first invoice — refunded at vacate."""
         return self.advance_amount - self.advance_applied_amount
+
+    @property
+    def security_deposit_pending(self):
+        """Agreed deposit not yet collected. Never negative: an admission created before the
+        agreed amount existed (or outside the API) may have collected more than `agreed`."""
+        return max(self.security_deposit_agreed - self.security_deposit_amount, Decimal('0.00'))
+
+
+class DepositPayment(TenantModelMixin):
+    """One collection of an admission's security deposit (the first at check-in, any later
+    ones when the resident pays the rest). `Admission.security_deposit_amount` is the running
+    total, updated under the admission row lock by `services.record_deposit_payment`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    admission = models.ForeignKey(Admission, on_delete=models.PROTECT, related_name='deposit_payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_date = models.DateField()
+    payment_mode = models.CharField(max_length=15, choices=Admission.AdvanceMode.choices)
+    reference = models.CharField(max_length=100, blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='deposit_payments_recorded'
+    )
+    # Client-supplied Idempotency-Key of the POST that created this row (apps/core/idempotency.py).
+    idempotency_key = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        db_table = 'deposit_payments'
+        ordering = ['-payment_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant_id', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False),
+                name='unique_deposit_payment_idempotency_key',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Deposit {self.amount} via {self.get_payment_mode_display()} on {self.payment_date}'
 
 
 class Allocation(TenantModelMixin):
@@ -335,6 +383,22 @@ class Vacate(TenantModelMixin):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='vacates_settled'
     )
 
+    # Module 24, snapshotted at finalize: food-holiday credit paid out with
+    # the refund, and the clawback for holiday days credited on an issued
+    # invoice after the actual move-out. Only the recovered part reduces the
+    # refund; the unrecovered rest is informational (dues are never netted on
+    # a normal move-out).
+    food_holiday_credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    food_holiday_clawback_calculated = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    food_holiday_clawback_recovered = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    food_holiday_clawback_unrecovered = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+
     class Meta:
         db_table = 'vacates'
         # Oldest-first, so Resident.latest_vacate is simply the last row and a
@@ -357,6 +421,16 @@ class Vacate(TenantModelMixin):
                 ),
                 name='vacate_not_both_cancelled_and_settled',
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    food_holiday_credit__gte=0, food_holiday_clawback_recovered__gte=0,
+                    food_holiday_clawback_unrecovered__gte=0,
+                    food_holiday_clawback_calculated=(
+                        models.F('food_holiday_clawback_recovered') + models.F('food_holiday_clawback_unrecovered')
+                    ),
+                ),
+                name='vacate_food_holiday_amounts_consistent',
+            ),
         ]
 
     def __str__(self):
@@ -376,13 +450,24 @@ class Vacate(TenantModelMixin):
         which finalize or cancel may act."""
         return not self.is_settled and not self.is_cancelled
 
-    def refund_for(self, maintenance_deduction):
-        """The refund formula (security deposit - deduction + unapplied
-        advance), shared by `refund_amount` (the settled figure) and the
-        settlement-preview endpoint (an estimate for a not-yet-chosen
-        deduction) so they can never drift apart."""
+    def refund_before_clawback(self, maintenance_deduction, food_holiday_credit=None):
+        """Security deposit - deduction + unapplied advance + food-holiday
+        credit: what a food-holiday clawback can be recovered from."""
         admission = self.resident.admission
-        return admission.security_deposit_amount - maintenance_deduction + admission.advance_refundable
+        if food_holiday_credit is None:
+            food_holiday_credit = self.food_holiday_credit
+        return (admission.security_deposit_amount - maintenance_deduction + admission.advance_refundable
+                + food_holiday_credit)
+
+    def refund_for(self, maintenance_deduction, food_holiday_credit=None, clawback_recovered=None):
+        """The refund formula (security deposit - deduction + unapplied
+        advance + food-holiday credit - recovered clawback), shared by
+        `refund_amount` (the settled figure) and the settlement-preview
+        endpoint (an estimate, which passes its own food-holiday figures) so
+        they can never drift apart."""
+        if clawback_recovered is None:
+            clawback_recovered = self.food_holiday_clawback_recovered
+        return self.refund_before_clawback(maintenance_deduction, food_holiday_credit) - clawback_recovered
 
     @property
     def refund_amount(self):
@@ -418,6 +503,11 @@ class AbscondedRecord(TenantModelMixin):
     deposit_forfeited = models.BooleanField(default=True)
     deposit_applied_to_dues = models.DecimalField(max_digits=12, decimal_places=2)
     remaining_dues = models.DecimalField(max_digits=12, decimal_places=2)
+    # Module 24, snapshotted at marking: food-holiday credit added to the
+    # forfeited pool, and the clawback (holiday days credited on an issued
+    # invoice after the abscond date) added to the dues it is netted against.
+    food_holiday_credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    food_holiday_clawback = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
 
     dues_recovery_status = models.CharField(
         max_length=20, choices=DuesRecoveryStatus.choices, default=DuesRecoveryStatus.OUTSTANDING
@@ -432,6 +522,12 @@ class AbscondedRecord(TenantModelMixin):
 
     class Meta:
         db_table = 'absconded_records'
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(food_holiday_credit__gte=0, food_holiday_clawback__gte=0),
+                name='absconded_food_holiday_amounts_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f'Absconded: {self.resident}'
@@ -473,3 +569,8 @@ def vacate_prefetch(lookup='vacates'):
         queryset=Vacate.objects.order_by('notice_given_date', 'created_at'),
         to_attr='prefetched_vacates',
     )
+
+
+# Module 26: how a person's own login account is linked to a resident record. Imported here so
+# Django registers the models with this app.
+from .access_models import ResidencyLinkRequest, ResidentAccess, ResidentInvite  # noqa: E402,F401

@@ -29,6 +29,10 @@ Build strictly top to bottom. Do not start a module until all dependencies are �
 | 20 | Expenses (owner request 2026-10-16, not in PRD v2) | 20-expenses.md | 3 | 01, 02, 15 | ✅ |
 | 21 | Analytics, property layout, resident finance (UX roadmap D0–D9) | 21-analytics.md | 3 | 02, 04, 08, 09, 10, 20 | ✅ |
 | 22 | Account Deletion (Google Play requirement, 2026-10-23, not in PRD v2) | 22-account-deletion.md | 3 | 01, 13, 14, 15, 19 | 🟨 |
+| 23 | Getting Started: setup checklist, empty-state hints, tutorial videos (owner request 2026-10-28, not in PRD v2) | 23-getting-started.md | 3 | 01, 02, 03, 04, 05, 20 | ✅ |
+| 24 | Notices & Food Holidays: notice board, food-holiday bill credits (owner request 2026-10-30, not in PRD v2) | 24-notices-holidays.md | 3 | 02, 03, 08, 10, 15 | 🟨 (backend and web UI done; move-out / abscond rows wait on FE-10) |
+| 25 | PG Discovery: public nearby-PG search, contact + inquiries behind a verified login (owner request 2026-10-31, not in PRD v2) | 25-pg-discovery.md | 3 | 01, 02, 03, 05, 13, 14, 18, 22, 26a | ⬜ |
+| 26 | Resident Identity & App Access: resident accounts, invites, join-code link requests, post-exit access (owner request 2026-10-31, not in PRD v2) | 26-resident-identity.md | 3 | 26a: 01, 04, 10, 14, 22 · 26b: 08, 09, 11, 12, 13, 19, 24 | 🟨 (26a ✅, 26b ⬜) |
 
 ## Cross-cutting (enforced in every module — not built once)
 - Tenant isolation + RLS

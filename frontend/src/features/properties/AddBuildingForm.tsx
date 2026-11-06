@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { afterHierarchyChange } from "@/lib/refresh";
 import { getProperty, createBuilding, type Property, type Building, ApiError } from "@/lib/api";
 
 export function AddBuildingForm({ propertyId }: { propertyId: string }) {
@@ -66,6 +67,7 @@ export function AddBuildingForm({ propertyId }: { propertyId: string }) {
         name: buildingName.trim(),
         number_of_floors: numberOfFloors === "" ? 0 : floors,
       });
+      void afterHierarchyChange({ propertyId });
       setCreatedBuilding(result);
       setIsLoading(false);
       setShowSuccess(true);

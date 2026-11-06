@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { AlertCircle, BedDouble } from "lucide-react";
+import { AlertCircle, BedDouble, Settings2 } from "lucide-react";
+import { WatchVideoButton } from "@/features/onboarding/WatchVideoButton";
 import { getPropertyLayout, type LayoutBed, type LayoutRoom } from "@/lib/api";
 import { MoneyText } from "@/components/shared/MoneyText";
 import { MonthNavigator } from "@/components/shared/MonthNavigator";
@@ -32,6 +33,7 @@ function bedMatchesFilter(bed: LayoutBed, filter: BedFilter): boolean {
 
 export function PropertyOverview({ propertyId }: { propertyId: string }) {
   const t = useTranslations("properties.layout");
+  const tHints = useTranslations("onboarding.hints");
   const { can } = useSession();
   const [period, setPeriod] = useState(currentMonthKey());
   const [buildingId, setBuildingId] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export function PropertyOverview({ propertyId }: { propertyId: string }) {
 
   const canAdmit = can("manage_admissions");
   const canViewResident = can("view_resident_profile");
+  const canEditSettings = can("manage_property_settings");
 
   return (
     <div className="space-y-6">
@@ -78,6 +81,24 @@ export function PropertyOverview({ propertyId }: { propertyId: string }) {
         <p className="text-center text-xs text-ink-muted">
           {layout.counts.total === 0 ? t("noBedsYet") : t("allUnderMaintenance")}
         </p>
+      )}
+
+      {/* Getting started hint (Module 23): before anyone moves in is when these settings matter. */}
+      {layout.counts.occupied === 0 && canEditSettings && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent-border bg-accent-soft px-4 py-3">
+          <Settings2 className="size-4 shrink-0 text-accent" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink">{tHints("settingsTitle")}</p>
+            <p className="text-xs text-ink-muted">{tHints("settingsBody")}</p>
+          </div>
+          <WatchVideoButton topic="property_settings" />
+          <Link
+            href={`/properties/${propertyId}/settings`}
+            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink-inverse hover:bg-accent-hover"
+          >
+            {tHints("settingsCta")}
+          </Link>
+        </div>
       )}
 
       {/* Dues banner */}

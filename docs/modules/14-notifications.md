@@ -41,7 +41,8 @@ generic, multi-channel dispatch system:
 Table: notification_logs                        (RLS enforced, app: apps.notifications)
   id                    uuid PK
   tenant_id             uuid              (RLS)
-  notification_type     welcome | trial_expiry_reminder | invoice_issued | payment_receipt
+  notification_type     welcome | trial_expiry_reminder | invoice_issued | payment_receipt |
+                        invoice_drafts_ready  (Module 08 automatic billing, 2026-10-28)
   channel                email | sms | whatsapp | push               [V2]
   recipient_email        email, blank (blank unless channel=email and recipient has an email)
   recipient_user         FK -> accounts.User, null                   [V2]
@@ -182,7 +183,7 @@ only — matching the MVP's original "no dedicated cross-tenant API" decision
    translation degrades gracefully rather than crashing or sending nothing
    (invariant 7).
 8. `NotificationPreference` only suppresses a channel for registry types
-   marked `optional=True` (today: `invoice_issued` only) — `welcome`,
+   marked `optional=True` (today: `invoice_issued` and `invoice_drafts_ready`) — `welcome`,
    `trial_expiry_reminder`, and `payment_receipt` cannot be disabled by the
    recipient (a payment receipt is not optional).
 9. `channels/push.py` looks up `PushSubscription` rows for the recipient and
@@ -467,3 +468,13 @@ Django-admin-only — superuser login, matching the MVP's original decision for
   `apps.core.email.EmailMultiAlternatives.send`. 15 new tests.
 - 2026-10-22  `COMPANY_NAME`/`COMPANY_ADDRESS` now also reach the Celery worker, which is what
   actually sends these emails — see Decisions.
+- 2026-10-28  New type `invoice_drafts_ready` (email + push, optional) for
+  Module 08's automatic billing: after the daily sweep, the Owner(s) and the
+  property's staff with `manage_invoices` get one summary per property
+  (drafted / need confirmation / unbilled gaps), reference
+  `auto_billing:<property>:<date>`. en + te templates seeded by migration
+  0010; `NotificationLog.notification_type` choices extended (0009).
+- 2026-11-01  Resident app accounts (Module 26) now exist as real `User` rows, so a push or email to a resident can resolve to a login.
+  `residency_link_requested` and `residency_link_resolved` were added (en + te). Resident-facing notification history and push
+  for a tenant-less account are still open (see Module 26 open items); the "Revisit once Module 04 adds resident login" note above
+  is superseded by that spec.

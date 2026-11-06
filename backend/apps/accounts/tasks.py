@@ -8,11 +8,13 @@ account can change between queueing and running — and delivers through
 transaction.on_commit (capturing plain values, never model objects), so a job
 never runs before its rows commit."""
 import logging
+import math
 from enum import Enum
 from smtplib import SMTPException
 
 from celery import shared_task
 from django.conf import settings
+from django.utils import timezone
 
 from apps.core.authentication import BLOCKED_TENANT_STATUSES, active_deletion_for
 from apps.core.tenancy import tenant_context
@@ -114,7 +116,7 @@ def send_verification_email_to_address_task(self, email):
     now. Queued for every requested address alike; silent for the rest."""
     from .models import User
 
-    user = User.objects.filter(email__iexact=email, is_active=True).first()
+    user = User.objects.staff_pool().filter(email__iexact=email, is_active=True).first()
     if user is not None and not user.email_verified:
         _deliver(self, _send_verification, user)
 
@@ -135,7 +137,7 @@ def send_password_reset_task(self, email):
     can't sign in anyway."""
     from .models import User
 
-    user = User.objects.select_related('tenant').filter(email__iexact=email, is_active=True).first()
+    user = User.objects.staff_pool().select_related('tenant').filter(email__iexact=email, is_active=True).first()
     if (
         user is None
         or user.tenant_id is None
@@ -228,7 +230,7 @@ def deliver_login_code(email):
     from .emails import send_login_code_email
     from .models import User
 
-    user = User.objects.filter(email__iexact=email, is_active=True).first()
+    user = User.objects.staff_pool().filter(email__iexact=email, is_active=True).first()
     if user is None:
         return DeliveryResult.SKIPPED
     code = otp.issue(
@@ -358,3 +360,174 @@ def send_account_deletion_code_task(self, user_id):
         return DeliveryResult.SENT
 
     _deliver(self, _issue_and_send)
+
+
+# --- Resident app accounts (Module 26) -------------------------------------------------------
+def _resident_user(email):
+    from .models import User
+
+    return User.objects.resident_pool().filter(email__iexact=email, is_active=True).first()
+
+
+def _can_use_resident_email_code(user, email):
+    """A resident account may always use an email code to sign in (it also verifies the address).
+    Checked on the row `otp.issue` has locked."""
+    return user.is_active and user.role == 'resident' and (user.email or '').lower() == email
+
+
+def deliver_resident_signup_mail(email):
+    """After a signup attempt for `email`. A new, unverified account gets its verification code. An
+    address that already has a VERIFIED account gets a plain "you already have an account" email
+    instead, so signing up twice reveals nothing to a stranger and tells the owner what to do."""
+    from . import otp
+    from .emails import send_resident_account_exists_email, send_resident_verification_code_email
+
+    user = _resident_user(email)
+    if user is None:
+        return DeliveryResult.SKIPPED
+    if user.email_verified:
+        send_resident_account_exists_email(user)
+        return DeliveryResult.SENT
+    code = otp.issue(
+        user, otp.Channel.EMAIL, still_eligible=lambda locked: _can_use_resident_email_code(locked, email),
+    )
+    if code is None:
+        return DeliveryResult.SKIPPED
+    send_resident_verification_code_email(user, code)
+    return DeliveryResult.SENT
+
+
+def deliver_resident_login_code(email):
+    """An email sign-in code for a resident account (also how an unverified address is verified).
+    The plaintext code is generated here, on the worker, so it never sits in the broker payload."""
+    from . import otp
+    from .emails import send_login_code_email, send_resident_verification_code_email
+
+    user = _resident_user(email)
+    if user is None:
+        return DeliveryResult.SKIPPED
+    code = otp.issue(
+        user, otp.Channel.EMAIL, still_eligible=lambda locked: _can_use_resident_email_code(locked, email),
+    )
+    if code is None:
+        return DeliveryResult.SKIPPED
+    (send_login_code_email if user.email_verified else send_resident_verification_code_email)(user, code)
+    return DeliveryResult.SENT
+
+
+def deliver_resident_password_reset_code(email):
+    from . import otp
+    from .emails import send_resident_password_reset_code_email
+
+    user = _resident_user(email)
+    if user is None:
+        return DeliveryResult.SKIPPED
+    code = otp.issue(
+        user, otp.Channel.EMAIL, purpose=otp.OtpCode.Purpose.PASSWORD_RESET,
+        still_eligible=lambda locked: _can_use_resident_email_code(locked, email),
+    )
+    if code is None:
+        return DeliveryResult.SKIPPED
+    send_resident_password_reset_code_email(user, code)
+    return DeliveryResult.SENT
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES, expires=settings.OTP_TTL_SECONDS)
+def send_resident_signup_task(self, email):
+    _deliver(self, deliver_resident_signup_mail, email)
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES, expires=settings.OTP_TTL_SECONDS)
+def send_resident_login_code_task(self, email):
+    _deliver(self, deliver_resident_login_code, email)
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES, expires=settings.OTP_TTL_SECONDS)
+def send_resident_password_reset_task(self, email):
+    _deliver(self, deliver_resident_password_reset_code, email)
+
+
+def deliver_resident_invite(tenant_id, invite_id):
+    """Mint the invite's secret on the worker and email the link. Idempotent per attempt: a retry
+    mints a new secret, voiding any earlier undelivered email. Skipped if the invite is no longer
+    pending or has expired. Queued with the tenant id (not secret) so the worker can enter the
+    tenant; the token never touches the broker."""
+    from django.db import transaction
+
+    from apps.accounts.models import Tenant
+    from apps.residents.access import invite_is_expired, mint_invite_secret
+    from apps.residents.models import ResidentInvite
+
+    from .emails import send_resident_invite_email
+
+    with tenant_context(tenant_id):
+        with transaction.atomic():
+            invite = (
+                ResidentInvite.objects.select_for_update(of=('self',))
+                .select_related('resident__property')
+                .filter(pk=invite_id, status=ResidentInvite.Status.PENDING)
+                .first()
+            )
+            if invite is None or invite_is_expired(invite):
+                return DeliveryResult.SKIPPED
+            token = mint_invite_secret(invite)
+            resident, prop = invite.resident, invite.resident.property
+            to, name, property_name = invite.email, resident.first_name, prop.name
+            hours = max(1, math.ceil((invite.expires_at - timezone.now()).total_seconds() / 3600))
+        tenant = Tenant.objects.filter(pk=tenant_id).first()
+    if tenant is None or tenant.status in BLOCKED_TENANT_STATUSES:
+        return DeliveryResult.SKIPPED
+    send_resident_invite_email(
+        to=to, name=name, business=tenant.name, property_name=property_name, token=token,
+        language=tenant.default_language, hours=hours,
+    )
+    return DeliveryResult.SENT
+
+
+@shared_task(bind=True, max_retries=EMAIL_TASK_MAX_RETRIES)
+def send_resident_invite_task(self, tenant_id, invite_id):
+    _deliver(self, deliver_resident_invite, tenant_id, invite_id)
+
+
+@shared_task
+def purge_unverified_resident_accounts():
+    """Nightly: remove self-signed-up resident accounts that never verified their email within
+    `PlatformConfig.unverified_resident_purge_days`. Goes through the same purge as an account
+    deletion (apps.accounts.deletion.purge_user_rows). Skips anyone with a link, a link request or
+    an open deletion request: those are not abandoned signups. Every resident account is
+    self-created, so there is no invite-created special case."""
+    from datetime import timedelta
+
+    from django.db import transaction
+
+    from apps.core.models import PlatformConfig
+    from apps.residents.models import ResidencyLinkRequest, ResidentAccess
+
+    from . import deletion
+    from .models import User
+
+    cutoff = timezone.now() - timedelta(days=PlatformConfig.get().unverified_resident_purge_days)
+    removed = 0
+    stale = User.objects.resident_pool().filter(email_verified=False, created_at__lt=cutoff)
+    for user_id in list(stale.values_list('pk', flat=True)):
+        # The list above is a snapshot: the person may verify, link or ask for deletion before we get
+        # to them. Lock the row (verify() and the link writers take it too) and decide again inside
+        # the same transaction as the delete.
+        with transaction.atomic():
+            locked = (
+                User.objects.resident_pool().select_for_update()
+                .filter(pk=user_id, email_verified=False, created_at__lt=cutoff).first()
+            )
+            if locked is None:
+                continue
+            with tenant_context(is_super_admin=True):
+                in_use = (
+                    ResidentAccess.objects.filter(user_id=user_id).exists()
+                    or ResidencyLinkRequest.objects.filter(requester_id=user_id).exists()
+                )
+            if in_use or deletion.active_request_for(locked) is not None:
+                continue
+            deletion.purge_user_rows(user_id, None)
+            removed += 1
+    logger.info('purged %s unverified resident account(s)', removed)
+    return removed

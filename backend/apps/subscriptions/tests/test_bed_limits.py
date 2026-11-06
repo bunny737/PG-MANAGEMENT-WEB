@@ -118,9 +118,9 @@ class BedLimitTests(SubscriptionAPITestCase):
     def test_seeded_basic_plan_caps_at_500_beds_and_unlimited_has_none(self):
         basic = Plan.objects.get(name='Basic')
         unlimited = Plan.objects.get(name='Unlimited')
-        self.assertEqual((basic.max_beds, str(basic.price_per_month), basic.is_trial_plan), (500, '149.00', True))
+        self.assertEqual((basic.max_beds, str(basic.price_per_month), basic.is_trial_plan), (500, '199.00', True))
         self.assertEqual((unlimited.max_beds, str(unlimited.price_per_month), unlimited.is_trial_plan),
-                         (None, '249.00', False))
+                         (None, '299.00', False))
         self.assertEqual(Plan.objects.filter(is_trial_plan=True).count(), 1)
 
 

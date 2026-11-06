@@ -12,9 +12,11 @@
     "financials": "Financials",
     "billing": "Billing",
     "expenses": "Expenses",
+    "notices": "Notices",
     "reports": "Reports",
     "settings": "Settings",
-    "more": "More"
+    "more": "More",
+    "help": "Help"
   },
   "roles": {
     "owner": "Owner",

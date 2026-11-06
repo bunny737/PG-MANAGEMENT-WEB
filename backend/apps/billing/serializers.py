@@ -169,6 +169,7 @@ class ResidentContextMixin(serializers.Serializer):
 
 class InvoiceSerializer(ResidentContextMixin, serializers.ModelSerializer):
     line_items = InvoiceLineItemSerializer(many=True, read_only=True)
+    can_auto_issue = serializers.BooleanField(read_only=True)
     total = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance_due = serializers.SerializerMethodField()
@@ -185,6 +186,8 @@ class InvoiceSerializer(ResidentContextMixin, serializers.ModelSerializer):
             'period_start', 'period_end', 'billing_mode',
             'issue_date', 'due_date', 'status', 'notes', 'created_by',
             'line_items', 'total', 'amount_paid', 'balance_due', 'capped_allocated', 'is_overdue',
+            'auto_generated', 'review_reasons', 'due_date_policy', 'auto_issue_on', 'auto_issue_held',
+            'can_auto_issue',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
@@ -280,6 +283,10 @@ class InvoiceBulkGenerateSerializer(serializers.Serializer):
         return attrs
 
 
+class InvoiceBulkIssueSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False, max_length=500)
+
+
 class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
     """Add/edit an ad-hoc line on a draft invoice (electricity, penalty, ...)."""
 
@@ -287,6 +294,15 @@ class InvoiceLineItemWriteSerializer(serializers.ModelSerializer):
         model = InvoiceLineItem
         fields = ['id', 'line_type', 'label', 'amount', 'order']
         read_only_fields = ['id']
+
+    def validate_line_type(self, value):
+        # Food-holiday lines are system-owned (Module 24): only
+        # apps.notices.credits creates them.
+        if value == InvoiceLineItem.LineType.FOOD_HOLIDAY:
+            raise serializers.ValidationError(
+                _('Food holiday credits are added automatically.'), code='line_locked',
+            )
+        return value
 
 
 class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):

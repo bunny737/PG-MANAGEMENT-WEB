@@ -148,9 +148,10 @@ lifecycle (`vacated`/`blacklisted`) instead.
 - [DECISION 2026-07-03] Document-completeness gating (e.g. "Aadhaar+PAN
   required before Active") is deliberately NOT enforced here — that's
   Module 05 (Admissions)'s "documents, billing setup" step to own.
-- [OPEN] No endpoint yet for the PRD's resident self-service views ("view
-  own profile", "view own invoices") — that needs the login-account
-  question above resolved first, likely in Module 05 or a dedicated step.
+- [DECISION 2026-11-01] **Resident self-service is Module 26.** A resident record still has no login of its own: the
+  PG owns the record and it works without the app. A person creates their own app account and is linked to the
+  record by accepting a staff invite or by staff approving a join-code request (`docs/modules/26-resident-identity.md`).
+  The self-service views ("view own profile", "view own invoices") are Module 26b.
 - [DECISION 2026-07-04] Module 13 added a plan-limit check
   (`check_resident_limit`) to `change_status` — but only when the target
   status newly counts toward the plan limit (`Reserved → Active`,

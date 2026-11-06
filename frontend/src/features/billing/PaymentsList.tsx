@@ -12,6 +12,7 @@ import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyF
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
 import { queryKeys } from "@/lib/queryKeys";
 import { afterPayment } from "@/lib/refresh";
+import { formatDate } from "@/lib/date";
 import { currentMonthKey } from "@/lib/period";
 
 const MODES: PaymentMode[] = ["cash", "upi", "bank_transfer", "card", "cheque"];
@@ -118,7 +119,7 @@ export function PaymentsList() {
                 <div className="col-span-2 text-ink-muted">{tStatus(payment.payment_mode)}</div>
                 <div className="col-span-2 text-ink-muted">{payment.receipt_number ?? "—"}</div>
                 <div className="col-span-1 flex items-center justify-end gap-2">
-                  <span className="text-ink-muted">{payment.payment_date}</span>
+                  <span className="text-ink-muted">{formatDate(payment.payment_date)}</span>
                   <PermissionGate permission="manage_payments">
                     <button
                       type="button"

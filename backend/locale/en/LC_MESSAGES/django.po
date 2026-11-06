@@ -2204,3 +2204,332 @@ msgstr ""
 #: apps/residents/serializers.py
 msgid "Identity document uploads are not enabled yet."
 msgstr ""
+
+#: apps/properties/models.py
+msgid "Resident's admission date"
+msgstr ""
+
+#: apps/properties/models.py
+msgid "Fixed day of the month"
+msgstr ""
+
+#: apps/properties/serializers.py
+msgid "Choose the day of the month to bill on (1-28)."
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Weekly resident"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "First partial period"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Billing day changed (transition period)"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Drafted after the billing date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Resident leaves during this period"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "First automatic invoice for this resident"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Resident is no longer billable"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Automatic billing settings changed"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "From the billing date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "From the issue date"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Set by the owner"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Draft created"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Skipped: overlaps an existing invoice"
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Unbilled period before a later invoice"
+msgstr ""
+
+#: apps/billing/services.py
+msgid "This period overlaps another invoice for this resident."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Invoice not found."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Only automatically generated drafts that need no confirmation can be scheduled for automatic issue."
+msgstr ""
+
+#: apps/billing/filters.py
+msgid "Unknown review filter. Use needs_confirmation, scheduled or held."
+msgstr ""
+
+#: apps/notifications/models.py
+msgid "Invoice Drafts Ready"
+msgstr ""
+
+#: apps/accounts/emails.py
+msgid "Your password reset code"
+msgstr ""
+
+#: apps/accounts/emails.py
+msgid "You already have an account"
+msgstr ""
+
+#: apps/accounts/emails.py
+msgid "%(business)s invited you to its app"
+msgstr ""
+
+#: apps/accounts/models.py
+msgid "Password reset"
+msgstr ""
+
+#: apps/accounts/resident_auth.py
+msgid "No active account found with the given credentials."
+msgstr ""
+
+#: apps/accounts/resident_auth.py
+msgid "Check your email for a verification code."
+msgstr ""
+
+#: apps/accounts/resident_auth.py
+msgid "If that email has an account, a code has been sent."
+msgstr ""
+
+#: apps/accounts/resident_auth.py
+msgid "If that email has an account, a reset code has been sent."
+msgstr ""
+
+#: apps/accounts/resident_auth.py
+msgid "Password updated. You can sign in now."
+msgstr ""
+
+#: apps/core/permissions.py
+msgid "This action is for resident app accounts."
+msgstr ""
+
+#: apps/core/permissions.py
+msgid "Verify your email address first."
+msgstr ""
+
+#: apps/notifications/models.py
+msgid "Residency Link Requested"
+msgstr ""
+
+#: apps/notifications/models.py
+msgid "Residency Link Resolved"
+msgstr ""
+
+#: apps/residents/access.py
+msgid "This invitation is invalid or has expired."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "This invitation was sent to a different email address."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "App access can only be offered to a reserved, active or notice-period resident."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "Add an email address to this resident's record first."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "That resident does not belong to the property in the request."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "The requester's account is no longer available."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "This resident already has app access."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "This request has already been resolved."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "Send the residency to act for in the X-Residency-Id header."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "This residency is not active."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "That join code was not found."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "You are already linked to this PG."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "Request not found."
+msgstr ""
+
+#: apps/residents/access.py
+msgid "That residency is not available."
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Staff invite"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Link request"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Revoked"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Expired"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Accepted"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Cancelled by staff"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Replaced by a newer invite"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Access was granted another way"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "The resident left"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Approved"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Rejected"
+msgstr ""
+
+#: apps/residents/access_models.py
+msgid "Cancelled by the requester"
+msgstr ""
+
+#: templates/emails/resident_account_exists.html
+msgid "Sign in, or reset your password if you have forgotten it."
+msgstr ""
+
+#: templates/emails/resident_account_exists.html
+msgid "Someone tried to create an account with this email address, but one already exists."
+msgstr ""
+
+#: templates/emails/resident_account_exists.html
+msgid "Open the app and sign in. If you have forgotten your password, choose “Forgot password” to reset it."
+msgstr ""
+
+#: templates/emails/resident_account_exists.html
+msgid "If this wasn't you, you can ignore this email. Nothing has changed."
+msgstr ""
+
+#: templates/emails/resident_invite.html
+msgid "Accept the invitation to see your bills and notices in the app."
+msgstr ""
+
+#: templates/emails/resident_invite.html
+msgid "%(business)s (%(property)s) invited you to use the PGLive app, where you can see your bills and receipts, raise complaints and read notices."
+msgstr ""
+
+#: templates/emails/resident_invite.html
+msgid "Create your own account with this email address (or sign in if you already have one), then accept the invitation."
+msgstr ""
+
+#: templates/emails/resident_invite.html
+msgid "This invitation is valid for %(hours)s hour."
+msgid_plural "This invitation is valid for %(hours)s hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: templates/emails/resident_invite.html
+msgid "Accept the invitation"
+msgstr ""
+
+#: templates/emails/resident_invite.html
+msgid "If you weren't expecting this invitation, you can ignore this email. No account is created until you sign up yourself."
+msgstr ""
+
+#: templates/emails/resident_password_reset_code.html
+msgid "Your password reset code is %(code)s."
+msgstr ""
+
+#: templates/emails/resident_password_reset_code.html
+msgid "Enter this code in the app to choose a new password:"
+msgstr ""
+
+#: templates/emails/resident_password_reset_code.html
+msgid "If you didn't ask to reset your password, you can ignore this email. Your password has not changed."
+msgstr ""
+
+#: templates/emails/resident_verification_code.html
+msgid "Your verification code is %(code)s."
+msgstr ""
+
+#: templates/emails/resident_verification_code.html
+msgid "Enter this code in the app to finish creating your account:"
+msgstr ""
+
+#: templates/emails/resident_verification_code.html
+msgid "If you didn't create an account, you can ignore this email."
+msgstr ""
+
+#: apps/residents/serializers.py
+msgid "The deposit collected cannot exceed the agreed deposit."
+msgstr ""
+
+#: apps/residents/serializers.py
+msgid "This resident has not been admitted yet."
+msgstr ""
+
+#: apps/residents/serializers.py apps/residents/services.py
+#, python-format
+msgid "This exceeds the pending security deposit of %(pending)s."
+msgstr ""
+
+#: apps/residents/services.py
+msgid ""
+"A deposit can only be collected from a resident who is Active or on Notice "
+"Period."
+msgstr ""

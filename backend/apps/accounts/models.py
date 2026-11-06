@@ -13,6 +13,9 @@ from django.utils.translation import gettext_lazy as _
 from apps.core.roles import Role, STAFF_ROLES
 from .normalization import normalize_email, normalize_phone
 
+# Roles whose users carry no tenant: platform staff, and residents (Module 26).
+TENANTLESS_ROLES = (Role.SUPER_ADMIN, Role.RESIDENT)
+
 
 class Tenant(models.Model):
     """One customer account. The root of all tenant-scoped data — has no
@@ -51,8 +54,31 @@ class Tenant(models.Model):
         return self.name
 
 
-class UserManager(BaseUserManager):
+class UserQuerySet(models.QuerySet):
+    """Two account pools share the `users` table (Module 26): the staff pool (Super Admin,
+    Owner, Manager, Receptionist) and the resident pool (a person's own app account, tied to
+    no tenant). An email or phone is unique within a pool, not across them, so one person
+    can hold a staff login and a resident login. Every lookup by email or phone must name its
+    pool; a bare `User.objects.filter(email=...)` could match either."""
+
+    def staff_pool(self):
+        return self.exclude(role=Role.RESIDENT)
+
+    def resident_pool(self):
+        return self.filter(role=Role.RESIDENT)
+
+    def pool_of(self, user):
+        """The pool `user` belongs to, for checks that must stay inside it (an email or phone
+        change on a shared endpoint such as PATCH /auth/me/)."""
+        return self.resident_pool() if user.role == Role.RESIDENT else self.staff_pool()
+
+
+class UserManager(BaseUserManager.from_queryset(UserQuerySet)):
     use_in_migrations = True
+
+    def get_by_natural_key(self, username):
+        # Django admin and `createsuperuser` only ever mean the staff pool.
+        return self.staff_pool().get(**{self.model.USERNAME_FIELD: username})
 
     def create_user(self, email=None, password=None, **extra_fields):
         email = normalize_email(email)
@@ -85,7 +111,9 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """All platform users. tenant is NULL only for Super Admins (platform staff).
+    """All platform users. tenant is NULL only for Super Admins (platform staff) and
+    residents (Module 26: a resident account belongs to a person, who can be linked to
+    residencies at several PGs through ResidentAccess).
 
     Not under RLS: authentication (login, OTP, password reset) must look up
     users before any tenant context exists. Views scope user queries at the
@@ -107,6 +135,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=20, choices=Role.choices)
     language_code = models.CharField(max_length=8, choices=settings.LANGUAGES, default='en')
     email_verified = models.BooleanField(default=False)
+    # When this user hid the Getting started checklist (Module 23); NULL = shown.
+    # Per user, so web and the mobile app agree and each staff member gets their own.
+    onboarding_dismissed_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)  # Django admin access only
     created_at = models.DateTimeField(auto_now_add=True)
@@ -121,22 +152,35 @@ class User(AbstractBaseUser, PermissionsMixin):
         db_table = 'users'
         constraints = [
             models.CheckConstraint(
-                # Super Admins are platform-level (no tenant); everyone else must belong to one.
+                # Super Admins and residents are tenant-less (platform-level / a person's own
+                # account); everyone else must belong to a tenant.
                 condition=(
-                    Q(role=Role.SUPER_ADMIN, tenant__isnull=True)
-                    | (~Q(role=Role.SUPER_ADMIN) & Q(tenant__isnull=False))
+                    Q(role__in=TENANTLESS_ROLES, tenant__isnull=True)
+                    | (~Q(role__in=TENANTLESS_ROLES) & Q(tenant__isnull=False))
                 ),
                 name='user_role_matches_tenant_presence',
             ),
+            # Identifiers are unique per pool (see UserQuerySet). Staff pool:
             models.UniqueConstraint(
                 Lower('email'),
-                condition=Q(is_active=True),
+                condition=Q(is_active=True) & ~Q(role=Role.RESIDENT),
                 name='unique_active_email_lower',
             ),
             models.UniqueConstraint(
                 fields=['phone'],
-                condition=Q(is_active=True),
+                condition=Q(is_active=True) & ~Q(role=Role.RESIDENT),
                 name='unique_active_phone',
+            ),
+            # Resident pool:
+            models.UniqueConstraint(
+                Lower('email'),
+                condition=Q(is_active=True, role=Role.RESIDENT),
+                name='unique_active_resident_email_lower',
+            ),
+            models.UniqueConstraint(
+                fields=['phone'],
+                condition=Q(is_active=True, role=Role.RESIDENT),
+                name='unique_active_resident_phone',
             ),
             models.CheckConstraint(
                 condition=Q(email__isnull=True) | ~Q(email=''),
@@ -217,6 +261,8 @@ class OtpCode(models.Model):
     class Purpose(models.TextChoices):
         LOGIN = 'login', _('Login')
         ACCOUNT_DELETION = 'account_deletion', _('Account deletion')
+        # Resident app accounts reset a password with an emailed code (Module 26).
+        PASSWORD_RESET = 'password_reset', _('Password reset')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='otp_codes')

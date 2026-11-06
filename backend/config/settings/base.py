@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     'apps.reporting',
     'apps.devices',
     'apps.expenses',
+    'apps.onboarding',
+    'apps.notices',
 ]
 
 MIDDLEWARE = [
@@ -122,7 +124,7 @@ REST_FRAMEWORK = {
         'apps.core.authentication.TenantJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'apps.core.permissions.IsAuthenticatedStaffPool',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -163,6 +165,21 @@ REST_FRAMEWORK = {
         # Website contact form (POST /public/contact/): per client IP and per sender email.
         'contact_message': '5/hour',
         'contact_message_email': '3/hour',
+        # Resident app accounts (Module 26). Own scopes so they never use up a staff allowance.
+        'resident_signup': '10/hour',
+        'resident_login': '10/min',
+        'resident_otp_request': '3/min',
+        'resident_otp_request_email': '5/hour',
+        'resident_otp_verify': '10/min',
+        'resident_password_reset_request': '5/min',
+        'resident_password_reset_request_email': '5/hour',
+        'resident_password_reset_confirm': '10/min',
+        # Authenticated resident actions (keyed on the user): join-code lookups are guessable-code
+        # probes, link requests create work for staff.
+        'resident_join_code_lookup': '20/hour',
+        'resident_join_code_lookup_ip': '60/hour',
+        'resident_link_request': '10/hour',
+        'resident_invite_accept': '20/hour',
     },
 }
 
@@ -242,7 +259,13 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     # users.language_code and tenants.default_language share one choice set.
-    'ENUM_NAME_OVERRIDES': {'LanguageEnum': LANGUAGES},
+    # Module 23: video topics and the required checklist steps are each used by
+    # several fields; one name apiece keeps the generated client types stable.
+    'ENUM_NAME_OVERRIDES': {
+        'LanguageEnum': LANGUAGES,
+        'TutorialTopicEnum': 'apps.onboarding.models.TutorialVideo.Topic',
+        'OnboardingRequiredStepEnum': 'apps.onboarding.checklist.REQUIRED_STEPS',
+    },
 }
 
 # PRD §11: bcrypt password hashing.

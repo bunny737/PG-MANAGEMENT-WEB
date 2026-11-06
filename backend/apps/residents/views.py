@@ -1,25 +1,37 @@
 import django_filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.fields import SkipField, empty
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.billing.filters import resident_search
+from apps.core.idempotency import idempotency_key, key_reused
 from apps.core.permissions import require_permission
 from apps.core.redaction import Redactor
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 from apps.subscriptions.services import check_resident_limit
 
-from . import services
+from . import access, services
 from .finance import resident_finance
-from .models import AbscondedRecord, Admission, Allocation, BlacklistEntry, Resident, Transfer, Vacate
+from .models import (
+    AbscondedRecord,
+    Admission,
+    Allocation,
+    BlacklistEntry,
+    DepositPayment,
+    Resident,
+    Transfer,
+    Vacate,
+)
 from .schema import ResidentDetailResponseSerializer, VacateSettlementPreviewResponseSerializer
 from .serializers import (
     bed_admits,
@@ -29,6 +41,8 @@ from .serializers import (
     AllocationSerializer,
     BlacklistConfirmSerializer,
     BlacklistEntrySerializer,
+    DepositPaymentSerializer,
+    DepositPaymentWriteSerializer,
     DuesWriteOffSerializer,
     ResidentSerializer,
     ResidentStatusUpdateSerializer,
@@ -160,6 +174,8 @@ class ResidentViewSet(viewsets.ModelViewSet):
                     and before_status not in Resident.COUNTS_TOWARD_PLAN_LIMIT):
                 check_resident_limit(resident.property)
             instance = serializer.save()
+            if instance.status in access.EXIT_STATUSES:
+                access.record_exit(instance)  # starts the app-access window (Module 26)
             audit_log.record(
                 action='resident.status_changed', actor=request.user, obj=instance,
                 before={'status': before_status}, after={'status': instance.status},
@@ -270,6 +286,8 @@ class AdmissionViewSet(viewsets.ModelViewSet):
 
         # Check-in creates the resident's initial Allocation (Module 06).
         services.create_initial_allocation(instance)
+        # A deposit collected at check-in is the first row of the deposit ledger (Module 10).
+        services.create_initial_deposit_payment(instance, actor=self.request.user)
 
         audit_log.record(
             action='admission.created', actor=self.request.user, obj=instance,
@@ -282,6 +300,97 @@ class AdmissionViewSet(viewsets.ModelViewSet):
             before={'status': before_status}, after={'status': resident.status},
             request=self.request,
         )
+
+
+class DepositPaymentViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    """Collections of a resident's security deposit (Module 10). A resident may pay the agreed
+    deposit in parts; the first part is recorded at admission, this records the rest. Append-only:
+    no update/delete. `?resident=` filters. Needs `manage_deposits`."""
+
+    permission_classes = [IsAuthenticated, require_permission('manage_deposits')]
+
+    def get_serializer_class(self):
+        return DepositPaymentWriteSerializer if self.action == 'create' else DepositPaymentSerializer
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return DepositPayment.objects.none()
+        ids = visible_property_ids(self.request.user)
+        return DepositPayment.objects.filter(admission__resident__property_id__in=ids).select_related('admission')
+
+    @extend_schema(
+        parameters=[OpenApiParameter('resident', str, description='Only this resident\'s deposit payments (UUID).')],
+        responses=DepositPaymentSerializer(many=True),
+    )
+    def list(self, request, *args, **kwargs):
+        resident = request.query_params.get('resident')
+        queryset = self.get_queryset()
+        if resident:
+            try:
+                queryset = queryset.filter(admission__resident_id=resident)
+            except (ValueError, DjangoValidationError):
+                raise ValidationError({'resident': _('Enter a valid UUID.')}, code='invalid')
+        page = self.paginate_queryset(queryset)
+        serializer = DepositPaymentSerializer(page if page is not None else queryset, many=True)
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'Idempotency-Key', str, OpenApiParameter.HEADER, required=False,
+            description='<= 100 chars; one per user intent. A retry with the same key and body '
+                        'returns 200 with `Idempotent-Replayed: true` and the original payment.',
+        )],
+        responses=DepositPaymentSerializer,
+    )
+    def create(self, request, *args, **kwargs):
+        key = idempotency_key(request)
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        if key:
+            # A retry of a request that already succeeded is answered with the original payment
+            # *before* validation, which would reject it (the deposit may now be fully paid).
+            replay = self._replay(request, key)
+            if replay is not None:
+                return replay
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        payment = services.record_deposit_payment(
+            admission=data['resident'].admission, amount=data['amount'], payment_date=data['payment_date'],
+            payment_mode=data['payment_mode'], reference=data['reference'],
+            actor=request.user, request=request, idempotency_key=key,
+        )
+        return self._response(payment, replayed=payment.replayed)
+
+    def _replay(self, request, key):
+        existing = self.get_queryset().filter(idempotency_key=key).first()
+        if existing is None:
+            return None
+        # Parse with the serializer's own fields (so "5000" == "5000.00") but skip its business
+        # rules: a replay must not be re-judged against the current pending amount.
+        fields = DepositPaymentWriteSerializer().fields
+        inputs = {}
+        try:
+            for name in ('amount', 'payment_date', 'payment_mode'):
+                inputs[name] = fields[name].run_validation(fields[name].get_value(request.data))
+            reference = fields['reference'].get_value(request.data)
+            inputs['reference'] = '' if reference is empty else fields['reference'].run_validation(reference)
+        except (ValidationError, SkipField):
+            raise key_reused()
+        # The request names a resident, the row an admission: the key is reused if they differ.
+        same_resident = str(existing.admission.resident_id) == str(request.data.get('resident'))
+        if not same_resident or not services.deposit_payment_matches(
+            existing, admission_id=existing.admission_id, **inputs,
+        ):
+            raise key_reused()
+        return self._response(existing, replayed=True)
+
+    def _response(self, payment, *, replayed):
+        response = Response(
+            DepositPaymentSerializer(payment).data,
+            status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        )
+        if replayed:
+            response['Idempotent-Replayed'] = 'true'
+        return response
 
 
 class AllocationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -381,10 +490,17 @@ class VacateViewSet(viewsets.ModelViewSet):
         return Response(VacateSerializer(vacate).data)
 
     @extend_schema(
-        parameters=[OpenApiParameter(
-            'maintenance_deduction', str, OpenApiParameter.QUERY, required=False, default='0.00',
-            description='Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit).',
-        )],
+        parameters=[
+            OpenApiParameter(
+                'maintenance_deduction', str, OpenApiParameter.QUERY, required=False, default='0.00',
+                description='Decimal string, default "0.00"; same cap as finalize (0 <= deduction <= deposit).',
+            ),
+            OpenApiParameter(
+                'actual_vacate_date', str, OpenApiParameter.QUERY, required=False,
+                description='YYYY-MM-DD the food-holiday credit/clawback is worked out for; '
+                            'default is the expected vacate date.',
+            ),
+        ],
         responses=VacateSettlementPreviewResponseSerializer,
     )
     @action(detail=True, methods=['get'], url_path='settlement-preview', url_name='settlement-preview')
@@ -400,7 +516,8 @@ class VacateViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         preview = services.settlement_preview(
-            vacate=vacate, maintenance_deduction=serializer.validated_data['maintenance_deduction']
+            vacate=vacate, maintenance_deduction=serializer.validated_data['maintenance_deduction'],
+            actual_vacate_date=serializer.validated_data.get('actual_vacate_date'),
         )
         return Response(VacateSettlementPreviewResponseSerializer(preview).data)
 

@@ -126,6 +126,14 @@ describe("CSP mode defaults", () => {
     expect(buildCsp("n")).not.toContain("report-uri");
   });
 
+  test("Google Analytics may load and report, and only those hosts", () => {
+    const directive = (name: string) =>
+      buildCsp("n").split("; ").find((part) => part.startsWith(`${name} `)) ?? "";
+    expect(directive("script-src")).toContain("https://www.googletagmanager.com");
+    expect(directive("connect-src")).toContain("https://*.google-analytics.com");
+    expect(directive("connect-src")).toContain("https://*.analytics.google.com");
+  });
+
   test("tutorial videos may embed and show thumbnails, and only from the privacy-enhanced host", () => {
     const directive = (name: string) =>
       buildCsp("n").split("; ").find((part) => part.startsWith(`${name} `)) ?? "";

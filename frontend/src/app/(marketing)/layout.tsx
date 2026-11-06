@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
+import { GoogleAnalytics } from "@/components/marketing/GoogleAnalytics";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { getSiteConfig } from "@/lib/site-config";
@@ -31,6 +32,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
         {children}
       </main>
       <MarketingFooter />
+      <GoogleAnalytics />
     </>
   );
 }

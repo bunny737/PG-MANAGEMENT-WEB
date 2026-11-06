@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { assertLaunchReady, isPlayStoreUrl, parseSiteEnv } from "../site-config.validation";
+import { getGaMeasurementId } from "../site-config";
+
+describe("getGaMeasurementId", () => {
+  it("returns a valid GA4 id, trimmed", () => {
+    expect(getGaMeasurementId({ GA_MEASUREMENT_ID: " G-BT7QG7CBZN " })).toBe("G-BT7QG7CBZN");
+  });
+
+  it("is null when unset or malformed (it is interpolated into an inline script)", () => {
+    expect(getGaMeasurementId({})).toBeNull();
+    expect(getGaMeasurementId({ GA_MEASUREMENT_ID: "" })).toBeNull();
+    expect(getGaMeasurementId({ GA_MEASUREMENT_ID: "UA-123456-1" })).toBeNull();
+    expect(getGaMeasurementId({ GA_MEASUREMENT_ID: "G-ABCD');alert(1);//" })).toBeNull();
+  });
+});
 
 const READY = {
   SITE_URL: "https://pglive.in",

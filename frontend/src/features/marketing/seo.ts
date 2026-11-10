@@ -42,7 +42,7 @@ export const PAGE_LAST_MODIFIED: Record<MarketingPage, string> = {
   pricing: "2026-10-25",
   app: "2026-10-25",
   contact: "2026-10-25",
-  privacy: "2026-10-25",
+  privacy: "2026-11-10",
   terms: "2026-10-25",
   refund: "2026-10-25",
   deleteAccount: "2026-10-25",

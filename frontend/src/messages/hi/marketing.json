@@ -422,7 +422,7 @@
   "legal": {
     "privacy": {
       "title": "Privacy Policy",
-      "updated": "Last updated: 22 October 2026",
+      "updated": "Last updated: 10 November 2026",
       "intro": "This policy explains what personal information PGLive collects, why we collect it, who can see it and the choices you have. \"We\" means {company}, which provides PGLive.",
       "sections": [
         {
@@ -451,7 +451,7 @@
         },
         {
           "heading": "Cookies and browser storage",
-          "body": "We use a few cookies that the service needs to work: sign-in session cookies (which scripts on the page cannot read) and a language cookie named NEXT_LOCALE. We also keep small preferences, such as your selected property, in your browser's local storage. The installed web app may keep recently viewed data on your device so it can open offline, and clears it when you sign out. We do not use advertising or tracking cookies, and we do not use third-party analytics."
+          "body": "We use a few cookies that the service needs to work: sign-in session cookies (which scripts on the page cannot read) and a language cookie named NEXT_LOCALE. We also keep small preferences, such as your selected property, in your browser's local storage. The installed web app may keep recently viewed data on your device so it can open offline, and clears it when you sign out. On our public marketing pages, we use Google Analytics to measure traffic and improve the website; it sets analytics cookies and is never loaded inside the signed-in PGLive app. We do not use advertising cookies."
         },
         {
           "heading": "Mobile app",
@@ -467,7 +467,7 @@
         },
         {
           "heading": "Service providers and where data is stored",
-          "body": "We use Google Cloud for hosting and file storage (in Mumbai, India), an email delivery provider, Google Firebase for push notifications, Google Maps for address search when you set a property location, Sentry for error reports, and Razorpay for payments. They process data only to provide those services to us, and some may process limited data outside India. We share data with authorities only when the law requires it."
+          "body": "We use Google Cloud for hosting and file storage (in Mumbai, India), an email delivery provider, Google Analytics for public website traffic measurement, Google Firebase for push notifications, Google Maps for address search when you set a property location, Sentry for error reports, and Razorpay for payments. They process data only to provide those services to us, and some may process limited data outside India. We share data with authorities only when the law requires it."
         },
         {
           "heading": "Security",
@@ -665,7 +665,7 @@
     "title": "Explore PGLive by what you need",
     "subtitle": "Pick the part of running your PG or hostel that takes most of your time.",
     "hubCta": "All solutions",
-    "viewPage": "Read more"
+    "viewPage": "Explore {topic}"
   },
   "solutions": {
     "hub": {

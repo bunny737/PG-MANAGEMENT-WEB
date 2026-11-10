@@ -15,12 +15,14 @@ const inter = Inter({
 });
 
 // Roboto is the phone UI's face, so the installed app reads like the Android (Material) app.
-// Applied only below the md breakpoint, via .phone-ui in globals.css.
+// Applied only below the md breakpoint, via .phone-ui in globals.css; preload is disabled so
+// marketing pages and desktop screens don't preload unused weights.
 const roboto = Roboto({
   variable: "--font-roboto",
   subsets: ["latin"],
   weight: ["400", "500", "700"],
   display: "swap",
+  preload: false,
 });
 
 // Plus Jakarta Sans is the display voice: headings, money figures, stat values.
@@ -30,20 +32,24 @@ const plusJakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
-// Noto Sans handles Latin and Devanagari (Hindi, V2) subsets.
+// Noto Sans handles Latin and Devanagari (Hindi, V2) subsets; preload stays off until Hindi is active.
 const notoSans = Noto_Sans({
   variable: "--font-noto-sans",
   subsets: ["latin", "devanagari"],
   display: "swap",
+  preload: false,
 });
 
 // Telugu is a separate font family from Google — the base Noto Sans has no
 // Telugu subset. Active in MVP alongside English (owner decision 2026-08-11).
+// Preload stays off so English pages don't preload Telugu glyphs; the browser loads
+// it on demand via unicode-range whenever Telugu text is rendered.
 // Noto_Sans_Tamil / Noto_Sans_Malayalam join the same way when ta/ml go active (V3).
 const notoSansTelugu = Noto_Sans_Telugu({
   variable: "--font-noto-sans-telugu",
   subsets: ["telugu"],
   display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {

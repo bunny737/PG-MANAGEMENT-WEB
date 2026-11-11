@@ -79,4 +79,10 @@ describe("marketing message catalogues", () => {
     expect(en.cta.requestAccess).toMatch(/early access/i);
     expect(JSON.stringify(en)).not.toMatch(/download on the app store|available on ios/i);
   });
+
+  it("discloses Google Analytics in the privacy policy instead of claiming no third-party analytics", () => {
+    const privacyText = JSON.stringify(en.legal.privacy);
+    expect(privacyText).toContain("Google Analytics");
+    expect(privacyText).not.toMatch(/do not use third-party analytics/i);
+  });
 });

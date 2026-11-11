@@ -15,7 +15,8 @@
   /* Ink */
   --color-ink: #0b1220;
   --color-ink-muted: #5a6779;
-  --color-ink-faint: #8a95a6;
+  /* Passes WCAG AA (4.55:1+) across surface-card, surface-page, and surface-subtle. */
+  --color-ink-faint: #647082;
   --color-ink-inverse: #ffffff;
   --color-ink-inverse-muted: #9aa6ba;
 

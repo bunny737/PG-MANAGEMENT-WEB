@@ -63,7 +63,7 @@ export function StatTile({
         <span
           className={cn(
             "text-xs font-medium tabular-nums",
-            isAccent ? "text-accent/70" : "text-ink-faint"
+            isAccent ? "text-accent" : "text-ink-faint"
           )}
         >
           {sublabel}

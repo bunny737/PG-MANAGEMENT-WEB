@@ -65,7 +65,7 @@ async function SolutionCards({ exclude, hub = false }: { exclude?: SolutionSlug;
             href={solutionPath(page.slug)}
             className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
           >
-            {tLinks("viewPage")}
+            {tLinks("viewPage", { topic: t(`${page.slug}.nav`) })}
             <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
         </li>

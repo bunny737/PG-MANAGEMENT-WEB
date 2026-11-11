@@ -110,6 +110,12 @@ describe("solution page copy (English, the indexed language)", () => {
     expect(copyFor("pg-rent-tracking").faq.items[0].a).toMatch(/does not collect|No\./);
     expect(copyFor("hostel-management-software").faq.items[0].a).toMatch(/^No\./);
   });
+
+  it("uses descriptive, destination-specific solution card link labels", () => {
+    expect(en.solutionLinks.viewPage).toContain("{topic}");
+    expect(en.solutionLinks.viewPage.toLowerCase()).not.toBe("read more");
+    expect(te.solutionLinks.viewPage).toContain("{topic}");
+  });
 });
 
 describe("solution page copy (Telugu)", () => {

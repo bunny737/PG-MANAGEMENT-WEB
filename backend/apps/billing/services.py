@@ -614,8 +614,11 @@ def _create_payment_locked(*, invoice, amount, payment_date, payment_mode, refer
                'receipt_number': payment.receipt_number},
         request=request,
     )
-    # Module 14: "Payment receipt to resident" (PRD).
-    transaction.on_commit(lambda: enqueue(send_payment_receipt_email_task, str(payment.id)))
+    # Module 14: notify residents only when new money is received. Advance
+    # adjustments draw down cash collected earlier, so a "payment received"
+    # notification here would report the same collection twice.
+    if not is_advance_adjustment:
+        transaction.on_commit(lambda: enqueue(send_payment_receipt_email_task, str(payment.id)))
     return payment
 
 

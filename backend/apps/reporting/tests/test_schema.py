@@ -21,8 +21,10 @@ class SchemaCompletenessTests(TestCase):
         ('get', ['properties', 'layout']),
         ('get', ['cash-movements']),
         ('get', ['payments', 'receipt']),
+        ('post', ['invoices', 'adjust-advance']),
         ('get', ['expenses', 'summary']),
         ('get', ['expenses', 'attachment']),
+        ('get', ['residents', 'documents']),
         ('get', ['residents', '{']),  # the detail route, not the list
         ('get', ['vacates', 'settlement-preview']),
         ('get', ['onboarding', 'checklist']),

@@ -19,7 +19,7 @@ from apps.properties.models import (
     PropertyStaffAssignment,
     Room,
 )
-from apps.residents.models import Admission, Allocation, Resident, Vacate
+from apps.residents.models import Admission, Allocation, DepositPayment, Resident, Vacate
 from apps.subscriptions.models import Subscription
 
 
@@ -322,7 +322,7 @@ class Command(BaseCommand):
             res1.status = Resident.Status.ACTIVE
             res1.save()
 
-            Admission.objects.get_or_create(
+            adm1, _ = Admission.objects.get_or_create(
                 resident=res1,
                 tenant_id=tenant.id,
                 defaults={
@@ -338,8 +338,19 @@ class Command(BaseCommand):
                     'advance_collected_date': thirty_days_ago,
                     'advance_mode': Admission.AdvanceMode.UPI,
                     'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_agreed': Decimal('1500.00'),
                     'security_deposit_collected_date': thirty_days_ago,
                     'security_deposit_mode': Admission.AdvanceMode.CASH,
+                    'recorded_by': owner,
+                },
+            )
+            DepositPayment.objects.get_or_create(
+                admission=adm1,
+                tenant_id=tenant.id,
+                defaults={
+                    'amount': Decimal('1500.00'),
+                    'payment_date': thirty_days_ago,
+                    'payment_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -379,7 +390,7 @@ class Command(BaseCommand):
             res2.status = Resident.Status.ACTIVE
             res2.save()
 
-            Admission.objects.get_or_create(
+            adm2, _ = Admission.objects.get_or_create(
                 resident=res2,
                 tenant_id=tenant.id,
                 defaults={
@@ -395,8 +406,19 @@ class Command(BaseCommand):
                     'advance_collected_date': fortyfive_days_ago,
                     'advance_mode': Admission.AdvanceMode.BANK_TRANSFER,
                     'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_agreed': Decimal('1500.00'),
                     'security_deposit_collected_date': fortyfive_days_ago,
                     'security_deposit_mode': Admission.AdvanceMode.CASH,
+                    'recorded_by': owner,
+                },
+            )
+            DepositPayment.objects.get_or_create(
+                admission=adm2,
+                tenant_id=tenant.id,
+                defaults={
+                    'amount': Decimal('1500.00'),
+                    'payment_date': fortyfive_days_ago,
+                    'payment_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': owner,
                 },
             )
@@ -436,7 +458,7 @@ class Command(BaseCommand):
             res3.status = Resident.Status.NOTICE_PERIOD
             res3.save()
 
-            Admission.objects.get_or_create(
+            adm3, _ = Admission.objects.get_or_create(
                 resident=res3,
                 tenant_id=tenant.id,
                 defaults={
@@ -452,8 +474,19 @@ class Command(BaseCommand):
                     'advance_collected_date': sixty_days_ago,
                     'advance_mode': Admission.AdvanceMode.CASH,
                     'security_deposit_amount': Decimal('1500.00'),
+                    'security_deposit_agreed': Decimal('1500.00'),
                     'security_deposit_collected_date': sixty_days_ago,
                     'security_deposit_mode': Admission.AdvanceMode.CASH,
+                    'recorded_by': manager,
+                },
+            )
+            DepositPayment.objects.get_or_create(
+                admission=adm3,
+                tenant_id=tenant.id,
+                defaults={
+                    'amount': Decimal('1500.00'),
+                    'payment_date': sixty_days_ago,
+                    'payment_mode': Admission.AdvanceMode.CASH,
                     'recorded_by': manager,
                 },
             )

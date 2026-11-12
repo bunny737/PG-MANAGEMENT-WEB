@@ -197,19 +197,40 @@ class HappyPathTests(AutoBillingTestCase):
 
 
 class ModeAndRuleTests(AutoBillingTestCase):
-    def test_weekly_drafts_always_need_confirmation(self):
+    def test_weekly_residents_are_never_auto_billed(self):
         resident = self.admit(joining=date(2026, 7, 1), billing_mode=Admission.BillingMode.WEEKLY,
                               contracted_rent=Decimal('1800.00'))
-        self.billed(resident, date(2026, 7, 1), date(2026, 7, 7))
-
         run_auto_billing(date(2026, 7, 7))
-        draft = self.invoices(resident)[-1]
-        self.assertEqual((draft.period_start, draft.period_end), (date(2026, 7, 8), date(2026, 7, 14)))
-        self.assertEqual(draft.review_reasons, [R.WEEKLY])
-        self.assertIsNone(draft.auto_issue_on)
-
         run_auto_billing(date(2026, 7, 8))
-        self.assertEqual(self.refreshed(draft).status, Invoice.Status.DRAFT)
+        self.assertEqual(self.invoices(resident), [])
+
+    def test_next_cycle_policy_skips_old_and_current_periods(self):
+        self.settings_for(billing_day_rule=PropertySettings.BillingDayRule.FIXED_DAY, billing_day_of_month=1)
+        resident = self.admit(
+            joining=date(2024, 2, 15),
+            billing_enrolled_on=date(2026, 11, 12),
+            first_billing_policy=Admission.FirstBillingPolicy.NEXT_BILLING_CYCLE,
+        )
+
+        run_auto_billing(date(2026, 11, 29))
+        self.assertEqual(self.invoices(resident), [])
+        run_auto_billing(date(2026, 11, 30))
+
+        draft = self.invoices(resident)[0]
+        self.assertEqual((draft.period_start, draft.period_end), (date(2026, 12, 1), date(2026, 12, 31)))
+        self.assertEqual(draft.review_reasons, [])
+        self.assertEqual(draft.auto_issue_on, date(2026, 12, 1))
+
+    def test_old_manual_invoice_cannot_pull_next_cycle_policy_backwards(self):
+        self.settings_for(billing_day_rule=PropertySettings.BillingDayRule.FIXED_DAY, billing_day_of_month=1)
+        resident = self.admit(
+            joining=date(2024, 2, 15), billing_enrolled_on=date(2026, 11, 12),
+            first_billing_policy=Admission.FirstBillingPolicy.NEXT_BILLING_CYCLE,
+        )
+        self.billed(resident, date(2024, 2, 15), date(2024, 2, 29))
+
+        run_auto_billing(date(2026, 11, 30))
+        self.assertEqual(self.invoices(resident)[-1].period_start, date(2026, 12, 1))
 
     def test_daily_residents_are_never_auto_billed(self):
         resident = self.admit(billing_mode=Admission.BillingMode.DAILY, contracted_rent=Decimal('400.00'))
@@ -273,7 +294,7 @@ class ModeAndRuleTests(AutoBillingTestCase):
         self.assertEqual(draft.due_date, date(2026, 8, 18))  # issue date + 5
 
     def test_multiple_reasons_are_kept_and_late_still_sets_the_due_date(self):
-        resident = self.admit(joining=date(2026, 8, 10), billing_mode=Admission.BillingMode.WEEKLY)
+        resident = self.admit(joining=date(2026, 8, 10))
         with tenant_context(self.tenant.id):
             resident.status = Resident.Status.NOTICE_PERIOD
             resident.save(update_fields=['status'])
@@ -281,7 +302,7 @@ class ModeAndRuleTests(AutoBillingTestCase):
 
         run_auto_billing(date(2026, 8, 11))
         draft = self.invoices(resident)[0]
-        self.assertEqual(set(draft.review_reasons), {R.WEEKLY, R.LATE, R.VACATING})
+        self.assertEqual(set(draft.review_reasons), {R.LATE, R.VACATING})
 
         with tenant_context(self.tenant.id):
             services.issue_invoice(invoice_id=draft.id, actor=self.owner, on_date=date(2026, 8, 12))
@@ -449,9 +470,10 @@ class HoldResumeTests(AutoBillingTestCase):
         self.assertEqual(draft.due_date_policy, Invoice.DueDatePolicy.FROM_PERIOD_START)
 
     def test_hold_and_resume_rejected_for_drafts_needing_confirmation(self):
-        weekly = self.admit(joining=date(2026, 8, 15), billing_mode=Admission.BillingMode.WEEKLY)
+        self.settings_for(billing_day_rule=PropertySettings.BillingDayRule.FIXED_DAY, billing_day_of_month=1)
+        partial = self.admit(joining=date(2026, 8, 15))
         run_auto_billing(date(2026, 8, 14))
-        draft = self.invoices(weekly)[0]
+        draft = self.invoices(partial)[0]
         for name in ('hold-auto-issue', 'resume-auto-issue'):
             response = self.post(name, draft)
             self.assertEqual(response.status_code, 400)
@@ -583,7 +605,9 @@ class ManualPathTests(AutoBillingTestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_review_filters(self):
-        weekly = self.admit(joining=date(2026, 8, 15), billing_mode=Admission.BillingMode.WEEKLY)
+        run_auto_billing(date(2026, 8, 14))
+        self.settings_for(billing_day_rule=PropertySettings.BillingDayRule.FIXED_DAY, billing_day_of_month=1)
+        partial = self.admit(joining=date(2026, 8, 15))
         run_auto_billing(date(2026, 8, 14))
         url = reverse('invoice-list')
 
@@ -593,7 +617,7 @@ class ManualPathTests(AutoBillingTestCase):
             rows = response.data['results'] if isinstance(response.data, dict) else response.data
             return {row['resident'] for row in rows}
 
-        self.assertEqual(ids('needs_confirmation'), {weekly.id})
+        self.assertEqual(ids('needs_confirmation'), {partial.id})
         self.assertEqual(ids('scheduled'), {self.resident.id})
         self.assertEqual(self.client.get(url, {'review': 'nope'}).status_code, 400)
 

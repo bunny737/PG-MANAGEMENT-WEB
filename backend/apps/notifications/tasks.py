@@ -63,7 +63,7 @@ def send_payment_receipt_email_task(payment_id):
             'name': resident.first_name,
             'amount': payment.amount,
             'date': payment.payment_date.isoformat(),
-            'mode': payment.get_payment_mode_display(),
+            'mode': str(payment.get_payment_source_display()),
             'balance': invoice.balance_due,
         }
         services.notify(

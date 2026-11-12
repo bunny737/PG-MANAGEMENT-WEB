@@ -137,6 +137,12 @@ export function ReportsPage() {
             </p>
           )}
 
+          {(summary.finance || summary.cash_flow) && (
+            <p role="note" className="rounded-xl border border-border bg-surface-subtle px-3.5 py-2.5 text-xs text-ink-muted">
+              {t("refundsLimitationNotice")}
+            </p>
+          )}
+
           <div className="rounded-2xl border border-border bg-surface-card p-5">
             <h2 className="mb-3 text-sm font-bold text-ink">{t("trend.title")}</h2>
             {trendQuery.isLoading && <SectionSkeleton className="h-64" />}
@@ -147,31 +153,37 @@ export function ReportsPage() {
       )}
 
       {summary?.finance && activeTab === "collections" && canFinance && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Card label={tCards("grossReceipts")}><MoneyText value={summary.finance.gross_receipts} /></Card>
-          <Card label={tCards("refundsPaid")}><MoneyText value={summary.finance.refunds_paid} /></Card>
-          <Card label={tCards("cashCollected")}><MoneyText value={summary.finance.cash_collected} /></Card>
-          <a href={`/billing?property=${propertyId ?? ""}&period=${month}`}>
-            <Card label={`${tCards("periodInvoiced")} (${t("toDate")})`}>
-              <MoneyText value={summary.finance.period_invoiced} />
-            </Card>
-          </a>
-          <a href={`/billing?property=${propertyId ?? ""}&period=${month}`}>
-            <Card label={`${tCards("periodCollected")} (${t("toDate")})`}>
-              <MoneyText value={summary.finance.period_collected} />
-            </Card>
-          </a>
-          <a href={`/billing?property=${propertyId ?? ""}&period=${month}&status=outstanding`}>
-            <Card label={`${tCards("periodOutstanding")} (${t("currentBalance")})`}>
-              <MoneyText value={summary.finance.period_outstanding} />
-            </Card>
-          </a>
-          <a href={`/billing?property=${propertyId ?? ""}&status=overdue`}>
-            <Card label={`${tCards("overdueTotal")} (${t("currentBalance")})`} highlight={Number(summary.finance.overdue_total) > 0}>
-              <MoneyText value={summary.finance.overdue_total} />
-            </Card>
-          </a>
-          <Card label={tCards("depositsHeld")}><MoneyText value={summary.finance.deposits_held} /></Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Card label={tCards("grossReceipts")}><MoneyText value={summary.finance.gross_receipts} /></Card>
+            <Card label={tCards("refundsPaid")}><MoneyText value={summary.finance.refunds_paid} /></Card>
+            <Card label={tCards("cashCollected")}><MoneyText value={summary.finance.cash_collected} /></Card>
+            <Card label={tCards("advanceAdjustments")}><MoneyText value={summary.finance.advance_adjustments_total} /></Card>
+            <a href={`/billing?property=${propertyId ?? ""}&period=${month}`}>
+              <Card label={`${tCards("periodInvoiced")} (${t("toDate")})`}>
+                <MoneyText value={summary.finance.period_invoiced} />
+              </Card>
+            </a>
+            <a href={`/billing?property=${propertyId ?? ""}&period=${month}`}>
+              <Card label={`${tCards("periodCollected")} (${t("toDate")})`}>
+                <MoneyText value={summary.finance.period_collected} />
+              </Card>
+            </a>
+            <a href={`/billing?property=${propertyId ?? ""}&period=${month}&status=outstanding`}>
+              <Card label={`${tCards("periodOutstanding")} (${t("currentBalance")})`}>
+                <MoneyText value={summary.finance.period_outstanding} />
+              </Card>
+            </a>
+            <a href={`/billing?property=${propertyId ?? ""}&status=overdue`}>
+              <Card label={`${tCards("overdueTotal")} (${t("currentBalance")})`} highlight={Number(summary.finance.overdue_total) > 0}>
+                <MoneyText value={summary.finance.overdue_total} />
+              </Card>
+            </a>
+            <Card label={tCards("depositsHeld")}><MoneyText value={summary.finance.deposits_held} /></Card>
+          </div>
+          <p role="note" className="rounded-xl border border-border bg-surface-subtle px-3.5 py-2.5 text-xs text-ink-muted">
+            {t("refundsLimitationNotice")}
+          </p>
         </div>
       )}
 

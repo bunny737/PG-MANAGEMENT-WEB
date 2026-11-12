@@ -37,6 +37,11 @@ jobs:
           APP_STATUS: ${{ vars.APP_STATUS }}
           PLAY_STORE_URL: ${{ vars.PLAY_STORE_URL }}
           SIGNUP_ENABLED: ${{ vars.SIGNUP_ENABLED }}
+          KYC_UPLOADS_ENABLED: ${{ vars.KYC_UPLOADS_ENABLED || 'true' }}
+          EXPECT_KYC_UPLOADS_ENABLED: ${{ vars.EXPECT_KYC_UPLOADS_ENABLED || 'true' }}
+          MEDIA_BUCKET: ${{ vars.MEDIA_BUCKET }}
+          KYC_BUCKET: ${{ vars.KYC_BUCKET }}
+          PURGE_LEGACY_KYC_MEDIA: ${{ vars.PURGE_LEGACY_KYC_MEDIA }}
           CSP_MODE: ${{ vars.CSP_MODE }}
           CSP_REPORT_URI: ${{ vars.CSP_REPORT_URI }}
           GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}

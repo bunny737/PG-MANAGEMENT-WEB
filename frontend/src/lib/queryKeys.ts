@@ -33,6 +33,11 @@ export const queryKeys = {
     list: (filters: Record<string, unknown> = {}) => ["residents", "list", filters] as const,
     detail: (id: string) => ["residents", "detail", id] as const,
   },
+  vacates: {
+    all: ["vacates"] as const,
+    list: (filters: Record<string, unknown> = {}) => ["vacates", "list", filters] as const,
+    preview: (id: string) => ["vacates", "preview", id] as const,
+  },
   properties: {
     all: ["properties"] as const,
     list: ["properties", "list"] as const,

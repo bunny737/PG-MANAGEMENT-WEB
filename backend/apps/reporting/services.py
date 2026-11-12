@@ -61,7 +61,7 @@ def payment_rows(user, property_id=None, month=None):
         rows.append([
             payment.payment_date.isoformat(), str(resident), resident.property.name,
             f'{invoice.period_start.isoformat()} to {invoice.period_end.isoformat()}',
-            str(payment.amount), payment.get_payment_mode_display(), payment.reference,
+            str(payment.amount), str(payment.get_payment_source_display()), payment.reference,
             str(payment.recorded_by) if payment.recorded_by else '', payment.receipt_number or '',
         ])
     return columns, rows
@@ -156,5 +156,7 @@ def cash_flow_rows(user, property_id, month):
     rows += [
         [str(_('Total expenses')), str(expenses_paid)],
         [str(_('Net cash flow')), str(flow['cash_collected'] - expenses_paid)],
+        [str(_('Advance adjustments (non-cash)')), str(flow['advance_adjustments_total'])],
+        [str(_('Note: Cash collected counts direct payments, admission advances, and security deposits on collection date. Refunds paid is 0.00 (refund payouts untracked), so Net cash flow may overstate cash retained after refunds are paid.')), ''],
     ]
     return [str(_('Line')), str(_('Amount (INR)'))], rows

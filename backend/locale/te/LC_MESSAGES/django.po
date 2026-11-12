@@ -2879,3 +2879,70 @@ msgid ""
 msgstr ""
 "డిపాజిట్‌ను యాక్టివ్‌గా ఉన్న లేదా నోటీసు వ్యవధిలో ఉన్న నివాసి నుండి మాత్రమే "
 "వసూలు చేయవచ్చు."
+
+#: apps/billing/filters.py
+#, python-format
+msgid "Unknown payment mode. Use %(choices)s, or advance_adjustment."
+msgstr "తెలియని చెల్లింపు విధానం. %(choices)s లేదా advance_adjustment ఉపయోగించండి."
+
+#: apps/billing/models.py
+msgid "Advance Adjustment"
+msgstr "అడ్వాన్స్ సర్దుబాటు"
+
+#: apps/billing/services.py
+msgid "Held advance adjustments can only be made for an Active or Notice Period resident."
+msgstr "నిల్వ ఉన్న అడ్వాన్స్ సర్దుబాట్లను యాక్టివ్ లేదా నోటీసు వ్యవధిలో ఉన్న నివాసికి మాత్రమే చేయవచ్చు."
+
+#: apps/billing/services.py
+msgid "Advance can only be adjusted against an issued invoice."
+msgstr "జారీ చేయబడిన ఇన్‌వాయిస్‌కు మాత్రమే అడ్వాన్స్‌ను సర్దుబాటు చేయవచ్చు."
+
+#: apps/billing/services.py
+msgid "Issue the resident's first invoice before adjusting held advance on another invoice."
+msgstr "మరో ఇన్‌వాయిస్‌పై నిల్వ ఉన్న అడ్వాన్స్‌ను సర్దుబాటు చేసే ముందు నివాసి మొదటి ఇన్‌వాయిస్‌ను జారీ చేయండి."
+
+#: apps/billing/services.py
+msgid "Adjustment amount must be greater than zero."
+msgstr "సర్దుబాటు మొత్తం సున్నా కంటే ఎక్కువగా ఉండాలి."
+
+#: apps/billing/services.py
+#, python-format
+msgid "Adjustment exceeds the outstanding balance of %(balance)s."
+msgstr "సర్దుబాటు %(balance)s బాకీ మిగులును మించిపోయింది."
+
+#: apps/billing/services.py
+#, python-format
+msgid "Adjustment exceeds the remaining held advance of %(advance)s."
+msgstr "సర్దుబాటు మిగిలి ఉన్న నిల్వ అడ్వాన్స్ %(advance)s కంటే ఎక్కువ."
+
+#: apps/billing/services.py
+msgid "Advance adjustments cannot be reversed after a resident has exited."
+msgstr "నివాసి ఖాళీ చేసిన తర్వాత అడ్వాన్స్ సర్దుబాట్లను రద్దు చేయలేరు."
+
+#: apps/billing/services.py
+msgid "Cannot restore advance adjustment: held advance applied amount is smaller than the payment."
+msgstr "అడ్వాన్స్ సర్దుబాటును పునరుద్ధరించలేము: వర్తించిన నిల్వ అడ్వాన్స్ మొత్తం చెల్లింపు కంటే తక్కువగా ఉంది."
+
+#: apps/billing/templates/billing/receipt.html
+msgid "Original collection mode"
+msgstr "మొదటి సేకరణ విధానం"
+
+#: apps/billing/views.py
+msgid "Collected at admission"
+msgstr "అడ్మిషన్ సమయంలో వసూలు చేసినది"
+
+#: apps/billing/views.py
+msgid "Security deposit"
+msgstr "సెక్యూరిటీ డిపాజిట్"
+
+#: apps/reporting/services.py
+msgid "Advance adjustments (non-cash)"
+msgstr "అడ్వాన్స్ సర్దుబాట్లు (నగదు రహితం)"
+
+#: apps/reporting/services.py
+msgid "Note: Cash collected counts direct payments, admission advances, and security deposits on collection date. Refunds paid is 0.00 (refund payouts untracked), so Net cash flow may overstate cash retained after refunds are paid."
+msgstr "గమనిక: వసూలైన నగదులో ప్రత్యక్ష చెల్లింపులు, అడ్మిషన్ అడ్వాన్స్‌లు మరియు సెక్యూరిటీ డిపాజిట్లు సేకరణ తేదీ ప్రకారం లెక్కించబడతాయి. చెల్లించిన రీఫండ్‌లు 0.00 (రీఫండ్ చెల్లింపులు ట్రాక్ చేయబడలేదు), కాబట్టి రీఫండ్‌లు చెల్లించిన తర్వాత నికర నగదు ప్రవాహం ఎక్కువగా చూపించవచ్చు."
+
+#: apps/residents/services.py
+msgid "Advance Adjusted"
+msgstr "అడ్వాన్స్ సర్దుబాటు చేయబడింది"

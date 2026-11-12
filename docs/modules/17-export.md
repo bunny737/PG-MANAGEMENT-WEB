@@ -143,3 +143,10 @@ everything the caller can see.
   `?month=` on payments, `?period=` on outstanding dues, receipt number column.
   Tests: `reporting/tests/test_analytics.py::ExportAdditionsTests`,
   `expenses/tests/test_expenses.py` (soft-deleted rows excluded).
+- 2026-11-11  Held advance & cash receipts update: `exports/payments/` Mode column uses
+  `payment.get_payment_source_display()` (`"Advance Adjustment"` for `is_advance_adjustment=True`
+  rows rather than `'cash'`). `exports/pnl/` (`cash_flow_rows`) includes direct payments +
+  admission advances + deposit collections in `Gross receipts`/`Cash collected`, adds
+  `Advance adjustments (non-cash)`, keeps `Refunds paid = 0.00`, and appends the explicit
+  limitation note that `Net cash flow` may overstate cash retained after refunds are paid.
+  Tests: `reporting/tests/test_exports.py`.

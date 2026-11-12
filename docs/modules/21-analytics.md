@@ -38,9 +38,10 @@ responses echo `timezones`).
 
 | Field | Definition | Drill-down that sums to it |
 |---|---|---|
-| gross_receipts | payments with `payment_date` in the month | `/payments/?month=` |
-| refunds_paid | rent refunds in the month — **always 0 in v1** | — |
+| gross_receipts | direct `Payment(is_advance_adjustment=False)` + `Admission(advance_amount > 0)` on `COALESCE(advance_collected_date, joining_date)` + `DepositPayment` dated in the month | `/cash-movements/?month=` (`gross_receipts`) |
+| refunds_paid | rent/deposit refunds paid in the month — **always `0.00` in v1** (refund payouts untracked; vacate finalizations calculate refund due, not confirmed cash outflows) | — |
 | cash_collected | gross_receipts − refunds_paid | `/cash-movements/?month=` (`total`) |
+| advance_adjustments_total | Σ `Payment(is_advance_adjustment=True)` dated in the month — non-cash drawdowns of held admission advance (never added to `cash_collected`) | `/cash-movements/?month=` (`advance_adjustments_total`) |
 | period_invoiced | current net total of issued (non-draft) invoices whose `period_start` is in the month ("to date") | `/invoices/?period=` `total` |
 | period_collected | Σ min(paid, max(net total, 0)) over those invoices | `/invoices/?period=` `capped_allocated` |
 | collection_rate | period_collected ÷ period_invoiced, % with 1 dp; `null` when nothing invoiced; ≤ 100 by construction | — |
@@ -50,7 +51,7 @@ responses echo `timezones`).
 | open_invoice_count / residents_with_balance_count / occupied_beds_with_balance_count | counts, never compared with each other | — |
 | deposits_held | Σ (security deposit + unapplied advance) of Active/Notice residents — a liability, never income | — |
 | expenses_paid | live expenses dated in the month | `/expenses/?month=` |
-| net_cash_flow | cash_collected − expenses_paid ("Net cash flow", not profit) | — |
+| net_cash_flow | cash_collected − expenses_paid ("Net cash flow", not profit — excludes untracked refund payouts, so may overstate cash retained after refunds are paid) | — |
 | ytd_* | flow metrics from the fiscal-year start to min(month end, today) | — |
 
 Summary response: `{month, property, timezones, balances_as_of, ytd{start,end},
@@ -165,3 +166,13 @@ detail only (not on the list). Drafts never count.
 - 2026-10-17  Web-client follow-up (S0b): schema-only response types for the
   six dict-shaped endpoints (see Decisions), `allowed_transitions` on beds
   (Module 02), and discount report columns/filter (Module 07).
+- 2026-11-11  Held advance & cash receipts update: `gross_receipts` /
+  `cash_collected` include direct `Payment(is_advance_adjustment=False)`,
+  `Admission(advance_amount > 0)` on `COALESCE(advance_collected_date,
+  joining_date)`, and `DepositPayment`; non-cash advance adjustments are
+  excluded from `cash_collected` and exposed separately in
+  `advance_adjustments_total` (summary & trend). `refunds_paid` stays `0.00`
+  (vacate finalizations calculate refunds due, not confirmed payouts), and
+  `net_cash_flow` / web Reports + Cash Movements UI disclose that refund
+  payouts are untracked. Tests: `reporting/tests/test_analytics.py`,
+  `reporting/tests/test_schema.py`.

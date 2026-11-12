@@ -112,6 +112,66 @@ class InvoiceAndPaymentFilterTests(BillingAPITestCase):
         self.assertEqual(row['room_number'], '101')
         self.assertTrue(row['receipt_number'] is None or row['receipt_number'].startswith('RCT-'))
 
+    def test_advance_adjustment_filter_and_cash_movements_composition(self):
+        # Create an admission in July with 20,000 advance (UPI) + 5,000 deposit (cash)
+        room = self.create_room(
+            self.create_floor(self.prop_a, name='First Floor', order=1),
+            room_number='102', rack_rate_with_food=Decimal('10000.00'),
+        )
+        bed = self.create_bed(room, bed_number='102-A')
+        r3 = self.create_resident(self.prop_a, first_name='Kiran', phone='9000000003', status=Resident.Status.RESERVED)
+        self.client.post(reverse('admission-list'), {
+            'resident': str(r3.id),
+            'bed': str(bed.id),
+            'joining_date': '2026-07-01',
+            'billing_mode': 'monthly',
+            'food_preference': 'with_food',
+            'advance_amount': '20000.00',
+            'advance_collected_date': '2026-07-01',
+            'advance_mode': 'upi',
+            'security_deposit_amount': '5000.00',
+            'security_deposit_agreed': '5000.00',
+            'security_deposit_collected_date': '2026-07-01',
+            'security_deposit_mode': 'cash',
+        })
+        jul_inv = self.client.post(reverse('invoice-list'), {
+            'resident': str(r3.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        self.client.post(reverse('invoice-issue', args=[jul_inv['id']]))
+        aug_inv = self.client.post(reverse('invoice-list'), {
+            'resident': str(r3.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+        self.client.post(reverse('invoice-issue', args=[aug_inv['id']]))
+        adj = self.client.post(
+            reverse('invoice-adjust-advance', args=[aug_inv['id']]),
+            {'amount': '4000.00', 'adjustment_date': '2026-08-04'},
+        ).data
+
+        # Payment filters keep advance adjustments distinct even though payment_mode on row is 'upi'
+        url = reverse('payment-list')
+        self.assertEqual(len(self.ids(url, resident=str(r3.id), payment_mode='advance_adjustment')), 2)
+        self.assertEqual(self.ids(url, resident=str(r3.id), payment_mode='upi'), set())
+        self.assertEqual(len(self.ids(url, resident=str(r3.id), is_advance_adjustment='true')), 2)
+        self.assertEqual(self.ids(url, resident=str(r3.id), is_advance_adjustment='false'), set())
+        self.assertEqual(self.client.get(url, {'payment_mode': 'invalid'}).status_code, 400)
+
+        # July cash movements include admission_advance (20,000) + deposit (5,000), not 10,000 adjustment.
+        jul_mov = self.client.get(reverse('cash-movements'), {'property': str(self.prop_a.id), 'month': '2026-07'}).data
+        self.assertEqual(jul_mov['gross_receipts'], '25000.00')
+        self.assertEqual(jul_mov['advance_adjustments_total'], '10000.00')
+        self.assertEqual(jul_mov['refunds_paid'], '0.00')
+        self.assertEqual(jul_mov['total'], '25000.00')
+        self.assertEqual({row['type'] for row in jul_mov['results']}, {'admission_advance', 'deposit'})
+
+        # August cash movements exclude the ₹4,000 advance adjustment (only Ravi's ₹2,000 cash payment counts).
+        aug_mov = self.client.get(reverse('cash-movements'), {'property': str(self.prop_a.id), 'month': '2026-08'}).data
+        self.assertEqual(aug_mov['gross_receipts'], '2000.00')
+        self.assertEqual(aug_mov['advance_adjustments_total'], '4000.00')
+        self.assertEqual(aug_mov['total'], '2000.00')
+        self.assertNotIn(adj['id'], {row['id'] for row in aug_mov['results']})
+
     def test_cash_movements_sum_to_gross_receipts(self):
         response = self.client.get(reverse('cash-movements'), {'month': '2026-08'})
         self.assertEqual(response.status_code, 200)

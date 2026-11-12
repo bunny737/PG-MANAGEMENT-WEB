@@ -21,6 +21,7 @@
     "depositsHeld": "Deposits held",
     "grossReceipts": "Gross receipts",
     "refundsPaid": "Refunds paid",
+    "advanceAdjustments": "अग्रिम समायोजन (गैर-नकद)",
     "periodInvoiced": "Invoiced this period",
     "periodCollected": "Collected this period",
     "ytd": "Year to date",
@@ -53,5 +54,6 @@
     "pnl": "Cash flow statement",
     "download": "Download"
   },
+  "refundsLimitationNotice": "नोट: प्राप्त नकदी में किराया भुगतान, प्रवेश अग्रिम और सुरक्षा जमा शामिल हैं, लेकिन वास्तविक रिफंड भुगतान अभी नकद निकासी के रूप में दर्ज नहीं होते (भुगतान किए गए रिफंड ₹0.00 रहते हैं)। रिफंड चुकाने के बाद शुद्ध नकदी प्रवाह वास्तविक शेष नकदी से अधिक दिख सकता है।",
   "errLoadFailed": "Couldn't load this report."
 }

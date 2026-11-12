@@ -9,7 +9,9 @@ history row — all of which must succeed or fail together.
 import calendar
 from datetime import date
 from decimal import Decimal
+import logging
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -18,7 +20,13 @@ from rest_framework.exceptions import ValidationError
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
 from apps.core.idempotency import key_reused
+from apps.core.storage import delete_storage_object_on_commit
+from apps.core.uploads import sniff_upload
 from apps.properties.models import Bed, PropertySettings
+
+logger = logging.getLogger(__name__)
+KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
+ALLOWED_KYC_TYPES = {'image/jpeg', 'image/png', 'application/pdf'}
 
 from .access import record_exit
 from .models import (
@@ -357,6 +365,10 @@ def finalize_vacate(*, vacate, actual_vacate_date, maintenance_deduction, mainte
     lock_property_settings(vacate.resident.property_id, vacate.tenant_id)
     resident = lock_resident(vacate.resident)
     vacate = Vacate.objects.select_for_update().get(pk=vacate.pk)
+    # Lock Admission right after Vacate (Settings -> Resident -> Vacate ->
+    # Admission) so finalize_vacate cannot race adjust_from_advance or
+    # delete_payment on an advance adjustment.
+    Admission.objects.select_for_update(of=('self',)).get(resident=resident)
     if vacate.is_settled:
         raise ValidationError(
             {'detail': _('This vacate has already been settled.')}, code='already_settled'
@@ -454,6 +466,8 @@ def settlement_preview(*, vacate, maintenance_deduction, actual_vacate_date=None
     )
     return {
         'security_deposit_amount': vacate.resident.admission.security_deposit_amount,
+        'advance_amount': vacate.resident.admission.advance_amount,
+        'advance_applied_amount': vacate.resident.admission.advance_applied_amount,
         'advance_refundable': vacate.resident.admission.advance_refundable,
         'maintenance_deduction': maintenance_deduction,
         'actual_vacate_date': through,
@@ -592,7 +606,8 @@ def mark_absconded(*, resident, absconded_date, last_seen_date, absconded_note, 
         )
 
     before_status = resident.status
-    admission = resident.admission
+    # Settings -> Resident -> Admission (serialize against advance adjustments/reversals).
+    admission = Admission.objects.select_for_update(of=('self',)).get(resident=resident)
     # Food-holiday credit still owed joins the forfeited pool; days already
     # credited on an issued invoice after the abscond date are added to the
     # dues (owner decisions 2026-10-30).
@@ -752,7 +767,9 @@ def build_activity_timeline(resident):
         running_total = Decimal('0.00')
         for index, payment in enumerate(payments):
             running_total += payment.amount
-            if running_total < invoice.total:
+            if payment.is_advance_adjustment:
+                label = _('Advance Adjusted')
+            elif running_total < invoice.total:
                 label = _('Partial Payment')
             elif index == 0:
                 label = _('Payment Received')
@@ -761,7 +778,7 @@ def build_activity_timeline(resident):
             add(
                 payment.payment_date, 4, label,
                 _('₹%(amount)s via %(mode)s')
-                % {'amount': payment.amount, 'mode': payment.get_payment_mode_display()},
+                % {'amount': payment.amount, 'mode': payment.get_payment_source_display()},
             )
 
     for transfer in resident.transfers.select_related('new_bed__room'):
@@ -821,3 +838,130 @@ def build_activity_timeline(resident):
         del event['_weight']
         event['date'] = event['date'].isoformat()
     return events
+
+
+def _cleanup_orphan_blobs(written_blobs, *, tenant_id, resident_id):
+    """Best-effort delete of newly written blobs when DB save or audit fails.
+
+    Never masks the original exception or leaks storage object keys/filenames.
+    """
+    for storage, name, field in written_blobs:
+        try:
+            storage.delete(name)
+        except Exception as cleanup_exc:
+            logger.error(
+                'kyc_orphan_cleanup_failed tenant_id=%s resident_id=%s field=%s error=%s',
+                tenant_id, resident_id, field, type(cleanup_exc).__name__,
+            )
+
+
+def _detected_kyc_type(field, upload, kyc_content_types):
+    if kyc_content_types and field in kyc_content_types:
+        return kyc_content_types[field]
+    return sniff_upload(
+        upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES,
+        code_prefix='document', allowed_types=ALLOWED_KYC_TYPES,
+    )
+
+
+def create_resident(*, validated_data, actor, kyc_content_types=None, request=None):
+    """Create a resident profile + any initial KYC documents with explicit orphan cleanup
+    and metadata-only audit events."""
+    data = dict(validated_data)
+    kyc_uploads = {field: data.pop(field) for field in KYC_FILE_FIELDS if field in data}
+    resident = Resident(tenant_id=actor.tenant_id, **data)
+
+    written_blobs = []
+    kyc_audits = []
+    try:
+        for field, upload in kyc_uploads.items():
+            if upload is None:
+                continue
+            detected_type = _detected_kyc_type(field, upload, kyc_content_types)
+            field_file = getattr(resident, field)
+            field_file.save(upload.name or field, upload, save=False)
+            written_blobs.append((field_file.storage, field_file.name, field))
+            kyc_audits.append(('resident.kyc_document_uploaded', None, {'field': field, 'content_type': detected_type}))
+
+        with transaction.atomic():
+            resident.save()
+            audit_log.record(
+                action='resident.created', actor=actor, obj=resident,
+                after={
+                    'first_name': resident.first_name, 'last_name': resident.last_name,
+                    'status': resident.status, 'property': str(resident.property_id),
+                },
+                request=request,
+            )
+            for action, before, after in kyc_audits:
+                audit_log.record(action=action, actor=actor, obj=resident, before=before, after=after, request=request)
+    except Exception:
+        _cleanup_orphan_blobs(written_blobs, tenant_id=actor.tenant_id, resident_id=resident.pk)
+        raise
+    return resident
+
+
+def update_resident(*, resident, validated_data, actor, kyc_content_types=None, request=None):
+    """Update a resident profile and apply KYC upload/replace/clear under a Resident row lock.
+
+    Locking the row inside transaction.atomic() before reading the existing object key or
+    writing the replacement blob serializes concurrent updates to the same resident so two
+    simultaneous replacements cannot both target the same old object and leave the losing
+    replacement orphaned in storage.
+    """
+    data = dict(validated_data)
+    kyc_changes = {field: data.pop(field) for field in KYC_FILE_FIELDS if field in data}
+    detected_types = {
+        field: _detected_kyc_type(field, value, kyc_content_types)
+        for field, value in kyc_changes.items()
+        if value is not None
+    }
+
+    written_blobs = []
+    try:
+        with transaction.atomic():
+            locked = lock_resident(resident)
+            replaced_blobs = []
+            kyc_audits = []
+            for field, value in kyc_changes.items():
+                prior_file = getattr(locked, field)
+                had_existing = bool(prior_file)
+                prior_ref = (prior_file.storage, str(prior_file.name), field) if had_existing else None
+
+                if value is None:
+                    setattr(locked, field, None)
+                    if prior_ref is not None:
+                        replaced_blobs.append(prior_ref)
+                        kyc_audits.append(('resident.kyc_document_removed', {'field': field}, None))
+                else:
+                    detected_type = detected_types[field]
+                    field_file = getattr(locked, field)
+                    field_file.save(value.name or field, value, save=False)
+                    written_blobs.append((field_file.storage, field_file.name, field))
+                    if prior_ref is not None:
+                        replaced_blobs.append(prior_ref)
+                        kyc_audits.append((
+                            'resident.kyc_document_replaced', {'field': field},
+                            {'field': field, 'content_type': detected_type},
+                        ))
+                    else:
+                        kyc_audits.append((
+                            'resident.kyc_document_uploaded', None,
+                            {'field': field, 'content_type': detected_type},
+                        ))
+
+            for field, value in data.items():
+                setattr(locked, field, value)
+
+            locked.save()
+            for action, before, after in kyc_audits:
+                audit_log.record(action=action, actor=actor, obj=locked, before=before, after=after, request=request)
+            for storage, old_name, field in replaced_blobs:
+                delete_storage_object_on_commit(
+                    storage, old_name,
+                    tenant_id=locked.tenant_id, object_id=locked.pk, field=field,
+                )
+    except Exception:
+        _cleanup_orphan_blobs(written_blobs, tenant_id=resident.tenant_id, resident_id=resident.pk)
+        raise
+    return locked

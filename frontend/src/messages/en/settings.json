@@ -149,7 +149,7 @@
     "errFoodChargeRange": "Enter an amount from 0 to 999999.99 with at most two decimals.",
     "autoBillingHeading": "Automatic Billing",
     "autoBillingToggle": "Generate invoices automatically",
-    "autoBillingDesc": "Each resident's invoice is drafted the day before their billing day so you can review it, then issued on the billing day. Weekly residents, partial periods and anything unusual wait for your confirmation. Daily residents are always invoiced by hand.",
+    "autoBillingDesc": "Monthly invoices are drafted the day before the billing day and issued on it. Partial periods and anything unusual wait for your confirmation. Weekly and daily residents are invoiced manually.",
     "billingDayLabel": "Billing day",
     "admissionDateTitle": "Resident's admission date",
     "admissionDateDesc": "Each resident is billed every month on the date they joined.",

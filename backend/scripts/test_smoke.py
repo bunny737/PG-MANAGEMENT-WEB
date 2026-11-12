@@ -45,17 +45,29 @@ def make_handler(overrides):
 
 
 class SmokeTests(unittest.TestCase):
-    def run_against(self, overrides=None):
+    def run_against(self, overrides=None, **run_kwargs):
         server = HTTPServer(('127.0.0.1', 0), make_handler(overrides or {}))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         url = f'http://127.0.0.1:{server.server_port}'
         lines = []
-        return smoke.run(url, url, CREDENTIALS, report=lines.append), lines
+        return smoke.run(url, url, CREDENTIALS, report=lines.append, **run_kwargs), lines
 
     def test_healthy_release_passes(self):
         failures, _ = self.run_against()
+        self.assertEqual(failures, [])
+
+    def test_expect_kyc_uploads_enabled_gate(self):
+        failures, _ = self.run_against(
+            overrides={'GET /api/v1/auth/me/': (200, json.dumps({'email': CREDENTIALS['email'], 'kyc_uploads_enabled': False}).encode())},
+            expect_kyc_uploads_enabled=True,
+        )
+        self.assertIn('kyc uploads enabled on /auth/me', failures)
+        failures, _ = self.run_against(
+            overrides={'GET /api/v1/auth/me/': (200, json.dumps({'email': CREDENTIALS['email'], 'kyc_uploads_enabled': True}).encode())},
+            expect_kyc_uploads_enabled=True,
+        )
         self.assertEqual(failures, [])
 
     def test_each_breakage_is_caught(self):

@@ -236,3 +236,120 @@ class ExportAdditionsTests(AnalyticsBase):
         xlsx = self.client.get(reverse('export-expenses'), {'filetype': 'xlsx', 'month': JULY})
         self.assertEqual(xlsx.status_code, 200)
         self.assertTrue(xlsx.content.startswith(b'PK'))
+
+
+class HeldAdvanceCashReceiptsTests(BillingAPITestCase):
+    """Admission advances + deposits count as cash receipts on collection date;
+    advance adjustments appear in advance_adjustments_total (never cash);
+    vacate finalizations do NOT create refunds_paid."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.prop = self.create_property(self.tenant, name='North Wing')
+        self.room = self.create_room(
+            self.create_floor(self.prop), room_number='101', rack_rate_with_food=Decimal('10000.00'),
+        )
+        self.bed = self.create_bed(self.room, bed_number='101-A')
+        self.resident = self.create_resident(self.prop, status=Resident.Status.RESERVED)
+        self.authenticate(self.owner)
+
+    def test_admission_receipts_non_cash_adjustments_and_vacate_refunds_policy(self):
+        # Admit with ₹20,000 advance + ₹5,000 deposit on 2026-07-01
+        adm_resp = self.client.post(reverse('admission-list'), {
+            'resident': str(self.resident.id),
+            'bed': str(self.bed.id),
+            'joining_date': '2026-07-01',
+            'billing_mode': 'monthly',
+            'food_preference': 'with_food',
+            'advance_amount': '20000.00',
+            'advance_collected_date': '2026-07-01',
+            'advance_mode': 'upi',
+            'security_deposit_amount': '5000.00',
+            'security_deposit_agreed': '5000.00',
+            'security_deposit_collected_date': '2026-07-01',
+            'security_deposit_mode': 'cash',
+        })
+        self.assertEqual(adm_resp.status_code, 201, adm_resp.data)
+
+        # Issue July (first) invoice -> auto-applies ₹10,000 from held advance (non-cash)
+        jul_inv = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        self.client.post(reverse('invoice-issue', args=[jul_inv['id']]))
+
+        # July analytics: ₹25,000 cash receipts (₹20k advance + ₹5k deposit), ₹10k non-cash adjustment
+        jul = self.client.get(
+            reverse('analytics-summary'), {'property': str(self.prop.id), 'month': JULY},
+        ).data
+        self.assertEqual(jul['finance']['gross_receipts'], '25000.00')
+        self.assertEqual(jul['finance']['cash_collected'], '25000.00')
+        self.assertEqual(jul['finance']['refunds_paid'], '0.00')
+        self.assertEqual(jul['finance']['advance_adjustments_total'], '10000.00')
+        self.assertEqual(jul['finance']['period_invoiced'], '10000.00')
+        self.assertEqual(jul['finance']['period_collected'], '10000.00')
+        self.assertEqual(jul['finance']['collection_rate'], 100.0)
+        self.assertEqual(jul['finance']['deposits_held'], '15000.00')
+
+        # Drill-down reconciles 1:1
+        mov = self.client.get(reverse('cash-movements'), {'property': str(self.prop.id), 'month': JULY}).data
+        self.assertEqual(mov['total'], '25000.00')
+        self.assertEqual(mov['advance_adjustments_total'], '10000.00')
+        self.assertEqual(
+            sum((Decimal(r['amount']) for r in mov['results']), Decimal('0.00')),
+            Decimal('25000.00'),
+        )
+
+        # August invoice: adjust ₹4,000 from held advance + ₹6,000 direct cash
+        aug_inv = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+        self.client.post(reverse('invoice-issue', args=[aug_inv['id']]))
+        self.client.post(
+            reverse('invoice-adjust-advance', args=[aug_inv['id']]),
+            {'amount': '4000.00', 'adjustment_date': '2026-08-05'},
+        )
+        self.client.post(reverse('payment-list'), {
+            'invoice': aug_inv['id'], 'amount': '6000.00',
+            'payment_date': '2026-08-06', 'payment_mode': 'cash',
+        })
+
+        aug = self.client.get(
+            reverse('analytics-summary'), {'property': str(self.prop.id), 'month': '2026-08'},
+        ).data
+        self.assertEqual(aug['finance']['cash_collected'], '6000.00')
+        self.assertEqual(aug['finance']['advance_adjustments_total'], '4000.00')
+        self.assertEqual(aug['finance']['period_collected'], '10000.00')
+        self.assertEqual(aug['finance']['deposits_held'], '11000.00')  # 5k deposit + 6k remaining advance
+
+        # Vacate finalized in August with refund_date still leaves refunds_paid = 0.00
+        vac = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-08-01',
+        }).data
+        fin = self.client.post(reverse('vacate-finalize', args=[vac['id']]), {
+            'actual_vacate_date': '2026-08-25', 'refund_date': '2026-08-25', 'refund_mode': 'upi',
+        })
+        self.assertEqual(fin.status_code, 200, fin.data)
+        self.assertEqual(fin.data['refund_amount'], '11000.00')
+
+        aug_after_vacate = self.client.get(
+            reverse('analytics-summary'), {'property': str(self.prop.id), 'month': '2026-08'},
+        ).data
+        self.assertEqual(aug_after_vacate['finance']['refunds_paid'], '0.00')
+        self.assertEqual(aug_after_vacate['finance']['cash_collected'], '6000.00')
+        self.assertEqual(aug_after_vacate['finance']['deposits_held'], '0.00')
+
+        trend = self.client.get(
+            reverse('analytics-trend'), {'property': str(self.prop.id), 'end': '2026-08', 'months': 2},
+        ).data
+        self.assertEqual(trend['series'][0]['finance']['advance_adjustments_total'], '10000.00')
+        self.assertEqual(trend['series'][1]['finance']['advance_adjustments_total'], '4000.00')
+
+        pnl_csv = self.client.get(
+            reverse('export-pnl'), {'property': str(self.prop.id), 'month': '2026-08'},
+        ).content.decode()
+        self.assertIn('Advance adjustments (non-cash),4000.00', pnl_csv)
+        self.assertIn('Refunds paid is 0.00 (refund payouts untracked)', pnl_csv)

@@ -11,6 +11,7 @@ import {
   deleteInvoiceDraft,
   deleteInvoiceLineItem,
   getInvoice,
+  getResident,
   holdAutoIssue,
   type Invoice,
   type InvoiceLineItem,
@@ -22,6 +23,7 @@ import {
   updateInvoiceLineItem,
 } from "@/lib/api";
 import { formatDate } from "@/lib/date";
+import { compareMoney, formatMoney, ZERO } from "@/lib/money";
 import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { SectionError, SectionSkeleton } from "@/components/shared/SectionState";
@@ -29,6 +31,7 @@ import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { queryKeys } from "@/lib/queryKeys";
 import { afterInvoiceChange, afterInvoiceIssued } from "@/lib/refresh";
 import { AddLineItemDialog } from "./AddLineItemDialog";
+import { AdjustAdvanceDialog } from "./AdjustAdvanceDialog";
 import { RecordPaymentDialog } from "./RecordPaymentDialog";
 
 export function InvoiceDetail({ id }: { id: string }) {
@@ -50,8 +53,15 @@ export function InvoiceDetail({ id }: { id: string }) {
     enabled: !!invoice,
   });
 
+  const { data: resident } = useQuery({
+    queryKey: queryKeys.residents.detail(invoice?.resident ?? ""),
+    queryFn: () => getResident(invoice!.resident),
+    enabled: !!invoice,
+  });
+
   const [editingLine, setEditingLine] = useState<InvoiceLineItem | "new" | null>(null);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [showAdjustAdvance, setShowAdjustAdvance] = useState(false);
   const [dueDate, setDueDate] = useState<string | null>(null);
 
   const invalidateDetail = () => queryClient.invalidateQueries({ queryKey: queryKeys.invoices.detail(id) });
@@ -105,6 +115,10 @@ export function InvoiceDetail({ id }: { id: string }) {
   if (isError || !invoice) return <SectionError onRetry={() => refetch()} message={t("errLoadFailed")} />;
 
   const isDraft = invoice.status === "draft";
+  const heldAdvance = resident?.advance_refundable ?? ZERO;
+  const hasHeldAdvance = compareMoney(heldAdvance, ZERO) === 1;
+  const firstInvoiceSettled = resident?.first_invoice_advance_settled !== false;
+  const canAdjustAdvance = !isDraft && compareMoney(invoice.balance_due, ZERO) === 1 && hasHeldAdvance;
 
   return (
     <div className="space-y-6">
@@ -204,39 +218,60 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        {Number(invoice.balance_due) > 0 && (
-          <PermissionGate permission="manage_payments">
-            <button
-              type="button"
-              onClick={() => setShowRecordPayment(true)}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ink-inverse transition-colors hover:bg-accent-hover cursor-pointer"
-            >
-              {t("recordPayment")}
-            </button>
-          </PermissionGate>
-        )}
-        {isDraft && (
-          <PermissionGate permission="manage_invoices">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm(t("issueConfirmBody"))) issueMutation.mutate();
-              }}
-              className="rounded-xl border border-border bg-surface-card px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-surface-subtle cursor-pointer"
-            >
-              {t("issue")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm(t("deleteConfirmBody"))) deleteMutation.mutate();
-              }}
-              className="rounded-xl border border-border bg-surface-card px-4 py-2 text-sm font-semibold text-status-critical transition-colors hover:bg-status-critical-soft cursor-pointer"
-            >
-              {t("deleteDraft")}
-            </button>
-          </PermissionGate>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          {Number(invoice.balance_due) > 0 && (
+            <PermissionGate permission="manage_payments">
+              <button
+                type="button"
+                onClick={() => setShowRecordPayment(true)}
+                className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ink-inverse transition-colors hover:bg-accent-hover cursor-pointer"
+              >
+                {t("recordPayment")}
+              </button>
+            </PermissionGate>
+          )}
+          {canAdjustAdvance && (
+            <PermissionGate permission="manage_payments">
+              <button
+                type="button"
+                disabled={!firstInvoiceSettled}
+                onClick={() => setShowAdjustAdvance(true)}
+                className="rounded-xl border border-accent bg-accent-soft px-4 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent hover:text-ink-inverse disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                {t("adjustAdvance")}
+              </button>
+            </PermissionGate>
+          )}
+          {isDraft && (
+            <PermissionGate permission="manage_invoices">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(t("issueConfirmBody"))) issueMutation.mutate();
+                }}
+                className="rounded-xl border border-border bg-surface-card px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-surface-subtle cursor-pointer"
+              >
+                {t("issue")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(t("deleteConfirmBody"))) deleteMutation.mutate();
+                }}
+                className="rounded-xl border border-border bg-surface-card px-4 py-2 text-sm font-semibold text-status-critical transition-colors hover:bg-status-critical-soft cursor-pointer"
+              >
+                {t("deleteDraft")}
+              </button>
+            </PermissionGate>
+          )}
+        </div>
+        {canAdjustAdvance && (
+          <p className="text-xs text-ink-muted">
+            {firstInvoiceSettled
+              ? t("heldAdvanceAvailable", { amount: formatMoney(heldAdvance) })
+              : t("firstInvoicePendingHint")}
+          </p>
         )}
       </div>
 
@@ -269,19 +304,43 @@ export function InvoiceDetail({ id }: { id: string }) {
           <p className="text-sm text-ink-muted">{t("noPayments")}</p>
         ) : (
           <div className="divide-y divide-border">
-            {payments.map((payment) => (
-              <Link
-                key={payment.id}
-                href={`/billing/payments/${payment.id}`}
-                className="flex items-center justify-between py-2 text-sm transition-colors hover:text-accent"
-              >
-                <div>
-                  <p className="font-medium text-ink">{formatDate(payment.payment_date)}</p>
-                  <p className="text-xs text-ink-muted">{payment.receipt_number ?? "—"}</p>
-                </div>
-                <MoneyText value={payment.amount} className="font-semibold" />
-              </Link>
-            ))}
+            {payments.map((payment) => {
+              const sourceLabel =
+                payment.payment_source === "advance_adjustment"
+                  ? tStatus("advance_adjustment")
+                  : payment.payment_mode
+                  ? tStatus(payment.payment_mode)
+                  : payment.payment_source_label || "—";
+              return (
+                <Link
+                  key={payment.id}
+                  href={`/billing/payments/${payment.id}`}
+                  className="flex items-center justify-between py-2 text-sm transition-colors hover:text-accent"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-ink">{formatDate(payment.payment_date)}</p>
+                      <span
+                        className={
+                          payment.is_advance_adjustment
+                            ? "rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent"
+                            : "text-xs text-ink-muted"
+                        }
+                      >
+                        {sourceLabel}
+                      </span>
+                    </div>
+                    <p className="text-xs text-ink-muted">
+                      {payment.receipt_number ?? "—"}
+                      {payment.historical_collection_mode
+                        ? ` · ${t("originallyCollectedVia", { mode: tStatus(payment.historical_collection_mode) })}`
+                        : ""}
+                    </p>
+                  </div>
+                  <MoneyText value={payment.amount} className="font-semibold" />
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
@@ -295,6 +354,13 @@ export function InvoiceDetail({ id }: { id: string }) {
       )}
       {showRecordPayment && (
         <RecordPaymentDialog invoice={invoice} onClose={() => setShowRecordPayment(false)} />
+      )}
+      {showAdjustAdvance && (
+        <AdjustAdvanceDialog
+          invoice={invoice}
+          heldAdvance={heldAdvance}
+          onClose={() => setShowAdjustAdvance(false)}
+        />
       )}
     </div>
   );

@@ -3,25 +3,34 @@
 Every figure is defined once here on top of apps/billing/selectors.py and has
 a drill-down list that uses the same definition:
 
-    gross_receipts       payments dated in the month           -> /payments/?month=
-    refunds_paid         rent refunds dated in the month — always 0 in v1
-                         (no rent-refund record; owner decision 2026-10-16)
-    cash_collected       gross_receipts - refunds_paid         -> /cash-movements/?month=
-    period_invoiced      current net total of issued invoices whose billing
-                         period starts in the month ("to date": a later edit
-                         can change a past month)              -> /invoices/?period=
-    period_collected     sum of min(paid, net total) over those invoices
-                                                               -> capped_allocated column
-    collection_rate      period_collected / period_invoiced as a % (1 dp);
-                         null when nothing was invoiced
-    outstanding_total    balance on every open invoice, any period
-                                                               -> /invoices/?status=outstanding
-    period_outstanding   balance on the month's invoices       -> ?period=&status=outstanding
-    overdue_total        outstanding with due_date before today
-    expenses_paid        live expenses dated in the month      -> /expenses/?month=
-    net_cash_flow        cash_collected - expenses_paid (NOT profit)
-    deposits_held        refundable security deposits + unapplied advance of
-                         current residents — a liability, never income
+    gross_receipts            direct invoice payments (excluding non-cash
+                              advance adjustments) + admission advance
+                              collections (COALESCE(advance_collected_date,
+                              joining_date)) + security deposit collections
+                              (DepositPayment) dated in the month     -> /cash-movements/?month=
+    refunds_paid              0.00 in v1 (refund payouts are untracked;
+                              vacate finalizations compute refunds due,
+                              not confirmed cash payouts)
+    cash_collected            gross_receipts - refunds_paid           -> /cash-movements/?month=
+    advance_adjustments_total non-cash drawdowns of held admission advance
+                              against invoices (does not add cash)
+    period_invoiced           current net total of issued invoices whose billing
+                              period starts in the month ("to date": a later edit
+                              can change a past month)                -> /invoices/?period=
+    period_collected          sum of min(paid, net total) over those invoices
+                                                                      -> capped_allocated column
+    collection_rate           period_collected / period_invoiced as a % (1 dp);
+                              null when nothing was invoiced
+    outstanding_total         balance on every open invoice, any period
+                                                                      -> /invoices/?status=outstanding
+    period_outstanding        balance on the month's invoices         -> ?period=&status=outstanding
+    overdue_total             outstanding with due_date before today
+    expenses_paid             live expenses dated in the month        -> /expenses/?month=
+    net_cash_flow             cash_collected - expenses_paid (excludes
+                              untracked refund payouts; may overstate cash
+                              retained after refunds are paid)
+    deposits_held             refundable security deposits + unapplied advance of
+                              current residents — a liability, never income
 
 Balance metrics (outstanding/overdue/counts) are always as of now, also for
 a past month (`balances_as_of`). Months are calendar months in the property
@@ -55,7 +64,7 @@ from apps.expenses import services as expense_services
 from apps.properties.layout import bed_counts
 from apps.properties.models import Bed
 from apps.properties.services import scoped_property_ids
-from apps.residents.models import Admission, Allocation, Resident
+from apps.residents.models import Admission, Allocation, DepositPayment, Resident
 
 ZERO = selectors.ZERO
 CURRENT = (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD)
@@ -84,8 +93,34 @@ def fiscal_year_start(first, start_month):
 def _gross_receipts(property_ids, start, end):
     if end < start:
         return ZERO
+    direct_payments = Payment.objects.filter(
+        invoice__resident__property_id__in=property_ids,
+        payment_date__range=(start, end),
+        is_advance_adjustment=False,
+    ).aggregate(total=Coalesce(Sum('amount'), ZERO, output_field=selectors.MONEY))['total']
+    admission_advances = (
+        Admission.objects.annotate(
+            collection_date=Coalesce('advance_collected_date', 'joining_date'),
+        ).filter(
+            resident__property_id__in=property_ids,
+            advance_amount__gt=0,
+            collection_date__range=(start, end),
+        ).aggregate(total=Coalesce(Sum('advance_amount'), ZERO, output_field=selectors.MONEY))['total']
+    )
+    deposit_collections = DepositPayment.objects.filter(
+        admission__resident__property_id__in=property_ids,
+        payment_date__range=(start, end),
+    ).aggregate(total=Coalesce(Sum('amount'), ZERO, output_field=selectors.MONEY))['total']
+    return direct_payments + admission_advances + deposit_collections
+
+
+def _advance_adjustments_total(property_ids, start, end):
+    if end < start:
+        return ZERO
     return Payment.objects.filter(
-        invoice__resident__property_id__in=property_ids, payment_date__range=(start, end),
+        invoice__resident__property_id__in=property_ids,
+        payment_date__range=(start, end),
+        is_advance_adjustment=True,
     ).aggregate(total=Coalesce(Sum('amount'), ZERO, output_field=selectors.MONEY))['total']
 
 
@@ -108,6 +143,7 @@ def flow_finance(property_ids, first, last):
         'gross_receipts': gross,
         'refunds_paid': refunds,
         'cash_collected': gross - refunds,
+        'advance_adjustments_total': _advance_adjustments_total(property_ids, first, last),
         'period_invoiced': invoiced,
         'period_collected': collected,
         'collection_rate': _rate(collected, invoiced),

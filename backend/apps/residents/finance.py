@@ -79,7 +79,7 @@ def resident_finance(resident):
         'prior_outstanding': str(
             selectors.total_of(open_invoices.filter(period_start__lt=first), 'balance')
         ),
-        'last_payment_date': Payment.objects.filter(invoice__resident=resident).aggregate(
-            last=Max('payment_date')
-        )['last'],
+        'last_payment_date': Payment.objects.filter(
+            invoice__resident=resident, is_advance_adjustment=False,
+        ).aggregate(last=Max('payment_date'))['last'],
     }

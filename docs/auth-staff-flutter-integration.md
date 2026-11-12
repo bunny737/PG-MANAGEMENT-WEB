@@ -347,3 +347,16 @@ Behaviour to implement:
 - A phone-only user with no usable password and no email cannot confirm online (`deletion_confirm_methods` is
   empty): send them to support (`GET /api/v1/support/`).
 - The app-client gate (force-update / maintenance) still applies to these routes; the web page is the fallback.
+
+## 11. Resident KYC documents (Gate B Option B1)
+
+`Resident` list and detail responses no longer include readable `aadhaar_document` / `pan_document` URLs
+(no eager URL signing on list/detail/create/update). Instead:
+- Read-only booleans `has_aadhaar_document: bool` and `has_pan_document: bool` are returned on
+  `GET /api/v1/residents/`, `GET /api/v1/residents/{id}/`, `POST /api/v1/residents/`, and
+  `PATCH /api/v1/residents/{id}/` (absent only when callers lack `view_resident_profile`, though the endpoint itself requires it).
+- `aadhaar_document` and `pan_document` are **write-only** multipart/PATCH fields for uploading (or sending `null` to remove).
+- To download/view a document, request a short-lived signed URL on demand (throttled at `60/min`, audits `resident.kyc_document_url_issued`):
+  `GET /api/v1/residents/{id}/documents/{field}/` where `field` is `aadhaar_document` or `pan_document`
+  -> `200 { "url": "...", "expires_in": 300, "expires_at": "2026-11-12T10:05:00Z" }`
+  -> `403 KYC_UPLOADS_DISABLED` / `PERMISSION_DENIED`, `404` (missing resident or no file), `503 DOCUMENT_URL_UNAVAILABLE` (storage signing failure).

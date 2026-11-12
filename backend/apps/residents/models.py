@@ -1,4 +1,5 @@
 import builtins
+import os
 import uuid
 from decimal import Decimal
 
@@ -7,11 +8,16 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
+from apps.core.periods import local_today
+from apps.core.storage import get_kyc_storage
 from apps.properties.models import Bed, Property, Room
 
 
 def resident_document_path(instance, filename):
-    return f'residents/{instance.tenant_id}/{instance.id}/{filename}'
+    # Random name: original filenames are user data, can leak PII into keys/signed URLs,
+    # and trigger storage-level truncation or SuspiciousFileOperation if overly long.
+    extension = os.path.splitext(filename)[1].lower()[:10]
+    return f'residents/{instance.tenant_id}/{instance.id}/{uuid.uuid4().hex}{extension}'
 
 
 class Resident(TenantModelMixin):
@@ -79,9 +85,15 @@ class Resident(TenantModelMixin):
     # Identity documents — Aadhaar/PAN carry both a number and an upload;
     # Passport/Employee ID/Student ID are optional numbers only (PRD Module 5).
     aadhaar_number = models.CharField(max_length=20, blank=True)
-    aadhaar_document = models.FileField(upload_to=resident_document_path, null=True, blank=True)
+    aadhaar_document = models.FileField(
+        upload_to=resident_document_path, storage=get_kyc_storage,
+        max_length=255, null=True, blank=True,
+    )
     pan_number = models.CharField(max_length=20, blank=True)
-    pan_document = models.FileField(upload_to=resident_document_path, null=True, blank=True)
+    pan_document = models.FileField(
+        upload_to=resident_document_path, storage=get_kyc_storage,
+        max_length=255, null=True, blank=True,
+    )
     passport_number = models.CharField(max_length=30, blank=True)
     employee_id = models.CharField(max_length=50, blank=True)
     student_id = models.CharField(max_length=50, blank=True)
@@ -155,12 +167,26 @@ class Admission(TenantModelMixin):
         CASH = 'cash', _('Cash')
         BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
 
+    class FirstBillingPolicy(models.TextChoices):
+        FROM_JOINING_DATE = 'from_joining_date', _('From joining date')
+        NEXT_BILLING_CYCLE = 'next_billing_cycle', _('Next billing cycle')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='admission')
     bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='admissions')
 
     joining_date = models.DateField()
     billing_mode = models.CharField(max_length=10, choices=BillingMode.choices)
+    # Controls only the first automatically generated invoice. The property's
+    # billing-day rule remains the resident's ongoing schedule.
+    first_billing_policy = models.CharField(
+        max_length=24, choices=FirstBillingPolicy.choices,
+        default=FirstBillingPolicy.FROM_JOINING_DATE,
+    )
+    # Stable local date on which this admission entered automatic billing.
+    # NEXT_BILLING_CYCLE starts strictly after this boundary, so an imported
+    # resident is never backfilled from their historical joining date.
+    billing_enrolled_on = models.DateField(default=local_today)
     expected_stay_duration = models.CharField(max_length=50, blank=True)  # free text, e.g. "6 months"
 
     # Snapshotted from bed/room at admission time — invariant 2/3: never
@@ -170,15 +196,23 @@ class Admission(TenantModelMixin):
     food_preference = models.CharField(max_length=15, choices=FoodPreference.choices)
     contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
 
-    # Advance = rent paid upfront for the first billing period (e.g. 30 days
-    # on a monthly contract). Billing applies it as a payment against the
-    # resident's first issued invoice (billing.services.apply_advance_to_first_invoice).
+    # Advance = upfront rent held by the owner (e.g. 1 or 2 months' rent).
+    # Billing applies up to the first issued invoice's total automatically
+    # (billing.services.apply_advance_to_first_invoice); any remainder stays as a
+    # held advance balance that staff may later apply explicitly to issued
+    # invoices ("Adjust from advance") or refund at vacate.
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     advance_collected_date = models.DateField(null=True, blank=True)
     advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
-    # Portion of the advance actually paid against the first invoice. Any
-    # remainder (e.g. 2 months paid upfront) is refunded at vacate.
+    # Cumulative advance applied across invoices (first-invoice auto-apply +
+    # explicit adjustments). Any remainder is refunded at vacate.
     advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # True once the first invoice has been issued (so automatic first-invoice
+    # advance application never re-runs after reversals or later invoice issues).
+    first_invoice_advance_settled = models.BooleanField(default=False)
+    # Imported opening balances normally stay held. New admissions may retain
+    # the existing behaviour of applying advance to the first issued invoice.
+    auto_apply_advance_to_first_invoice = models.BooleanField(default=True)
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
     # `security_deposit_amount` is what has actually been COLLECTED (the running total of the
@@ -210,13 +244,23 @@ class Admission(TenantModelMixin):
 
     class Meta:
         db_table = 'admissions'
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(advance_applied_amount__gte=0),
+                name='admission_advance_applied_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(advance_applied_amount__lte=models.F('advance_amount')),
+                name='admission_advance_applied_lte_advance',
+            ),
+        ]
 
     def __str__(self):
         return f'Admission: {self.resident}'
 
     @property
     def advance_refundable(self):
-        """Advance not consumed by the first invoice — refunded at vacate."""
+        """Held advance not consumed by invoice adjustments — refunded at vacate."""
         return self.advance_amount - self.advance_applied_amount
 
     @property

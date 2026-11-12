@@ -204,6 +204,11 @@ lifecycle (`vacated`/`blacklisted`) instead.
   until the transaction actually commits.
 
 ## Changelog
+- `2026-11-12` (follow-up hardening):
+  - `services.update_resident` now locks the `Resident` row (`lock_resident`, `select_for_update(of=('self',))`) inside `transaction.atomic()` before reading the prior object key or writing replacement blobs, preventing concurrent replacement races from orphaning blobs (`tests/test_kyc_concurrency.py`).
+  - Added `manage.py backfill_kyc_documents` (idempotent cross-bucket copy with `--dry-run` and `--delete-source`) and `manage.py check_kyc_storage` (verifies `$KYC_BUCKET` existence, hard-delete settings, UBLA/PAP, IAM object perms, live V4 URL signing, and 0 unmigrated docs), wired as `pglive-backfill-kyc` and `pglive-check-kyc` in `infra/30-services.sh` / `infra/deploy.sh` (`tests/test_kyc_commands.py`).
+  - Frontend download handler (`ResidentProfile.tsx`) opens a blank tab synchronously (`window.open("", "_blank")` + `popup.opener = null`) and navigates it after URL issuance (same-tab fallback if blocked; closes blank tab on error) so browsers do not popup-block async signed URL downloads.
+  - Infra: `infra/10-foundation.sh` idempotently revokes legacy `sa-worker` `TokenCreator` bindings; `infra/20-data.sh` grants `pglive.bucketMetadataReader` (`storage.buckets.get`) on `$KYC_BUCKET` to `sa-api`; `infra/deploy.sh` + `infra/worker/{deploy,create-vm}.sh` forward custom `MEDIA_BUCKET`/`KYC_BUCKET` overrides to the worker VM.
 - 2026-11-12  **GCS KYC rollout (Gate A1 + Gate B1).** Switched KYC uploads to dedicated hard-delete
   `STORAGES['kyc']` (`GS_KYC_BUCKET_NAME`, no versioning, 0d soft delete) with UUID object keys (`max_length=255`);
   split `ResidentListSerializer` vs `ResidentSerializer`, made `aadhaar_document`/`pan_document` write-only and

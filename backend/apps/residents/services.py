@@ -893,55 +893,66 @@ def create_resident(*, validated_data, actor, kyc_content_types=None, request=No
 
 
 def update_resident(*, resident, validated_data, actor, kyc_content_types=None, request=None):
-    """Update a resident profile and apply KYC upload/replace/clear with orphan cleanup,
-    hardened post-commit deletion of replaced objects, and metadata-only audit events."""
+    """Update a resident profile and apply KYC upload/replace/clear under a Resident row lock.
+
+    Locking the row inside transaction.atomic() before reading the existing object key or
+    writing the replacement blob serializes concurrent updates to the same resident so two
+    simultaneous replacements cannot both target the same old object and leave the losing
+    replacement orphaned in storage.
+    """
     data = dict(validated_data)
     kyc_changes = {field: data.pop(field) for field in KYC_FILE_FIELDS if field in data}
+    detected_types = {
+        field: _detected_kyc_type(field, value, kyc_content_types)
+        for field, value in kyc_changes.items()
+        if value is not None
+    }
 
     written_blobs = []
-    replaced_blobs = []
-    kyc_audits = []
     try:
-        for field, value in kyc_changes.items():
-            prior_file = getattr(resident, field)
-            had_existing = bool(prior_file)
-            prior_ref = (prior_file.storage, str(prior_file.name), field) if had_existing else None
-
-            if value is None:
-                setattr(resident, field, None)
-                if prior_ref is not None:
-                    replaced_blobs.append(prior_ref)
-                    kyc_audits.append(('resident.kyc_document_removed', {'field': field}, None))
-            else:
-                detected_type = _detected_kyc_type(field, value, kyc_content_types)
-                field_file = getattr(resident, field)
-                field_file.save(value.name or field, value, save=False)
-                written_blobs.append((field_file.storage, field_file.name, field))
-                if prior_ref is not None:
-                    replaced_blobs.append(prior_ref)
-                    kyc_audits.append((
-                        'resident.kyc_document_replaced', {'field': field},
-                        {'field': field, 'content_type': detected_type},
-                    ))
-                else:
-                    kyc_audits.append((
-                        'resident.kyc_document_uploaded', None,
-                        {'field': field, 'content_type': detected_type},
-                    ))
-
-        for field, value in data.items():
-            setattr(resident, field, value)
-
         with transaction.atomic():
-            resident.save()
+            locked = lock_resident(resident)
+            replaced_blobs = []
+            kyc_audits = []
+            for field, value in kyc_changes.items():
+                prior_file = getattr(locked, field)
+                had_existing = bool(prior_file)
+                prior_ref = (prior_file.storage, str(prior_file.name), field) if had_existing else None
+
+                if value is None:
+                    setattr(locked, field, None)
+                    if prior_ref is not None:
+                        replaced_blobs.append(prior_ref)
+                        kyc_audits.append(('resident.kyc_document_removed', {'field': field}, None))
+                else:
+                    detected_type = detected_types[field]
+                    field_file = getattr(locked, field)
+                    field_file.save(value.name or field, value, save=False)
+                    written_blobs.append((field_file.storage, field_file.name, field))
+                    if prior_ref is not None:
+                        replaced_blobs.append(prior_ref)
+                        kyc_audits.append((
+                            'resident.kyc_document_replaced', {'field': field},
+                            {'field': field, 'content_type': detected_type},
+                        ))
+                    else:
+                        kyc_audits.append((
+                            'resident.kyc_document_uploaded', None,
+                            {'field': field, 'content_type': detected_type},
+                        ))
+
+            for field, value in data.items():
+                setattr(locked, field, value)
+
+            locked.save()
             for action, before, after in kyc_audits:
-                audit_log.record(action=action, actor=actor, obj=resident, before=before, after=after, request=request)
+                audit_log.record(action=action, actor=actor, obj=locked, before=before, after=after, request=request)
             for storage, old_name, field in replaced_blobs:
                 delete_storage_object_on_commit(
                     storage, old_name,
-                    tenant_id=resident.tenant_id, object_id=resident.pk, field=field,
+                    tenant_id=locked.tenant_id, object_id=locked.pk, field=field,
                 )
     except Exception:
         _cleanup_orphan_blobs(written_blobs, tenant_id=resident.tenant_id, resident_id=resident.pk)
         raise
-    return resident
+    return locked

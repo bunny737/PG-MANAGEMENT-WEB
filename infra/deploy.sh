@@ -44,12 +44,14 @@ fi
 echo "== services + jobs (new revisions get NO traffic yet)"
 "$here/30-services.sh" "$ENVIRONMENT"
 
-echo "== migrate, grants, role check"
+echo "== migrate, grants, role check, KYC backfill + storage preflight"
 g run jobs execute pglive-migrate --region "$REGION" --wait
 # roles-2-grants.sql was applied once after the first migrate (docs/deployment.md); from then on
 # ALTER DEFAULT PRIVILEGES FOR ROLE migration_user grants app_user access to every new table and sequence.
 # This job proves it: it fails the release if app_user owns anything or a new tenant table lacks forced RLS.
 g run jobs execute pglive-check-roles --region "$REGION" --wait
+g run jobs execute pglive-backfill-kyc --region "$REGION" --wait
+g run jobs execute pglive-check-kyc --region "$REGION" --wait
 
 echo "== pre-traffic smoke test from inside the VPC (candidate revisions)"
 g run jobs execute pglive-smoke --region "$REGION" --wait
@@ -76,8 +78,10 @@ for svc in pglive-api pglive-web; do shift_traffic "$svc" 100; done
 
 if [[ "$ENVIRONMENT" == prod ]]; then
   echo "== worker VM"
+  printf -v worker_cmd 'sudo env GS_BUCKET_NAME=%q GS_KYC_BUCKET_NAME=%q /opt/pglive/deploy.sh %q' \
+    "$MEDIA_BUCKET" "$KYC_BUCKET" "$SHA"
   gcloud --project "$PROJECT" compute ssh "$WORKER_VM" --zone "${REGION}-a" --tunnel-through-iap \
-    --command "sudo /opt/pglive/deploy.sh $SHA"
+    --command "$worker_cmd"
 fi
 trap - ERR
 echo "Released $SHA to $ENVIRONMENT"

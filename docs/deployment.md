@@ -32,9 +32,10 @@ nginx on the worker VM (Let's Encrypt cert for all three names)
 pglive-web → https://api.pglive.in (BFF; signed X-PGLive-Origin-*)      Razorpay webhook → api.pglive.in
 pglive-api → Cloud SQL (/cloudsql socket)                                pglive-api → worker VM :6379 (Direct VPC egress)
 Worker VM (e2-small, IAP-only SSH): nginx edge · redis · celery worker · celery beat (exactly one) · cloud-sql-proxy
-Cloud Run Jobs (fixed commands): pglive-migrate · pglive-check-roles · pglive-bootstrap · pglive-generate-invoices ·
-  pglive-check-grace-periods · pglive-smoke · pglive-export-verify
-GCS: pglive-prod-media (private) · pglive-prod-backups (asia-south2)
+Cloud Run Jobs (fixed commands): pglive-migrate · pglive-check-roles · pglive-backfill-kyc ·
+  pglive-check-kyc · pglive-bootstrap · pglive-generate-invoices · pglive-check-grace-periods ·
+  pglive-smoke · pglive-export-verify
+GCS: pglive-prod-media (private, versioned) · pglive-prod-kyc (private, hard-delete) · pglive-prod-backups (asia-south2)
 ```
 
 One backend image (`backend/Dockerfile.prod`) serves the API, worker, beat and every job; one frontend image
@@ -147,8 +148,7 @@ Then, in Super Admin: PlatformConfig (trial days, grace days, caps — invariant
 - Production deploys come from annotated tags `vX.Y.Z` whose commit is reachable from `main`
   (`deploy-prod.yml` checks `git merge-base --is-ancestor`). A GitHub ruleset restricts who can create `v*` tags and
   forbids moving or deleting them; the `production` Environment accepts only `v*` tags and needs a reviewer.
-- Pipeline: build → on-demand Cloud SQL backup (wait for success) → `pglive-migrate` → candidate revision with
-  `--no-traffic --tag candidate` → `pglive-smoke` (in-VPC) → 10 % → watch → 100 % → web → worker VM.
+- Pipeline: build → on-demand Cloud SQL backup (wait for success) → `pglive-migrate` → `pglive-check-roles` → `pglive-backfill-kyc` → `pglive-check-kyc` → candidate revision with `--no-traffic --tag candidate` → `pglive-smoke` (in-VPC) → 10 % → watch → 100 % → web → worker VM (forwarding resolved `GS_BUCKET_NAME` and `GS_KYC_BUCKET_NAME`).
 - **Start-up deploy check.** The API image starts through `backend/bin/start-api.sh`, which runs
   `manage.py check --deploy --fail-level ERROR` before gunicorn. A revision with blank, malformed or placeholder
   Razorpay keys (`apps/subscriptions/checks.py`), an `http`/default `FRONTEND_BASE_URL` (`apps/core/checks.py`) or
@@ -212,6 +212,11 @@ tests, and deletes the instance.
   `deploy-staging.yml` set `KYC_UPLOADS_ENABLED=true` and `EXPECT_KYC_UPLOADS_ENABLED=true` (enforced by preflight
   in `30-services.sh` and `pglive-smoke`). Resident KYC objects live in `$PROJECT-kyc` (`GS_KYC_BUCKET_NAME`,
   non-versioned with `0d` soft delete) so Remove, Replace, and account deletion purge PII bytes immediately.
+  Provision `$KYC_BUCKET` + `pglive.bucketMetadataReader` via `infra/20-data.sh` (and `infra/10-foundation.sh` to
+  ensure `sa-worker` holds no `serviceAccountTokenCreator` binding); `infra/deploy.sh` runs `pglive-backfill-kyc`
+  (idempotent copy of any legacy objects from `$MEDIA_BUCKET`) and `pglive-check-kyc` (verifies bucket existence,
+  hard-delete config, IAM permissions, live V4 URL signing, and 0 unmigrated objects) before `pglive-smoke` and
+  canary traffic shifts, and forwards resolved `MEDIA_BUCKET`/`KYC_BUCKET` overrides to the worker VM deploy.
 - **Account deletion (Module 22)**: create the `account_deletion_failed` log-based alert (see §7), confirm with the accountant that the
   retained billing set satisfies GST record rules, and put the public `/delete-account` URL into Play Console → Data safety.
   The Flutter app must also ship its in-app "Delete account" entry before the module is closed.

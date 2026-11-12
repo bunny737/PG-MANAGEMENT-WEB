@@ -159,6 +159,15 @@ bind api roles/firebasecloudmessaging.admin; bind worker roles/firebasecloudmess
 # Keyless GCS URL signing: only the API signs URLs (worker only deletes objects during tenant purge).
 gcloud iam service-accounts add-iam-policy-binding $(sa api) \
   --member "serviceAccount:$(sa api)" --role roles/iam.serviceAccountTokenCreator
+# If migrating from an older setup where sa-worker also held TokenCreator, revoke it idempotently:
+for target in $(sa worker) $(sa api); do
+  if gcloud iam service-accounts get-iam-policy $target --flatten="bindings[].members" \
+      --filter="bindings.role=roles/iam.serviceAccountTokenCreator AND bindings.members=serviceAccount:$(sa worker)" \
+      --format="value(bindings.members)" | grep -q .; then
+    gcloud iam service-accounts remove-iam-policy-binding $target \
+      --member "serviceAccount:$(sa worker)" --role roles/iam.serviceAccountTokenCreator --all
+  fi
+done
 ```
 
 Custom roles for the weekly export (only needed once you set up section 13):
@@ -292,11 +301,16 @@ done
 
 # Dedicated hard-delete bucket for resident KYC documents (no versioning, 0d soft delete)
 mkb $KYC_BUCKET    $REGION
-gcloud storage buckets update gs://$KYC_BUCKET --no-versioning --soft-delete-duration=0
+gcloud storage buckets update gs://$KYC_BUCKET --uniform-bucket-level-access --public-access-prevention \
+  --no-versioning --soft-delete-duration=0
 for n in api worker; do
   gcloud storage buckets add-iam-policy-binding gs://$KYC_BUCKET \
     --member "serviceAccount:$(sa $n)" --role roles/storage.objectUser
 done
+gcloud iam roles create pglive.bucketMetadataReader --project $PROJECT \
+  --title "PGLive bucket metadata reader" --permissions storage.buckets.get
+gcloud storage buckets add-iam-policy-binding gs://$KYC_BUCKET \
+  --member "serviceAccount:$(sa api)" --role projects/$PROJECT/roles/pglive.bucketMetadataReader
 
 mkb $BACKUP_BUCKET asia-south2
 gcloud storage buckets update gs://$BACKUP_BUCKET --retention-period=90d      # do NOT lock it yet

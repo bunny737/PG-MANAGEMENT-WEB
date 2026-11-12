@@ -99,14 +99,16 @@ g run deploy pglive-web --region "$REGION" --image "$WEB_IMAGE" --service-accoun
   --set-env-vars "^;^INTERNAL_API_URL=https://api.pglive.in;SITE_URL=$SITE_URL;COMPANY_NAME=${COMPANY_NAME:?};COMPANY_ADDRESS=${COMPANY_ADDRESS:?};APP_STATUS=${APP_STATUS:-comingSoon};PLAY_STORE_URL=${PLAY_STORE_URL:-};SIGNUP_ENABLED=${SIGNUP_ENABLED:-false};CSP_MODE=${CSP_MODE:-report-only};CSP_REPORT_URI=${CSP_REPORT_URI:-};GA_MEASUREMENT_ID=${GA_MEASUREMENT_ID:-}" \
   "$(secrets BFF_ORIGIN_SECRET BFF_EDGE_KEY)" "${WEB_TRAFFIC[@]}"
 
-job() { # name service-account db-user secrets-flag django-command-and-args [nosql]
-  local name="$1" account="$2" db_user="$3" secret_flag="$4" args="$5" nosql="${6:-}"
+job() { # name service-account db-user secrets-flag django-command-and-args [nosql] [extra_env]
+  local name="$1" account="$2" db_user="$3" secret_flag="$4" args="$5" nosql="${6:-}" extra_env="${7:-}"
   local verb=create sql=(--set-cloudsql-instances "$SQL_CONNECTION")
+  local env_vars="^;^$COMMON_ENV;$SQL_ENV;DB_USER=$db_user;ALLOWED_HOSTS=$ALLOWED_API_HOSTS;EXPORT_BUCKET=$BACKUP_BUCKET;EXPORT_MIN_TABLES=${EXPORT_MIN_TABLES:-60}"
+  [[ -n "$extra_env" ]] && env_vars="$env_vars;$extra_env"
   [[ -n "$nosql" ]] && sql=(--clear-cloudsql-instances)
   g run jobs describe "$name" --region "$REGION" >/dev/null 2>&1 && verb=update
   g run jobs "$verb" "$name" --region "$REGION" --image "$API_IMAGE" --service-account "$(sa "$account")" \
     --max-retries 0 --task-timeout 1800 "${sql[@]}" "${VPC[@]}" \
-    --set-env-vars "^;^$COMMON_ENV;$SQL_ENV;DB_USER=$db_user;ALLOWED_HOSTS=$ALLOWED_API_HOSTS;EXPORT_BUCKET=$BACKUP_BUCKET;EXPORT_MIN_TABLES=${EXPORT_MIN_TABLES:-60}" \
+    --set-env-vars "$env_vars" \
     "$secret_flag" --command python --args "manage.py,$args"
 }
 echo "== jobs"
@@ -115,6 +117,11 @@ MIGRATE_SECRETS="$(secrets SECRET_KEY=DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSW
 job pglive-migrate sa-migrate migration_user "$MIGRATE_SECRETS" "migrate,--noinput"
 # One job = one command, so the post-migrate role check is its own job; the deploy aborts if it fails.
 job pglive-check-roles sa-api app_user "$API_SECRETS" "check_db_roles,--role,app_user"
+# Backfill any pre-existing resident KYC objects from $MEDIA_BUCKET into $KYC_BUCKET idempotently, then
+# fail the release before smoke/canary if the KYC bucket, hard-delete settings, IAM permissions, or URL signing are broken.
+job pglive-backfill-kyc sa-api app_user "$API_SECRETS" "backfill_kyc_documents"
+job pglive-check-kyc sa-api app_user "$API_SECRETS" "check_kyc_storage,--require" "" \
+  "GS_SA_EMAIL=$(sa sa-api);KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED;EXPECT_KYC_UPLOADS_ENABLED=$EXPECT_KYC_UPLOADS_ENABLED"
 job pglive-generate-invoices sa-api app_user "$API_SECRETS" "generate_subscription_invoices"
 job pglive-check-grace-periods sa-api app_user "$API_SECRETS" "check_subscription_grace_periods"
 # Bootstrap exists only for the first deploy: add INITIAL_SUPERADMIN_EMAIL / INITIAL_SUPERADMIN_PASSWORD (a

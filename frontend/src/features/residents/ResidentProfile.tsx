@@ -230,10 +230,27 @@ export function ResidentProfile({ id }: { id: string }) {
   const handleDownloadDocument = async (field: ResidentDocumentField) => {
     setDownloadingField(field);
     setUploadError("");
+    // Open the tab synchronously inside the user-gesture turn so popup blockers do
+    // not block navigation after the signed-URL request resolves asynchronously.
+    // Omit "noopener" from window.open() because per HTML spec it forces a null
+    // return value and breaks navigating the blank tab later; sever opener explicitly.
+    const popup = window.open("", "_blank");
+    if (popup) {
+      popup.opener = null;
+    }
     try {
       const { url } = await getResidentDocumentUrl(id, field);
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (popup) {
+        if (!popup.closed) {
+          popup.location.href = url;
+        }
+      } else {
+        window.location.assign(url);
+      }
     } catch (err) {
+      if (popup && !popup.closed) {
+        popup.close();
+      }
       console.error(err);
       if (err instanceof ApiError && err.code === "DOCUMENT_URL_UNAVAILABLE") {
         setUploadError(t("documents.errDownloadFailed"));

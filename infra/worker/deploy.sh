@@ -30,8 +30,10 @@ umask 077
   echo "SENTRY_DSN=$(secret SENTRY_DSN)"
   echo "SENTRY_ENVIRONMENT=production"
   echo "APP_RELEASE=$TAG"
-  echo "GS_BUCKET_NAME=$PROJECT-media"
-  echo "GS_KYC_BUCKET_NAME=$PROJECT-kyc"
+  MEDIA_BUCKET_NAME="${GS_BUCKET_NAME:-$(opt media-bucket)}"
+  KYC_BUCKET_NAME="${GS_KYC_BUCKET_NAME:-$(opt kyc-bucket)}"
+  echo "GS_BUCKET_NAME=${MEDIA_BUCKET_NAME:-$PROJECT-media}"
+  echo "GS_KYC_BUCKET_NAME=${KYC_BUCKET_NAME:-$PROJECT-kyc}"
   echo "GS_PROJECT_ID=$PROJECT"
   # Least-privilege: sa-worker deletes expired/purged objects only and never signs URLs (no GS_SA_EMAIL).
   # SMTP + company-identity settings (non-secret) come from VM metadata; unset ones are left out so

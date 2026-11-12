@@ -87,6 +87,8 @@ trap - ERR
 if [[ "${PURGE_LEGACY_KYC_MEDIA:-false}" == true ]]; then
   echo "== controlled post-cutover purge of legacy residents/ generations in $MEDIA_BUCKET"
   g run jobs execute pglive-purge-legacy-kyc --region "$REGION" --wait
-  g run jobs execute pglive-check-kyc --region "$REGION" --wait
+  # Unlike the ordinary preflight, this gate fails if the purge left any live or noncurrent
+  # generations behind. Soft-deleted generations remain informational until hardDeleteTime.
+  g run jobs execute pglive-check-kyc-strict --region "$REGION" --wait
 fi
 echo "Released $SHA to $ENVIRONMENT"

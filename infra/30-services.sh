@@ -125,6 +125,8 @@ job pglive-backfill-kyc sa-api app_user "$API_SECRETS" "backfill_kyc_documents"
 job pglive-purge-legacy-kyc sa-api app_user "$API_SECRETS" "backfill_kyc_documents,--delete-source,--purge-orphaned-legacy"
 job pglive-check-kyc sa-api app_user "$API_SECRETS" "check_kyc_storage,--require" "" \
   "GS_SA_EMAIL=$(sa sa-api);KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED;EXPECT_KYC_UPLOADS_ENABLED=$EXPECT_KYC_UPLOADS_ENABLED"
+job pglive-check-kyc-strict sa-api app_user "$API_SECRETS" "check_kyc_storage,--require,--fail-on-legacy-media" "" \
+  "GS_SA_EMAIL=$(sa sa-api);KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED;EXPECT_KYC_UPLOADS_ENABLED=$EXPECT_KYC_UPLOADS_ENABLED"
 job pglive-generate-invoices sa-api app_user "$API_SECRETS" "generate_subscription_invoices"
 job pglive-check-grace-periods sa-api app_user "$API_SECRETS" "check_subscription_grace_periods"
 # Bootstrap exists only for the first deploy: add INITIAL_SUPERADMIN_EMAIL / INITIAL_SUPERADMIN_PASSWORD (a

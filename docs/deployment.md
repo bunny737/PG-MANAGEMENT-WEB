@@ -33,7 +33,7 @@ pglive-web → https://api.pglive.in (BFF; signed X-PGLive-Origin-*)      Razorp
 pglive-api → Cloud SQL (/cloudsql socket)                                pglive-api → worker VM :6379 (Direct VPC egress)
 Worker VM (e2-small, IAP-only SSH): nginx edge · redis · celery worker · celery beat (exactly one) · cloud-sql-proxy
 Cloud Run Jobs (fixed commands): pglive-migrate · pglive-check-roles · pglive-backfill-kyc ·
-  pglive-purge-legacy-kyc · pglive-check-kyc · pglive-bootstrap · pglive-generate-invoices ·
+  pglive-purge-legacy-kyc · pglive-check-kyc · pglive-check-kyc-strict · pglive-bootstrap · pglive-generate-invoices ·
   pglive-check-grace-periods · pglive-smoke · pglive-export-verify
 GCS: pglive-prod-media (private, versioned) · pglive-prod-kyc (private, hard-delete) · pglive-prod-backups (asia-south2)
 ```
@@ -226,7 +226,9 @@ tests, and deletes the instance.
     rollback safety; once 100% traffic cutover succeeds and legal approval is recorded (via
     `PURGE_LEGACY_KYC_MEDIA=true` or `gcloud run jobs execute pglive-purge-legacy-kyc`), `backfill_kyc_documents
     --delete-source --purge-orphaned-legacy` deletes all live and noncurrent `residents/` generations in
-    `$MEDIA_BUCKET`. Because `$MEDIA_BUCKET` enables `--versioning --soft-delete-duration=14d`, GCS retains any
+    `$MEDIA_BUCKET`. The automated deploy then runs `pglive-check-kyc-strict`, which fails if any live or
+    noncurrent generations remain while reporting soft-deleted generations informationally. Because
+    `$MEDIA_BUCKET` enables `--versioning --soft-delete-duration=14d`, GCS retains any
     deleted pre-migration source generations as soft-deleted objects until `hardDeleteTime` (14 days; GCS exposes no
     API to force-purge soft-deleted objects early). New uploads created after migration `0013` go solely to
     `$KYC_BUCKET` (`--no-versioning --soft-delete-duration=0`).

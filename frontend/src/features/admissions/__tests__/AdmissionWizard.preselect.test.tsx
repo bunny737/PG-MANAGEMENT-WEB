@@ -222,6 +222,31 @@ describe("AdmissionWizard completing the admission", () => {
 
     await waitFor(() => expect(api.createAdmission).toHaveBeenCalledWith(expect.objectContaining({ advance_mode: "bank_transfer" })));
   });
+
+  test("an existing resident starts next cycle with an explicitly held opening advance", async () => {
+    renderWizard({ propertyId: "p1", bedId: "bed-target" });
+    completeStep1();
+    await screen.findByText(SELECTED("101", "101-B"), undefined, { timeout: 2000 });
+    next();
+    await screen.findByText(admissions.step3.heading);
+
+    fireEvent.change(screen.getByLabelText(admissions.step3.joiningDate), { target: { value: "2024-01-15" } });
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(admissions.step3.nextBillingCycle) }));
+    next();
+    await screen.findByText(admissions.step4.heading);
+
+    expect((document.getElementById("paid-now-rent") as HTMLInputElement).value).toBe("0.00");
+    expect(screen.getByRole("radio", { name: admissions.step4.keepAdvanceHeld })).toBeChecked();
+    fireEvent.change(document.getElementById("paid-now-rent") as HTMLInputElement, { target: { value: "8000" } });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(admissions.controls.complete) }));
+
+    await waitFor(() => expect(api.createAdmission).toHaveBeenCalledWith(expect.objectContaining({
+      joining_date: "2024-01-15",
+      first_billing_policy: "next_billing_cycle",
+      auto_apply_advance_to_first_invoice: false,
+      advance_amount: "8000.00",
+    })));
+  });
 });
 
 describe("AdmissionWizard collecting only part of the money at admission", () => {

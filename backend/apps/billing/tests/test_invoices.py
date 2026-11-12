@@ -318,10 +318,11 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
         self.authenticate(self.owner)
 
-    def _admit(self, advance):
+    def _admit(self, advance, **kwargs):
         self.check_in(
             self.resident, self.bed, advance_amount=Decimal(advance),
             advance_collected_date=date(2026, 7, 1), advance_mode=Admission.AdvanceMode.UPI,
+            **kwargs,
         )
 
     def _generate_and_issue(self, **period):
@@ -349,6 +350,19 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         adm = self._refresh_admission()
         self.assertEqual(adm.advance_applied_amount, Decimal('7000.00'))
         self.assertTrue(adm.first_invoice_advance_settled)
+
+    def test_opening_advance_can_remain_held_after_first_invoice(self):
+        self._admit('7000.00', auto_apply_advance_to_first_invoice=False)
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'issued')
+        with tenant_context(self.tenant.id):
+            self.assertFalse(Payment.objects.filter(invoice_id=invoice['id']).exists())
+        admission = self._refresh_admission()
+        self.assertTrue(admission.first_invoice_advance_settled)
+        self.assertEqual(admission.advance_applied_amount, Decimal('0.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
 
     def test_smaller_advance_leaves_invoice_partially_paid(self):
         self._admit('3000.00')

@@ -462,6 +462,13 @@ def apply_advance_to_first_invoice(*, invoice, actor, request=None):
     ).exists()
     if earlier_draft:
         return None
+    if not admission.auto_apply_advance_to_first_invoice:
+        # The first invoice has now been reached, but this admission's opening
+        # balance was explicitly marked as held. Do not create a payment; leave
+        # the full balance available for a later manual adjustment or refund.
+        admission.first_invoice_advance_settled = True
+        admission.save(update_fields=['first_invoice_advance_settled', 'updated_at'])
+        return None
     earlier_issued = (
         Invoice.objects.filter(
             resident_id=invoice.resident_id,

@@ -31,6 +31,7 @@ import {
   type Floor,
   type Room,
   type Bed,
+  type FirstBillingPolicy,
   ApiError
 } from "@/lib/api";
 
@@ -40,6 +41,7 @@ import { addMoney, compareMoney, formatMoney, isMoneyInput, subtractMoney, toMon
 
 // The local calendar day, not UTC: between midnight and 05:30 IST the UTC date is still yesterday.
 const todayISO = () => localDateKey(new Date());
+const FIRST_BILLING_POLICIES: FirstBillingPolicy[] = ["from_joining_date", "next_billing_cycle"];
 
 /** The amount as the API's two-place string, "0.00" when blank (an empty input means nothing). */
 const moneyOrZero = (value: string) => (value.trim() === "" ? ZERO : toMoneyString(value.trim()));
@@ -90,11 +92,14 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   const [foodPreference, setFoodPreference] = useState<"with_food" | "without_food">("with_food");
   const [overrideRate, setOverrideRate] = useState("0.00");
   const [deposit, setDeposit] = useState("5000.00"); // default deposit amount
+  const [joiningDate, setJoiningDate] = useState(todayISO);
+  const [firstBillingPolicy, setFirstBillingPolicy] = useState<FirstBillingPolicy>("from_joining_date");
+  const [autoApplyAdvance, setAutoApplyAdvance] = useState(true);
 
   // Step 4: Collection. A resident often pays only part on joining, so staff enter what was actually
-  // received now. `null` means not edited yet: the full agreed amount is shown (and sent), so it also follows a
-  // later change of food plan. The rest of the rent stays on the first invoice and the
-  // rest of the deposit is recorded later from the resident's profile.
+  // received now. `null` means not edited yet: ordinary admissions default to the agreed rent, while a
+  // next-cycle/imported admission defaults to no opening advance. The rest of the deposit can be recorded
+  // later from the resident's profile.
   const [rentPaid, setRentPaid] = useState<string | null>(null);
   const [depositPaid, setDepositPaid] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<DepositMode>("upi");
@@ -255,6 +260,10 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       }
       setStep(3);
     } else if (step === 3) {
+      if (!joiningDate || joiningDate > todayISO()) {
+        setStep3Error(t("step3.errJoiningDate"));
+        return;
+      }
       if (!isMoneyInput(moneyOrZero(deposit)) || !isMoneyInput(moneyOrZero(overrideRate))) {
         setStep3Error(t("step3.errAmount"));
         return;
@@ -269,17 +278,20 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   };
 
   // What the resident owes: the room rate for the chosen food plan (the server snapshots it as the contracted
-  // rent) and the agreed deposit. Rent paid now may be less (shortfall due on first invoice) or more (e.g.
-  // two months' advance: first invoice uses what it needs and the rest stays as held advance).
+  // rent) and the agreed deposit. A next-cycle admission intentionally has no current-period rent due here;
+  // any entered rent amount is an opening held advance.
   const agreedRent = moneyOrZero(overrideRate);
   const agreedDeposit = moneyOrZero(deposit);
-  const rentPaidText = rentPaid ?? agreedRent;
+  const startsNextCycle = firstBillingPolicy === "next_billing_cycle";
+  const rentPaidText = rentPaid ?? (startsNextCycle ? ZERO : agreedRent);
   const depositPaidText = depositPaid ?? agreedDeposit;
   const rentPaidAmount = moneyOrZero(rentPaidText);
   const depositPaidAmount = moneyOrZero(depositPaidText);
   const isOverRent = compareMoney(rentPaidAmount, agreedRent) === 1;
-  const rentPending = isOverRent ? ZERO : (subtractMoney(agreedRent, rentPaidAmount) ?? ZERO);
-  const estimatedAdvanceAfterFirstInvoice = isOverRent ? (subtractMoney(rentPaidAmount, agreedRent) ?? ZERO) : ZERO;
+  const rentPending = startsNextCycle || isOverRent ? ZERO : (subtractMoney(agreedRent, rentPaidAmount) ?? ZERO);
+  const estimatedAdvanceAfterFirstInvoice = !autoApplyAdvance
+    ? rentPaidAmount
+    : isOverRent ? (subtractMoney(rentPaidAmount, agreedRent) ?? ZERO) : ZERO;
   const depositPending = subtractMoney(agreedDeposit, depositPaidAmount) ?? ZERO;
   const totalPaidNow = addMoney(rentPaidAmount, depositPaidAmount) ?? ZERO;
   const totalPending = addMoney(rentPending, depositPending) ?? ZERO;
@@ -340,8 +352,10 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       await createAdmission({
         resident: residentObj.id,
         bed: selectedBedId,
-        joining_date: todayISO(),
+        joining_date: joiningDate,
         billing_mode: "monthly",
+        first_billing_policy: firstBillingPolicy,
+        auto_apply_advance_to_first_invoice: autoApplyAdvance,
         expected_stay_duration: leaseTerm,
         food_preference: foodPreference,
         advance_amount: rentPaidAmount,
@@ -691,6 +705,19 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
               <div className="space-y-1.5">
+                <label htmlFor="joining-date" className="font-semibold text-ink-muted">{t("step3.joiningDate")}</label>
+                <input
+                  id="joining-date"
+                  type="date"
+                  value={joiningDate}
+                  max={todayISO()}
+                  onChange={(e) => setJoiningDate(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2.5 text-ink outline-none focus:ring-2 focus:ring-accent"
+                />
+                <p className="text-[11px] text-ink-faint">{t("step3.joiningDateHint")}</p>
+              </div>
+
+              <div className="space-y-1.5">
                 <label className="font-semibold text-ink-muted">{t("step3.leaseDuration")}</label>
                 <select
                   value={leaseTerm}
@@ -741,6 +768,39 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
                 {step3Error && <p className="text-[11px] text-status-critical">{step3Error}</p>}
               </div>
             </div>
+
+            <fieldset className="space-y-3 rounded-2xl border border-border bg-surface-page/60 p-4 text-xs">
+              <legend className="px-1 font-semibold text-ink">{t("step3.firstBilling")}</legend>
+              {FIRST_BILLING_POLICIES.map((policy) => (
+                <label key={policy} className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-surface-card p-3">
+                  <input
+                    type="radio"
+                    name="first-billing-policy"
+                    value={policy}
+                    checked={firstBillingPolicy === policy}
+                    onChange={() => {
+                      setFirstBillingPolicy(policy);
+                      setAutoApplyAdvance(policy === "from_joining_date");
+                      setRentPaid(policy === "next_billing_cycle" ? ZERO : null);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="block font-semibold text-ink">
+                      {t(policy === "from_joining_date" ? "step3.fromJoiningDate" : "step3.nextBillingCycle")}
+                    </span>
+                    <span className="mt-0.5 block text-ink-muted">
+                      {t(policy === "from_joining_date" ? "step3.fromJoiningDateHint" : "step3.nextBillingCycleHint")}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              {startsNextCycle && (
+                <p role="note" className="rounded-xl border border-accent/30 bg-accent-soft/40 p-3 text-ink-muted">
+                  {t("step3.waivedPeriodWarning")}
+                </p>
+              )}
+            </fieldset>
           </div>
         )}
 
@@ -761,9 +821,21 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
                 {t("step4.summaryTitle")}
               </h3>
 
+              <fieldset className="space-y-2 rounded-xl border border-border bg-surface-card p-3">
+                <legend className="px-1 font-semibold text-ink">{t("step4.advanceTreatment")}</legend>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="advance-treatment" checked={autoApplyAdvance} onChange={() => setAutoApplyAdvance(true)} />
+                  <span>{t("step4.applyAdvance")}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="advance-treatment" checked={!autoApplyAdvance} onChange={() => setAutoApplyAdvance(false)} />
+                  <span>{t("step4.keepAdvanceHeld")}</span>
+                </label>
+              </fieldset>
+
               {(
                 [
-                  { key: "rent", label: t("step4.advanceRent"), agreed: agreedRent, value: rentPaidText, set: setRentPaid, pending: rentPending, error: step4Errors.rent },
+                  { key: "rent", label: t(startsNextCycle ? "step4.openingAdvance" : "step4.advanceRent"), agreed: agreedRent, value: rentPaidText, set: setRentPaid, pending: rentPending, error: step4Errors.rent },
                   { key: "deposit", label: t("step4.depositHolding"), agreed: agreedDeposit, value: depositPaidText, set: setDepositPaid, pending: depositPending, error: step4Errors.deposit },
                 ] as const
               ).map((row) => (
@@ -821,7 +893,7 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
                   <p className="text-[11px] text-ink-muted leading-relaxed">{t("step4.estimatedAdvanceNote")}</p>
                 </div>
               )}
-              <p className="text-[11px] text-ink-faint">{t("step4.pendingNote")}</p>
+              <p className="text-[11px] text-ink-faint">{t(startsNextCycle ? "step4.openingAdvanceNote" : "step4.pendingNote")}</p>
             </div>
 
             {/* Payment mode and date: only meaningful when something is received now */}

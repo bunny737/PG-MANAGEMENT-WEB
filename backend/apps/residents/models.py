@@ -7,6 +7,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
+from apps.core.periods import local_today
 from apps.properties.models import Bed, Property, Room
 
 
@@ -155,12 +156,26 @@ class Admission(TenantModelMixin):
         CASH = 'cash', _('Cash')
         BANK_TRANSFER = 'bank_transfer', _('Bank Transfer')
 
+    class FirstBillingPolicy(models.TextChoices):
+        FROM_JOINING_DATE = 'from_joining_date', _('From joining date')
+        NEXT_BILLING_CYCLE = 'next_billing_cycle', _('Next billing cycle')
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     resident = models.OneToOneField(Resident, on_delete=models.PROTECT, related_name='admission')
     bed = models.ForeignKey(Bed, on_delete=models.PROTECT, related_name='admissions')
 
     joining_date = models.DateField()
     billing_mode = models.CharField(max_length=10, choices=BillingMode.choices)
+    # Controls only the first automatically generated invoice. The property's
+    # billing-day rule remains the resident's ongoing schedule.
+    first_billing_policy = models.CharField(
+        max_length=24, choices=FirstBillingPolicy.choices,
+        default=FirstBillingPolicy.FROM_JOINING_DATE,
+    )
+    # Stable local date on which this admission entered automatic billing.
+    # NEXT_BILLING_CYCLE starts strictly after this boundary, so an imported
+    # resident is never backfilled from their historical joining date.
+    billing_enrolled_on = models.DateField(default=local_today)
     expected_stay_duration = models.CharField(max_length=50, blank=True)  # free text, e.g. "6 months"
 
     # Snapshotted from bed/room at admission time — invariant 2/3: never
@@ -184,6 +199,9 @@ class Admission(TenantModelMixin):
     # True once the first invoice has been issued (so automatic first-invoice
     # advance application never re-runs after reversals or later invoice issues).
     first_invoice_advance_settled = models.BooleanField(default=False)
+    # Imported opening balances normally stay held. New admissions may retain
+    # the existing behaviour of applying advance to the first issued invoice.
+    auto_apply_advance_to_first_invoice = models.BooleanField(default=True)
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
     # `security_deposit_amount` is what has actually been COLLECTED (the running total of the

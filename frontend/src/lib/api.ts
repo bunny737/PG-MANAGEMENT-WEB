@@ -888,6 +888,9 @@ export interface Admission {
   bed: string;
   joining_date: string;
   billing_mode: "monthly" | "weekly" | "daily";
+  first_billing_policy: FirstBillingPolicy;
+  billing_enrolled_on: string;
+  auto_apply_advance_to_first_invoice: boolean;
   expected_stay_duration: string;
   contracted_sharing_type: number;
   contracted_room_category: string;
@@ -902,6 +905,8 @@ export interface Admission {
   created_at: string;
   updated_at: string;
 }
+
+export type FirstBillingPolicy = "from_joining_date" | "next_billing_cycle";
 
 export function listResidents(propertyId?: string, status?: string, search?: string) {
   if (propertyId && !isUUID(propertyId)) return Promise.reject(new ApiError(404, { detail: "Property not found" }));
@@ -1012,6 +1017,8 @@ export interface CreateAdmissionPayload {
   bed: string;
   joining_date: string;
   billing_mode: "monthly" | "weekly" | "daily";
+  first_billing_policy?: FirstBillingPolicy;
+  auto_apply_advance_to_first_invoice?: boolean;
   expected_stay_duration?: string;
   food_preference: "with_food" | "without_food";
   /** Rent/advance paid at admission (applied to first invoice; remainder stays held advance). May be "0.00". */

@@ -3659,6 +3659,10 @@ export interface components {
             /** Format: date */
             joining_date: string;
             billing_mode: components["schemas"]["BillingModeEnum"];
+            first_billing_policy?: components["schemas"]["FirstBillingPolicyEnum"];
+            /** Format: date */
+            readonly billing_enrolled_on: string;
+            auto_apply_advance_to_first_invoice?: boolean;
             expected_stay_duration?: string;
             readonly contracted_sharing_type: components["schemas"]["ContractedSharingTypeEnum"];
             readonly contracted_room_category: components["schemas"]["ContractedRoomCategoryEnum"];
@@ -3896,6 +3900,8 @@ export interface components {
          * @enum {string}
          */
         BillingModeEnum: "monthly" | "weekly" | "daily";
+        /** @enum {string} */
+        FirstBillingPolicyEnum: "from_joining_date" | "next_billing_cycle";
         /**
          * @description Owner/Manager confirms blacklisting (PRD: flagged automatically after
          *     Absconded, but blacklisting itself is never automatic).

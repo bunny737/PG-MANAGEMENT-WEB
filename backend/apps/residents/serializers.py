@@ -239,6 +239,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
         model = Admission
         fields = [
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
+            'first_billing_policy', 'billing_enrolled_on', 'auto_apply_advance_to_first_invoice',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
             'advance_amount', 'advance_collected_date', 'advance_mode',
             # `security_deposit_amount` is the amount COLLECTED now; `_agreed` is the full deposit
@@ -254,6 +255,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
             'advance_applied_amount', 'advance_refundable', 'security_deposit_pending',
+            'billing_enrolled_on',
             'recorded_by', 'created_at', 'updated_at',
         ]
         extra_kwargs = {
@@ -265,6 +267,20 @@ class AdmissionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         resident = attrs['resident']
         bed = attrs['bed']
+
+        if attrs['joining_date'] > timezone.localdate():
+            raise serializers.ValidationError(
+                {'joining_date': _('The joining date cannot be in the future.')},
+                code='future_joining_date',
+            )
+        if (attrs['billing_mode'] != Admission.BillingMode.MONTHLY
+                and attrs.get('first_billing_policy') == Admission.FirstBillingPolicy.NEXT_BILLING_CYCLE):
+            raise serializers.ValidationError(
+                {'first_billing_policy': _(
+                    'Automatic billing options are available only for monthly residents.'
+                )},
+                code='monthly_only',
+            )
 
         if not resident.can_transition_to(Resident.Status.ACTIVE):
             raise serializers.ValidationError(

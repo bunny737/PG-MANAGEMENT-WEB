@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.urls import reverse
 
 from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
+from apps.core.periods import local_today
 from apps.properties.models import Bed, Room
 from apps.residents.models import Admission, Resident
 
@@ -60,6 +61,37 @@ class AdmissionTests(ResidentAPITestCase):
         self.assertEqual(self.bed.status, Bed.Status.OCCUPIED)
         self.assertEqual(self.room.status, Room.Status.OCCUPIED)
         self.assertEqual(self.resident.status, Resident.Status.ACTIVE)
+
+    def test_saves_next_cycle_and_held_advance_choices(self):
+        self.authenticate(self.owner)
+        response = self.client.post(reverse('admission-list'), admission_payload(
+            self.resident, self.bed,
+            first_billing_policy='next_billing_cycle',
+            auto_apply_advance_to_first_invoice=False,
+        ))
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['first_billing_policy'], 'next_billing_cycle')
+        self.assertFalse(response.data['auto_apply_advance_to_first_invoice'])
+        self.assertEqual(response.data['billing_enrolled_on'], local_today().isoformat())
+
+    def test_future_joining_date_is_rejected(self):
+        self.authenticate(self.owner)
+        response = self.client.post(reverse('admission-list'), admission_payload(
+            self.resident, self.bed, joining_date=(local_today() + timedelta(days=1)).isoformat(),
+        ))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['joining_date'][0].code, 'future_joining_date')
+
+    def test_next_cycle_is_rejected_for_non_monthly_resident(self):
+        self.authenticate(self.owner)
+        response = self.client.post(reverse('admission-list'), admission_payload(
+            self.resident, self.bed, billing_mode='weekly', first_billing_policy='next_billing_cycle',
+        ))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['first_billing_policy'][0].code, 'monthly_only')
 
     def test_without_food_preference_uses_without_food_rate(self):
         self.authenticate(self.owner)

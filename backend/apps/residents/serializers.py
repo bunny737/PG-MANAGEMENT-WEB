@@ -292,6 +292,11 @@ class AdmissionSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             'advance_amount': {'min_value': Decimal('0.00')},
+            # Multipart/form submissions treat an omitted checkbox as False
+            # unless the serializer declares its default explicitly. Preserve
+            # the model/API default for older clients that do not send this
+            # newly added field.
+            'auto_apply_advance_to_first_invoice': {'default': True, 'required': False},
             'security_deposit_amount': {'min_value': Decimal('0.00')},
             'security_deposit_agreed': {'min_value': Decimal('0.00'), 'required': False},
         }

@@ -1742,7 +1742,7 @@ export function deletePayment(id: string) {
 
 export interface AdvanceAdjustmentCreatePayload {
   amount: string;
-  adjustment_date?: string;
+  adjustment_date: string;
   note?: string;
 }
 

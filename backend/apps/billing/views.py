@@ -178,20 +178,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         serializer.save(**extra)
         return self._fresh_response(invoice)
 
-    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        instance = self._locked_draft()
-        audit_log.record(
-            action='invoice.deleted', actor=self.request.user, obj=instance,
-            before={'resident': str(instance.resident_id), 'period_start': instance.period_start.isoformat()},
-            request=self.request,
-        )
-        # Its food-holiday credits go back to pending first (their lines are
-        # PROTECTed), then are offered to the resident's other drafts.
-        food_credits.release_invoice(instance, actor=request.user, request=request)
-        resident = instance.resident
-        instance.delete()
-        food_credits.allocate_pending(resident, actor=request.user, request=request)
+        instance = self.get_object()
+        services.delete_draft_invoice(invoice_id=instance.pk, actor=request.user, request=request)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
@@ -243,9 +232,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         fields = InvoiceAdjustAdvanceSerializer().fields
         try:
             amount = fields['amount'].run_validation(fields['amount'].get_value(request.data))
-            adj_date = fields['adjustment_date'].get_value(request.data)
-            adjustment_date = (
-                local_today() if adj_date is empty else fields['adjustment_date'].run_validation(adj_date)
+            adjustment_date = fields['adjustment_date'].run_validation(
+                fields['adjustment_date'].get_value(request.data)
             )
             note_val = fields['note'].get_value(request.data)
             note = '' if note_val is empty else fields['note'].run_validation(note_val)

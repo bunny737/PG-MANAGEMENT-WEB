@@ -12,6 +12,7 @@ from decimal import Decimal
 from fractions import Fraction
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import NotFound, ValidationError
 
@@ -307,6 +308,48 @@ def issue_invoice(*, invoice_id, actor, on_date=None, auto=False, request=None):
     return ISSUED
 
 
+@transaction.atomic
+def delete_draft_invoice(*, invoice_id, actor, request=None):
+    """Delete a draft invoice, releasing any attached food-holiday credits back
+    to pending and offering them to other drafts. If deletion removes the last
+    earlier blocking draft while the resident's first-invoice advance remained
+    unsettled, settle the earliest remaining non-draft invoice.
+
+    Lock order: Settings -> Resident -> Invoice (-> FoodHolidayCredit -> Admission)."""
+    from apps.notices import credits as food_credits
+    from apps.residents.models import Resident
+    from apps.residents.services import lock_resident
+
+    ref = Invoice.objects.filter(pk=invoice_id).values(
+        'resident_id', 'resident__property_id', 'tenant_id',
+    ).first()
+    if ref is None:
+        raise NotFound(_('Invoice not found.'))
+    lock_property_settings(ref['resident__property_id'], ref['tenant_id'])
+    resident = lock_resident(Resident(pk=ref['resident_id']))
+    instance = Invoice.objects.select_for_update().get(pk=invoice_id)
+    require_draft(instance)
+    audit_log.record(
+        action='invoice.deleted', actor=actor, tenant_id=instance.tenant_id, obj=instance,
+        before={'resident': str(instance.resident_id), 'period_start': instance.period_start.isoformat()},
+        request=request,
+    )
+    # Its food-holiday credits go back to pending first (their lines are
+    # PROTECTed), then are offered to the resident's other drafts.
+    food_credits.release_invoice(instance, actor=actor, request=request)
+    instance.delete()
+    food_credits.allocate_pending(resident, actor=actor, request=request)
+    if Admission.objects.filter(resident=resident, first_invoice_advance_settled=False).exists():
+        earliest_issued = (
+            Invoice.objects.filter(resident=resident)
+            .exclude(status=Invoice.Status.DRAFT)
+            .order_by('period_start')
+            .first()
+        )
+        if earliest_issued is not None:
+            apply_advance_to_first_invoice(invoice=earliest_issued, actor=actor, request=request)
+
+
 def _due_from_issue_date(invoice):
     """The draft is (or will be) issued after its billing date: recompute the
     due date from the issue date — unless the owner set it by hand."""
@@ -389,21 +432,45 @@ def apply_advance_to_first_invoice(*, invoice, actor, request=None):
     is issued (capped at the invoice total). Any surplus stays on the admission's
     `advance_refundable` balance for explicit later adjustment or exit refund.
 
-    Always marks `first_invoice_advance_settled = True` once a resident's first
-    invoice is issued so subsequent invoices (or payment deletions) never
-    re-trigger automatic application. Lock order: Invoice -> Admission -> ReceiptCounter."""
+    If an earlier DRAFT still exists (`period_start < invoice.period_start`), do
+    not consume the advance or mark `first_invoice_advance_settled` yet so the
+    earlier first invoice keeps its automatic advance (and manual adjustments on
+    later invoices stay blocked until that earlier invoice is issued or deleted).
+
+    Once no earlier draft exists and no earlier non-draft invoice was issued,
+    always marks `first_invoice_advance_settled = True` so subsequent invoices
+    (or payment deletions) never re-trigger automatic application.
+
+    Lock order: Resident -> Invoice -> Admission -> ReceiptCounter."""
+    from apps.residents.models import Resident
+    from apps.residents.services import lock_resident
+
+    ref = Invoice.objects.filter(pk=invoice.pk).values('resident_id').first()
+    if ref is None:
+        return None
+    lock_resident(Resident(pk=ref['resident_id']))
     invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
     if invoice.status == Invoice.Status.DRAFT:
         return None
     admission = Admission.objects.select_for_update().get(resident_id=invoice.resident_id)
     if admission.first_invoice_advance_settled:
         return None
-    other_issued = (
-        Invoice.objects.filter(resident_id=invoice.resident_id).exclude(pk=invoice.pk)
+    earlier_draft = Invoice.objects.filter(
+        resident_id=invoice.resident_id,
+        status=Invoice.Status.DRAFT,
+        period_start__lt=invoice.period_start,
+    ).exists()
+    if earlier_draft:
+        return None
+    earlier_issued = (
+        Invoice.objects.filter(
+            resident_id=invoice.resident_id,
+            period_start__lt=invoice.period_start,
+        )
         .exclude(status=Invoice.Status.DRAFT).exists()
     )
     admission.first_invoice_advance_settled = True
-    if other_issued or admission.advance_amount <= 0 or admission.advance_applied_amount > 0:
+    if earlier_issued or admission.advance_amount <= 0 or admission.advance_applied_amount > 0:
         admission.save(update_fields=['first_invoice_advance_settled', 'updated_at'])
         return None
     amount = min(admission.advance_refundable, invoice.balance_due)
@@ -582,21 +649,31 @@ def adjust_from_advance(*, invoice_id, amount, adjustment_date=None, note='',
     invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
     admission = Admission.objects.select_for_update().get(resident_id=resident.pk)
 
-    effective_date = adjustment_date or local_today()
     cleaned_note = (note or '').strip()
     effective_ref = cleaned_note or 'Advance adjustment'
 
     # Replay check before business-rule guards so retries after full settlement return 200.
+    # When a direct Python caller omits `adjustment_date`, compare against the date on
+    # which the original row was created so retries across midnight do not drift to a new
+    # `local_today()` and wrongly raise `key_reused()`.
     if idempotency_key:
-        existing = find_replayed_payment(
+        existing = Payment.objects.filter(
             tenant_id=invoice.tenant_id, idempotency_key=idempotency_key,
-            invoice_id=invoice.pk, amount=amount, payment_date=effective_date,
-            payment_mode=admission.advance_mode, reference=effective_ref,
-            is_advance_adjustment=True,
-        )
+        ).first()
         if existing is not None:
+            replay_date = (
+                timezone.localdate(existing.created_at) if adjustment_date is None else adjustment_date
+            )
+            if not payment_matches(
+                existing, invoice_id=invoice.pk, amount=amount, payment_date=replay_date,
+                payment_mode=admission.advance_mode, reference=effective_ref,
+                is_advance_adjustment=True,
+            ):
+                raise key_reused()
             existing.replayed = True
             return existing
+
+    effective_date = adjustment_date or local_today()
 
     if resident.status not in (Resident.Status.ACTIVE, Resident.Status.NOTICE_PERIOD):
         raise ValidationError(

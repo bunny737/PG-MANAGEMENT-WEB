@@ -135,6 +135,7 @@
     "submit": "Apply adjustment",
     "submitting": "Applying...",
     "errInvalidAmount": "Enter a valid amount greater than zero.",
+    "errDateRequired": "Pick an adjustment date.",
     "errExceedsHeld": "Amount can't exceed the remaining held advance.",
     "errExceedsBalance": "Amount can't exceed the invoice balance.",
     "errFirstInvoiceNotIssued": "Issue the resident's first invoice before adjusting held advance on another invoice.",

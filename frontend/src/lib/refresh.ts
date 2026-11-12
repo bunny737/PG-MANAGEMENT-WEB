@@ -48,6 +48,7 @@ export function afterInvoiceChange(opts: { invoiceId?: string; residentId?: stri
     [...queryKeys.notices.all],
     [...queryKeys.analytics.all],
     [...queryKeys.dashboard.all],
+    [...queryKeys.vacates.all],
   ];
   if (opts.invoiceId) keys.push([...queryKeys.invoices.detail(opts.invoiceId)]);
   if (opts.residentId) keys.push([...queryKeys.residents.detail(opts.residentId)]);

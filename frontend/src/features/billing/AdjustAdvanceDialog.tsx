@@ -62,6 +62,11 @@ export function AdjustAdvanceDialog({
       setError(t("errExceedsBalance"));
       return;
     }
+    const trimmedDate = adjustmentDate.trim();
+    if (!trimmedDate) {
+      setError(t("errDateRequired"));
+      return;
+    }
 
     setError(null);
     setSubmitting(true);
@@ -70,7 +75,7 @@ export function AdjustAdvanceDialog({
         invoice.id,
         {
           amount: trimmed,
-          adjustment_date: adjustmentDate || undefined,
+          adjustment_date: trimmedDate,
           note: note.trim() || undefined,
         },
         idempotencyKey
@@ -170,7 +175,7 @@ export function AdjustAdvanceDialog({
         {t("nonCashNotice")}
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div className="space-y-1.5">
           <label
             htmlFor="adjust-advance-amount"
@@ -223,6 +228,7 @@ export function AdjustAdvanceDialog({
           <input
             id="adjust-advance-date"
             type="date"
+            required
             value={adjustmentDate}
             max={localDateKey(new Date())}
             onChange={(event) => setAdjustmentDate(event.target.value)}

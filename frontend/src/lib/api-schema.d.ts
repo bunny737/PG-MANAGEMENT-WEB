@@ -4579,7 +4579,7 @@ export interface components {
             /** Format: decimal */
             amount: string;
             /** Format: date */
-            adjustment_date?: string;
+            adjustment_date: string;
             /** @default  */
             note: string;
         };

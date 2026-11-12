@@ -371,5 +371,5 @@ class InvoiceAdjustAdvanceSerializer(serializers.Serializer):
     held admission advance toward an issued invoice."""
 
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
-    adjustment_date = serializers.DateField(required=False, default=local_today)
+    adjustment_date = serializers.DateField()
     note = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
   Phone,
@@ -33,14 +34,13 @@ import {
   listVacates,
   updateResident,
   uploadResidentDocument,
-  type Complaint,
   type Resident,
   type ResidentDocumentField,
-  type VacateSettlementPreview,
   ApiError,
 } from "@/lib/api";
 import { formatDate } from "@/lib/date";
 import { compareMoney, formatMoney, ZERO } from "@/lib/money";
+import { queryKeys } from "@/lib/queryKeys";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { FinanceCard } from "./FinanceCard";
 import { RecordDepositPaymentDialog } from "./RecordDepositPaymentDialog";
@@ -56,8 +56,7 @@ export function ResidentProfile({ id }: { id: string }) {
   const t = useTranslations("residents.profile");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("status");
-  const [resident, setResident] = useState<Resident | null>(null);
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const queryClient = useQueryClient();
   const { can, user } = useSession();
   // New Aadhaar/PAN uploads are behind a launch gate; stored documents stay viewable either way.
   const kycUploadsEnabled = user?.kyc_uploads_enabled === true;
@@ -65,10 +64,6 @@ export function ResidentProfile({ id }: { id: string }) {
   // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
   const canSeeFinance = can("view_finance");
   const canManageDeposits = can("manage_deposits");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [settlementPreview, setSettlementPreview] = useState<VacateSettlementPreview | null>(null);
-  const [settlementPreviewError, setSettlementPreviewError] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"overview" | "financials" | "documents" | "maintenance">(
     "overview"
@@ -104,63 +99,76 @@ export function ResidentProfile({ id }: { id: string }) {
   const [uploadingField, setUploadingField] = useState<ResidentDocumentField | null>(null);
   const [uploadError, setUploadError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    getResident(id)
-      .then((data) => {
-        if (cancelled) return;
-        setResident(data);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
-        setIsLoading(false);
-      });
-    listComplaints({ resident: id }).then((data) => {
-      if (!cancelled) setComplaints(data);
-    }).catch(() => {
-      // Non-fatal: the Maintenance tab just shows its empty state.
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, t]);
+  const residentQuery = useQuery({
+    queryKey: queryKeys.residents.detail(id),
+    queryFn: () => getResident(id),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+  const resident = residentQuery.data ?? null;
+  const isLoading = residentQuery.isPending;
+  const error = residentQuery.isError
+    ? residentQuery.error instanceof ApiError
+      ? residentQuery.error.message
+      : t("errLoadFailed")
+    : "";
 
+  const complaintsQuery = useQuery({
+    queryKey: ["complaints", "list", { resident: id }] as const,
+    queryFn: () => listComplaints({ resident: id }),
+  });
+  // Non-fatal: if complaints fail to load, the Maintenance tab shows its empty state.
+  const complaints = complaintsQuery.data ?? [];
+
+  const canLoadSettlementPreview = resident?.status === "notice_period" && canManageDeposits;
+  const vacatesQuery = useQuery({
+    queryKey: queryKeys.vacates.list({ resident: resident?.id ?? id }),
+    queryFn: () => listVacates({ resident: resident!.id }),
+    enabled: canLoadSettlementPreview,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const openVacate = vacatesQuery.data?.find(
+    (v) => v.is_open || (!v.is_cancelled && !v.is_settled && !v.actual_vacate_date)
+  );
+
+  const previewQuery = useQuery({
+    queryKey: queryKeys.vacates.preview(openVacate?.id ?? ""),
+    queryFn: () => getVacateSettlementPreview(openVacate!.id),
+    enabled: canLoadSettlementPreview && !!openVacate,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const settlementPreview = openVacate ? previewQuery.data ?? null : null;
+  const settlementPreviewError = vacatesQuery.isError || previewQuery.isError;
+
+  // Refresh held-advance and settlement-preview figures when the profile window
+  // becomes active again or is restored from bfcache after billing actions.
   useEffect(() => {
-    if (!resident || resident.status !== "notice_period" || !canManageDeposits) {
-      return;
-    }
-    let cancelled = false;
-    listVacates({ resident: resident.id })
-      .then((vacates) => {
-        if (cancelled) return;
-        const openVacate = vacates.find(
-          (v) => v.is_open || (!v.is_cancelled && !v.is_settled && !v.actual_vacate_date)
-        );
-        if (!openVacate) {
-          setSettlementPreview(null);
-          setSettlementPreviewError(false);
-          return;
-        }
-        return getVacateSettlementPreview(openVacate.id).then((preview) => {
-          if (!cancelled) {
-            setSettlementPreview(preview);
-            setSettlementPreviewError(false);
-          }
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSettlementPreview(null);
-          setSettlementPreviewError(true);
-        }
-      });
-    return () => {
-      cancelled = true;
+    const refreshProfile = () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
     };
-  }, [resident, canManageDeposits]);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshProfile();
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshProfile();
+    };
+    window.addEventListener("focus", refreshProfile);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshProfile);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [id, queryClient]);
 
   const handleAction = async (type: "transfer" | "vacate" | "edit") => {
     if (type === "edit" && resident) {
@@ -203,7 +211,17 @@ export function ResidentProfile({ id }: { id: string }) {
 
     try {
       const updated = await updateResident(id, editForm);
-      setResident(updated);
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev
+          ? {
+              ...prev,
+              ...updated,
+              finance: updated.finance ?? prev.finance,
+              redacted: updated.redacted ?? prev.redacted,
+            }
+          : updated
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.residents.list() });
       setIsEditing(false);
       setActionAlert({ type: "edit", message: t("editModal.updatedToast") });
       setTimeout(() => setActionAlert(null), 4000);
@@ -222,7 +240,9 @@ export function ResidentProfile({ id }: { id: string }) {
     try {
       const updated = await uploadResidentDocument(id, field, file);
       // PATCH responses omit the detail-only `finance` block, so merge instead of replacing.
-      setResident((prev) => (prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated));
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated
+      );
       setActionAlert({ type: "document", message: t("documents.uploadedToast") });
       setTimeout(() => setActionAlert(null), 4000);
     } catch (err) {
@@ -253,7 +273,7 @@ export function ResidentProfile({ id }: { id: string }) {
         <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
         <p className="text-xs text-ink-muted leading-relaxed">{error || t("errLoadFailed")}</p>
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => void residentQuery.refetch()}
           className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
         >
           {t("retry")}
@@ -396,7 +416,14 @@ export function ResidentProfile({ id }: { id: string }) {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              onClick={() => {
+                const nextTab = tab.id as typeof activeTab;
+                setActiveTab(nextTab);
+                if (nextTab === "overview" || nextTab === "financials") {
+                  void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+                  void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
+                }
+              }}
               className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 isActive
                   ? "bg-accent text-ink-inverse shadow-sm"
@@ -778,7 +805,10 @@ export function ResidentProfile({ id }: { id: string }) {
           onClose={() => setIsRecordingDeposit(false)}
           onRecorded={() => {
             // Re-read the detail: the collected and pending deposit changed.
-            getResident(id).then(setResident).catch(() => {});
+            void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.cashMovements.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
           }}
         />
       )}
@@ -789,7 +819,8 @@ export function ResidentProfile({ id }: { id: string }) {
           onClose={() => setIsTransferring(false)}
           onTransferred={() => {
             // The transfer response has no resident fields, so re-read the detail (bed, rent, finance).
-            getResident(id).then(setResident).catch(() => {});
+            void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
             setActionAlert({ type: "transfer", message: t("transferDone") });
             setTimeout(() => setActionAlert(null), 4000);
           }}

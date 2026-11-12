@@ -161,7 +161,11 @@ describe("InvoiceDetail → Adjust from advance", () => {
     await waitFor(() => expect(api.adjustInvoiceAdvance).toHaveBeenCalledTimes(1));
     expect(api.adjustInvoiceAdvance).toHaveBeenCalledWith(
       "inv-2",
-      expect.objectContaining({ amount: "4000.00", note: "Part final month" }),
+      expect.objectContaining({
+        amount: "4000.00",
+        adjustment_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        note: "Part final month",
+      }),
       expect.any(String)
     );
     expect(refresh.afterPayment).toHaveBeenCalledWith({
@@ -227,6 +231,17 @@ describe("InvoiceDetail → Adjust from advance", () => {
     expect(await screen.findByText(status.advance_adjustment)).toBeInTheDocument();
     expect(screen.getByText(/Originally collected via Bank Transfer/)).toBeInTheDocument();
     expect(screen.queryByText(status.cash)).toBeNull();
+  });
+
+  test("requires an explicit adjustment date before submitting", async () => {
+    await renderDetail();
+    fireEvent.click(await screen.findByRole("button", { name: billing.detail.adjustAdvance }));
+    const dateInput = await screen.findByLabelText(billing.adjustAdvance.date);
+    fireEvent.change(dateInput, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: billing.adjustAdvance.submit }));
+
+    expect(await screen.findByText(billing.adjustAdvance.errDateRequired)).toBeInTheDocument();
+    expect(api.adjustInvoiceAdvance).not.toHaveBeenCalled();
   });
 });
 

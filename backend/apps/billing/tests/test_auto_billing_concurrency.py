@@ -137,10 +137,10 @@ class AutoBillingRaceTests(TransactionTestCase):
             resident, draft = self.scheduled_draft(advance_amount=Decimal('7000.00'),
                                                    advance_collected_date=date(2026, 7, 15), advance_mode='cash')
             with tenant_context(self.tenant.id):
-                # The Jul invoice was created directly; mark the advance as unused
-                # so the Aug draft is the first to receive it.
-                Invoice.objects.filter(resident=resident, period_start=date(2026, 7, 15)).update(
-                    status=Invoice.Status.DRAFT)
+                # `scheduled_draft` created a prior Jul invoice so auto-billing would
+                # draft Aug; delete Jul so Aug is genuinely the first invoice and not
+                # blocked by an earlier unissued draft.
+                Invoice.objects.filter(resident=resident, period_start=date(2026, 7, 15)).delete()
             issue = lambda: services.issue_invoice(invoice_id=draft.pk, actor=self.owner, on_date=BILLING_DAY)  # noqa: E731
             results = self.race(first=issue, second=issue)
 

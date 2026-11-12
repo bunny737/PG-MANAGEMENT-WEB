@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from unittest import mock
 
 from django.urls import reverse
 
@@ -670,6 +671,124 @@ class HeldAdvanceAdjustmentTests(BillingAPITestCase):
         del_after_exit = self.client.delete(reverse('payment-detail', args=[first.data['id']]))
         self.assertEqual(del_after_exit.status_code, 400)
         self.assertEqual(del_after_exit.data['code'], 'RESIDENT_NOT_CURRENT')
+
+    def test_issuing_later_invoice_while_earlier_draft_exists_preserves_first_invoice_advance(self):
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        aug_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+
+        # Staff issues August first while July is still a draft.
+        aug_issued = self.client.post(reverse('invoice-issue', args=[aug_draft['id']])).data
+        self.assertEqual(aug_issued['status'], 'issued')
+        self.assertEqual(aug_issued['balance_due'], '10000.00')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('0.00'))
+        self.assertFalse(adm.first_invoice_advance_settled)
+
+        # Manual adjust-advance on August stays blocked until July (the earlier invoice) is issued.
+        blocked = self._adjust(aug_issued['id'], '5000.00', '2026-08-05')
+        self.assertEqual(blocked.status_code, 400)
+        self.assertEqual(blocked.data['code'], 'FIRST_INVOICE_NOT_ISSUED')
+
+        # Issuing July next still applies Month 1's advance automatically to July and unlocks later adjustments.
+        jul_issued = self.client.post(reverse('invoice-issue', args=[jul_draft['id']])).data
+        self.assertEqual(jul_issued['status'], 'paid')
+        self.assertEqual(jul_issued['balance_due'], '0.00')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('10000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+        self.assertTrue(adm.first_invoice_advance_settled)
+
+        # Now August can receive explicit adjustment from the remaining ₹10,000 held advance.
+        aug_adj = self._adjust(aug_issued['id'], '4000.00', '2026-08-05')
+        self.assertEqual(aug_adj.status_code, 201, aug_adj.data)
+        self.assertEqual(self._admission().advance_refundable, Decimal('6000.00'))
+
+    def test_deleting_blocking_earlier_draft_settles_remaining_earliest_issued_invoice(self):
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        aug_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+
+        self.client.post(reverse('invoice-issue', args=[aug_draft['id']]))
+        self.assertFalse(self._admission().first_invoice_advance_settled)
+
+        deleted = self.client.delete(reverse('invoice-detail', args=[jul_draft['id']]))
+        self.assertEqual(deleted.status_code, 204)
+
+        aug_refreshed = self.client.get(reverse('invoice-detail', args=[aug_draft['id']])).data
+        self.assertEqual(aug_refreshed['status'], 'paid')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('10000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+        self.assertTrue(adm.first_invoice_advance_settled)
+
+    def test_adjustment_date_required_on_api_and_replay_succeeds_across_midnight(self):
+        from apps.billing import services as billing_services
+
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        self._generate_and_issue('2026-07-01', '2026-07-31', '2026-07-10')
+        aug = self._generate_and_issue('2026-08-01', '2026-08-31', '2026-08-10')
+        sep = self._generate_and_issue('2026-09-01', '2026-09-30', '2026-09-10')
+
+        # API requires an explicit adjustment_date so network retries cannot shift dates across midnight.
+        missing_date = self.client.post(
+            reverse('invoice-adjust-advance', args=[aug['id']]),
+            {'amount': '4000.00'},
+            HTTP_IDEMPOTENCY_KEY='missing-date-key',
+        )
+        self.assertEqual(missing_date.status_code, 400)
+        self.assertIn('adjustment_date', missing_date.data)
+
+        # 2026-08-05 23:59 IST == 18:29 UTC; 2026-08-06 00:01 IST == 18:31 UTC.
+        before_midnight = datetime(2026, 8, 5, 18, 29, tzinfo=dt_timezone.utc)
+        after_midnight = datetime(2026, 8, 5, 18, 31, tzinfo=dt_timezone.utc)
+
+        with mock.patch('django.utils.timezone.now', return_value=before_midnight):
+            first = self._adjust(aug['id'], '4000.00', '2026-08-05', key='api-midnight-key')
+        self.assertEqual(first.status_code, 201, first.data)
+
+        with mock.patch('django.utils.timezone.now', return_value=after_midnight):
+            replay = self._adjust(aug['id'], '4000.00', '2026-08-05', key='api-midnight-key')
+            mismatch = self._adjust(aug['id'], '4000.00', '2026-08-06', key='api-midnight-key')
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay['Idempotent-Replayed'], 'true')
+        self.assertEqual(replay.data['id'], first.data['id'])
+        self.assertEqual(mismatch.status_code, 409)
+
+        # Direct Python callers passing adjustment_date=None also replay safely across midnight.
+        with tenant_context(self.tenant.id):
+            with mock.patch('django.utils.timezone.now', return_value=before_midnight):
+                svc_first = billing_services.adjust_from_advance(
+                    invoice_id=sep['id'],
+                    amount=Decimal('3000.00'),
+                    adjustment_date=None,
+                    actor=self.owner,
+                    idempotency_key='svc-midnight-key',
+                )
+            with mock.patch('django.utils.timezone.now', return_value=after_midnight):
+                svc_replay = billing_services.adjust_from_advance(
+                    invoice_id=sep['id'],
+                    amount=Decimal('3000.00'),
+                    adjustment_date=None,
+                    actor=self.owner,
+                    idempotency_key='svc-midnight-key',
+                )
+        self.assertFalse(svc_first.replayed)
+        self.assertTrue(svc_replay.replayed)
+        self.assertEqual(svc_replay.id, svc_first.id)
+        self.assertEqual(svc_replay.payment_date, date(2026, 8, 5))
 
 
 class BillingAcrossNoticeCancellationTests(BillingAPITestCase):

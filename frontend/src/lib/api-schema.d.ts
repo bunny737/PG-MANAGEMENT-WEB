@@ -2785,6 +2785,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/residents/{id}/documents/{field}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Issue a fresh short-lived signed download URL for an uploaded KYC
+         *     document (`aadhaar_document` or `pan_document`). Never wraps GCS signing
+         *     and the mandatory `resident.kyc_document_url_issued` audit insert in
+         *     a misleading atomic transaction.
+         */
+        get: operations["v1_residents_documents_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/residents/{id}/status/": {
         parameters: {
             query?: never;
@@ -5275,6 +5297,14 @@ export interface components {
             /** Format: date-time */
             readonly updated_at?: string;
         };
+        /**
+         * @description Shared Resident representation + permission-scoped financial field redaction.
+         *
+         *     Never exposes raw file URLs or eagerly calls storage.url(): list/detail/write
+         *     responses carry boolean presence flags (`has_aadhaar_document`, `has_pan_document`)
+         *     while short-lived signed URLs are issued on demand from
+         *     `GET /api/v1/residents/{id}/documents/{field}/`.
+         */
         PatchedResident: {
             /** Format: uuid */
             readonly id?: string;
@@ -5297,9 +5327,11 @@ export interface components {
             aadhaar_number?: string;
             /** Format: uri */
             aadhaar_document?: string | null;
+            readonly has_aadhaar_document?: boolean;
             pan_number?: string;
             /** Format: uri */
             pan_document?: string | null;
+            readonly has_pan_document?: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5723,6 +5755,14 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        /**
+         * @description Shared Resident representation + permission-scoped financial field redaction.
+         *
+         *     Never exposes raw file URLs or eagerly calls storage.url(): list/detail/write
+         *     responses carry boolean presence flags (`has_aadhaar_document`, `has_pan_document`)
+         *     while short-lived signed URLs are issued on demand from
+         *     `GET /api/v1/residents/{id}/documents/{field}/`.
+         */
         Resident: {
             /** Format: uuid */
             readonly id: string;
@@ -5745,9 +5785,11 @@ export interface components {
             aadhaar_number?: string;
             /** Format: uri */
             aadhaar_document?: string | null;
+            readonly has_aadhaar_document: boolean;
             pan_number?: string;
             /** Format: uri */
             pan_document?: string | null;
+            readonly has_pan_document: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5772,7 +5814,7 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
-        /** @description ResidentSerializer's own fields, plus the two the detail view adds. */
+        /** @description ResidentSerializer's own read fields, plus the two the detail view adds. */
         ResidentDetailResponse: {
             /** Format: uuid */
             readonly id: string;
@@ -5793,11 +5835,9 @@ export interface components {
             emergency_contact_relation?: string;
             emergency_contact_phone?: string;
             aadhaar_number?: string;
-            /** Format: uri */
-            aadhaar_document?: string | null;
+            readonly has_aadhaar_document: boolean;
             pan_number?: string;
-            /** Format: uri */
-            pan_document?: string | null;
+            readonly has_pan_document: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5824,6 +5864,14 @@ export interface components {
             finance: components["schemas"]["ResidentFinance"] | null;
             redacted: string[];
         };
+        /** @description Response shape for `GET /residents/{id}/documents/{field}/`. */
+        ResidentDocumentUrlResponse: {
+            /** Format: uri */
+            url: string;
+            expires_in: number;
+            /** Format: date-time */
+            expires_at: string;
+        };
         ResidentEmailCodeRequest: {
             /** Format: email */
             email: string;
@@ -5844,6 +5892,54 @@ export interface components {
             prior_outstanding: string;
             /** Format: date */
             last_payment_date: string | null;
+        };
+        /** @description Explicit read serializer for GET /residents/ (no write-only file fields). */
+        ResidentList: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly property: string;
+            readonly status: components["schemas"]["Status82bEnum"];
+            readonly first_name: string;
+            readonly last_name: string;
+            readonly gender: components["schemas"]["GenderEnum"];
+            /** Format: date */
+            readonly date_of_birth: string | null;
+            readonly phone: string;
+            /** Format: email */
+            readonly email: string;
+            readonly permanent_address: string;
+            readonly current_address: string;
+            readonly emergency_contact_name: string;
+            readonly emergency_contact_relation: string;
+            readonly emergency_contact_phone: string;
+            readonly aadhaar_number: string;
+            readonly has_aadhaar_document: boolean;
+            readonly pan_number: string;
+            readonly has_pan_document: boolean;
+            readonly passport_number: string;
+            readonly employee_id: string;
+            readonly student_id: string;
+            readonly unit: string;
+            readonly block: string;
+            readonly move_in_date: string;
+            readonly contracted_rent: string | null;
+            readonly food_preference: string | null;
+            readonly billing_mode: string | null;
+            readonly joining_date: string | null;
+            readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
+            readonly advance_amount: string | null;
+            readonly advance_applied_amount: string | null;
+            readonly advance_refundable: string | null;
+            readonly first_invoice_advance_settled: boolean | null;
+            readonly room_number: string | null;
+            readonly bed_number: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
         };
         ResidentLogin: {
             /** Format: email */
@@ -10678,7 +10774,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Resident"][];
+                    "application/json": components["schemas"]["ResidentList"][];
                 };
             };
         };
@@ -10847,6 +10943,37 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+        };
+    };
+    v1_residents_documents_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Which KYC document field to issue a short-lived signed URL for. */
+                field: "aadhaar_document" | "pan_document";
+                /** @description A UUID string identifying this resident. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentDocumentUrlResponse"];
+                };
+            };
+            /** @description Document download URL temporarily unavailable (code=DOCUMENT_URL_UNAVAILABLE). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

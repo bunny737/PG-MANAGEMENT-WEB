@@ -2,7 +2,9 @@
 permissions, property scope, idempotency and tenant isolation."""
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
 
+from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
 from django.db.utils import DatabaseError
@@ -226,6 +228,19 @@ class ExpenseAttachmentTests(ExpenseAPITestCase):
     def test_size_limit(self):
         big = SimpleUploadedFile('big.pdf', b'%PDF-' + b'0' * 2048)
         self.assertEqual(self.create(attachment=big).data['attachment'][0].code, 'attachment_too_large')
+
+    def test_post_commit_old_attachment_delete_failure_is_logged_not_raised(self):
+        created = self.create(attachment=SimpleUploadedFile('bill.png', PNG, content_type='image/png'))
+        url = reverse('expense-attachment', args=[created.data['id']])
+        with tenant_context(self.tenant.id):
+            first_name = Expense.objects.get(pk=created.data['id']).attachment.name
+        with mock.patch.object(FileSystemStorage, 'delete', side_effect=OSError('gcs timeout')), \
+             self.assertLogs('apps.core.storage', level='ERROR') as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                resp = self.client.put(url, {'attachment': SimpleUploadedFile('b.pdf', PDF)}, format='multipart')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(any('storage_post_commit_delete_failed' in line for line in logs.output))
+        self.assertFalse(any(first_name in line for line in logs.output))
 
 
 class ExpenseCategoryTests(ExpenseAPITestCase):

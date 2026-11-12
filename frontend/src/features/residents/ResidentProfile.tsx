@@ -19,6 +19,7 @@ import {
   FileCheck2,
   LoaderCircle,
   AlertTriangle,
+  Trash2,
   X
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -28,8 +29,10 @@ import { PermissionGate } from "@/components/shared/PermissionGate";
 import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
 import {
+  clearResidentDocument,
   getResident,
   getVacateSettlementPreview,
+  getResidentDocumentUrl,
   listComplaints,
   listVacates,
   updateResident,
@@ -46,10 +49,27 @@ import { FinanceCard } from "./FinanceCard";
 import { RecordDepositPaymentDialog } from "./RecordDepositPaymentDialog";
 import { TransferRoomDialog } from "./TransferRoomDialog";
 
+const MAX_KYC_FILE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_KYC_MIME_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
+// Some browsers supply "" or "application/octet-stream" for valid files; backend magic-byte sniffing decides those.
+const UNRELIABLE_BROWSER_MIME_TYPES = new Set(["", "application/octet-stream"]);
+
 /** The two KYC files the backend stores on a resident. */
 const DOCUMENT_SLOTS = [
-  { field: "aadhaar_document", titleKey: "documents.aadhaarDoc", numberKey: "overview.aadhaar", number: "aadhaar_number" },
-  { field: "pan_document", titleKey: "documents.panDoc", numberKey: "overview.pan", number: "pan_number" },
+  {
+    field: "aadhaar_document",
+    hasField: "has_aadhaar_document",
+    titleKey: "documents.aadhaarDoc",
+    numberKey: "overview.aadhaar",
+    number: "aadhaar_number",
+  },
+  {
+    field: "pan_document",
+    hasField: "has_pan_document",
+    titleKey: "documents.panDoc",
+    numberKey: "overview.pan",
+    number: "pan_number",
+  },
 ] as const;
 
 export function ResidentProfile({ id }: { id: string }) {
@@ -95,8 +115,11 @@ export function ResidentProfile({ id }: { id: string }) {
   const [isTransferring, setIsTransferring] = useState(false);
   const [isRecordingDeposit, setIsRecordingDeposit] = useState(false);
 
-  // KYC document upload
+  // KYC document upload, download & removal
   const [uploadingField, setUploadingField] = useState<ResidentDocumentField | null>(null);
+  const [downloadingField, setDownloadingField] = useState<ResidentDocumentField | null>(null);
+  const [removingField, setRemovingField] = useState<ResidentDocumentField | null>(null);
+  const [confirmRemoveSlot, setConfirmRemoveSlot] = useState<(typeof DOCUMENT_SLOTS)[number] | null>(null);
   const [uploadError, setUploadError] = useState("");
 
   const residentQuery = useQuery({
@@ -235,8 +258,17 @@ export function ResidentProfile({ id }: { id: string }) {
 
   const handleDocumentSelected = async (field: ResidentDocumentField, file: File | undefined) => {
     if (!file) return;
-    setUploadingField(field);
     setUploadError("");
+    if (file.size > MAX_KYC_FILE_BYTES) {
+      setUploadError(t("documents.errFileTooLarge"));
+      return;
+    }
+    const mime = (file.type || "").toLowerCase();
+    if (!UNRELIABLE_BROWSER_MIME_TYPES.has(mime) && !ALLOWED_KYC_MIME_TYPES.has(mime)) {
+      setUploadError(t("documents.errInvalidFileType"));
+      return;
+    }
+    setUploadingField(field);
     try {
       const updated = await uploadResidentDocument(id, field, file);
       // PATCH responses omit the detail-only `finance` block, so merge instead of replacing.
@@ -252,6 +284,65 @@ export function ResidentProfile({ id }: { id: string }) {
       );
     } finally {
       setUploadingField(null);
+    }
+  };
+
+  const handleDownloadDocument = async (field: ResidentDocumentField) => {
+    setDownloadingField(field);
+    setUploadError("");
+    // Open the tab synchronously inside the user-gesture turn so popup blockers do
+    // not block navigation after the signed-URL request resolves asynchronously.
+    // Omit "noopener" from window.open() because per HTML spec it forces a null
+    // return value and breaks navigating the blank tab later; sever opener explicitly.
+    const popup = window.open("", "_blank");
+    if (popup) {
+      popup.opener = null;
+    }
+    try {
+      const { url } = await getResidentDocumentUrl(id, field);
+      if (popup) {
+        if (!popup.closed) {
+          popup.location.href = url;
+        }
+      } else {
+        window.location.assign(url);
+      }
+    } catch (err) {
+      if (popup && !popup.closed) {
+        popup.close();
+      }
+      console.error(err);
+      if (err instanceof ApiError && err.code === "DOCUMENT_URL_UNAVAILABLE") {
+        setUploadError(t("documents.errDownloadFailed"));
+      } else {
+        setUploadError(err instanceof ApiError ? err.message : t("documents.errDownloadFailed"));
+      }
+    } finally {
+      setDownloadingField(null);
+    }
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!confirmRemoveSlot) return;
+    const { field } = confirmRemoveSlot;
+    setRemovingField(field);
+    setUploadError("");
+    try {
+      const updated = await clearResidentDocument(id, field);
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated
+      );
+      setConfirmRemoveSlot(null);
+      setActionAlert({ type: "document", message: t("documents.removedToast") });
+      setTimeout(() => setActionAlert(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setConfirmRemoveSlot(null);
+      setUploadError(
+        err instanceof ApiError ? (err.fieldError(field) ?? err.message) : t("documents.errRemoveFailed")
+      );
+    } finally {
+      setRemovingField(null);
     }
   };
 
@@ -676,8 +767,11 @@ export function ResidentProfile({ id }: { id: string }) {
       {/* Tab 3: Documents & KYC */}
       {activeTab === "documents" && (
         <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4 animate-fade-in">
-          <div className="border-b border-border pb-3">
+          <div className="border-b border-border pb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">{t("documents.heading")}</h3>
+            {kycUploadsEnabled && (
+              <span className="text-[11px] text-ink-muted">{t("documents.formatHint")}</span>
+            )}
           </div>
 
           {uploadError && (
@@ -691,9 +785,13 @@ export function ResidentProfile({ id }: { id: string }) {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            {DOCUMENT_SLOTS.map(({ field, titleKey, numberKey, number }) => {
-              const url = resident[field];
+            {DOCUMENT_SLOTS.map((slot) => {
+              const { field, hasField, titleKey, numberKey, number } = slot;
+              const hasDoc = Boolean(resident[hasField]);
               const isUploading = uploadingField === field;
+              const isDownloading = downloadingField === field;
+              const isRemoving = removingField === field;
+              const busy = uploadingField !== null || removingField !== null;
               return (
                 <div key={field} className="border border-border rounded-xl p-4 bg-surface-page/40 space-y-2 flex flex-col justify-between">
                   <div className="flex items-start justify-between gap-2">
@@ -703,49 +801,64 @@ export function ResidentProfile({ id }: { id: string }) {
                     </div>
                     <span
                       className={
-                        url
+                        hasDoc
                           ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold"
                           : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-page text-ink-muted border border-border text-[9px] font-bold"
                       }
                     >
-                      {url && <CheckCircle className="size-3" />} {url ? t("documents.uploaded") : t("documents.notUploaded")}
+                      {hasDoc && <CheckCircle className="size-3" />} {hasDoc ? t("documents.uploaded") : t("documents.notUploaded")}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 pt-2">
-                    {url ? (
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent text-[11px] font-bold hover:underline cursor-pointer"
+                  <div className="flex items-center justify-between gap-2 flex-wrap pt-2">
+                    {hasDoc ? (
+                      <button
+                        type="button"
+                        disabled={isDownloading || isRemoving}
+                        onClick={() => void handleDownloadDocument(field)}
+                        className="inline-flex items-center gap-1 text-accent text-[11px] font-bold hover:underline cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {t("documents.download")} ›
-                      </a>
+                        {isDownloading && <LoaderCircle className="size-3 animate-spin" />}
+                        {isDownloading ? t("documents.downloading") : t("documents.download")}
+                        {!isDownloading && <ChevronRight className="size-3.5" />}
+                      </button>
                     ) : (
                       <span className="text-[11px] text-ink-faint">{t("documents.noDocs")}</span>
                     )}
                     <PermissionGate permission="manage_residents">
-                      {kycUploadsEnabled && (
-                      <label
-                        className={`rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors inline-flex items-center gap-1.5 ${
-                          uploadingField ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                        }`}
-                      >
-                        {isUploading ? <LoaderCircle className="size-3.5 animate-spin" /> : <FileCheck2 className="size-3.5" />}
-                        {url ? t("documents.replace") : t("documents.uploadNew")}
-                        <input
-                          type="file"
-                          accept="image/*,application/pdf"
-                          className="sr-only"
-                          disabled={uploadingField !== null}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            e.target.value = ""; // allow re-selecting the same file after a failure
-                            void handleDocumentSelected(field, file);
-                          }}
-                        />
-                      </label>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {hasDoc && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setConfirmRemoveSlot(slot)}
+                            className="rounded-xl border border-status-critical/30 bg-status-critical-soft px-2.5 py-1.5 text-xs font-semibold text-status-critical hover:bg-status-critical hover:text-ink-inverse transition-colors inline-flex items-center gap-1 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="size-3.5" />
+                            {t("documents.remove")}
+                          </button>
+                        )}
+                        {kycUploadsEnabled && (
+                        <label
+                          className={`rounded-xl bg-accent hover:bg-accent-hover text-ink-inverse text-xs font-semibold px-3 py-1.5 transition-colors inline-flex items-center gap-1.5 ${
+                            busy ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                          }`}
+                        >
+                          {isUploading ? <LoaderCircle className="size-3.5 animate-spin" /> : <FileCheck2 className="size-3.5" />}
+                          {hasDoc ? t("documents.replace") : t("documents.uploadNew")}
+                          <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                            className="sr-only"
+                            disabled={busy}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = ""; // allow re-selecting the same file after a failure
+                              void handleDocumentSelected(field, file);
+                            }}
+                          />
+                        </label>
+                        )}
+                      </div>
                     </PermissionGate>
                   </div>
                 </div>
@@ -934,6 +1047,46 @@ export function ResidentProfile({ id }: { id: string }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm KYC Document Removal Modal */}
+      {confirmRemoveSlot && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-kyc-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-surface/40 backdrop-blur-sm animate-fade-in"
+        >
+          <div className="bg-surface-card border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="space-y-1.5">
+              <h4 id="remove-kyc-dialog-title" className="text-base font-bold text-ink">
+                {t("documents.removeConfirmTitle", { document: t(confirmRemoveSlot.titleKey) })}
+              </h4>
+              <p className="text-xs text-ink-muted leading-relaxed">
+                {t("documents.removeConfirmDesc")}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
+              <button
+                type="button"
+                disabled={removingField !== null}
+                onClick={() => setConfirmRemoveSlot(null)}
+                className="px-4 py-2 rounded-xl border border-border bg-surface-page text-xs font-bold text-ink-muted hover:bg-surface-card cursor-pointer disabled:opacity-50"
+              >
+                {t("documents.cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={removingField !== null}
+                onClick={() => void handleConfirmRemove()}
+                className="px-4 py-2 rounded-xl bg-status-critical text-ink-inverse text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {removingField && <LoaderCircle className="size-3.5 animate-spin" />}
+                {removingField ? t("documents.removing") : t("documents.removeConfirmButton")}
+              </button>
+            </div>
           </div>
         </div>
       )}

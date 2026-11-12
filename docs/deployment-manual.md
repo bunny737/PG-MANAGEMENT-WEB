@@ -23,6 +23,7 @@ export SQL_INSTANCE=pglive-pg-$ENV
 export SQL_CONN=$PROJECT:$REGION:$SQL_INSTANCE
 export DB_NAME=pg_platform
 export MEDIA_BUCKET=$PROJECT-media
+export KYC_BUCKET=$PROJECT-kyc
 export BACKUP_BUCKET=$PROJECT-backups
 export AR=$REGION-docker.pkg.dev/$PROJECT/pglive
 export WORKER_IP=10.20.0.10
@@ -155,10 +156,17 @@ for n in api web worker migrate bootstrap scheduler export export-verify smoke; 
 bind worker roles/artifactregistry.reader
 bind api roles/firebasecloudmessaging.admin; bind worker roles/firebasecloudmessaging.admin
 
-# Keyless GCS URL signing: api and worker sign as themselves.
-for n in api worker; do
-  gcloud iam service-accounts add-iam-policy-binding $(sa $n) \
-    --member "serviceAccount:$(sa $n)" --role roles/iam.serviceAccountTokenCreator
+# Keyless GCS URL signing: only the API signs URLs (worker only deletes objects during tenant purge).
+gcloud iam service-accounts add-iam-policy-binding $(sa api) \
+  --member "serviceAccount:$(sa api)" --role roles/iam.serviceAccountTokenCreator
+# If migrating from an older setup where sa-worker also held TokenCreator, revoke it idempotently:
+for target in $(sa worker) $(sa api); do
+  if gcloud iam service-accounts get-iam-policy $target --flatten="bindings[].members" \
+      --filter="bindings.role=roles/iam.serviceAccountTokenCreator AND bindings.members=serviceAccount:$(sa worker)" \
+      --format="value(bindings.members)" | grep -q .; then
+    gcloud iam service-accounts remove-iam-policy-binding $target \
+      --member "serviceAccount:$(sa worker)" --role roles/iam.serviceAccountTokenCreator --all
+  fi
 done
 ```
 
@@ -291,6 +299,19 @@ for n in api worker; do
     --member "serviceAccount:$(sa $n)" --role roles/storage.objectUser
 done
 
+# Dedicated hard-delete bucket for resident KYC documents (no versioning, 0d soft delete)
+mkb $KYC_BUCKET    $REGION
+gcloud storage buckets update gs://$KYC_BUCKET --uniform-bucket-level-access --public-access-prevention \
+  --no-versioning --soft-delete-duration=0
+for n in api worker; do
+  gcloud storage buckets add-iam-policy-binding gs://$KYC_BUCKET \
+    --member "serviceAccount:$(sa $n)" --role roles/storage.objectUser
+done
+gcloud iam roles create pglive.bucketMetadataReader --project $PROJECT \
+  --title "PGLive bucket metadata reader" --permissions storage.buckets.get
+gcloud storage buckets add-iam-policy-binding gs://$KYC_BUCKET \
+  --member "serviceAccount:$(sa api)" --role projects/$PROJECT/roles/pglive.bucketMetadataReader
+
 mkb $BACKUP_BUCKET asia-south2
 gcloud storage buckets update gs://$BACKUP_BUCKET --retention-period=90d      # do NOT lock it yet
 cat > backup-lifecycle.json <<'JSON'
@@ -373,7 +394,7 @@ Common values:
 PN=$(gcloud projects describe $PROJECT --format='value(projectNumber)')   # used in the run.app hostnames
 VPC="--network pglive --subnet pglive-$REGION --vpc-egress private-ranges-only"
 SQLENV="DB_HOST=/cloudsql/$SQL_CONN;DB_NAME=$DB_NAME"
-COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT;FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=https://www.pglive.in"
+COMMON="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_KYC_BUCKET_NAME=$KYC_BUCKET;GS_PROJECT_ID=$PROJECT;FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=$PROJECT;FRONTEND_BASE_URL=https://www.pglive.in"
 API_SECRETS="SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_PASSWORD:latest,BFF_ORIGIN_SECRET=BFF_ORIGIN_SECRET:latest,RAZORPAY_KEY_ID=RAZORPAY_KEY_ID:latest,RAZORPAY_KEY_SECRET=RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=RAZORPAY_WEBHOOK_SECRET:latest,EMAIL_HOST_PASSWORD=EMAIL_HOST_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,APP_MAINTENANCE_BYPASS_TOKEN=APP_MAINTENANCE_BYPASS_TOKEN:latest,REDIS_URL=REDIS_URL:latest,REDIS_CACHE_URL=REDIS_CACHE_URL:latest"
 ```
 
@@ -395,6 +416,12 @@ job() {   # name service-account db-user secrets command-args [--clear-cloudsql-
 job pglive-migrate           migrate    migration_user "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_MIGRATION_PASSWORD:latest" "manage.py,migrate,--noinput"
 job pglive-check-roles       api        app_user       "$API_SECRETS" "manage.py,check_db_roles,--role,app_user"
 job pglive-check-resident-users api app_user "$API_SECRETS" "manage.py,check_resident_users"
+job pglive-backfill-kyc      api        app_user       "$API_SECRETS" "manage.py,backfill_kyc_documents"
+job pglive-purge-legacy-kyc  api        app_user       "$API_SECRETS" "manage.py,backfill_kyc_documents,--delete-source,--purge-orphaned-legacy"
+job pglive-check-kyc         api        app_user       "$API_SECRETS" "manage.py,check_kyc_storage,--require"
+job pglive-check-kyc-strict  api        app_user       "$API_SECRETS" "manage.py,check_kyc_storage,--require,--fail-on-legacy-media"
+gcloud run jobs update pglive-check-kyc --region $REGION --update-env-vars "GS_SA_EMAIL=$(sa api),KYC_UPLOADS_ENABLED=true,EXPECT_KYC_UPLOADS_ENABLED=true"
+gcloud run jobs update pglive-check-kyc-strict --region $REGION --update-env-vars "GS_SA_EMAIL=$(sa api),KYC_UPLOADS_ENABLED=true,EXPECT_KYC_UPLOADS_ENABLED=true"
 job pglive-generate-invoices api        app_user       "$API_SECRETS" "manage.py,generate_subscription_invoices"
 job pglive-check-grace-periods api      app_user       "$API_SECRETS" "manage.py,check_subscription_grace_periods"
 ```
@@ -410,7 +437,7 @@ gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --serv
   --cpu 1 --memory 1Gi --concurrency 8 --timeout 60 --min-instances 1 --max-instances 3 \
   --set-cloudsql-instances $SQL_CONN $VPC \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^;^$COMMON;$SQLENV;DB_USER=app_user;ALLOWED_HOSTS=api.pglive.in,pglive-api-$PN.$REGION.run.app;CSRF_TRUSTED_ORIGINS=https://www.pglive.in,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa api);IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^;^$COMMON;$SQLENV;DB_USER=app_user;ALLOWED_HOSTS=api.pglive.in,pglive-api-$PN.$REGION.run.app;CSRF_TRUSTED_ORIGINS=https://www.pglive.in,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa api);KYC_UPLOADS_ENABLED=true;IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0" \
   --set-secrets "$API_SECRETS"
 ```
 
@@ -667,7 +694,7 @@ git checkout <new-sha>; export SHA=$(git rev-parse --short=12 HEAD)
 gcloud sql backups create --instance $SQL_INSTANCE --description "pre-release $SHA"
 gcloud sql backups list --instance $SQL_INSTANCE --limit 1            # status SUCCESSFUL before continuing
 # 3. point the jobs at the new image, migrate, verify roles
-for j in pglive-migrate pglive-check-roles pglive-check-resident-users pglive-generate-invoices pglive-check-grace-periods; do
+for j in pglive-migrate pglive-check-roles pglive-check-resident-users pglive-backfill-kyc pglive-purge-legacy-kyc pglive-check-kyc pglive-check-kyc-strict pglive-generate-invoices pglive-check-grace-periods; do
   gcloud run jobs update $j --region $REGION --image $AR/pglive-api:$SHA
 done
 # Module 26: accounts.0013 refuses to migrate if a role=resident user exists. The check prints
@@ -675,7 +702,9 @@ done
 # never reaches migrate.
 gcloud run jobs execute pglive-check-resident-users --region $REGION --wait && \
 gcloud run jobs execute pglive-migrate --region $REGION --wait && \
-gcloud run jobs execute pglive-check-roles --region $REGION --wait
+gcloud run jobs execute pglive-check-roles --region $REGION --wait && \
+gcloud run jobs execute pglive-backfill-kyc --region $REGION --wait && \
+gcloud run jobs execute pglive-check-kyc --region $REGION --wait
 # 4. new revisions without traffic, then look at them via the tag
 gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --no-traffic --tag candidate
 gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --no-traffic --tag candidate
@@ -685,7 +714,12 @@ gcloud run services update-traffic pglive-web --region $REGION --to-tags candida
 gcloud run services update-traffic pglive-api --region $REGION --to-latest
 gcloud run services update-traffic pglive-web --region $REGION --to-latest
 # 6. the worker
-gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo /opt/pglive/deploy.sh $SHA"
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo env GS_BUCKET_NAME=$MEDIA_BUCKET GS_KYC_BUCKET_NAME=$KYC_BUCKET /opt/pglive/deploy.sh $SHA"
+# 7. (if pglive-check-kyc showed any pre-migration objects in $MEDIA_BUCKET) after rollback is no longer needed and legal approves:
+gcloud run jobs execute pglive-purge-legacy-kyc --region $REGION --wait
+gcloud run jobs execute pglive-check-kyc-strict --region $REGION --wait
+# Note: deleted pre-migration source generations in $MEDIA_BUCKET stay soft-deleted in GCS for 14 days (cannot be bypassed by API);
+# all post-migration uploads write solely to $KYC_BUCKET (--no-versioning --soft-delete-duration=0).
 ```
 
 `--set-env-vars`/`--set-secrets` carry over from the previous revision when you only pass `--image`.

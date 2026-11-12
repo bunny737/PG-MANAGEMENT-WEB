@@ -72,11 +72,24 @@ bind "$(sa sa-scheduler)" roles/workflows.invoker
 # FCM send via Application Default Credentials (WP8).
 bind "$(sa sa-api)" roles/firebasecloudmessaging.admin
 bind "$(sa sa-worker)" roles/firebasecloudmessaging.admin
-# Keyless GCS URL signing: each runtime SA signs as itself.
-for name in api worker; do
-  g iam service-accounts add-iam-policy-binding "$(sa sa-$name)" \
-    --member "serviceAccount:$(sa sa-$name)" --role roles/iam.serviceAccountTokenCreator >/dev/null
-done
+# Keyless GCS URL signing: only sa-api signs download URLs (all Celery tasks/jobs were audited to perform
+# deletion/notification only — never serializer evaluation or signed_url(); add sa-worker here only if a
+# future background job signs URLs). Idempotently revoke any legacy TokenCreator binding held by sa-worker.
+g iam service-accounts add-iam-policy-binding "$(sa sa-api)" \
+  --member "serviceAccount:$(sa sa-api)" --role roles/iam.serviceAccountTokenCreator >/dev/null
+revoke_sa_token_creator() {
+  local target_sa="$1" member_sa="$2" found
+  found="$(g iam service-accounts get-iam-policy "$target_sa" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role=roles/iam.serviceAccountTokenCreator AND bindings.members=serviceAccount:$member_sa" \
+    --format="value(bindings.members)")"
+  if [[ -n "$found" ]]; then
+    g iam service-accounts remove-iam-policy-binding "$target_sa" \
+      --member "serviceAccount:$member_sa" --role roles/iam.serviceAccountTokenCreator --all >/dev/null
+  fi
+}
+revoke_sa_token_creator "$(sa sa-worker)" "$(sa sa-worker)"
+revoke_sa_token_creator "$(sa sa-api)" "$(sa sa-worker)"
 # The deployer may deploy revisions that run as the runtime accounts.
 for name in api web worker migrate bootstrap export-verify smoke; do
   g iam service-accounts add-iam-policy-binding "$(sa sa-$name)" \

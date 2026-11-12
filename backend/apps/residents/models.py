@@ -1,4 +1,5 @@
 import builtins
+import os
 import uuid
 from decimal import Decimal
 
@@ -8,11 +9,15 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import TenantModelMixin
 from apps.core.periods import local_today
+from apps.core.storage import get_kyc_storage
 from apps.properties.models import Bed, Property, Room
 
 
 def resident_document_path(instance, filename):
-    return f'residents/{instance.tenant_id}/{instance.id}/{filename}'
+    # Random name: original filenames are user data, can leak PII into keys/signed URLs,
+    # and trigger storage-level truncation or SuspiciousFileOperation if overly long.
+    extension = os.path.splitext(filename)[1].lower()[:10]
+    return f'residents/{instance.tenant_id}/{instance.id}/{uuid.uuid4().hex}{extension}'
 
 
 class Resident(TenantModelMixin):
@@ -80,9 +85,15 @@ class Resident(TenantModelMixin):
     # Identity documents — Aadhaar/PAN carry both a number and an upload;
     # Passport/Employee ID/Student ID are optional numbers only (PRD Module 5).
     aadhaar_number = models.CharField(max_length=20, blank=True)
-    aadhaar_document = models.FileField(upload_to=resident_document_path, null=True, blank=True)
+    aadhaar_document = models.FileField(
+        upload_to=resident_document_path, storage=get_kyc_storage,
+        max_length=255, null=True, blank=True,
+    )
     pan_number = models.CharField(max_length=20, blank=True)
-    pan_document = models.FileField(upload_to=resident_document_path, null=True, blank=True)
+    pan_document = models.FileField(
+        upload_to=resident_document_path, storage=get_kyc_storage,
+        max_length=255, null=True, blank=True,
+    )
     passport_number = models.CharField(max_length=30, blank=True)
     employee_id = models.CharField(max_length=50, blank=True)
     student_id = models.CharField(max_length=50, blank=True)

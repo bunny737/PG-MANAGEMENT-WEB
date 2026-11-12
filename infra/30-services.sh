@@ -11,10 +11,22 @@ source "$(dirname "$0")/env.sh" "$1"
 : "${ALLOWED_API_HOSTS:=api.pglive.in}" "${SITE_URL:=https://www.pglive.in}"
 g() { gcloud --project "$PROJECT" "$@"; }
 
+# Fail closed unless explicitly enabled; assert release expectation to catch missing/typo'd CI vars.
+KYC_UPLOADS_ENABLED="${KYC_UPLOADS_ENABLED:-false}"
+EXPECT_KYC_UPLOADS_ENABLED="${EXPECT_KYC_UPLOADS_ENABLED:-false}"
+case "$KYC_UPLOADS_ENABLED" in
+  true|false) ;;
+  *) echo "KYC_UPLOADS_ENABLED must be true or false (got '$KYC_UPLOADS_ENABLED')" >&2; exit 1 ;;
+esac
+if [[ "$EXPECT_KYC_UPLOADS_ENABLED" == true && "$KYC_UPLOADS_ENABLED" != true ]]; then
+  echo "Release expects KYC uploads enabled (EXPECT_KYC_UPLOADS_ENABLED=true) but KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED" >&2
+  exit 1
+fi
+
 # Env values contain commas (ALLOWED_HOSTS) and @ (GS_SA_EMAIL, DEFAULT_FROM_EMAIL), so every --set-env-vars uses
 # gcloud's custom delimiter ";": "^;^K=v;K2=v2".
 SQL_ENV="DB_HOST=/cloudsql/$SQL_CONNECTION;DB_NAME=$DB_NAME"
-COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_PROJECT_ID=$PROJECT"
+COMMON_ENV="DJANGO_SETTINGS_MODULE=config.settings.prod;GS_BUCKET_NAME=$MEDIA_BUCKET;GS_KYC_BUCKET_NAME=$KYC_BUCKET;GS_PROJECT_ID=$PROJECT"
 # FIREBASE_PROJECT_ID: Firebase may live in its own project (prod: pglive-prod-e57a1); defaults to this one.
 COMMON_ENV+=";FIREBASE_USE_ADC=True;FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-$PROJECT};FRONTEND_BASE_URL=$SITE_URL"
 COMMON_ENV+=";APP_RELEASE=${SHA:-unknown};SENTRY_ENVIRONMENT=$([[ $ENVIRONMENT == prod ]] && echo production || echo staging)"
@@ -75,7 +87,7 @@ g run deploy pglive-api --region "$REGION" --image "$API_IMAGE" --service-accoun
   --min-instances 1 --max-instances "$API_MAX_INSTANCES" \
   --set-cloudsql-instances "$SQL_CONNECTION" "${VPC[@]}" \
   --startup-probe tcpSocket.port=8080,initialDelaySeconds=0,periodSeconds=3,failureThreshold=20 \
-  --set-env-vars "^;^$COMMON_ENV;$SQL_ENV;DB_USER=app_user;ALLOWED_HOSTS=$API_HOSTS;CSRF_TRUSTED_ORIGINS=$SITE_URL,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa sa-api);IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0" \
+  --set-env-vars "^;^$COMMON_ENV;$SQL_ENV;DB_USER=app_user;ALLOWED_HOSTS=$API_HOSTS;CSRF_TRUSTED_ORIGINS=$SITE_URL,https://api.pglive.in;APP_VERSION_ENFORCEMENT=log;GS_SA_EMAIL=$(sa sa-api);IAP_REQUIRED=False;SECURE_HSTS_SECONDS=0;KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED" \
   "$API_SECRETS" "${API_TRAFFIC[@]}"
 
 echo "== pglive-web"
@@ -116,7 +128,7 @@ smoke_verb=create; g run jobs describe pglive-smoke --region "$REGION" >/dev/nul
 API_CAND="$(service_url pglive-api)"; WEB_CAND="$(service_url pglive-web)"
 g run jobs "$smoke_verb" pglive-smoke --region "$REGION" --image "$API_IMAGE" --service-account "$(sa sa-smoke)" \
   --max-retries 0 --task-timeout 300 --network "$NETWORK" --subnet "$SUBNET" --vpc-egress all-traffic \
-  --set-env-vars "^;^SMOKE_API_URL=https://candidate---${API_CAND#https://};SMOKE_WEB_URL=https://candidate---${WEB_CAND#https://}" \
+  --set-env-vars "^;^SMOKE_API_URL=https://candidate---${API_CAND#https://};SMOKE_WEB_URL=https://candidate---${WEB_CAND#https://};SMOKE_EXPECT_KYC_UPLOADS_ENABLED=$EXPECT_KYC_UPLOADS_ENABLED" \
   "$(secrets SMOKE_USER_CREDENTIALS)" --command python --args "scripts/smoke.py"
 
 echo "== Scheduler (OAuth tokens: these are googleapis.com endpoints, not Cloud Run URLs)"

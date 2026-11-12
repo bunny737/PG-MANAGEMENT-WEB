@@ -96,8 +96,10 @@ Tests: `apps/accounts/tests/test_account_deletion.py`, `test_account_deletion_pu
    nulled. Audit: IPs of actions they performed are cleared, and rows whose before/after names their id, email or
    phone are redacted **by value**, so legacy rows (e.g. property-staff assignments) are covered.
 10. **Tenant purge** deletes every `TenantModelMixin` model in `PURGE_ORDER` (children before PROTECT parents),
-    the tenant's audit log, users, installs, contact-form messages from their addresses, and the four storage
-    prefixes (`residents|properties|complaints|expenses/<tenant_id>/`). **Retained** (tax records): `Tenant` (legal
+    the tenant's audit log, users, installs, contact-form messages from their addresses, the four storage
+    prefixes (`residents|properties|complaints|expenses/<tenant_id>/`) on `default_storage` (`$MEDIA_BUCKET`), and
+    `residents/<tenant_id>/` on `kyc_storage` (`$KYC_BUCKET`, unversioned with 0-day soft delete so KYC bytes are
+    hard-deleted immediately). **Retained** (tax records): `Tenant` (legal
     name only), `Subscription`, `RazorpaySubscription`, `SubscriptionInvoice(+Line)`, `SubscriptionPayment`,
     `BedLedgerEntry`; their Razorpay payloads are redacted to an allow-list of scalars
     (`subscriptions.services.sanitized_payload`), including legacy invoice events stored with `tenant_id=NULL`.

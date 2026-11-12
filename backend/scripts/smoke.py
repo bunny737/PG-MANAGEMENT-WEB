@@ -31,7 +31,7 @@ def call(method, url, body=None, headers=None):
         return error.code, dict(error.headers), error.read()
 
 
-def run(api, web, credentials, report=print):
+def run(api, web, credentials, report=print, expect_kyc_uploads_enabled=False):
     failures = []
 
     def check(name, ok, detail=''):
@@ -53,8 +53,10 @@ def run(api, web, credentials, report=print):
     check('smoke account can log in', bool(token), str(status))
     if token:
         status, _, body = call('GET', f'{api}/api/v1/auth/me/', headers={'Authorization': f'Bearer {token}'})
-        check('authenticated /auth/me', status == 200 and json.loads(body or b'{}').get('email') == credentials['email'],
-              str(status))
+        me = json.loads(body or b'{}') if status == 200 else {}
+        check('authenticated /auth/me', status == 200 and me.get('email') == credentials['email'], str(status))
+        if expect_kyc_uploads_enabled:
+            check('kyc uploads enabled on /auth/me', me.get('kyc_uploads_enabled') is True, repr(me.get('kyc_uploads_enabled')))
 
     status, _, body = call('GET', f'{web}/api/health')
     check('web health', status == 200, str(status))
@@ -79,7 +81,8 @@ def main():
     if not api or not web:
         print('SMOKE_API_URL and SMOKE_WEB_URL are required', file=sys.stderr)
         return 2
-    failures = run(api, web, credentials)
+    expect_kyc = os.environ.get('SMOKE_EXPECT_KYC_UPLOADS_ENABLED', '').lower() == 'true'
+    failures = run(api, web, credentials, expect_kyc_uploads_enabled=expect_kyc)
     print(f'{len(failures)} check(s) failed' if failures else 'smoke test passed')
     return 1 if failures else 0
 

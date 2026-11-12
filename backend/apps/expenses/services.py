@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.audit import log as audit_log
 from apps.core.idempotency import key_reused
+from apps.core.storage import delete_storage_object_on_commit
 from apps.core.uploads import sniff_upload
 
 from .models import SYSTEM_CATEGORIES, Expense, ExpenseCategory
@@ -50,12 +51,18 @@ def sniff_attachment(upload):
     )
 
 
-def _delete_file_on_commit(previous):
+def _delete_file_on_commit(previous, *, expense=None):
     """Storage deletes are irreversible and not rolled back with the database,
     so a file is only removed once the change that orphans it has committed."""
     if previous is not None:
         storage, name = previous
-        transaction.on_commit(lambda: storage.delete(name))
+        delete_storage_object_on_commit(
+            storage,
+            name,
+            tenant_id=getattr(expense, 'tenant_id', None),
+            object_id=getattr(expense, 'pk', None),
+            field='attachment',
+        )
 
 
 def _store_attachment(expense, upload):
@@ -168,14 +175,14 @@ def replace_attachment(*, expense, upload, actor, request=None):
     except Exception:
         expense.attachment.storage.delete(new_name)  # the row rolls back; don't orphan the new file
         raise
-    _delete_file_on_commit(previous)
+    _delete_file_on_commit(previous, expense=expense)
     return expense
 
 
 @transaction.atomic
 def remove_attachment(*, expense, actor, request=None):
     if expense.attachment:
-        _delete_file_on_commit((expense.attachment.storage, expense.attachment.name))
+        _delete_file_on_commit((expense.attachment.storage, expense.attachment.name), expense=expense)
     expense.attachment = None
     expense.attachment_content_type = ''
     expense.updated_by = actor

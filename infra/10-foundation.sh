@@ -72,11 +72,11 @@ bind "$(sa sa-scheduler)" roles/workflows.invoker
 # FCM send via Application Default Credentials (WP8).
 bind "$(sa sa-api)" roles/firebasecloudmessaging.admin
 bind "$(sa sa-worker)" roles/firebasecloudmessaging.admin
-# Keyless GCS URL signing: each runtime SA signs as itself.
-for name in api worker; do
-  g iam service-accounts add-iam-policy-binding "$(sa sa-$name)" \
-    --member "serviceAccount:$(sa sa-$name)" --role roles/iam.serviceAccountTokenCreator >/dev/null
-done
+# Keyless GCS URL signing: only sa-api signs download URLs (all Celery tasks/jobs were audited to perform
+# deletion/notification only — never serializer evaluation or signed_url(); add sa-worker here only if a
+# future background job signs URLs).
+g iam service-accounts add-iam-policy-binding "$(sa sa-api)" \
+  --member "serviceAccount:$(sa sa-api)" --role roles/iam.serviceAccountTokenCreator >/dev/null
 # The deployer may deploy revisions that run as the runtime accounts.
 for name in api web worker migrate bootstrap export-verify smoke; do
   g iam service-accounts add-iam-policy-binding "$(sa sa-$name)" \

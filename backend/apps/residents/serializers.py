@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -23,7 +22,15 @@ from .models import (
 )
 
 
-class ResidentSerializer(serializers.ModelSerializer):
+class _ResidentBaseSerializer(serializers.ModelSerializer):
+    """Shared Resident representation + permission-scoped financial field redaction.
+
+    Never exposes raw file URLs or eagerly calls storage.url(): list/detail/write
+    responses carry boolean presence flags (`has_aadhaar_document`, `has_pan_document`)
+    while short-lived signed URLs are issued on demand from
+    `GET /api/v1/residents/{id}/documents/{field}/`.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
@@ -43,6 +50,8 @@ class ResidentSerializer(serializers.ModelSerializer):
             for field in hidden:
                 self.fields.pop(field, None)
 
+    has_aadhaar_document = serializers.SerializerMethodField()
+    has_pan_document = serializers.SerializerMethodField()
     unit = serializers.SerializerMethodField()
     block = serializers.SerializerMethodField()
     move_in_date = serializers.SerializerMethodField()
@@ -61,23 +70,26 @@ class ResidentSerializer(serializers.ModelSerializer):
     room_number = serializers.SerializerMethodField()
     bed_number = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Resident
-        fields = [
-            'id', 'property', 'status',
-            'first_name', 'last_name', 'gender', 'date_of_birth', 'phone', 'email',
-            'permanent_address', 'current_address',
-            'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
-            'aadhaar_number', 'aadhaar_document', 'pan_number', 'pan_document',
-            'passport_number', 'employee_id', 'student_id',
-            'unit', 'block', 'move_in_date',
-            'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
-            'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
-            'advance_amount', 'advance_refundable',
-            'room_number', 'bed_number',
-            'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+    _COMMON_READ_FIELDS = [
+        'id', 'property', 'status',
+        'first_name', 'last_name', 'gender', 'date_of_birth', 'phone', 'email',
+        'permanent_address', 'current_address',
+        'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
+        'aadhaar_number', 'has_aadhaar_document', 'pan_number', 'has_pan_document',
+        'passport_number', 'employee_id', 'student_id',
+        'unit', 'block', 'move_in_date',
+        'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
+        'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
+        'advance_amount', 'advance_refundable',
+        'room_number', 'bed_number',
+        'created_at', 'updated_at',
+    ]
+
+    def get_has_aadhaar_document(self, obj) -> bool:
+        return bool(obj.aadhaar_document)
+
+    def get_has_pan_document(self, obj) -> bool:
+        return bool(obj.pan_document)
 
     @staticmethod
     def _related(obj, name):
@@ -143,6 +155,39 @@ class ResidentSerializer(serializers.ModelSerializer):
             return obj.admission.joining_date.strftime('%B %d, %Y')
         return "N/A"
 
+
+class ResidentListSerializer(_ResidentBaseSerializer):
+    """Explicit read serializer for GET /residents/ (no write-only file fields)."""
+
+    class Meta:
+        model = Resident
+        fields = _ResidentBaseSerializer._COMMON_READ_FIELDS
+        read_only_fields = fields
+
+
+class ResidentSerializer(_ResidentBaseSerializer):
+    aadhaar_document = serializers.FileField(write_only=True, required=False, allow_null=True)
+    pan_document = serializers.FileField(write_only=True, required=False, allow_null=True)
+
+    class Meta:
+        model = Resident
+        fields = [
+            'id', 'property', 'status',
+            'first_name', 'last_name', 'gender', 'date_of_birth', 'phone', 'email',
+            'permanent_address', 'current_address',
+            'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
+            'aadhaar_number', 'aadhaar_document', 'has_aadhaar_document',
+            'pan_number', 'pan_document', 'has_pan_document',
+            'passport_number', 'employee_id', 'student_id',
+            'unit', 'block', 'move_in_date',
+            'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
+            'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
+            'advance_amount', 'advance_refundable',
+            'room_number', 'bed_number',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+
     def validate_property(self, value):
         request = self.context['request']
         if not can_view_property(request.user, value.pk):
@@ -151,11 +196,10 @@ class ResidentSerializer(serializers.ModelSerializer):
             )
         return value
 
-    @staticmethod
-    def _validate_kyc_document(upload, field):
+    def _validate_kyc_document(self, upload, field):
         """Aadhaar/PAN uploads sit behind a launch gate (settings.KYC_UPLOADS_ENABLED). Only a NEW
-        file is gated: clearing a stored document (None) is always allowed, and stored documents stay
-        readable. A file that is let through must really be a JPEG/PNG/WebP/PDF within the size cap."""
+        file is gated: clearing a stored document (None) is always allowed. A file that is let through
+        must really be a JPEG/PNG/PDF within the size cap."""
         if upload is None:
             return upload
         if not settings.KYC_UPLOADS_ENABLED:
@@ -163,12 +207,16 @@ class ResidentSerializer(serializers.ModelSerializer):
                 _('Identity document uploads are not enabled yet.'), code='kyc_uploads_disabled'
             )
         try:
-            sniff_upload(
+            detected_type = sniff_upload(
                 upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES, code_prefix='document',
-                allowed_types={'image/jpeg', 'image/png', 'application/pdf'},  # approved set; no WebP (plan rev 2)
+                allowed_types={'image/jpeg', 'image/png', 'application/pdf'},
             )
         except serializers.ValidationError as exc:
             raise serializers.ValidationError(exc.detail[field])
+        # Preserve the magic-byte MIME type explicitly for services.py metadata-only audit events.
+        if not hasattr(self, '_detected_kyc_content_types'):
+            self._detected_kyc_content_types = {}
+        self._detected_kyc_content_types[field] = detected_type
         return upload
 
     def validate_aadhaar_document(self, value):
@@ -176,23 +224,6 @@ class ResidentSerializer(serializers.ModelSerializer):
 
     def validate_pan_document(self, value):
         return self._validate_kyc_document(value, 'pan_document')
-
-    _KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
-
-    def update(self, instance, validated_data):
-        """Clearing or replacing a KYC file only repoints the FileField; Django never
-        deletes the old object from storage on its own. Capture it before `super().update()`
-        overwrites the reference, and only remove it once the row update has committed —
-        a failed save must not orphan-delete a file still referenced by the row."""
-        previous = [
-            (getattr(instance, field).storage, getattr(instance, field).name)
-            for field in self._KYC_FILE_FIELDS
-            if field in validated_data and getattr(instance, field)
-        ]
-        instance = super().update(instance, validated_data)
-        for storage, name in previous:
-            transaction.on_commit(lambda storage=storage, name=name: storage.delete(name))
-        return instance
 
 
 class ResidentStatusUpdateSerializer(serializers.ModelSerializer):

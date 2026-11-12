@@ -53,6 +53,15 @@ for name in api worker; do
     --member "serviceAccount:$(sa sa-$name)" --role roles/storage.objectUser >/dev/null
 done
 
+# Dedicated Gate A1 resident KYC bucket: no versioning and 0d soft delete so Remove, Replace, and
+# account-deletion purge make PII bytes unrecoverable immediately (matching deletion/privacy copy).
+mk "$KYC_BUCKET" "$REGION"
+gcloud storage buckets update "gs://$KYC_BUCKET" --project "$PROJECT" --no-versioning --soft-delete-duration=0
+for name in api worker; do
+  gcloud storage buckets add-iam-policy-binding "gs://$KYC_BUCKET" --project "$PROJECT" \
+    --member "serviceAccount:$(sa sa-$name)" --role roles/storage.objectUser >/dev/null
+done
+
 mk "$BACKUP_BUCKET" "$BACKUP_REGION"
 # 90-day retention, deliberately NOT locked: locking is irreversible and puts a lien on the project.
 # Prove export -> restore -> lifecycle -> deletion first, then lock only with explicit owner approval.

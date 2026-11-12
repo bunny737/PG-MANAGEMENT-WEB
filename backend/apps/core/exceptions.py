@@ -77,3 +77,9 @@ class PayloadTooLarge(APIException):
     status_code = 413
     default_detail = _('Request body too large.')
     default_code = 'payload_too_large'
+
+
+class ServiceUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = _('Service temporarily unavailable.')
+    default_code = 'service_unavailable'

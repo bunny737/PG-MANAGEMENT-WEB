@@ -521,6 +521,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/resident/login/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_login_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resident/otp/email/request/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_otp_email_request_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resident/otp/email/verify/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_otp_email_verify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resident/password-reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_password_reset_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resident/password-reset/confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_password_reset_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resident/signup/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_auth_resident_signup_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/signup/": {
         parameters: {
             query?: never;
@@ -1717,6 +1813,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/invites/accept/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Accept a staff invite with the token from the emailed link. Always authenticated: the
+         *     person signs up (or in) first, so accepting is always an act of the account's owner.
+         */
+        post: operations["v1_me_invites_accept_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/join-codes/{code}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Confirm which PG a join code is for before asking to be linked. Returns the property's name
+         *     and city only; an unknown code and a blocked PG look the same.
+         */
+        get: operations["v1_me_join_codes_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/link-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_me_link_requests_list"];
+        put?: never;
+        post: operations["v1_me_link_requests_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/link-requests/{id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_me_link_requests_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/residencies/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Every link this signed-in person holds, with what each currently lets them see. No
+         *     X-Residency-Id needed: this is how the app learns which ids to send.
+         */
+        get: operations["v1_me_residencies_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notices/": {
         parameters: {
             query?: never;
@@ -2246,6 +2434,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/properties/{id}/join-code/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The code residents use to ask to be linked to this PG. GET shows it; POST (rotate) replaces
+         *     it, and the old one stops working at once. Pending requests already made stay valid.
+         */
+        get: operations["v1_properties_join_code_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/properties/{id}/join-code/rotate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The code residents use to ask to be linked to this PG. GET shows it; POST (rotate) replaces
+         *     it, and the old one stops working at once. Pending requests already made stay valid.
+         */
+        get: operations["v1_properties_join_code_rotate_retrieve"];
+        put?: never;
+        /**
+         * @description The code residents use to ask to be linked to this PG. GET shows it; POST (rotate) replaces
+         *     it, and the old one stops working at once. Pending requests already made stay valid.
+         */
+        post: operations["v1_properties_join_code_rotate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/properties/{id}/layout/": {
         parameters: {
             query?: never;
@@ -2340,6 +2572,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/residency-link-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Staff review of 'link me to this PG' requests. Scoped to the properties the caller can see. */
+        get: operations["v1_residency_link_requests_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residency-link-requests/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Staff review of 'link me to this PG' requests. Scoped to the properties the caller can see. */
+        get: operations["v1_residency_link_requests_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residency-link-requests/{id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Staff review of 'link me to this PG' requests. Scoped to the properties the caller can see. */
+        post: operations["v1_residency_link_requests_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residency-link-requests/{id}/reject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Staff review of 'link me to this PG' requests. Scoped to the properties the caller can see. */
+        post: operations["v1_residency_link_requests_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/residents/": {
         parameters: {
             query?: never;
@@ -2395,6 +2695,92 @@ export interface paths {
          *     vacate/blacklist via the status lifecycle instead.
          */
         patch: operations["v1_residents_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/residents/{id}/app-access/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_residents_app_access_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residents/{id}/app-access/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_residents_app_access_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residents/{id}/app-invite/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_residents_app_invite_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residents/{id}/app-invite/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_residents_app_invite_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/residents/{id}/documents/{field}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Issue a fresh short-lived signed download URL for an uploaded KYC
+         *     document (`aadhaar_document` or `pan_document`). Never wraps GCS signing
+         *     and the mandatory `resident.kyc_document_url_issued` audit insert in
+         *     a misleading atomic transaction.
+         */
+        get: operations["v1_residents_documents_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/residents/{id}/status/": {
@@ -4130,6 +4516,9 @@ export interface components {
          * @enum {string}
          */
         GenderPreferenceEnum: "unisex" | "male" | "female";
+        InviteAccept: {
+            token: string;
+        };
         /**
          * @description Who/where columns for finance lists, so a row renders without a
          *     second lookup. `_resident(obj)` returns the row's resident.
@@ -4234,6 +4623,15 @@ export interface components {
          * @enum {string}
          */
         KeyEnum: "add_property" | "add_building" | "add_floor" | "add_room" | "admit_resident" | "record_expense";
+        /**
+         * @description * `en` - en
+         *     * `hi` - hi
+         *     * `te` - te
+         *     * `ta` - ta
+         *     * `ml` - ml
+         * @enum {string}
+         */
+        LanguageCodeD72Enum: "en" | "hi" | "te" | "ta" | "ml";
         /**
          * @description * `en` - English
          *     * `hi` - Hindi
@@ -4351,6 +4749,50 @@ export interface components {
          * @enum {string}
          */
         LineTypeEnum: "accommodation" | "food" | "electricity" | "water" | "laundry" | "addon" | "additional" | "discount" | "penalty" | "food_holiday";
+        LinkRequestApprove: {
+            /** Format: uuid */
+            resident_id: string;
+        };
+        LinkRequestCreate: {
+            join_code: string;
+            /** @default  */
+            message: string;
+            /** @default  */
+            claimed_name: string;
+            /** @default  */
+            claimed_phone: string;
+            /** @default  */
+            claimed_room: string;
+        };
+        LinkRequestReject: {
+            /** @default  */
+            note: string;
+        };
+        /**
+         * @description What staff see. Deliberately the person's name and what they typed about themselves, not
+         *     their account details; `possible_matches` is display-only help and nothing is auto-matched.
+         */
+        LinkRequestStaff: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["StatusCcfEnum"];
+            /** Format: uuid */
+            readonly property: string;
+            readonly property_name: string;
+            readonly requester_name: string;
+            readonly message: string;
+            readonly claimed_name: string;
+            readonly claimed_phone: string;
+            readonly claimed_room: string;
+            readonly resolution_note: string;
+            /** Format: uuid */
+            readonly resolved_resident: string | null;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly possible_matches: unknown[];
+        };
         Login: {
             email: string;
             password: string;
@@ -4391,6 +4833,21 @@ export interface components {
             phone?: string | null;
             language_code?: components["schemas"]["LanguageEnum"];
         };
+        MyLinkRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["StatusCcfEnum"];
+            readonly property_name: string;
+            readonly message: string;
+            readonly claimed_name: string;
+            readonly claimed_phone: string;
+            readonly claimed_room: string;
+            readonly resolution_note: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+        };
         NotificationLog: {
             /** Format: uuid */
             readonly id: string;
@@ -4418,9 +4875,11 @@ export interface components {
          *     * `invoice_issued` - Invoice Issued
          *     * `payment_receipt` - Payment Receipt
          *     * `invoice_drafts_ready` - Invoice Drafts Ready
+         *     * `residency_link_requested` - Residency Link Requested
+         *     * `residency_link_resolved` - Residency Link Resolved
          * @enum {string}
          */
-        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt" | "invoice_drafts_ready";
+        NotificationTypeEnum: "welcome" | "trial_expiry_reminder" | "invoice_issued" | "payment_receipt" | "invoice_drafts_ready" | "residency_link_requested" | "residency_link_resolved";
         /** @enum {unknown} */
         NullEnum: null;
         Occupancy: {
@@ -4791,6 +5250,14 @@ export interface components {
             /** Format: date-time */
             readonly updated_at?: string;
         };
+        /**
+         * @description Shared Resident representation + permission-scoped financial field redaction.
+         *
+         *     Never exposes raw file URLs or eagerly calls storage.url(): list/detail/write
+         *     responses carry boolean presence flags (`has_aadhaar_document`, `has_pan_document`)
+         *     while short-lived signed URLs are issued on demand from
+         *     `GET /api/v1/residents/{id}/documents/{field}/`.
+         */
         PatchedResident: {
             /** Format: uuid */
             readonly id?: string;
@@ -4813,9 +5280,11 @@ export interface components {
             aadhaar_number?: string;
             /** Format: uri */
             aadhaar_document?: string | null;
+            readonly has_aadhaar_document?: boolean;
             pan_number?: string;
             /** Format: uri */
             pan_document?: string | null;
+            readonly has_pan_document?: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5229,6 +5698,14 @@ export interface components {
             /** Format: email */
             email: string;
         };
+        /**
+         * @description Shared Resident representation + permission-scoped financial field redaction.
+         *
+         *     Never exposes raw file URLs or eagerly calls storage.url(): list/detail/write
+         *     responses carry boolean presence flags (`has_aadhaar_document`, `has_pan_document`)
+         *     while short-lived signed URLs are issued on demand from
+         *     `GET /api/v1/residents/{id}/documents/{field}/`.
+         */
         Resident: {
             /** Format: uuid */
             readonly id: string;
@@ -5251,9 +5728,11 @@ export interface components {
             aadhaar_number?: string;
             /** Format: uri */
             aadhaar_document?: string | null;
+            readonly has_aadhaar_document: boolean;
             pan_number?: string;
             /** Format: uri */
             pan_document?: string | null;
+            readonly has_pan_document: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5276,7 +5755,7 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
-        /** @description ResidentSerializer's own fields, plus the two the detail view adds. */
+        /** @description ResidentSerializer's own read fields, plus the two the detail view adds. */
         ResidentDetailResponse: {
             /** Format: uuid */
             readonly id: string;
@@ -5297,11 +5776,9 @@ export interface components {
             emergency_contact_relation?: string;
             emergency_contact_phone?: string;
             aadhaar_number?: string;
-            /** Format: uri */
-            aadhaar_document?: string | null;
+            readonly has_aadhaar_document: boolean;
             pan_number?: string;
-            /** Format: uri */
-            pan_document?: string | null;
+            readonly has_pan_document: boolean;
             passport_number?: string;
             employee_id?: string;
             student_id?: string;
@@ -5326,6 +5803,24 @@ export interface components {
             finance: components["schemas"]["ResidentFinance"] | null;
             redacted: string[];
         };
+        /** @description Response shape for `GET /residents/{id}/documents/{field}/`. */
+        ResidentDocumentUrlResponse: {
+            /** Format: uri */
+            url: string;
+            expires_in: number;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        ResidentEmailCodeRequest: {
+            /** Format: email */
+            email: string;
+        };
+        ResidentEmailCodeVerify: {
+            /** Format: email */
+            email: string;
+            code: string;
+            password?: string;
+        };
         ResidentFinance: {
             current_period: components["schemas"]["CurrentPeriod"];
             /** Format: decimal */
@@ -5336,6 +5831,86 @@ export interface components {
             prior_outstanding: string;
             /** Format: date */
             last_payment_date: string | null;
+        };
+        /** @description Explicit read serializer for GET /residents/ (no write-only file fields). */
+        ResidentList: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly property: string;
+            readonly status: components["schemas"]["Status82bEnum"];
+            readonly first_name: string;
+            readonly last_name: string;
+            readonly gender: components["schemas"]["GenderEnum"];
+            /** Format: date */
+            readonly date_of_birth: string | null;
+            readonly phone: string;
+            /** Format: email */
+            readonly email: string;
+            readonly permanent_address: string;
+            readonly current_address: string;
+            readonly emergency_contact_name: string;
+            readonly emergency_contact_relation: string;
+            readonly emergency_contact_phone: string;
+            readonly aadhaar_number: string;
+            readonly has_aadhaar_document: boolean;
+            readonly pan_number: string;
+            readonly has_pan_document: boolean;
+            readonly passport_number: string;
+            readonly employee_id: string;
+            readonly student_id: string;
+            readonly unit: string;
+            readonly block: string;
+            readonly move_in_date: string;
+            readonly contracted_rent: string | null;
+            readonly food_preference: string | null;
+            readonly billing_mode: string | null;
+            readonly joining_date: string | null;
+            readonly security_deposit_amount: string | null;
+            readonly security_deposit_agreed: string | null;
+            readonly security_deposit_pending: string | null;
+            readonly advance_amount: string | null;
+            readonly advance_refundable: string | null;
+            readonly room_number: string | null;
+            readonly bed_number: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ResidentLogin: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        ResidentPasswordResetConfirm: {
+            /** Format: email */
+            email: string;
+            code: string;
+            new_password: string;
+        };
+        ResidentPasswordResetRequest: {
+            /** Format: email */
+            email: string;
+        };
+        /**
+         * @description Create the person's own app account. The response is the same whether or not the address
+         *     already has an account (no enumeration): a new account gets a verification code by email, an
+         *     existing verified one gets a "you already have an account" email.
+         *
+         *     No password is accepted or stored here. Anyone can sign up with anyone's address, so a password
+         *     chosen now could later be activated by the real owner's verification. The password is chosen
+         *     in the verification step, by the person who holds the emailed code.
+         */
+        ResidentSignup: {
+            /** Format: email */
+            email: string;
+            first_name: string;
+            /** @default  */
+            last_name: string;
+            /** @default en */
+            language_code: components["schemas"]["LanguageCodeD72Enum"];
+            website?: string;
         };
         /**
          * @description * `weekly` - Weekly resident
@@ -5430,17 +6005,8 @@ export interface components {
             phone?: string | null;
             password: string;
             /** @default en */
-            language_code: components["schemas"]["SignupLanguageCodeEnum"];
+            language_code: components["schemas"]["LanguageCodeD72Enum"];
         };
-        /**
-         * @description * `en` - en
-         *     * `hi` - hi
-         *     * `te` - te
-         *     * `ta` - ta
-         *     * `ml` - ml
-         * @enum {string}
-         */
-        SignupLanguageCodeEnum: "en" | "hi" | "te" | "ta" | "ml";
         Staff: {
             /** Format: uuid */
             readonly id: string;
@@ -5501,6 +6067,14 @@ export interface components {
          * @enum {string}
          */
         Status82bEnum: "inquiry" | "reserved" | "active" | "notice_period" | "vacated" | "absconded" | "blacklisted";
+        /**
+         * @description * `pending` - Pending
+         *     * `approved` - Approved
+         *     * `rejected` - Rejected
+         *     * `cancelled` - Cancelled
+         * @enum {string}
+         */
+        StatusCcfEnum: "pending" | "approved" | "rejected" | "cancelled";
         /**
          * @description A tenant's plan + usage (PRD Module 20 'Current plan and usage
          *     (properties used vs. allowed)'). `property_usage` breaks usage down per
@@ -6546,6 +7120,156 @@ export interface operations {
             };
         };
     };
+    v1_auth_resident_login_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentLogin"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentLogin"];
+                "multipart/form-data": components["schemas"]["ResidentLogin"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+        };
+    };
+    v1_auth_resident_otp_email_request_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentEmailCodeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentEmailCodeRequest"];
+                "multipart/form-data": components["schemas"]["ResidentEmailCodeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentEmailCodeRequest"];
+                };
+            };
+        };
+    };
+    v1_auth_resident_otp_email_verify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentEmailCodeVerify"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentEmailCodeVerify"];
+                "multipart/form-data": components["schemas"]["ResidentEmailCodeVerify"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+        };
+    };
+    v1_auth_resident_password_reset_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentPasswordResetRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentPasswordResetRequest"];
+                "multipart/form-data": components["schemas"]["ResidentPasswordResetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentPasswordResetRequest"];
+                };
+            };
+        };
+    };
+    v1_auth_resident_password_reset_confirm_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentPasswordResetConfirm"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentPasswordResetConfirm"];
+                "multipart/form-data": components["schemas"]["ResidentPasswordResetConfirm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentPasswordResetConfirm"];
+                };
+            };
+        };
+    };
+    v1_auth_resident_signup_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResidentSignup"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResidentSignup"];
+                "multipart/form-data": components["schemas"]["ResidentSignup"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentSignup"];
+                };
+            };
+        };
+    };
     v1_auth_signup_create: {
         parameters: {
             query?: never;
@@ -7218,7 +7942,8 @@ export interface operations {
     v1_deposit_payments_list: {
         parameters: {
             query?: {
-                admission__resident?: string;
+                /** @description Only this resident's deposit payments (UUID). */
+                resident?: string;
             };
             header?: never;
             path?: never;
@@ -8625,6 +9350,142 @@ export interface operations {
             };
         };
     };
+    v1_me_invites_accept_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAccept"];
+                "application/x-www-form-urlencoded": components["schemas"]["InviteAccept"];
+                "multipart/form-data": components["schemas"]["InviteAccept"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_me_join_codes_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_me_link_requests_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyLinkRequest"][];
+                };
+            };
+        };
+    };
+    v1_me_link_requests_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequestCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["LinkRequestCreate"];
+                "multipart/form-data": components["schemas"]["LinkRequestCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyLinkRequest"];
+                };
+            };
+        };
+    };
+    v1_me_link_requests_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyLinkRequest"];
+                };
+            };
+        };
+    };
+    v1_me_residencies_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     v1_notices_list: {
         parameters: {
             query?: {
@@ -8795,8 +9656,10 @@ export interface operations {
                  *     * `invoice_issued` - Invoice Issued
                  *     * `payment_receipt` - Payment Receipt
                  *     * `invoice_drafts_ready` - Invoice Drafts Ready
+                 *     * `residency_link_requested` - Residency Link Requested
+                 *     * `residency_link_resolved` - Residency Link Resolved
                  */
-                notification_type?: "invoice_drafts_ready" | "invoice_issued" | "payment_receipt" | "trial_expiry_reminder" | "welcome";
+                notification_type?: "invoice_drafts_ready" | "invoice_issued" | "payment_receipt" | "residency_link_requested" | "residency_link_resolved" | "trial_expiry_reminder" | "welcome";
                 /**
                  * @description * `sent` - Sent
                  *     * `failed` - Failed
@@ -9501,6 +10364,75 @@ export interface operations {
             };
         };
     };
+    v1_properties_join_code_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_properties_join_code_rotate_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_properties_join_code_rotate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     v1_properties_layout_retrieve: {
         parameters: {
             query?: {
@@ -9620,6 +10552,112 @@ export interface operations {
             };
         };
     };
+    v1_residency_link_requests_list: {
+        parameters: {
+            query?: {
+                property?: string;
+                /**
+                 * @description * `pending` - Pending
+                 *     * `approved` - Approved
+                 *     * `rejected` - Rejected
+                 *     * `cancelled` - Cancelled
+                 */
+                status?: "approved" | "cancelled" | "pending" | "rejected";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkRequestStaff"][];
+                };
+            };
+        };
+    };
+    v1_residency_link_requests_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this residency link request. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkRequestStaff"];
+                };
+            };
+        };
+    };
+    v1_residency_link_requests_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this residency link request. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequestApprove"];
+                "application/x-www-form-urlencoded": components["schemas"]["LinkRequestApprove"];
+                "multipart/form-data": components["schemas"]["LinkRequestApprove"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkRequestStaff"];
+                };
+            };
+        };
+    };
+    v1_residency_link_requests_reject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this residency link request. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LinkRequestReject"];
+                "application/x-www-form-urlencoded": components["schemas"]["LinkRequestReject"];
+                "multipart/form-data": components["schemas"]["LinkRequestReject"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkRequestStaff"];
+                };
+            };
+        };
+    };
     v1_residents_list: {
         parameters: {
             query?: {
@@ -9638,7 +10676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Resident"][];
+                    "application/json": components["schemas"]["ResidentList"][];
                 };
             };
         };
@@ -9715,6 +10753,129 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Resident"];
                 };
+            };
+        };
+    };
+    v1_residents_app_access_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_residents_app_access_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_residents_app_invite_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_residents_app_invite_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    v1_residents_documents_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Which KYC document field to issue a short-lived signed URL for. */
+                field: "aadhaar_document" | "pan_document";
+                /** @description A UUID string identifying this resident. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResidentDocumentUrlResponse"];
+                };
+            };
+            /** @description Document download URL temporarily unavailable (code=DOCUMENT_URL_UNAVAILABLE). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

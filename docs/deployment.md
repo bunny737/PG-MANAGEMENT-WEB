@@ -196,7 +196,7 @@ stay on GET endpoints. Credentials in `SMOKE_USER_CREDENTIALS`, rotated quarterl
 |---|---|---|
 | Bad deploy | shift traffic back; `deploy.sh PREVIOUS` on the VM | < 5 min |
 | Bad migration / corruption | PITR clone to a **new** instance → `check_db_roles` → switch the connection name in `pglive-api`, every job, the VM proxy, the export Workflow, monitoring and `infra/`; keep the old instance stopped 14 days | RPO ≤ 5 min, RTO 1–2 h |
-| File deleted | GCS versioning / soft delete | < 1 h |
+| File deleted | GCS versioning / soft delete (`$MEDIA_BUCKET` only; `$KYC_BUCKET` uses no versioning & 0d soft delete so KYC PII Remove/Replace/account deletion hard-deletes immediately) | < 1 h |
 | Zone / region loss | restore from backup / weekly export in asia-south2 | hours / ~1 day |
 | VM lost | recreate, `deploy.sh` (Redis is disposable) | < 30 min |
 
@@ -207,10 +207,11 @@ tests, and deletes the instance.
 
 ## 9. Launch gates and open items
 
-- **Aadhaar/PAN legal review** (lawful basis, consent text, purpose limitation, retention): until signed off,
-  ship with those uploads disabled. This is the `KYC_UPLOADS_ENABLED` setting, which defaults to **off in
-  production**: new Aadhaar/PAN files are refused (stored ones stay readable and can be cleared) until
-  `KYC_UPLOADS_ENABLED=true` is set on the API service.
+- **Aadhaar/PAN uploads (`KYC_UPLOADS_ENABLED` & `$KYC_BUCKET`).** `config/settings/prod.py` and `infra/30-services.sh`
+  fail closed to `KYC_UPLOADS_ENABLED=false` unless explicitly passed; `.github/workflows/deploy-prod.yml` and
+  `deploy-staging.yml` set `KYC_UPLOADS_ENABLED=true` and `EXPECT_KYC_UPLOADS_ENABLED=true` (enforced by preflight
+  in `30-services.sh` and `pglive-smoke`). Resident KYC objects live in `$PROJECT-kyc` (`GS_KYC_BUCKET_NAME`,
+  non-versioned with `0d` soft delete) so Remove, Replace, and account deletion purge PII bytes immediately.
 - **Account deletion (Module 22)**: create the `account_deletion_failed` log-based alert (see §7), confirm with the accountant that the
   retained billing set satisfies GST record rules, and put the public `/delete-account` URL into Play Console → Data safety.
   The Flutter app must also ship its in-app "Delete account" entry before the module is closed.

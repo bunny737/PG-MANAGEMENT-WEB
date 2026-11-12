@@ -9,7 +9,9 @@ history row — all of which must succeed or fail together.
 import calendar
 from datetime import date
 from decimal import Decimal
+import logging
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -18,7 +20,13 @@ from rest_framework.exceptions import ValidationError
 from apps.audit import log as audit_log
 from apps.audit.models import AuditLog
 from apps.core.idempotency import key_reused
+from apps.core.storage import delete_storage_object_on_commit
+from apps.core.uploads import sniff_upload
 from apps.properties.models import Bed, PropertySettings
+
+logger = logging.getLogger(__name__)
+KYC_FILE_FIELDS = ('aadhaar_document', 'pan_document')
+ALLOWED_KYC_TYPES = {'image/jpeg', 'image/png', 'application/pdf'}
 
 from .access import record_exit
 from .models import (
@@ -821,3 +829,119 @@ def build_activity_timeline(resident):
         del event['_weight']
         event['date'] = event['date'].isoformat()
     return events
+
+
+def _cleanup_orphan_blobs(written_blobs, *, tenant_id, resident_id):
+    """Best-effort delete of newly written blobs when DB save or audit fails.
+
+    Never masks the original exception or leaks storage object keys/filenames.
+    """
+    for storage, name, field in written_blobs:
+        try:
+            storage.delete(name)
+        except Exception as cleanup_exc:
+            logger.error(
+                'kyc_orphan_cleanup_failed tenant_id=%s resident_id=%s field=%s error=%s',
+                tenant_id, resident_id, field, type(cleanup_exc).__name__,
+            )
+
+
+def _detected_kyc_type(field, upload, kyc_content_types):
+    if kyc_content_types and field in kyc_content_types:
+        return kyc_content_types[field]
+    return sniff_upload(
+        upload, field=field, max_bytes=settings.KYC_DOCUMENT_MAX_BYTES,
+        code_prefix='document', allowed_types=ALLOWED_KYC_TYPES,
+    )
+
+
+def create_resident(*, validated_data, actor, kyc_content_types=None, request=None):
+    """Create a resident profile + any initial KYC documents with explicit orphan cleanup
+    and metadata-only audit events."""
+    data = dict(validated_data)
+    kyc_uploads = {field: data.pop(field) for field in KYC_FILE_FIELDS if field in data}
+    resident = Resident(tenant_id=actor.tenant_id, **data)
+
+    written_blobs = []
+    kyc_audits = []
+    try:
+        for field, upload in kyc_uploads.items():
+            if upload is None:
+                continue
+            detected_type = _detected_kyc_type(field, upload, kyc_content_types)
+            field_file = getattr(resident, field)
+            field_file.save(upload.name or field, upload, save=False)
+            written_blobs.append((field_file.storage, field_file.name, field))
+            kyc_audits.append(('resident.kyc_document_uploaded', None, {'field': field, 'content_type': detected_type}))
+
+        with transaction.atomic():
+            resident.save()
+            audit_log.record(
+                action='resident.created', actor=actor, obj=resident,
+                after={
+                    'first_name': resident.first_name, 'last_name': resident.last_name,
+                    'status': resident.status, 'property': str(resident.property_id),
+                },
+                request=request,
+            )
+            for action, before, after in kyc_audits:
+                audit_log.record(action=action, actor=actor, obj=resident, before=before, after=after, request=request)
+    except Exception:
+        _cleanup_orphan_blobs(written_blobs, tenant_id=actor.tenant_id, resident_id=resident.pk)
+        raise
+    return resident
+
+
+def update_resident(*, resident, validated_data, actor, kyc_content_types=None, request=None):
+    """Update a resident profile and apply KYC upload/replace/clear with orphan cleanup,
+    hardened post-commit deletion of replaced objects, and metadata-only audit events."""
+    data = dict(validated_data)
+    kyc_changes = {field: data.pop(field) for field in KYC_FILE_FIELDS if field in data}
+
+    written_blobs = []
+    replaced_blobs = []
+    kyc_audits = []
+    try:
+        for field, value in kyc_changes.items():
+            prior_file = getattr(resident, field)
+            had_existing = bool(prior_file)
+            prior_ref = (prior_file.storage, str(prior_file.name), field) if had_existing else None
+
+            if value is None:
+                setattr(resident, field, None)
+                if prior_ref is not None:
+                    replaced_blobs.append(prior_ref)
+                    kyc_audits.append(('resident.kyc_document_removed', {'field': field}, None))
+            else:
+                detected_type = _detected_kyc_type(field, value, kyc_content_types)
+                field_file = getattr(resident, field)
+                field_file.save(value.name or field, value, save=False)
+                written_blobs.append((field_file.storage, field_file.name, field))
+                if prior_ref is not None:
+                    replaced_blobs.append(prior_ref)
+                    kyc_audits.append((
+                        'resident.kyc_document_replaced', {'field': field},
+                        {'field': field, 'content_type': detected_type},
+                    ))
+                else:
+                    kyc_audits.append((
+                        'resident.kyc_document_uploaded', None,
+                        {'field': field, 'content_type': detected_type},
+                    ))
+
+        for field, value in data.items():
+            setattr(resident, field, value)
+
+        with transaction.atomic():
+            resident.save()
+            for action, before, after in kyc_audits:
+                audit_log.record(action=action, actor=actor, obj=resident, before=before, after=after, request=request)
+            for storage, old_name, field in replaced_blobs:
+                delete_storage_object_on_commit(
+                    storage, old_name,
+                    tenant_id=resident.tenant_id, object_id=resident.pk, field=field,
+                )
+    except Exception:
+        _cleanup_orphan_blobs(written_blobs, tenant_id=resident.tenant_id, resident_id=resident.pk)
+        raise
+    return resident

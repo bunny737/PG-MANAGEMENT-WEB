@@ -286,6 +286,32 @@ class TenantPurgeTests(PurgeTestCase):
         self.assertEqual(row.status, Status.COMPLETED)
         self.assertTrue(all([row.notified_at, row.razorpay_closed_at, row.db_purged_at, row.files_purged_at]))
 
+    def test_purge_tenant_files_clears_separate_kyc_bucket_without_touching_other_tenants(self):
+        from django.conf import settings as django_settings
+        from django.core.files.storage import FileSystemStorage
+
+        with tempfile.TemporaryDirectory() as kyc_dir:
+            storages_cfg = {
+                **django_settings.STORAGES,
+                'kyc': {
+                    'BACKEND': 'django.core.files.storage.FileSystemStorage',
+                    'OPTIONS': {'location': kyc_dir, 'base_url': '/kyc/'},
+                },
+            }
+            with override_settings(STORAGES=storages_cfg):
+                kyc_fs = FileSystemStorage(location=kyc_dir)
+                t1_exp = default_storage.save(f'expenses/{self.tenant.id}/a.png', ContentFile(b'1'))
+                t2_exp = default_storage.save(f'expenses/{self.other_tenant.id}/b.png', ContentFile(b'2'))
+                t1_kyc = kyc_fs.save(f'residents/{self.tenant.id}/{uuid.uuid4()}/doc.pdf', ContentFile(b'3'))
+                t2_kyc = kyc_fs.save(f'residents/{self.other_tenant.id}/{uuid.uuid4()}/doc.pdf', ContentFile(b'4'))
+
+                deleted = deletion.purge_tenant_files(self.tenant.id)
+                self.assertEqual(deleted, 2)
+                self.assertFalse(default_storage.exists(t1_exp))
+                self.assertTrue(default_storage.exists(t2_exp))
+                self.assertFalse(kyc_fs.exists(t1_kyc))
+                self.assertTrue(kyc_fs.exists(t2_kyc))
+
     def test_tenant_status_becomes_deleted_only_at_the_end(self):
         row = self.request_for(self.owner)
         statuses = []

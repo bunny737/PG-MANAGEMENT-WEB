@@ -31,8 +31,9 @@ umask 077
   echo "SENTRY_ENVIRONMENT=production"
   echo "APP_RELEASE=$TAG"
   echo "GS_BUCKET_NAME=$PROJECT-media"
+  echo "GS_KYC_BUCKET_NAME=$PROJECT-kyc"
   echo "GS_PROJECT_ID=$PROJECT"
-  echo "GS_SA_EMAIL=$(md instance/service-accounts/default/email)"   # signs media URLs as the VM's own account
+  # Least-privilege: sa-worker deletes expired/purged objects only and never signs URLs (no GS_SA_EMAIL).
   # SMTP + company-identity settings (non-secret) come from VM metadata; unset ones are left out so
   # settings defaults apply. COMPANY_NAME/COMPANY_ADDRESS feed every email's footer (apps.core.email) —
   # this worker is the process that actually sends them, so it needs its own copy, not just the web service's.

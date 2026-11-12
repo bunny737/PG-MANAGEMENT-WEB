@@ -845,10 +845,9 @@ export interface Resident {
   emergency_contact_relation: string;
   emergency_contact_phone: string;
   aadhaar_number: string;
-  /** Absolute URL of the uploaded file, or null. */
-  aadhaar_document?: string | null;
+  has_aadhaar_document?: boolean;
   pan_number: string;
-  pan_document?: string | null;
+  has_pan_document?: boolean;
   passport_number: string;
   employee_id: string;
   student_id: string;
@@ -988,11 +987,30 @@ export function createTransfer(payload: CreateTransferPayload) {
 
 export type ResidentDocumentField = "aadhaar_document" | "pan_document";
 
+export interface ResidentDocumentUrlResponse {
+  url: string;
+  expires_in: number;
+  expires_at: string;
+}
+
 /** Uploads (or replaces) one KYC file on the resident, as multipart. */
 export function uploadResidentDocument(residentId: string, field: ResidentDocumentField, file: File) {
   const form = new FormData();
   form.append(field, file);
   return apiFetch<Resident>(`/api/v1/residents/${residentId}/`, { method: "PATCH", body: form });
+}
+
+/** Issues a fresh short-lived signed download URL for an uploaded KYC document. */
+export function getResidentDocumentUrl(residentId: string, field: ResidentDocumentField) {
+  return apiFetch<ResidentDocumentUrlResponse>(`/api/v1/residents/${residentId}/documents/${field}/`);
+}
+
+/** Permanently removes an uploaded KYC document (`{ [field]: null }`). */
+export function clearResidentDocument(residentId: string, field: ResidentDocumentField) {
+  return apiFetch<Resident>(`/api/v1/residents/${residentId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ [field]: null }),
+  });
 }
 
 export function updateResidentStatus(residentId: string, status: string) {

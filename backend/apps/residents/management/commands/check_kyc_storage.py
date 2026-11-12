@@ -11,6 +11,7 @@ import os
 from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from django.utils.functional import empty
@@ -18,6 +19,10 @@ from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound
 
 from apps.core.storage import _is_gcs, kyc_storage
 from apps.core.tenancy import tenant_context
+from apps.residents.management.commands.backfill_kyc_documents import (
+    _same_storage,
+    inspect_legacy_media_residents,
+)
 from apps.residents.models import Resident
 from apps.residents.services import KYC_FILE_FIELDS
 
@@ -44,6 +49,10 @@ class Command(BaseCommand):
         parser.add_argument(
             '--require', action='store_true',
             help='Require dedicated GCS KYC bucket checks even when KYC_UPLOADS_ENABLED is False.',
+        )
+        parser.add_argument(
+            '--fail-on-legacy-media', action='store_true',
+            help='Fail if any live or noncurrent resident KYC objects still remain in default media storage.',
         )
 
     def handle(self, *args, **options):
@@ -142,6 +151,8 @@ class Command(BaseCommand):
                         'verify roles/iam.serviceAccountTokenCreator and GS_SA_EMAIL.'
                     )
 
+        legacy = {'live': 0, 'noncurrent': 0, 'soft_deleted': 0}
+        if storage_backend is not None and reloaded:
                 # Confirm no resident row still references a document missing from KYC storage.
                 with tenant_context(is_super_admin=True):
                     rows = list(
@@ -162,12 +173,30 @@ class Command(BaseCommand):
                         f'gs://{bucket_name}; run manage.py backfill_kyc_documents.'
                     )
 
+                media_storage = _unwrap_storage(default_storage)
+                if not _same_storage(media_storage, storage_backend):
+                    try:
+                        legacy = inspect_legacy_media_residents(media_storage)
+                    except GoogleAPIError as exc:
+                        problems.append(
+                            f'Failed inspecting legacy residents/ prefix in default media storage ({type(exc).__name__}).'
+                        )
+                    else:
+                        if options['fail_on_legacy_media'] and (legacy['live'] or legacy['noncurrent']):
+                            problems.append(
+                                f'{legacy["live"]} live and {legacy["noncurrent"]} noncurrent legacy KYC '
+                                'object(s) still exist in default media storage; run manage.py backfill_kyc_documents '
+                                '--delete-source --purge-orphaned-legacy (or execute pglive-purge-legacy-kyc).'
+                            )
+
         if problems:
             raise CommandError('KYC storage preflight failed:\n- ' + '\n- '.join(problems))
         self.stdout.write(
             self.style.SUCCESS(
                 f'KYC storage preflight passed for gs://{bucket_name} '
-                f'(uploads_enabled={enabled}, hard-delete=on, signing=ok, missing_docs=0).'
+                f'(uploads_enabled={enabled}, hard-delete=on, signing=ok, missing_docs=0, '
+                f'legacy_media_live={legacy["live"]}, legacy_media_noncurrent={legacy["noncurrent"]}, '
+                f'legacy_media_soft_deleted={legacy["soft_deleted"]}).'
             )
         )
 

@@ -84,4 +84,9 @@ if [[ "$ENVIRONMENT" == prod ]]; then
     --command "$worker_cmd"
 fi
 trap - ERR
+if [[ "${PURGE_LEGACY_KYC_MEDIA:-false}" == true ]]; then
+  echo "== controlled post-cutover purge of legacy residents/ generations in $MEDIA_BUCKET"
+  g run jobs execute pglive-purge-legacy-kyc --region "$REGION" --wait
+  g run jobs execute pglive-check-kyc --region "$REGION" --wait
+fi
 echo "Released $SHA to $ENVIRONMENT"

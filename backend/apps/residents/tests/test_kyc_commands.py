@@ -72,10 +72,97 @@ class BackfillKycDocumentsCommandTests(ResidentAPITestCase):
             # Second run is a clean idempotent no-op, and --delete-source cleans up source cleanly.
             second_out = io.StringIO()
             call_command('backfill_kyc_documents', '--delete-source', stdout=second_out)
-            self.assertIn('already_in_kyc=1 copied=0 to_copy=0 deleted_source=1', second_out.getvalue())
+            self.assertIn('already_in_kyc=1 copied=0 to_copy=0 deleted_source=1 deleted_generations=1', second_out.getvalue())
+            self.assertIn('legacy_media_live=0', second_out.getvalue())
             self.assertTrue(dst_storage.exists(key))
             self.assertFalse(src_storage.exists(key))
             self.assertNotIn('legacy_aadhaar_9999.pdf', first_out.getvalue() + second_out.getvalue())
+
+    def test_backfill_purge_orphaned_legacy_requires_delete_source_and_clears_leftovers(self):
+        src_storage = FileSystemStorage(location=self.media_dir)
+        dst_storage = FileSystemStorage(location=self.kyc_dir)
+        active_key = f'residents/{self.tenant.id}/{self.resident.id}/active.pdf'
+        orphan_key = f'residents/{self.tenant.id}/{self.resident.id}/replaced_old.pdf'
+        src_storage.save(active_key, ContentFile(PDF))
+        src_storage.save(orphan_key, ContentFile(PDF))
+        with tenant_context(self.tenant.id):
+            Resident.objects.filter(pk=self.resident.pk).update(aadhaar_document=active_key)
+
+        with override_settings(STORAGES=self._storages()):
+            with self.assertRaises(CommandError):
+                call_command('backfill_kyc_documents', '--purge-orphaned-legacy', stdout=io.StringIO())
+
+            out = io.StringIO()
+            call_command('backfill_kyc_documents', '--delete-source', '--purge-orphaned-legacy', stdout=out)
+        self.assertTrue(dst_storage.exists(active_key))
+        self.assertFalse(src_storage.exists(active_key))
+        self.assertFalse(src_storage.exists(orphan_key))
+        self.assertIn('purged_orphaned_generations=1', out.getvalue())
+        self.assertIn('legacy_media_live=0', out.getvalue())
+
+    def test_backfill_delete_source_removes_all_gcs_generations_live_and_noncurrent(self):
+        creds = _fake_service_account()
+        storages_cfg = {
+            **settings.STORAGES,
+            'default': {
+                'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage',
+                'OPTIONS': {'bucket_name': 'pglive-media', 'project_id': 'test', 'credentials': creds, 'iam_sign_blob': False},
+            },
+            'kyc': {
+                'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage',
+                'OPTIONS': {'bucket_name': 'pglive-kyc', 'project_id': 'test', 'credentials': creds, 'iam_sign_blob': False},
+            },
+        }
+        key = f'residents/{self.tenant.id}/{self.resident.id}/versioned.pdf'
+        orphan_key = f'residents/{self.tenant.id}/{self.resident.id}/old_orphan.pdf'
+        with tenant_context(self.tenant.id):
+            Resident.objects.filter(pk=self.resident.pk).update(aadhaar_document=key)
+
+        blobs = [
+            mock.Mock(name='gen1', generation=101, time_deleted='2026-11-01T00:00:00Z'),
+            mock.Mock(name='gen2', generation=102, time_deleted=None),
+            mock.Mock(name='orphan1', generation=201, time_deleted='2026-11-02T00:00:00Z'),
+        ]
+        blobs[0].name = key
+        blobs[1].name = key
+        blobs[2].name = orphan_key
+
+        deleted_calls = []
+        src_bucket = mock.Mock(name='media_bucket')
+        dst_bucket = mock.Mock(name='kyc_bucket')
+
+        def fake_list_blobs(prefix='', versions=None, soft_deleted=None):
+            if soft_deleted:
+                return []
+            return [b for b in blobs if b.name.startswith(prefix)]
+
+        def fake_delete_blob(blob_name, generation=None):
+            deleted_calls.append((blob_name, generation))
+            blobs[:] = [b for b in blobs if not (b.name == blob_name and b.generation == generation)]
+
+        src_bucket.list_blobs.side_effect = fake_list_blobs
+        src_bucket.delete_blob.side_effect = fake_delete_blob
+        src_bucket.get_blob.return_value = blobs[1]
+
+        def bucket_for(storage_self):
+            return dst_bucket if storage_self.bucket_name == 'pglive-kyc' else src_bucket
+
+        with override_settings(STORAGES=storages_cfg), \
+             mock.patch.object(GoogleCloudStorage, 'exists', autospec=True,
+                               side_effect=lambda s, n: s.bucket_name == 'pglive-kyc'), \
+             mock.patch('storages.backends.gcloud.GoogleCloudStorage.bucket', new=property(bucket_for)):
+            out = io.StringIO()
+            call_command(
+                'backfill_kyc_documents', '--delete-source', '--purge-orphaned-legacy', stdout=out,
+            )
+
+        self.assertEqual(deleted_calls, [(key, 101), (key, 102), (orphan_key, 201)])
+        self.assertIn('deleted_generations=2', out.getvalue())
+        self.assertIn('purged_orphaned_generations=1', out.getvalue())
+        self.assertIn('legacy_media_live=0 legacy_media_noncurrent=0', out.getvalue())
+        self.assertIn('soft-delete retention', out.getvalue())
+        self.assertNotIn('versioned.pdf', out.getvalue())
+        self.assertNotIn('old_orphan.pdf', out.getvalue())
 
     def test_backfill_fails_if_referenced_object_is_missing_from_both_storages(self):
         missing_key = f'residents/{self.tenant.id}/{self.resident.id}/missing.pdf'
@@ -122,6 +209,7 @@ class BackfillKycDocumentsCommandTests(ResidentAPITestCase):
 
         src_bucket.get_blob.return_value = src_blob
         src_bucket.copy_blob.side_effect = fake_copy_blob
+        src_bucket.list_blobs.return_value = []
         dst_bucket.blob.side_effect = lambda name: mock.Mock(exists=lambda: copied['done'])
 
         def bucket_for(storage_self):
@@ -168,6 +256,7 @@ def _make_fake_bucket(*, versioning=False, soft_delete_seconds=0, ubla=True, pap
 
     bucket.blob.side_effect = make_blob
     bucket.get_blob.side_effect = lambda name, **kwargs: make_blob(name) if name in existing_keys else None
+    bucket.list_blobs.return_value = []
     return bucket
 
 
@@ -221,6 +310,7 @@ class CheckKycStorageCommandTests(ResidentAPITestCase):
              mock.patch.object(GoogleCloudStorage, 'bucket', new=property(lambda s: bucket)):
             call_command('check_kyc_storage', '--require', stdout=out)
         self.assertIn('preflight passed', out.getvalue())
+        self.assertIn('legacy_media_live=0, legacy_media_noncurrent=0, legacy_media_soft_deleted=0', out.getvalue())
         bucket.reload.assert_called_once()
 
     def test_detects_bad_bucket_config_missing_permissions_signing_error_and_unmigrated_docs(self):
@@ -270,3 +360,33 @@ class CheckKycStorageCommandTests(ResidentAPITestCase):
                 with self.assertRaises(CommandError) as ctx:
                     call_command('check_kyc_storage', stdout=io.StringIO())
             self.assertIn(expected_fragment, str(ctx.exception))
+
+    def test_reports_and_optionally_fails_when_legacy_media_objects_remain(self):
+        kyc_bucket = _make_fake_bucket()
+        media_bucket = _make_fake_bucket()
+        live_blob = mock.Mock(time_deleted=None)
+        noncurrent_blob = mock.Mock(time_deleted='2026-11-01T00:00:00Z')
+        soft_blob = mock.Mock(time_deleted='2026-11-02T00:00:00Z')
+
+        def media_list(prefix='', versions=None, soft_deleted=None):
+            if soft_deleted:
+                return [soft_blob]
+            return [live_blob, noncurrent_blob]
+
+        media_bucket.list_blobs.side_effect = media_list
+
+        def bucket_for(storage_self):
+            return kyc_bucket if storage_self.bucket_name == 'pglive-test-kyc' else media_bucket
+
+        with override_settings(
+            KYC_UPLOADS_ENABLED=True, GS_BUCKET_NAME='pglive-test-media',
+            GS_KYC_BUCKET_NAME='pglive-test-kyc', STORAGES=self._gcs_storages(),
+        ), mock.patch.dict('os.environ', {'EXPECT_KYC_UPLOADS_ENABLED': 'true'}), \
+             mock.patch.object(GoogleCloudStorage, 'bucket', new=property(bucket_for)):
+            out = io.StringIO()
+            call_command('check_kyc_storage', '--require', stdout=out)
+            self.assertIn('legacy_media_live=1, legacy_media_noncurrent=1, legacy_media_soft_deleted=1', out.getvalue())
+
+            with self.assertRaises(CommandError) as ctx:
+                call_command('check_kyc_storage', '--require', '--fail-on-legacy-media', stdout=io.StringIO())
+        self.assertIn('1 live and 1 noncurrent legacy KYC object(s)', str(ctx.exception))

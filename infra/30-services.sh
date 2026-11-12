@@ -117,9 +117,12 @@ MIGRATE_SECRETS="$(secrets SECRET_KEY=DJANGO_SECRET_KEY JWT_SIGNING_KEY DB_PASSW
 job pglive-migrate sa-migrate migration_user "$MIGRATE_SECRETS" "migrate,--noinput"
 # One job = one command, so the post-migrate role check is its own job; the deploy aborts if it fails.
 job pglive-check-roles sa-api app_user "$API_SECRETS" "check_db_roles,--role,app_user"
-# Backfill any pre-existing resident KYC objects from $MEDIA_BUCKET into $KYC_BUCKET idempotently, then
-# fail the release before smoke/canary if the KYC bucket, hard-delete settings, IAM permissions, or URL signing are broken.
+# Backfill any pre-existing resident KYC objects from $MEDIA_BUCKET into $KYC_BUCKET idempotently (rollback-safe),
+# then fail the release before smoke/canary if the KYC bucket, hard-delete settings, IAM permissions, or URL
+# signing are broken. `pglive-purge-legacy-kyc` runs post-cutover (with legal approval via PURGE_LEGACY_KYC_MEDIA=true)
+# to delete all live and noncurrent `residents/` generations in $MEDIA_BUCKET.
 job pglive-backfill-kyc sa-api app_user "$API_SECRETS" "backfill_kyc_documents"
+job pglive-purge-legacy-kyc sa-api app_user "$API_SECRETS" "backfill_kyc_documents,--delete-source,--purge-orphaned-legacy"
 job pglive-check-kyc sa-api app_user "$API_SECRETS" "check_kyc_storage,--require" "" \
   "GS_SA_EMAIL=$(sa sa-api);KYC_UPLOADS_ENABLED=$KYC_UPLOADS_ENABLED;EXPECT_KYC_UPLOADS_ENABLED=$EXPECT_KYC_UPLOADS_ENABLED"
 job pglive-generate-invoices sa-api app_user "$API_SECRETS" "generate_subscription_invoices"

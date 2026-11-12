@@ -416,6 +416,10 @@ job() {   # name service-account db-user secrets command-args [--clear-cloudsql-
 job pglive-migrate           migrate    migration_user "SECRET_KEY=DJANGO_SECRET_KEY:latest,JWT_SIGNING_KEY=JWT_SIGNING_KEY:latest,DB_PASSWORD=DB_MIGRATION_PASSWORD:latest" "manage.py,migrate,--noinput"
 job pglive-check-roles       api        app_user       "$API_SECRETS" "manage.py,check_db_roles,--role,app_user"
 job pglive-check-resident-users api app_user "$API_SECRETS" "manage.py,check_resident_users"
+job pglive-backfill-kyc      api        app_user       "$API_SECRETS" "manage.py,backfill_kyc_documents"
+job pglive-purge-legacy-kyc  api        app_user       "$API_SECRETS" "manage.py,backfill_kyc_documents,--delete-source,--purge-orphaned-legacy"
+job pglive-check-kyc         api        app_user       "$API_SECRETS" "manage.py,check_kyc_storage,--require"
+gcloud run jobs update pglive-check-kyc --region $REGION --update-env-vars "GS_SA_EMAIL=$(sa api),KYC_UPLOADS_ENABLED=true,EXPECT_KYC_UPLOADS_ENABLED=true"
 job pglive-generate-invoices api        app_user       "$API_SECRETS" "manage.py,generate_subscription_invoices"
 job pglive-check-grace-periods api      app_user       "$API_SECRETS" "manage.py,check_subscription_grace_periods"
 ```
@@ -688,7 +692,7 @@ git checkout <new-sha>; export SHA=$(git rev-parse --short=12 HEAD)
 gcloud sql backups create --instance $SQL_INSTANCE --description "pre-release $SHA"
 gcloud sql backups list --instance $SQL_INSTANCE --limit 1            # status SUCCESSFUL before continuing
 # 3. point the jobs at the new image, migrate, verify roles
-for j in pglive-migrate pglive-check-roles pglive-check-resident-users pglive-generate-invoices pglive-check-grace-periods; do
+for j in pglive-migrate pglive-check-roles pglive-check-resident-users pglive-backfill-kyc pglive-purge-legacy-kyc pglive-check-kyc pglive-generate-invoices pglive-check-grace-periods; do
   gcloud run jobs update $j --region $REGION --image $AR/pglive-api:$SHA
 done
 # Module 26: accounts.0013 refuses to migrate if a role=resident user exists. The check prints
@@ -696,7 +700,9 @@ done
 # never reaches migrate.
 gcloud run jobs execute pglive-check-resident-users --region $REGION --wait && \
 gcloud run jobs execute pglive-migrate --region $REGION --wait && \
-gcloud run jobs execute pglive-check-roles --region $REGION --wait
+gcloud run jobs execute pglive-check-roles --region $REGION --wait && \
+gcloud run jobs execute pglive-backfill-kyc --region $REGION --wait && \
+gcloud run jobs execute pglive-check-kyc --region $REGION --wait
 # 4. new revisions without traffic, then look at them via the tag
 gcloud run deploy pglive-api --region $REGION --image $AR/pglive-api:$SHA --no-traffic --tag candidate
 gcloud run deploy pglive-web --region $REGION --image $AR/pglive-web:$SHA --no-traffic --tag candidate
@@ -706,7 +712,11 @@ gcloud run services update-traffic pglive-web --region $REGION --to-tags candida
 gcloud run services update-traffic pglive-api --region $REGION --to-latest
 gcloud run services update-traffic pglive-web --region $REGION --to-latest
 # 6. the worker
-gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo /opt/pglive/deploy.sh $SHA"
+gcloud compute ssh pglive-worker --zone $ZONE --tunnel-through-iap --command "sudo env GS_BUCKET_NAME=$MEDIA_BUCKET GS_KYC_BUCKET_NAME=$KYC_BUCKET /opt/pglive/deploy.sh $SHA"
+# 7. (if pglive-check-kyc showed any pre-migration objects in $MEDIA_BUCKET) after rollback is no longer needed and legal approves:
+gcloud run jobs execute pglive-purge-legacy-kyc --region $REGION --wait
+# Note: deleted pre-migration source generations in $MEDIA_BUCKET stay soft-deleted in GCS for 14 days (cannot be bypassed by API);
+# all post-migration uploads write solely to $KYC_BUCKET (--no-versioning --soft-delete-duration=0).
 ```
 
 `--set-env-vars`/`--set-secrets` carry over from the previous revision when you only pass `--image`.

@@ -31,7 +31,10 @@ jobs:
             || { echo "::error::$GITHUB_REF_NAME is not on main - refusing to deploy"; exit 1; }
       - name: Tag must be annotated
         run: |
-          [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag ] \
+          # actions/checkout dereferences the triggering tag when it checks out GITHUB_SHA,
+          # so the local ref can look lightweight even when the remote tag is annotated.
+          # Only annotated tags have a peeled ^{} ref on the remote.
+          git ls-remote --exit-code --tags origin "refs/tags/${GITHUB_REF_NAME}^{}" >/dev/null \
             || { echo "::error::$GITHUB_REF_NAME is a lightweight tag - use git tag -a"; exit 1; }
 
   ci:

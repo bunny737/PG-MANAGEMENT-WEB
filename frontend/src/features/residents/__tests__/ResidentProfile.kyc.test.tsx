@@ -1,15 +1,21 @@
 /* eslint-disable i18next/no-literal-string -- test fixtures, not UI copy */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextIntlClientProvider } from "next-intl";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import common from "@/messages/en/common.json";
 import residents from "@/messages/en/residents.json";
 import status from "@/messages/en/status.json";
+import { queryClient as appQueryClient } from "@/lib/queryClient";
+import { afterPayment } from "@/lib/refresh";
 
 const mocks = vi.hoisted(() => ({
   getResident: vi.fn(),
   listComplaints: vi.fn(),
+  listVacates: vi.fn(),
+  getVacateSettlementPreview: vi.fn(),
   createDepositPayment: vi.fn(),
+  can: vi.fn(() => true),
   uploadResidentDocument: vi.fn(),
   getResidentDocumentUrl: vi.fn(),
   clearResidentDocument: vi.fn(),
@@ -22,6 +28,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     getResident: mocks.getResident,
     listComplaints: mocks.listComplaints,
+    listVacates: mocks.listVacates,
+    getVacateSettlementPreview: mocks.getVacateSettlementPreview,
     createDepositPayment: mocks.createDepositPayment,
     uploadResidentDocument: mocks.uploadResidentDocument,
     getResidentDocumentUrl: mocks.getResidentDocumentUrl,
@@ -29,7 +37,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   };
 });
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ can: () => true, user: mocks.user.value }),
+  useSession: () => ({ can: mocks.can, user: mocks.user.value }),
 }));
 vi.mock("@/components/shared/PermissionGate", () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -57,13 +65,16 @@ const RESIDENT = {
 };
 
 async function openDocumentsTab() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
-      <ResidentProfile id="r1" />
-    </NextIntlClientProvider>
+    <QueryClientProvider client={client}>
+      <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+        <ResidentProfile id="r1" />
+      </NextIntlClientProvider>
+    </QueryClientProvider>
   );
-  await act(async () => {});
-  fireEvent.click(screen.getByRole("button", { name: new RegExp(residents.profile.tabs.documents) }));
+  const documentsTab = await screen.findByRole("button", { name: new RegExp(residents.profile.tabs.documents) });
+  fireEvent.click(documentsTab);
 }
 
 describe("ResidentProfile → documents tab and the KYC upload gate", () => {
@@ -241,13 +252,16 @@ describe("ResidentProfile → security deposit paid in parts", () => {
   });
 
   const renderProfile = async (resident: object) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     mocks.getResident.mockReset().mockResolvedValue({ ...RESIDENT, ...resident });
     render(
-      <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
-        <ResidentProfile id="r1" />
-      </NextIntlClientProvider>
+      <QueryClientProvider client={client}>
+        <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+          <ResidentProfile id="r1" />
+        </NextIntlClientProvider>
+      </QueryClientProvider>
     );
-    await act(async () => {});
+    await screen.findByRole("heading", { name: `${RESIDENT.first_name} ${RESIDENT.last_name}` });
   };
 
   test("shows agreed, collected and pending, with a button to record the rest", async () => {
@@ -298,6 +312,212 @@ describe("ResidentProfile → security deposit paid in parts", () => {
     fireEvent.click(submit);
 
     expect(await screen.findByText(residents.profile.depositDialog.success)).toBeTruthy();
-    expect(mocks.getResident).toHaveBeenCalledWith("r1");
+    await waitFor(() => expect(mocks.getResident).toHaveBeenCalledWith("r1"));
+  });
+});
+
+describe("ResidentProfile → held advance and notice-period settlement preview", () => {
+  beforeEach(() => {
+    mocks.user.value = {};
+    mocks.can.mockImplementation(() => true);
+    mocks.listComplaints.mockReset().mockResolvedValue([]);
+    mocks.listVacates.mockReset().mockResolvedValue([]);
+    mocks.getVacateSettlementPreview.mockReset();
+  });
+
+  afterEach(() => {
+    appQueryClient.clear();
+  });
+
+  const renderProfile = async (resident: object, client?: QueryClient) => {
+    const queryClient = client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.getResident.mockReset().mockResolvedValue({ ...RESIDENT, ...resident });
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+          <ResidentProfile id="r1" />
+        </NextIntlClientProvider>
+      </QueryClientProvider>
+    );
+    await screen.findByRole("heading", { name: `${RESIDENT.first_name} ${RESIDENT.last_name}` });
+    return { ...view, queryClient };
+  };
+
+  test("shows advance collected, applied, and remaining held balance on overview", async () => {
+    await renderProfile({
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+    });
+
+    expect(screen.getByText(residents.profile.overview.advanceCollected)).toBeTruthy();
+    expect(screen.getByText(residents.profile.overview.advanceApplied)).toBeTruthy();
+    expect(screen.getByText(residents.profile.overview.advanceRemaining)).toBeTruthy();
+    expect(screen.getByText("₹20,000.00")).toBeTruthy();
+    expect(screen.getAllByText("₹10,000.00").length).toBe(2);
+  });
+
+  test("shows read-only settlement preview during notice period with dues shown separately", async () => {
+    mocks.listVacates.mockResolvedValue([
+      { id: "vac-1", resident: "r1", is_open: true, is_cancelled: false, is_settled: false, actual_vacate_date: null },
+    ]);
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+      maintenance_deduction: "500.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "200.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "14700.00",
+      outstanding_dues: "3000.00",
+    });
+
+    await renderProfile({
+      status: "notice_period",
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+    });
+
+    expect(await screen.findByText(residents.profile.settlementPreview.title)).toBeTruthy();
+    expect(mocks.listVacates).toHaveBeenCalledWith({ resident: "r1" });
+    expect(mocks.getVacateSettlementPreview).toHaveBeenCalledWith("vac-1");
+    expect(screen.getByText(residents.profile.settlementPreview.estimatedRefund)).toBeTruthy();
+    expect(screen.getByText("₹14,700.00")).toBeTruthy();
+    expect(screen.getByText(residents.profile.settlementPreview.outstandingDues)).toBeTruthy();
+    expect(screen.getByText("₹3,000.00")).toBeTruthy();
+    expect(screen.getByText(residents.profile.settlementPreview.outstandingSeparateNote)).toBeTruthy();
+  });
+
+  test("hides settlement preview when caller lacks manage_deposits", async () => {
+    mocks.can.mockImplementation((perm?: string) => perm !== "manage_deposits");
+    await renderProfile({ status: "notice_period", advance_amount: "10000.00" });
+
+    expect(mocks.listVacates).not.toHaveBeenCalled();
+    expect(screen.queryByText(residents.profile.settlementPreview.title)).toBeNull();
+  });
+
+  test("refreshes held advance and settlement preview after payment invalidation, focus, and remount", async () => {
+    const openVacates = [
+      { id: "vac-1", resident: "r1", is_open: true, is_cancelled: false, is_settled: false, actual_vacate_date: null },
+    ];
+    mocks.listVacates.mockResolvedValue(openVacates);
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+      maintenance_deduction: "0.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "0.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "15000.00",
+      outstanding_dues: "10000.00",
+    });
+
+    appQueryClient.clear();
+    const { unmount } = await renderProfile(
+      {
+        status: "notice_period",
+        advance_amount: "20000.00",
+        advance_applied_amount: "10000.00",
+        advance_refundable: "10000.00",
+      },
+      appQueryClient
+    );
+    expect(await screen.findByText("₹15,000.00")).toBeTruthy();
+
+    // Another screen applies the remaining ₹10,000 advance and runs afterPayment().
+    mocks.getResident.mockResolvedValue({
+      ...RESIDENT,
+      status: "notice_period",
+      advance_amount: "20000.00",
+      advance_applied_amount: "20000.00",
+      advance_refundable: "0.00",
+    });
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "20000.00",
+      advance_refundable: "0.00",
+      maintenance_deduction: "0.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "0.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "5000.00",
+      outstanding_dues: "0.00",
+    });
+
+    await act(async () => {
+      await afterPayment({ invoiceId: "inv-2", residentId: "r1", propertyId: "p1" });
+    });
+    await waitFor(() => expect(screen.getByText("₹5,000.00")).toBeTruthy());
+
+    // Regaining window focus refreshes latest server state even without cache invalidation.
+    mocks.getResident.mockResolvedValue({
+      ...RESIDENT,
+      status: "notice_period",
+      advance_amount: "20000.00",
+      advance_applied_amount: "14000.00",
+      advance_refundable: "6000.00",
+    });
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "14000.00",
+      advance_refundable: "6000.00",
+      maintenance_deduction: "0.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "0.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "11000.00",
+      outstanding_dues: "6000.00",
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(screen.getByText("₹11,000.00")).toBeTruthy());
+
+    // Moving away to Billing and back (unmount -> remount on shared QueryClient within 30s) still refetches.
+    unmount();
+    mocks.getResident.mockResolvedValue({
+      ...RESIDENT,
+      status: "notice_period",
+      advance_amount: "20000.00",
+      advance_applied_amount: "20000.00",
+      advance_refundable: "0.00",
+    });
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "20000.00",
+      advance_refundable: "0.00",
+      maintenance_deduction: "0.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "0.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "5000.00",
+      outstanding_dues: "0.00",
+    });
+    render(
+      <QueryClientProvider client={appQueryClient}>
+        <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+          <ResidentProfile id="r1" />
+        </NextIntlClientProvider>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(screen.getByText("₹5,000.00")).toBeTruthy());
   });
 });

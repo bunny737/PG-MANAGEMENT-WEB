@@ -9,6 +9,7 @@ import status from "@/messages/en/status.json";
 
 const api = vi.hoisted(() => ({
   getInvoice: vi.fn(),
+  getResident: vi.fn(),
   listPaymentsFiltered: vi.fn(),
   holdAutoIssue: vi.fn(),
   resumeAutoIssue: vi.fn(),
@@ -79,6 +80,14 @@ describe("InvoiceDetail → automatic billing banner", () => {
   beforeEach(() => {
     for (const fn of Object.values(api)) fn.mockReset();
     api.listPaymentsFiltered.mockResolvedValue([]);
+    api.getResident.mockResolvedValue({
+      id: "r1",
+      status: "active",
+      advance_amount: "0.00",
+      advance_applied_amount: "0.00",
+      advance_refundable: "0.00",
+      first_invoice_advance_settled: true,
+    });
   });
 
   test("a scheduled draft says when it will be issued and can be held", async () => {

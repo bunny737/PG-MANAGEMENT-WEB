@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from apps.billing.tests.base import BillingAPITestCase
 from apps.core.periods import local_today, month_key, month_start
+from apps.core.tenancy import tenant_context
 from apps.residents.models import Resident
 
 
@@ -61,6 +62,23 @@ class ResidentFinanceBlockTests(BillingAPITestCase):
         invoice = self.create_invoice(self.resident, self.month, due_date=self.today + timedelta(days=5))
         self.pay(invoice, Decimal('7000.00'), self.today)
         self.assertEqual(self.finance()['current_period']['status'], 'paid')
+
+    def test_last_payment_date_ignores_advance_adjustments(self):
+        previous = month_start(self.month - timedelta(days=1))
+        prev_inv = self.create_invoice(self.resident, previous, total=Decimal('7000.00'))
+        self.pay(prev_inv, Decimal('7000.00'), previous)
+
+        cur_inv = self.create_invoice(self.resident, self.month, total=Decimal('7000.00'))
+        self.create_payment(
+            cur_inv, amount=Decimal('3000.00'), payment_date=self.today,
+            payment_mode='', is_advance_adjustment=True,
+        )
+        with tenant_context(self.tenant.id):
+            cur_inv.recompute_status()
+
+        finance = self.finance()
+        self.assertEqual(finance['current_period']['paid'], '3000.00')
+        self.assertEqual(finance['last_payment_date'], previous)
 
     def test_redacted_without_view_finance(self):
         receptionist = self.create_receptionist(self.tenant)

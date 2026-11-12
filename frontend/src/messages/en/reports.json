@@ -21,6 +21,7 @@
     "depositsHeld": "Deposits held",
     "grossReceipts": "Gross receipts",
     "refundsPaid": "Refunds paid",
+    "advanceAdjustments": "Advance adjustments (non-cash)",
     "periodInvoiced": "Invoiced this period",
     "periodCollected": "Collected this period",
     "ytd": "Year to date",
@@ -53,5 +54,6 @@
     "pnl": "Cash flow statement",
     "download": "Download"
   },
+  "refundsLimitationNotice": "Note: Cash collected includes rent payments, admission advances, and deposits, but actual refund payouts are not yet recorded as cash outflows (Refunds paid stays ₹0.00). Net cash flow can overstate cash retained after a resident's refund is paid.",
   "errLoadFailed": "Couldn't load this report."
 }

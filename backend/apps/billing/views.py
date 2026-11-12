@@ -1,5 +1,7 @@
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db import transaction
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -15,7 +17,7 @@ from apps.core.periods import local_today, month_end, month_start, parse_date, p
 from apps.core.permissions import require_permission, require_permission_by_method
 from apps.notices import credits as food_credits
 from apps.properties.services import scoped_property_ids, visible_property_ids
-from apps.residents.models import Resident
+from apps.residents.models import Admission, DepositPayment, Resident
 
 from . import receipts, selectors, services
 from .filters import DiscountFilter, InvoiceFilter, PaymentFilter
@@ -27,6 +29,7 @@ from .schema import (
 )
 from .serializers import (
     DiscountSerializer,
+    InvoiceAdjustAdvanceSerializer,
     InvoiceBulkGenerateSerializer,
     InvoiceBulkIssueSerializer,
     InvoiceGenerateSerializer,
@@ -129,6 +132,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             return InvoiceGenerateSerializer
         if self.action == 'partial_update':
             return InvoiceUpdateSerializer
+        if self.action == 'adjust_advance':
+            return InvoiceAdjustAdvanceSerializer
         return InvoiceSerializer
 
     @staticmethod
@@ -173,21 +178,91 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         serializer.save(**extra)
         return self._fresh_response(invoice)
 
-    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        instance = self._locked_draft()
-        audit_log.record(
-            action='invoice.deleted', actor=self.request.user, obj=instance,
-            before={'resident': str(instance.resident_id), 'period_start': instance.period_start.isoformat()},
-            request=self.request,
-        )
-        # Its food-holiday credits go back to pending first (their lines are
-        # PROTECTed), then are offered to the resident's other drafts.
-        food_credits.release_invoice(instance, actor=request.user, request=request)
-        resident = instance.resident
-        instance.delete()
-        food_credits.allocate_pending(resident, actor=request.user, request=request)
+        instance = self.get_object()
+        services.delete_draft_invoice(invoice_id=instance.pk, actor=request.user, request=request)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            'Idempotency-Key', str, OpenApiParameter.HEADER, required=False,
+            description='<= 100 chars; one per user intent. A retry with the same key and body '
+                        'returns 200 with `Idempotent-Replayed: true` and the original payment.',
+        )],
+        request=InvoiceAdjustAdvanceSerializer,
+        responses=PaymentSerializer,
+    )
+    @action(
+        detail=True, methods=['post'], url_path='adjust-advance',
+        permission_classes=[IsAuthenticated, require_permission('manage_payments')],
+    )
+    def adjust_advance(self, request, pk=None):
+        """Explicitly apply part or all of the resident's held advance balance
+        against an issued invoice. Never counts as new cash receipts."""
+        invoice = self.get_object()
+        key = idempotency_key(request)
+        if key:
+            replay = self._replay_adjust_advance(request, invoice, key)
+            if replay is not None:
+                return replay
+        serializer = InvoiceAdjustAdvanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payment = services.adjust_from_advance(
+            invoice_id=invoice.pk,
+            amount=serializer.validated_data['amount'],
+            adjustment_date=serializer.validated_data['adjustment_date'],
+            note=serializer.validated_data['note'],
+            actor=request.user, request=request, idempotency_key=key,
+        )
+        return self._adjustment_response(payment, replayed=payment.replayed)
+
+    def _replay_adjust_advance(self, request, invoice, key):
+        ids = visible_property_ids(request.user)
+        existing = Payment.objects.filter(
+            invoice__resident__property_id__in=ids, idempotency_key=key,
+        ).select_related(
+            'invoice__resident__property',
+            'invoice__resident__allocation__allocated_bed__room',
+            'recorded_by',
+        ).first()
+        if existing is None:
+            return None
+        if not existing.is_advance_adjustment:
+            raise key_reused()
+        fields = InvoiceAdjustAdvanceSerializer().fields
+        try:
+            amount = fields['amount'].run_validation(fields['amount'].get_value(request.data))
+            adjustment_date = fields['adjustment_date'].run_validation(
+                fields['adjustment_date'].get_value(request.data)
+            )
+            note_val = fields['note'].get_value(request.data)
+            note = '' if note_val is empty else fields['note'].run_validation(note_val)
+        except (ValidationError, SkipField):
+            raise key_reused()
+        reference = (note or '').strip() or 'Advance adjustment'
+        if not services.payment_matches(
+            existing, invoice_id=invoice.pk, amount=amount, payment_date=adjustment_date,
+            payment_mode=existing.payment_mode, reference=reference,
+            is_advance_adjustment=True,
+        ):
+            raise key_reused()
+        return self._adjustment_response(existing, replayed=True)
+
+    def _adjustment_response(self, payment, *, replayed):
+        payment = (
+            Payment.objects.select_related(
+                'invoice__resident__property',
+                'invoice__resident__allocation__allocated_bed__room',
+                'recorded_by',
+            ).get(pk=payment.pk)
+        )
+        response = Response(
+            PaymentSerializer(payment).data,
+            status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        )
+        if replayed:
+            response['Idempotent-Replayed'] = 'true'
+        return response
 
     @action(detail=True, methods=['post'])
     def issue(self, request, pk=None):
@@ -448,10 +523,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
 
 class CashMovementView(APIView):
-    """Cash movements for a date range (D3) — the drill-down behind the
+    """Cash receipts for a date range (D3) — the drill-down behind the
     analytics `cash_collected` figure, which this list always sums to.
-    Payments are (+). Rent refunds would be (−), but v1 has none (owner
-    decision 2026-10-16), so refunds_paid is always 0 here."""
+    Includes direct invoice payments (`is_advance_adjustment=False`),
+    admission advance collections (on `COALESCE(advance_collected_date,
+    joining_date)`), and security deposit collections (`DepositPayment`).
+    Non-cash advance drawdowns are excluded from cash receipts and reported
+    separately in `advance_adjustments_total`. Refund payouts are untracked
+    in v1 (`refunds_paid = 0.00`)."""
 
     permission_classes = [IsAuthenticated, require_permission('view_finance')]
 
@@ -473,35 +552,105 @@ class CashMovementView(APIView):
             raise ValidationError({'to': [_('"to" cannot be before "from".')]}, code='invalid_date_range')
 
         property_ids = scoped_property_ids(request.user, params.get('property'))
-        payments = (
+        direct_payments = list(
             Payment.objects.filter(
-                invoice__resident__property_id__in=property_ids, payment_date__range=(start, end),
-            )
-            .select_related('invoice__resident__property')
-            .order_by('-payment_date', '-created_at')
+                invoice__resident__property_id__in=property_ids,
+                payment_date__range=(start, end),
+                is_advance_adjustment=False,
+            ).select_related('invoice__resident__property')
         )
-        results = [
-            {
+        advance_adjustments_total = (
+            Payment.objects.filter(
+                invoice__resident__property_id__in=property_ids,
+                payment_date__range=(start, end),
+                is_advance_adjustment=True,
+            ).aggregate(total=Coalesce(Sum('amount'), selectors.ZERO, output_field=selectors.MONEY))['total']
+        )
+        admissions = list(
+            Admission.objects.annotate(
+                collection_date=Coalesce('advance_collected_date', 'joining_date'),
+            ).filter(
+                resident__property_id__in=property_ids,
+                advance_amount__gt=0,
+                collection_date__range=(start, end),
+            ).select_related('resident__property')
+        )
+        deposits = list(
+            DepositPayment.objects.filter(
+                admission__resident__property_id__in=property_ids,
+                payment_date__range=(start, end),
+            ).select_related('admission__resident__property')
+        )
+
+        rows = []
+        for p in direct_payments:
+            rows.append({
                 'type': 'payment',
                 'id': str(p.id),
                 'date': p.payment_date,
                 'amount': str(p.amount),
                 'receipt_number': p.receipt_number,
                 'payment_mode': p.payment_mode,
+                'source_label': str(p.get_payment_source_display()),
                 'invoice': str(p.invoice_id),
                 'resident': str(p.invoice.resident_id),
                 'resident_name': str(p.invoice.resident),
                 'property': str(p.invoice.resident.property_id),
                 'property_name': p.invoice.resident.property.name,
-            }
-            for p in payments
-        ]
-        gross = sum((p.amount for p in payments), selectors.ZERO)
+                '_sort_ts': p.created_at,
+            })
+        for adm in admissions:
+            rows.append({
+                'type': 'admission_advance',
+                'id': str(adm.id),
+                'date': adm.collection_date,
+                'amount': str(adm.advance_amount),
+                'receipt_number': None,
+                'payment_mode': adm.advance_mode,
+                'source_label': (
+                    adm.get_advance_mode_display() if adm.advance_mode else str(_('Collected at admission'))
+                ),
+                'invoice': None,
+                'resident': str(adm.resident_id),
+                'resident_name': str(adm.resident),
+                'property': str(adm.resident.property_id),
+                'property_name': adm.resident.property.name,
+                '_sort_ts': adm.created_at,
+            })
+        for dp in deposits:
+            rows.append({
+                'type': 'deposit',
+                'id': str(dp.id),
+                'date': dp.payment_date,
+                'amount': str(dp.amount),
+                'receipt_number': None,
+                'payment_mode': dp.payment_mode,
+                'source_label': (
+                    dp.get_payment_mode_display() if dp.payment_mode else str(_('Security deposit'))
+                ),
+                'invoice': None,
+                'resident': str(dp.admission.resident_id),
+                'resident_name': str(dp.admission.resident),
+                'property': str(dp.admission.resident.property_id),
+                'property_name': dp.admission.resident.property.name,
+                '_sort_ts': dp.created_at,
+            })
+
+        rows.sort(key=lambda r: (r['date'], r['_sort_ts']), reverse=True)
+        for row in rows:
+            row.pop('_sort_ts', None)
+
+        gross = (
+            sum((p.amount for p in direct_payments), selectors.ZERO)
+            + sum((adm.advance_amount for adm in admissions), selectors.ZERO)
+            + sum((dp.amount for dp in deposits), selectors.ZERO)
+        )
         refunds = selectors.ZERO
         return Response({
             'from': start, 'to': end,
             'gross_receipts': str(gross), 'refunds_paid': str(refunds),
+            'advance_adjustments_total': str(advance_adjustments_total),
             'total': str(gross - refunds),
-            'count': len(results),
-            'results': results,
+            'count': len(rows),
+            'results': rows,
         })

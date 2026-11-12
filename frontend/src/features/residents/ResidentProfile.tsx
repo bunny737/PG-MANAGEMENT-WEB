@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight,
   Phone,
@@ -30,17 +31,19 @@ import { getInitials } from "@/lib/utils";
 import {
   clearResidentDocument,
   getResident,
+  getVacateSettlementPreview,
   getResidentDocumentUrl,
   listComplaints,
+  listVacates,
   updateResident,
   uploadResidentDocument,
-  type Complaint,
   type Resident,
   type ResidentDocumentField,
   ApiError,
 } from "@/lib/api";
 import { formatDate } from "@/lib/date";
-import { compareMoney, ZERO } from "@/lib/money";
+import { compareMoney, formatMoney, ZERO } from "@/lib/money";
+import { queryKeys } from "@/lib/queryKeys";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { FinanceCard } from "./FinanceCard";
 import { RecordDepositPaymentDialog } from "./RecordDepositPaymentDialog";
@@ -73,16 +76,14 @@ export function ResidentProfile({ id }: { id: string }) {
   const t = useTranslations("residents.profile");
   const tCommon = useTranslations("common");
   const tStatus = useTranslations("status");
-  const [resident, setResident] = useState<Resident | null>(null);
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const queryClient = useQueryClient();
   const { can, user } = useSession();
   // New Aadhaar/PAN uploads are behind a launch gate; stored documents stay viewable either way.
   const kycUploadsEnabled = user?.kyc_uploads_enabled === true;
   // Billing figures belong to the Finance module: without view_finance the API omits
   // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
   const canSeeFinance = can("view_finance");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const canManageDeposits = can("manage_deposits");
 
   const [activeTab, setActiveTab] = useState<"overview" | "financials" | "documents" | "maintenance">(
     "overview"
@@ -121,29 +122,76 @@ export function ResidentProfile({ id }: { id: string }) {
   const [confirmRemoveSlot, setConfirmRemoveSlot] = useState<(typeof DOCUMENT_SLOTS)[number] | null>(null);
   const [uploadError, setUploadError] = useState("");
 
+  const residentQuery = useQuery({
+    queryKey: queryKeys.residents.detail(id),
+    queryFn: () => getResident(id),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+  const resident = residentQuery.data ?? null;
+  const isLoading = residentQuery.isPending;
+  const error = residentQuery.isError
+    ? residentQuery.error instanceof ApiError
+      ? residentQuery.error.message
+      : t("errLoadFailed")
+    : "";
+
+  const complaintsQuery = useQuery({
+    queryKey: ["complaints", "list", { resident: id }] as const,
+    queryFn: () => listComplaints({ resident: id }),
+  });
+  // Non-fatal: if complaints fail to load, the Maintenance tab shows its empty state.
+  const complaints = complaintsQuery.data ?? [];
+
+  const canLoadSettlementPreview = resident?.status === "notice_period" && canManageDeposits;
+  const vacatesQuery = useQuery({
+    queryKey: queryKeys.vacates.list({ resident: resident?.id ?? id }),
+    queryFn: () => listVacates({ resident: resident!.id }),
+    enabled: canLoadSettlementPreview,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const openVacate = vacatesQuery.data?.find(
+    (v) => v.is_open || (!v.is_cancelled && !v.is_settled && !v.actual_vacate_date)
+  );
+
+  const previewQuery = useQuery({
+    queryKey: queryKeys.vacates.preview(openVacate?.id ?? ""),
+    queryFn: () => getVacateSettlementPreview(openVacate!.id),
+    enabled: canLoadSettlementPreview && !!openVacate,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const settlementPreview = openVacate ? previewQuery.data ?? null : null;
+  const settlementPreviewError = vacatesQuery.isError || previewQuery.isError;
+
+  // Refresh held-advance and settlement-preview figures when the profile window
+  // becomes active again or is restored from bfcache after billing actions.
   useEffect(() => {
-    let cancelled = false;
-    getResident(id)
-      .then((data) => {
-        if (cancelled) return;
-        setResident(data);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error(err);
-        setError(err instanceof ApiError ? err.message : t("errLoadFailed"));
-        setIsLoading(false);
-      });
-    listComplaints({ resident: id }).then((data) => {
-      if (!cancelled) setComplaints(data);
-    }).catch(() => {
-      // Non-fatal: the Maintenance tab just shows its empty state.
-    });
-    return () => {
-      cancelled = true;
+    const refreshProfile = () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
     };
-  }, [id, t]);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshProfile();
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshProfile();
+    };
+    window.addEventListener("focus", refreshProfile);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshProfile);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [id, queryClient]);
 
   const handleAction = async (type: "transfer" | "vacate" | "edit") => {
     if (type === "edit" && resident) {
@@ -186,7 +234,17 @@ export function ResidentProfile({ id }: { id: string }) {
 
     try {
       const updated = await updateResident(id, editForm);
-      setResident(updated);
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev
+          ? {
+              ...prev,
+              ...updated,
+              finance: updated.finance ?? prev.finance,
+              redacted: updated.redacted ?? prev.redacted,
+            }
+          : updated
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.residents.list() });
       setIsEditing(false);
       setActionAlert({ type: "edit", message: t("editModal.updatedToast") });
       setTimeout(() => setActionAlert(null), 4000);
@@ -214,7 +272,9 @@ export function ResidentProfile({ id }: { id: string }) {
     try {
       const updated = await uploadResidentDocument(id, field, file);
       // PATCH responses omit the detail-only `finance` block, so merge instead of replacing.
-      setResident((prev) => (prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated));
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated
+      );
       setActionAlert({ type: "document", message: t("documents.uploadedToast") });
       setTimeout(() => setActionAlert(null), 4000);
     } catch (err) {
@@ -269,7 +329,9 @@ export function ResidentProfile({ id }: { id: string }) {
     setUploadError("");
     try {
       const updated = await clearResidentDocument(id, field);
-      setResident((prev) => (prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated));
+      queryClient.setQueryData<Resident>(queryKeys.residents.detail(id), (prev) =>
+        prev ? { ...prev, ...updated, finance: prev.finance, redacted: prev.redacted } : updated
+      );
       setConfirmRemoveSlot(null);
       setActionAlert({ type: "document", message: t("documents.removedToast") });
       setTimeout(() => setActionAlert(null), 4000);
@@ -302,7 +364,7 @@ export function ResidentProfile({ id }: { id: string }) {
         <h3 className="text-lg font-bold text-ink">{t("errLoadFailed")}</h3>
         <p className="text-xs text-ink-muted leading-relaxed">{error || t("errLoadFailed")}</p>
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => void residentQuery.refetch()}
           className="px-4 py-2 bg-surface-inverse text-ink-inverse text-xs font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
         >
           {t("retry")}
@@ -445,7 +507,14 @@ export function ResidentProfile({ id }: { id: string }) {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              onClick={() => {
+                const nextTab = tab.id as typeof activeTab;
+                setActiveTab(nextTab);
+                if (nextTab === "overview" || nextTab === "financials") {
+                  void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+                  void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
+                }
+              }}
               className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 isActive
                   ? "bg-accent text-ink-inverse shadow-sm"
@@ -561,6 +630,22 @@ export function ResidentProfile({ id }: { id: string }) {
                     )}
                   </>
                 )}
+                {resident.advance_amount != null && (
+                  <>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceCollected")}</span>
+                      <MoneyText value={resident.advance_amount} className="font-semibold text-ink" />
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceApplied")}</span>
+                      <MoneyText value={resident.advance_applied_amount ?? ZERO} className="font-semibold text-ink" />
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceRemaining")}</span>
+                      <MoneyText value={resident.advance_refundable ?? ZERO} className="font-semibold text-accent" />
+                    </div>
+                  </>
+                )}
                 {resident.food_preference && (
                   <div className="flex justify-between items-center">
                     <span className="text-ink-muted">{t("overview.rentType")}</span>
@@ -571,6 +656,78 @@ export function ResidentProfile({ id }: { id: string }) {
                 )}
               </div>
             </div>
+
+            {/* Read-only Exit Settlement Preview during Notice Period */}
+            {resident.status === "notice_period" && canManageDeposits && (settlementPreview || settlementPreviewError) && (
+              <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="border-b border-border pb-2.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                    {t("settlementPreview.title")}
+                  </h3>
+                  <p className="text-[11px] text-ink-muted mt-0.5">{t("settlementPreview.subtitle")}</p>
+                </div>
+
+                {settlementPreviewError ? (
+                  <p className="text-xs text-status-critical">{t("settlementPreview.errLoadFailed")}</p>
+                ) : settlementPreview && (
+                  <div className="space-y-3 text-xs">
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("settlementPreview.depositCollected")}</span>
+                      <MoneyText value={settlementPreview.security_deposit_amount} className="font-semibold text-ink" />
+                    </div>
+                    <div className="space-y-1 pb-2 border-b border-border/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-ink-muted">{t("settlementPreview.remainingAdvance")}</span>
+                        <MoneyText value={settlementPreview.advance_refundable} className="font-semibold text-ink" />
+                      </div>
+                      {compareMoney(settlementPreview.advance_applied_amount, ZERO) === 1 && (
+                        <p className="text-[11px] text-ink-faint">
+                          {t("settlementPreview.advanceAppliedNote", {
+                            applied: formatMoney(settlementPreview.advance_applied_amount),
+                            collected: formatMoney(settlementPreview.advance_amount),
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    {compareMoney(settlementPreview.maintenance_deduction, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.maintenanceDeduction")}</span>
+                        <MoneyText value={settlementPreview.maintenance_deduction} className="font-semibold text-status-critical" />
+                      </div>
+                    )}
+                    {compareMoney(settlementPreview.food_holiday_credit, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.foodHolidayCredit")}</span>
+                        <MoneyText value={settlementPreview.food_holiday_credit} className="font-semibold text-status-good" />
+                      </div>
+                    )}
+                    {compareMoney(settlementPreview.food_holiday_clawback_recovered, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.clawbackRecovered")}</span>
+                        <MoneyText value={settlementPreview.food_holiday_clawback_recovered} className="font-semibold text-status-critical" />
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-1 font-bold text-sm text-ink">
+                      <span>{t("settlementPreview.estimatedRefund")}</span>
+                      <MoneyText value={settlementPreview.refund_amount} className="text-accent" />
+                    </div>
+                    <div className="rounded-xl border border-border bg-surface-page/60 p-3 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-ink">{t("settlementPreview.outstandingDues")}</span>
+                        <MoneyText
+                          value={settlementPreview.outstanding_dues}
+                          attention={compareMoney(settlementPreview.outstanding_dues, ZERO) === 1}
+                          className="font-bold"
+                        />
+                      </div>
+                      <p className="text-[11px] text-ink-muted leading-relaxed">
+                        {t("settlementPreview.outstandingSeparateNote")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* IDs & Org */}
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
@@ -761,7 +918,10 @@ export function ResidentProfile({ id }: { id: string }) {
           onClose={() => setIsRecordingDeposit(false)}
           onRecorded={() => {
             // Re-read the detail: the collected and pending deposit changed.
-            getResident(id).then(setResident).catch(() => {});
+            void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.cashMovements.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
           }}
         />
       )}
@@ -772,7 +932,8 @@ export function ResidentProfile({ id }: { id: string }) {
           onClose={() => setIsTransferring(false)}
           onTransferred={() => {
             // The transfer response has no resident fields, so re-read the detail (bed, rent, finance).
-            getResident(id).then(setResident).catch(() => {});
+            void queryClient.invalidateQueries({ queryKey: queryKeys.residents.detail(id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.vacates.all });
             setActionAlert({ type: "transfer", message: t("transferDone") });
             setTimeout(() => setActionAlert(null), 4000);
           }}

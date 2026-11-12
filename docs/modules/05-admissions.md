@@ -37,14 +37,17 @@ Table: admissions                               (RLS enforced, app: apps.residen
   food_preference           with_food | without_food
   contracted_rent            decimal(12,2)
 
-  advance_amount              decimal(12,2), default 0   (rent paid upfront for the first period; min 0)
+  advance_amount              decimal(12,2), default 0   (rent advance collected at admission — may cover 1+ months; min 0)
   advance_collected_date      date, null            (added by Module 10)
   advance_mode                upi | cash | bank_transfer, blank   (added by Module 10)
-  advance_applied_amount      decimal(12,2), default 0   (read-only; set when applied to the first invoice)
+  advance_applied_amount      decimal(12,2), default 0   (read-only; cumulative applied to first invoice + explicit adjustments; min 0, <= advance_amount)
+  first_invoice_advance_settled boolean, default false   (true once the resident's first issued invoice settles initial advance)
   security_deposit_amount     decimal(12,2), default 0   (refundable deposit; min 0)
+  security_deposit_agreed     decimal(12,2), default 0   (agreed total deposit; min 0)
   security_deposit_collected_date  date, null
   security_deposit_mode       upi | cash | bank_transfer, blank
   -- advance_refundable = advance_amount - advance_applied_amount (read-only property)
+  -- DB constraints (residents.0013): non-negative advance & deposit fields and advance_applied_amount <= advance_amount
   first_month_billing_amount  decimal(12,2), null   (manual partial-month override)
   first_month_billing_note    text, blank
   addons                      jsonb, default []     (reserved; added by Module 08)
@@ -196,3 +199,4 @@ No PATCH/DELETE — an admission is immutable once created (405 on both).
   `POST /api/v1/deposit-payments/`, see [10-deposits-exit.md](10-deposits-exit.md) "Update 2026-11-01". The wizard
   now reserves the resident and lets the admission check them in (it used to ask the status API for Inquiry → Active,
   which the transition graph refuses). Tests: `residents/tests/test_deposit_payments.py`.
+- 2026-11-11: held advance balance (Milestone 1). `Admission` supports multi-month upfront rent advances (`advance_amount` > 1 month's rent allowed in web `AdmissionWizard` Step 4, with `rentPending` clamped at `0.00` and surplus framed as **Estimated advance remaining after first invoice** since the actual first invoice may differ from monthly contracted rent). Added `first_invoice_advance_settled` and DB check constraints in `residents.0013_admission_advance_guards` (`advance_amount >= 0`, `advance_applied_amount >= 0`, `advance_applied_amount <= advance_amount`, non-negative deposit amounts). `AdmissionSerializer` exposes `first_invoice_advance_settled`. Tests: `residents/tests/test_admissions.py`, frontend `AdmissionWizard.preselect.test.tsx`.

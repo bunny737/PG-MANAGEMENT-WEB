@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from unittest import mock
 
 from django.urls import reverse
 
@@ -317,10 +318,11 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
         self.authenticate(self.owner)
 
-    def _admit(self, advance):
+    def _admit(self, advance, **kwargs):
         self.check_in(
             self.resident, self.bed, advance_amount=Decimal(advance),
             advance_collected_date=date(2026, 7, 1), advance_mode=Admission.AdvanceMode.UPI,
+            **kwargs,
         )
 
     def _generate_and_issue(self, **period):
@@ -342,8 +344,25 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
             payment = Payment.objects.get(invoice_id=invoice['id'])
         self.assertEqual(payment.amount, Decimal('7000.00'))
         self.assertEqual(payment.payment_mode, 'upi')
+        self.assertTrue(payment.is_advance_adjustment)
+        self.assertEqual(payment.payment_source, 'advance_adjustment')
         self.assertEqual(payment.payment_date, date(2026, 7, 1))
-        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
+        adm = self._refresh_admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('7000.00'))
+        self.assertTrue(adm.first_invoice_advance_settled)
+
+    def test_opening_advance_can_remain_held_after_first_invoice(self):
+        self._admit('7000.00', auto_apply_advance_to_first_invoice=False)
+
+        invoice = self._generate_and_issue()
+
+        self.assertEqual(invoice['status'], 'issued')
+        with tenant_context(self.tenant.id):
+            self.assertFalse(Payment.objects.filter(invoice_id=invoice['id']).exists())
+        admission = self._refresh_admission()
+        self.assertTrue(admission.first_invoice_advance_settled)
+        self.assertEqual(admission.advance_applied_amount, Decimal('0.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
 
     def test_smaller_advance_leaves_invoice_partially_paid(self):
         self._admit('3000.00')
@@ -401,8 +420,8 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.assertIsNone(again)
         self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('7000.00'))
 
-    def test_deleting_the_advance_payment_releases_the_advance(self):
-        self._admit('7000.00')
+    def test_deleting_the_advance_payment_releases_the_advance_and_does_not_retrigger_auto_apply(self):
+        self._admit('14000.00')
         invoice = self._generate_and_issue()
         with tenant_context(self.tenant.id):
             payment = Payment.objects.get(invoice_id=invoice['id'])
@@ -412,7 +431,15 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.assertEqual(response.status_code, 204)
         admission = self._refresh_admission()
         self.assertEqual(admission.advance_applied_amount, Decimal('0.00'))
-        self.assertEqual(admission.advance_refundable, Decimal('7000.00'))
+        self.assertEqual(admission.advance_refundable, Decimal('14000.00'))
+        self.assertTrue(admission.first_invoice_advance_settled)
+
+        # Second invoice issued after deletion must NOT auto-apply advance again.
+        second = self._generate_and_issue(
+            period_start='2026-08-01', period_end='2026-08-31', due_date='2026-08-10',
+        )
+        self.assertEqual(second['status'], 'issued')
+        self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('0.00'))
 
     def test_deleting_an_ordinary_payment_leaves_the_advance_alone(self):
         self._admit('3000.00')
@@ -426,6 +453,356 @@ class AdvanceAppliedToFirstInvoiceTests(BillingAPITestCase):
         self.client.delete(reverse('payment-detail', args=[ordinary.data['id']]))
 
         self.assertEqual(self._refresh_admission().advance_applied_amount, Decimal('3000.00'))
+
+
+class HeldAdvanceAdjustmentTests(BillingAPITestCase):
+    """Explicit 'Adjust from advance' lifecycle: worked ₹10k/₹20k/₹5k scenarios,
+    partial & multi-invoice drawdowns, error guards, reversal, blank-mode source
+    presentation, permissions, timeline, and idempotency."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = self.create_tenant()
+        self.owner = self.create_owner(self.tenant)
+        self.property = self.create_property(self.tenant)
+        self.room = self.create_room(
+            self.create_floor(self.property), room_number='101', sharing_type=2, category='ac',
+            rack_rate_with_food=Decimal('10000.00'),
+        )
+        self.bed = self.create_bed(self.room, bed_number='101-A')
+        self.resident = self.create_resident(self.property, status=Resident.Status.RESERVED)
+        self.authenticate(self.owner)
+
+    def _admit_via_api(self, *, advance='20000.00', deposit='5000.00', mode='upi'):
+        resp = self.client.post(reverse('admission-list'), {
+            'resident': str(self.resident.id),
+            'bed': str(self.bed.id),
+            'joining_date': '2026-07-01',
+            'billing_mode': 'monthly',
+            'food_preference': 'with_food',
+            'advance_amount': advance,
+            'advance_collected_date': '2026-07-01',
+            'advance_mode': mode,
+            'security_deposit_amount': deposit,
+            'security_deposit_agreed': deposit,
+            'security_deposit_collected_date': '2026-07-01',
+            'security_deposit_mode': 'cash',
+        })
+        self.assertEqual(resp.status_code, 201, resp.data)
+        return resp.data
+
+    def _generate_and_issue(self, start, end, due):
+        inv = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': start, 'period_end': end, 'due_date': due,
+        }).data
+        return self.client.post(reverse('invoice-issue', args=[inv['id']])).data
+
+    def _adjust(self, invoice_id, amount, adjustment_date='2026-09-05', note='', key=None):
+        headers = {'HTTP_IDEMPOTENCY_KEY': key} if key else {}
+        return self.client.post(
+            reverse('invoice-adjust-advance', args=[invoice_id]),
+            {'amount': amount, 'adjustment_date': adjustment_date, 'note': note},
+            **headers,
+        )
+
+    def _admission(self):
+        with tenant_context(self.tenant.id):
+            return Admission.objects.get(resident=self.resident)
+
+    def test_worked_example_paths_a_b_and_c(self):
+        # ₹10,000 monthly rent, ₹20,000 advance, ₹5,000 deposit
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul = self._generate_and_issue('2026-07-01', '2026-07-31', '2026-07-10')
+        self.assertEqual(jul['status'], 'paid')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('10000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+
+        # August & September invoices stay issued; advance is NOT auto-applied.
+        aug = self._generate_and_issue('2026-08-01', '2026-08-31', '2026-08-10')
+        sep = self._generate_and_issue('2026-09-01', '2026-09-30', '2026-09-10')
+        self.assertEqual(aug['status'], 'issued')
+        self.assertEqual(sep['status'], 'issued')
+
+        # Path C: partial adjustment ₹4,000 on Aug + ₹6,000 on Sep, then delete Sep -> restores ₹6,000
+        adj_aug = self._adjust(aug['id'], '4000.00', '2026-08-05', note='Partial aug')
+        self.assertEqual(adj_aug.status_code, 201, adj_aug.data)
+        self.assertTrue(adj_aug.data['is_advance_adjustment'])
+        self.assertEqual(adj_aug.data['payment_source'], 'advance_adjustment')
+        self.assertEqual(adj_aug.data['payment_source_label'], 'Advance Adjustment')
+        self.assertEqual(adj_aug.data['historical_collection_mode'], 'upi')
+
+        adj_sep = self._adjust(sep['id'], '6000.00', '2026-09-05', note='Partial sep')
+        self.assertEqual(adj_sep.status_code, 201, adj_sep.data)
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('20000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('0.00'))
+
+        # Pay Aug balance ₹6,000 normally and reverse Sep's ₹6,000 adjustment.
+        self.client.post(reverse('payment-list'), {
+            'invoice': aug['id'], 'amount': '6000.00',
+            'payment_date': '2026-08-06', 'payment_mode': 'cash',
+        })
+        del_resp = self.client.delete(reverse('payment-detail', args=[adj_sep.data['id']]))
+        self.assertEqual(del_resp.status_code, 204)
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('14000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('6000.00'))
+        sep_refreshed = self.client.get(reverse('invoice-detail', args=[sep['id']])).data
+        self.assertEqual(sep_refreshed['status'], 'issued')
+        self.assertEqual(sep_refreshed['balance_due'], '10000.00')
+
+        # Give notice -> preview reflects ₹6,000 remaining advance + ₹5,000 deposit = ₹11,000, dues separate.
+        vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-09-01',
+        }).data
+        preview_c = self.client.get(reverse('vacate-settlement-preview', args=[vacate['id']])).data
+        self.assertEqual(preview_c['advance_refundable'], '6000.00')
+        self.assertEqual(preview_c['refund_amount'], '11000.00')
+        self.assertEqual(preview_c['outstanding_dues'], '10000.00')
+
+        # Path B (leave Sep unpaid / paid by cash) -> ₹11,000 refund; Path A: adjust remaining ₹6,000 -> ₹5,000.
+        adj_sep_2 = self._adjust(sep['id'], '6000.00', '2026-09-10')
+        self.assertEqual(adj_sep_2.status_code, 201, adj_sep_2.data)
+        preview_a = self.client.get(reverse('vacate-settlement-preview', args=[vacate['id']])).data
+        self.assertEqual(preview_a['advance_refundable'], '0.00')
+        self.assertEqual(preview_a['refund_amount'], '5000.00')
+        self.assertEqual(preview_a['outstanding_dues'], '4000.00')
+
+    def test_first_invoice_rule_blocks_adjustment_when_unsettled(self):
+        self.check_in(
+            self.resident, self.bed,
+            joining_date=date(2026, 7, 1),
+            advance_amount=Decimal('20000.00'),
+            advance_collected_date=date(2026, 7, 1),
+            advance_mode='upi',
+        )
+        # An issued invoice inserted without going through issue_invoice() leaves
+        # first_invoice_advance_settled=False, so later manual adjustments are blocked.
+        issued_bypass = self.create_invoice(self.resident, date(2026, 8, 1), status='issued')
+        resp = self._adjust(issued_bypass.id, '5000.00', '2026-08-05')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['code'], 'FIRST_INVOICE_NOT_ISSUED')
+
+    def test_manual_payment_with_legacy_reference_does_not_restore_advance_on_delete(self):
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul = self._generate_and_issue('2026-07-01', '2026-07-31', '2026-07-10')
+        self.assertEqual(jul['status'], 'paid')
+        aug = self._generate_and_issue('2026-08-01', '2026-08-31', '2026-08-10')
+
+        manual = self.client.post(reverse('payment-list'), {
+            'invoice': aug['id'],
+            'amount': '3000.00',
+            'payment_date': '2026-08-05',
+            'payment_mode': 'cash',
+            'reference': 'Advance collected at admission',
+        })
+        self.assertEqual(manual.status_code, 201, manual.data)
+        self.assertFalse(manual.data['is_advance_adjustment'])
+
+        self.assertEqual(self.client.delete(reverse('payment-detail', args=[manual.data['id']])).status_code, 204)
+        self.assertEqual(self._admission().advance_applied_amount, Decimal('10000.00'))
+
+    def test_blank_advance_mode_never_invents_cash_fallback(self):
+        self.check_in(
+            self.resident, self.bed,
+            joining_date=date(2026, 7, 1),
+            advance_amount=Decimal('20000.00'),
+            advance_applied_amount=Decimal('10000.00'),
+            advance_collected_date=date(2026, 7, 1),
+            advance_mode='',
+            first_invoice_advance_settled=True,
+        )
+        inv = self.create_invoice(self.resident, date(2026, 8, 1), total=Decimal('10000.00'))
+        resp = self._adjust(inv.id, '5000.00', '2026-08-05')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['payment_mode'], '')
+        self.assertIsNone(resp.data['historical_collection_mode'])
+        self.assertEqual(resp.data['payment_source'], 'advance_adjustment')
+        self.assertEqual(resp.data['payment_source_label'], 'Advance Adjustment')
+
+        receipt = self.client.get(reverse('payment-receipt', args=[resp.data['id']])).data
+        self.assertEqual(receipt['payment_mode'], '')
+        self.assertIsNone(receipt['historical_collection_mode'])
+        self.assertEqual(receipt['payment_source'], 'advance_adjustment')
+        self.assertEqual(receipt['payment_source_label'], 'Advance Adjustment')
+
+        pdf = self.client.get(reverse('payment-receipt', args=[resp.data['id']]), {'filetype': 'pdf'})
+        self.assertEqual(pdf.status_code, 200)
+        self.assertTrue(pdf.content.startswith(b'%PDF'))
+
+        timeline = self.client.get(reverse('resident-timeline', args=[self.resident.id])).data
+        events = [row for row in timeline if row['event'] == 'Advance Adjusted']
+        self.assertEqual(len(events), 1)
+        self.assertIn('Advance Adjustment', events[0]['detail'])
+
+    def test_validation_guards_idempotency_permissions_and_exit_reversal_block(self):
+        self._admit_via_api(advance='15000.00', deposit='5000.00')
+        jul = self._generate_and_issue('2026-07-01', '2026-07-31', '2026-07-10')
+        self.assertEqual(jul['status'], 'paid')  # 5,000 remaining
+        draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+        self.assertEqual(self._adjust(draft['id'], '1000.00').status_code, 400)
+
+        aug = self.client.post(reverse('invoice-issue', args=[draft['id']])).data
+        # Exceeds remaining held advance (5,000 < 6,000)
+        over_adv = self._adjust(aug['id'], '6000.00')
+        self.assertEqual(over_adv.status_code, 400)
+        self.assertEqual(over_adv.data['amount'].code, 'exceeds_held_advance')
+
+        # Pay 8,000 by cash -> balance_due = 2,000 < 5,000 remaining -> overpayment guard
+        self.client.post(reverse('payment-list'), {
+            'invoice': aug['id'], 'amount': '8000.00',
+            'payment_date': '2026-08-02', 'payment_mode': 'cash',
+        })
+        over_bal = self._adjust(aug['id'], '3000.00')
+        self.assertEqual(over_bal.status_code, 400)
+        self.assertEqual(over_bal.data['amount'].code, 'overpayment')
+
+        # Idempotent retry & 409 reuse
+        first = self._adjust(aug['id'], '2000.00', '2026-08-05', note='Final settlement', key='adj-key-1')
+        self.assertEqual(first.status_code, 201)
+        replay = self._adjust(aug['id'], '2000.00', '2026-08-05', note='Final settlement', key='adj-key-1')
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay['Idempotent-Replayed'], 'true')
+        self.assertEqual(self._adjust(aug['id'], '1000.00', '2026-08-05', key='adj-key-1').status_code, 409)
+
+        # Staff without manage_payments gets 403
+        receptionist = self.create_receptionist(self.tenant)
+        self.assign_staff(receptionist, self.property)
+        self.authenticate(receptionist)
+        self.assertEqual(self._adjust(aug['id'], '1000.00').status_code, 403)
+
+        # Vacate resident -> reversing or creating advance adjustments is blocked
+        self.authenticate(self.owner)
+        vacate = self.client.post(reverse('vacate-list'), {
+            'resident': str(self.resident.id), 'notice_given_date': '2026-08-01',
+        }).data
+        self.client.post(reverse('vacate-finalize', args=[vacate['id']]), {'actual_vacate_date': '2026-09-01'})
+        del_after_exit = self.client.delete(reverse('payment-detail', args=[first.data['id']]))
+        self.assertEqual(del_after_exit.status_code, 400)
+        self.assertEqual(del_after_exit.data['code'], 'RESIDENT_NOT_CURRENT')
+
+    def test_issuing_later_invoice_while_earlier_draft_exists_preserves_first_invoice_advance(self):
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        aug_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+
+        # Staff issues August first while July is still a draft.
+        aug_issued = self.client.post(reverse('invoice-issue', args=[aug_draft['id']])).data
+        self.assertEqual(aug_issued['status'], 'issued')
+        self.assertEqual(aug_issued['balance_due'], '10000.00')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('0.00'))
+        self.assertFalse(adm.first_invoice_advance_settled)
+
+        # Manual adjust-advance on August stays blocked until July (the earlier invoice) is issued.
+        blocked = self._adjust(aug_issued['id'], '5000.00', '2026-08-05')
+        self.assertEqual(blocked.status_code, 400)
+        self.assertEqual(blocked.data['code'], 'FIRST_INVOICE_NOT_ISSUED')
+
+        # Issuing July next still applies Month 1's advance automatically to July and unlocks later adjustments.
+        jul_issued = self.client.post(reverse('invoice-issue', args=[jul_draft['id']])).data
+        self.assertEqual(jul_issued['status'], 'paid')
+        self.assertEqual(jul_issued['balance_due'], '0.00')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('10000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+        self.assertTrue(adm.first_invoice_advance_settled)
+
+        # Now August can receive explicit adjustment from the remaining ₹10,000 held advance.
+        aug_adj = self._adjust(aug_issued['id'], '4000.00', '2026-08-05')
+        self.assertEqual(aug_adj.status_code, 201, aug_adj.data)
+        self.assertEqual(self._admission().advance_refundable, Decimal('6000.00'))
+
+    def test_deleting_blocking_earlier_draft_settles_remaining_earliest_issued_invoice(self):
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        jul_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10',
+        }).data
+        aug_draft = self.client.post(reverse('invoice-list'), {
+            'resident': str(self.resident.id),
+            'period_start': '2026-08-01', 'period_end': '2026-08-31', 'due_date': '2026-08-10',
+        }).data
+
+        self.client.post(reverse('invoice-issue', args=[aug_draft['id']]))
+        self.assertFalse(self._admission().first_invoice_advance_settled)
+
+        deleted = self.client.delete(reverse('invoice-detail', args=[jul_draft['id']]))
+        self.assertEqual(deleted.status_code, 204)
+
+        aug_refreshed = self.client.get(reverse('invoice-detail', args=[aug_draft['id']])).data
+        self.assertEqual(aug_refreshed['status'], 'paid')
+        adm = self._admission()
+        self.assertEqual(adm.advance_applied_amount, Decimal('10000.00'))
+        self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+        self.assertTrue(adm.first_invoice_advance_settled)
+
+    def test_adjustment_date_required_on_api_and_replay_succeeds_across_midnight(self):
+        from apps.billing import services as billing_services
+
+        self._admit_via_api(advance='20000.00', deposit='5000.00')
+        self._generate_and_issue('2026-07-01', '2026-07-31', '2026-07-10')
+        aug = self._generate_and_issue('2026-08-01', '2026-08-31', '2026-08-10')
+        sep = self._generate_and_issue('2026-09-01', '2026-09-30', '2026-09-10')
+
+        # API requires an explicit adjustment_date so network retries cannot shift dates across midnight.
+        missing_date = self.client.post(
+            reverse('invoice-adjust-advance', args=[aug['id']]),
+            {'amount': '4000.00'},
+            HTTP_IDEMPOTENCY_KEY='missing-date-key',
+        )
+        self.assertEqual(missing_date.status_code, 400)
+        self.assertIn('adjustment_date', missing_date.data)
+
+        # 2026-08-05 23:59 IST == 18:29 UTC; 2026-08-06 00:01 IST == 18:31 UTC.
+        before_midnight = datetime(2026, 8, 5, 18, 29, tzinfo=dt_timezone.utc)
+        after_midnight = datetime(2026, 8, 5, 18, 31, tzinfo=dt_timezone.utc)
+
+        with mock.patch('django.utils.timezone.now', return_value=before_midnight):
+            first = self._adjust(aug['id'], '4000.00', '2026-08-05', key='api-midnight-key')
+        self.assertEqual(first.status_code, 201, first.data)
+
+        with mock.patch('django.utils.timezone.now', return_value=after_midnight):
+            replay = self._adjust(aug['id'], '4000.00', '2026-08-05', key='api-midnight-key')
+            mismatch = self._adjust(aug['id'], '4000.00', '2026-08-06', key='api-midnight-key')
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay['Idempotent-Replayed'], 'true')
+        self.assertEqual(replay.data['id'], first.data['id'])
+        self.assertEqual(mismatch.status_code, 409)
+
+        # Direct Python callers passing adjustment_date=None also replay safely across midnight.
+        with tenant_context(self.tenant.id):
+            with mock.patch('django.utils.timezone.now', return_value=before_midnight):
+                svc_first = billing_services.adjust_from_advance(
+                    invoice_id=sep['id'],
+                    amount=Decimal('3000.00'),
+                    adjustment_date=None,
+                    actor=self.owner,
+                    idempotency_key='svc-midnight-key',
+                )
+            with mock.patch('django.utils.timezone.now', return_value=after_midnight):
+                svc_replay = billing_services.adjust_from_advance(
+                    invoice_id=sep['id'],
+                    amount=Decimal('3000.00'),
+                    adjustment_date=None,
+                    actor=self.owner,
+                    idempotency_key='svc-midnight-key',
+                )
+        self.assertFalse(svc_first.replayed)
+        self.assertTrue(svc_replay.replayed)
+        self.assertEqual(svc_replay.id, svc_first.id)
+        self.assertEqual(svc_replay.payment_date, date(2026, 8, 5))
 
 
 class BillingAcrossNoticeCancellationTests(BillingAPITestCase):

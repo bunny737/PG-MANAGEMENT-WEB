@@ -92,13 +92,10 @@ class Schedule:
 
 def schedule_for(*, billing_mode, joining_date, billing_day_rule, billing_day_of_month):
     """The resident's schedule, or None when automation doesn't bill them
-    (daily residents — the owner invoices them at checkout)."""
+    (weekly and daily residents are invoiced manually)."""
     from apps.properties.models import PropertySettings
     from apps.residents.models import Admission
 
-    if billing_mode == Admission.BillingMode.WEEKLY:
-        # Weekly residents always follow their own joining weekday.
-        return Schedule('weekly', anchor_date=joining_date)
     if billing_mode != Admission.BillingMode.MONTHLY:
         return None
     if billing_day_rule == PropertySettings.BillingDayRule.FIXED_DAY and billing_day_of_month:
@@ -205,7 +202,14 @@ def plan_next_cycle(*, resident, admission, allocation, schedule, on_date):
 
     covered = coverage_end(resident)
     reasons = []
-    if covered is not None:
+    if admission.first_billing_policy == admission.FirstBillingPolicy.NEXT_BILLING_CYCLE:
+        # Keep the enrollment boundary stable while using the property's current
+        # schedule. Changing the property rule before the first invoice therefore
+        # moves the resident to the new regular day without reopening old periods.
+        boundary = max(admission.joining_date, admission.billing_enrolled_on)
+        first_allowed = schedule.billing_day_after(boundary)
+        start = max(covered + ONE_DAY, first_allowed) if covered is not None else first_allowed
+    elif covered is not None:
         start = covered + ONE_DAY
     else:
         current_cycle_start = schedule.billing_day_on_or_before(on_date)

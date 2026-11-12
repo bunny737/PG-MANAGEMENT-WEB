@@ -45,7 +45,8 @@ class _ResidentBaseSerializer(serializers.ModelSerializer):
             if not user_permissions & {'view_finance', 'manage_deposits'}:
                 hidden += [
                     'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
-                    'advance_amount', 'advance_refundable',
+                    'advance_amount', 'advance_applied_amount', 'advance_refundable',
+                    'first_invoice_advance_settled',
                 ]
             for field in hidden:
                 self.fields.pop(field, None)
@@ -66,7 +67,9 @@ class _ResidentBaseSerializer(serializers.ModelSerializer):
     security_deposit_agreed = serializers.SerializerMethodField()
     security_deposit_pending = serializers.SerializerMethodField()
     advance_amount = serializers.SerializerMethodField()
+    advance_applied_amount = serializers.SerializerMethodField()
     advance_refundable = serializers.SerializerMethodField()
+    first_invoice_advance_settled = serializers.SerializerMethodField()
     room_number = serializers.SerializerMethodField()
     bed_number = serializers.SerializerMethodField()
 
@@ -80,7 +83,8 @@ class _ResidentBaseSerializer(serializers.ModelSerializer):
         'unit', 'block', 'move_in_date',
         'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
         'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
-        'advance_amount', 'advance_refundable',
+        'advance_amount', 'advance_applied_amount', 'advance_refundable',
+        'first_invoice_advance_settled',
         'room_number', 'bed_number',
         'created_at', 'updated_at',
     ]
@@ -129,8 +133,14 @@ class _ResidentBaseSerializer(serializers.ModelSerializer):
     def get_advance_amount(self, obj) -> str | None:
         return self._admission_value(obj, 'advance_amount', as_str=True)
 
+    def get_advance_applied_amount(self, obj) -> str | None:
+        return self._admission_value(obj, 'advance_applied_amount', as_str=True)
+
     def get_advance_refundable(self, obj) -> str | None:
         return self._admission_value(obj, 'advance_refundable', as_str=True)
+
+    def get_first_invoice_advance_settled(self, obj) -> bool | None:
+        return self._admission_value(obj, 'first_invoice_advance_settled')
 
     def get_room_number(self, obj) -> str | None:
         allocation = self._related(obj, 'allocation')
@@ -182,7 +192,8 @@ class ResidentSerializer(_ResidentBaseSerializer):
             'unit', 'block', 'move_in_date',
             'contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
             'security_deposit_amount', 'security_deposit_agreed', 'security_deposit_pending',
-            'advance_amount', 'advance_refundable',
+            'advance_amount', 'advance_applied_amount', 'advance_refundable',
+            'first_invoice_advance_settled',
             'room_number', 'bed_number',
             'created_at', 'updated_at',
         ]
@@ -260,6 +271,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
         model = Admission
         fields = [
             'id', 'resident', 'bed', 'joining_date', 'billing_mode', 'expected_stay_duration',
+            'first_billing_policy', 'billing_enrolled_on', 'auto_apply_advance_to_first_invoice',
             'contracted_sharing_type', 'contracted_room_category', 'food_preference', 'contracted_rent',
             'advance_amount', 'advance_collected_date', 'advance_mode',
             # `security_deposit_amount` is the amount COLLECTED now; `_agreed` is the full deposit
@@ -275,6 +287,7 @@ class AdmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'contracted_sharing_type', 'contracted_room_category', 'contracted_rent',
             'advance_applied_amount', 'advance_refundable', 'security_deposit_pending',
+            'billing_enrolled_on',
             'recorded_by', 'created_at', 'updated_at',
         ]
         extra_kwargs = {
@@ -286,6 +299,20 @@ class AdmissionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         resident = attrs['resident']
         bed = attrs['bed']
+
+        if attrs['joining_date'] > timezone.localdate():
+            raise serializers.ValidationError(
+                {'joining_date': _('The joining date cannot be in the future.')},
+                code='future_joining_date',
+            )
+        if (attrs['billing_mode'] != Admission.BillingMode.MONTHLY
+                and attrs.get('first_billing_policy') == Admission.FirstBillingPolicy.NEXT_BILLING_CYCLE):
+            raise serializers.ValidationError(
+                {'first_billing_policy': _(
+                    'Automatic billing options are available only for monthly residents.'
+                )},
+                code='monthly_only',
+            )
 
         if not resident.can_transition_to(Resident.Status.ACTIVE):
             raise serializers.ValidationError(
@@ -474,6 +501,8 @@ class VacateSerializer(serializers.ModelSerializer):
     # Breakdown of refund_amount: deposit - deduction + unapplied advance
     # + food-holiday credit - recovered food-holiday clawback (Module 24).
     security_deposit_amount = serializers.SerializerMethodField()
+    advance_amount = serializers.SerializerMethodField()
+    advance_applied_amount = serializers.SerializerMethodField()
     advance_refundable = serializers.SerializerMethodField()
 
     class Meta:
@@ -482,7 +511,7 @@ class VacateSerializer(serializers.ModelSerializer):
             'id', 'resident', 'notice_given_date', 'expected_vacate_date', 'actual_vacate_date',
             'maintenance_deduction', 'maintenance_deduction_note',
             'refund_date', 'refund_mode', 'refund_note', 'refund_amount', 'is_settled',
-            'security_deposit_amount', 'advance_refundable',
+            'security_deposit_amount', 'advance_amount', 'advance_applied_amount', 'advance_refundable',
             'food_holiday_credit', 'food_holiday_clawback_calculated', 'food_holiday_clawback_recovered',
             'food_holiday_clawback_unrecovered',
             'cancelled_date', 'cancellation_reason', 'cancelled_by', 'is_cancelled', 'is_open',
@@ -492,6 +521,12 @@ class VacateSerializer(serializers.ModelSerializer):
 
     def get_security_deposit_amount(self, obj) -> str:
         return str(obj.resident.admission.security_deposit_amount)
+
+    def get_advance_amount(self, obj) -> str:
+        return str(obj.resident.admission.advance_amount)
+
+    def get_advance_applied_amount(self, obj) -> str:
+        return str(obj.resident.admission.advance_applied_amount)
 
     def get_advance_refundable(self, obj) -> str:
         return str(obj.resident.admission.advance_refundable)

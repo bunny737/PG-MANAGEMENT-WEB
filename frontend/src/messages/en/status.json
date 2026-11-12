@@ -54,6 +54,9 @@
   "bank_transfer": "Bank Transfer",
   "cash": "Cash",
   "card": "Card",
-  "cheque": "Cheque"
+  "cheque": "Cheque",
+  "advance_adjustment": "Advance Adjustment",
+  "admission_advance": "Admission Advance",
+  "deposit": "Security Deposit"
 }
 

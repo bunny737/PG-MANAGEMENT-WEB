@@ -813,10 +813,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Cash movements for a date range (D3) — the drill-down behind the
+         * @description Cash receipts for a date range (D3) — the drill-down behind the
          *     analytics `cash_collected` figure, which this list always sums to.
-         *     Payments are (+). Rent refunds would be (−), but v1 has none (owner
-         *     decision 2026-10-16), so refunds_paid is always 0 here.
+         *     Includes direct invoice payments (`is_advance_adjustment=False`),
+         *     admission advance collections (on `COALESCE(advance_collected_date,
+         *     joining_date)`), and security deposit collections (`DepositPayment`).
+         *     Non-cash advance drawdowns are excluded from cash receipts and reported
+         *     separately in `advance_adjustments_total`. Refund payouts are untracked
+         *     in v1 (`refunds_paid = 0.00`).
          */
         get: operations["v1_cash_movements_retrieve"];
         put?: never;
@@ -1630,6 +1634,26 @@ export interface paths {
          *     once issued an invoice is a financial record and cannot be edited/deleted.
          */
         patch: operations["v1_invoices_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/invoices/{id}/adjust-advance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Explicitly apply part or all of the resident's held advance balance
+         *     against an issued invoice. Never counts as new cash receipts.
+         */
+        post: operations["v1_invoices_adjust_advance_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/invoices/{id}/hold-auto-issue/": {
@@ -3657,6 +3681,10 @@ export interface components {
             /** Format: date */
             joining_date: string;
             billing_mode: components["schemas"]["BillingModeEnum"];
+            first_billing_policy?: components["schemas"]["FirstBillingPolicyEnum"];
+            /** Format: date */
+            readonly billing_enrolled_on: string;
+            auto_apply_advance_to_first_invoice?: boolean;
             expected_stay_duration?: string;
             readonly contracted_sharing_type: components["schemas"]["ContractedSharingTypeEnum"];
             readonly contracted_room_category: components["schemas"]["ContractedRoomCategoryEnum"];
@@ -3741,6 +3769,8 @@ export interface components {
             refunds_paid: string;
             /** Format: decimal */
             cash_collected: string;
+            /** Format: decimal */
+            advance_adjustments_total: string;
             /** Format: decimal */
             period_invoiced: string;
             /** Format: decimal */
@@ -3892,6 +3922,8 @@ export interface components {
          * @enum {string}
          */
         BillingModeEnum: "monthly" | "weekly" | "daily";
+        /** @enum {string} */
+        FirstBillingPolicyEnum: "from_joining_date" | "next_billing_cycle";
         /**
          * @description Owner/Manager confirms blacklisting (PRD: flagged automatically after
          *     Absconded, but blacklisting itself is never automatic).
@@ -3944,8 +3976,9 @@ export interface components {
             amount: string;
             receipt_number: string | null;
             payment_mode: string;
+            source_label: string;
             /** Format: uuid */
-            invoice: string;
+            invoice: string | null;
             /** Format: uuid */
             resident: string;
             resident_name: string;
@@ -3965,6 +3998,8 @@ export interface components {
             gross_receipts: string;
             /** Format: decimal */
             refunds_paid: string;
+            /** Format: decimal */
+            advance_adjustments_total: string;
             /** Format: decimal */
             total: string;
             count: number;
@@ -4563,6 +4598,18 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        /**
+         * @description Input for explicitly applying part or all of a resident's remaining
+         *     held admission advance toward an issued invoice.
+         */
+        InvoiceAdjustAdvance: {
+            /** Format: decimal */
+            amount: string;
+            /** Format: date */
+            adjustment_date: string;
+            /** @default  */
+            note: string;
         };
         InvoiceBulkIssue: {
             ids: string[];
@@ -5299,7 +5346,9 @@ export interface components {
             readonly security_deposit_agreed?: string | null;
             readonly security_deposit_pending?: string | null;
             readonly advance_amount?: string | null;
+            readonly advance_applied_amount?: string | null;
             readonly advance_refundable?: string | null;
+            readonly first_invoice_advance_settled?: boolean | null;
             readonly room_number?: string | null;
             readonly bed_number?: string | null;
             /** Format: date-time */
@@ -5420,6 +5469,10 @@ export interface components {
             /** Format: date */
             readonly payment_date: string;
             readonly payment_mode: components["schemas"]["PaymentMode2f4Enum"];
+            readonly is_advance_adjustment: boolean;
+            readonly payment_source: string;
+            readonly payment_source_label: string;
+            readonly historical_collection_mode: string | null;
             readonly reference: string;
             /** Format: uuid */
             readonly recorded_by: string | null;
@@ -5666,6 +5719,10 @@ export interface components {
             /** Format: date */
             payment_date: string;
             payment_mode: string;
+            is_advance_adjustment: boolean;
+            payment_source: string;
+            payment_source_label: string;
+            historical_collection_mode: string | null;
             reference: string;
             recorded_by: string | null;
             recorded_by_name: string | null;
@@ -5747,7 +5804,9 @@ export interface components {
             readonly security_deposit_agreed: string | null;
             readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
+            readonly advance_applied_amount: string | null;
             readonly advance_refundable: string | null;
+            readonly first_invoice_advance_settled: boolean | null;
             readonly room_number: string | null;
             readonly bed_number: string | null;
             /** Format: date-time */
@@ -5793,7 +5852,9 @@ export interface components {
             readonly security_deposit_agreed: string | null;
             readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
+            readonly advance_applied_amount: string | null;
             readonly advance_refundable: string | null;
+            readonly first_invoice_advance_settled: boolean | null;
             readonly room_number: string | null;
             readonly bed_number: string | null;
             /** Format: date-time */
@@ -5870,7 +5931,9 @@ export interface components {
             readonly security_deposit_agreed: string | null;
             readonly security_deposit_pending: string | null;
             readonly advance_amount: string | null;
+            readonly advance_applied_amount: string | null;
             readonly advance_refundable: string | null;
+            readonly first_invoice_advance_settled: boolean | null;
             readonly room_number: string | null;
             readonly bed_number: string | null;
             /** Format: date-time */
@@ -6233,6 +6296,8 @@ export interface components {
             /** Format: decimal */
             cash_collected: string;
             /** Format: decimal */
+            advance_adjustments_total: string;
+            /** Format: decimal */
             period_invoiced: string;
             /** Format: decimal */
             period_collected: string;
@@ -6275,9 +6340,11 @@ export interface components {
         };
         /**
          * @description * `payment` - payment
+         *     * `admission_advance` - admission_advance
+         *     * `deposit` - deposit
          * @enum {string}
          */
-        TypeEnum: "payment";
+        TypeEnum: "payment" | "admission_advance" | "deposit";
         Vacate: {
             /** Format: uuid */
             readonly id: string;
@@ -6299,6 +6366,8 @@ export interface components {
             readonly refund_amount: string | null;
             readonly is_settled: boolean;
             readonly security_deposit_amount: string;
+            readonly advance_amount: string;
+            readonly advance_applied_amount: string;
             readonly advance_refundable: string;
             /** Format: decimal */
             readonly food_holiday_credit: string;
@@ -6342,6 +6411,10 @@ export interface components {
         VacateSettlementPreviewResponse: {
             /** Format: decimal */
             security_deposit_amount: string;
+            /** Format: decimal */
+            advance_amount: string;
+            /** Format: decimal */
+            advance_applied_amount: string;
             /** Format: decimal */
             advance_refundable: string;
             /** Format: decimal */
@@ -9118,6 +9191,37 @@ export interface operations {
             };
         };
     };
+    v1_invoices_adjust_advance_create: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description <= 100 chars; one per user intent. A retry with the same key and body returns 200 with `Idempotent-Replayed: true` and the original payment. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description A UUID string identifying this invoice. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceAdjustAdvance"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvoiceAdjustAdvance"];
+                "multipart/form-data": components["schemas"]["InvoiceAdjustAdvance"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+        };
+    };
     v1_invoices_hold_auto_issue_create: {
         parameters: {
             query?: never;
@@ -9892,15 +9996,9 @@ export interface operations {
                 from?: string;
                 invoice?: string;
                 invoice__resident?: string;
+                is_advance_adjustment?: boolean;
                 month?: string;
-                /**
-                 * @description * `upi` - UPI
-                 *     * `cash` - Cash
-                 *     * `bank_transfer` - Bank Transfer
-                 *     * `card` - Card
-                 *     * `cheque` - Cheque
-                 */
-                payment_mode?: "bank_transfer" | "card" | "cash" | "cheque" | "upi";
+                payment_mode?: string;
                 property?: string;
                 resident?: string;
                 search?: string;

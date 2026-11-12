@@ -49,11 +49,12 @@ Response: a JSON array, oldest first, each item
    `is_overdue(today)` — i.e. still not `paid`. A later-settled invoice's
    overdue period silently drops off the timeline once it's fully paid,
    same as the invoice's own `is_overdue` flag elsewhere in the API.
-5. Each `Payment` becomes one event, labeled by its effect on the invoice's
+5. Each `Payment` becomes one event, labeled `"Advance Adjusted"` when
+   `is_advance_adjustment=True`, or by its effect on the invoice's
    running total (not a stored field): `Partial Payment` if it leaves a
    balance, `Remaining Paid` if it's the *last of several* payments that
    clears the balance, `Payment Received` if a single payment clears it
-   outright.
+   outright; the detail string formats `get_payment_source_display()`.
 6. A `Transfer` names its destination room + bed.
 7. `Complaint Raised` fires once per complaint, at creation.
 8. The exit sequence is either the notice path or the absconded path, never
@@ -150,3 +151,4 @@ Response: a JSON array, oldest first, each item
 - 2026-10-12  The timeline endpoint needs `view_resident_profile` **and** `view_activity_timeline`
   (the latter now belongs to the Finance module's View level), so Finance=View alone never reaches
   resident data. See Module 01 `[DECISION 2026-10-12]`.
+- 2026-11-11  Advance-adjustment payments render under `"Advance Adjusted"` using `payment.get_payment_source_display()` (`"Advance Adjustment"`) instead of leaking `'cash'` or empty `payment_mode`.

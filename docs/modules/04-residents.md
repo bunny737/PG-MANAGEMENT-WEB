@@ -269,3 +269,21 @@ lifecycle (`vacated`/`blacklisted`) instead.
   the new `apps/residents/schema.py` (never instantiated for a real
   response). See Module 21's 2026-10-17 decision for the full list and the
   test that guards it.
+- 2026-11-11  Held advance balance (Milestone 1): `ResidentSerializer` adds
+  `advance_applied_amount` and `first_invoice_advance_settled` (redacted
+  without `view_finance` or `manage_deposits`, alongside `advance_amount` /
+  `advance_refundable`). `resident_finance()` excludes non-cash
+  `Payment(is_advance_adjustment=True)` rows from `last_payment_date`.
+  `build_activity_timeline` labels advance adjustments `"Advance Adjusted"`
+  via `get_payment_source_display()`. Web `ResidentProfile` shows the
+  collected / applied / remaining held advance breakdown and, while in
+  `notice_period`, a read-only Exit Settlement Preview card (`outstanding_dues`
+  shown separately; interactive checkout dialogs stay Milestone 2).
+- 2026-11-12  Review fix (`ResidentProfile` cache freshness): `ResidentProfile`
+  moved resident, vacate list, and settlement preview fetches to TanStack
+  Query (`staleTime: 0`, `refetchOnMount: "always"`,
+  `refetchOnWindowFocus: true`), plus `focus` / `pageshow` / `visibilitychange`
+  and tab-switch invalidations so held-advance balances and exit previews
+  refresh immediately when invalidated by billing or returning from another
+  view/window (`afterInvoiceChange` also invalidates `queryKeys.vacates.all`).
+  Tests: `ResidentProfile.kyc.test.tsx`.

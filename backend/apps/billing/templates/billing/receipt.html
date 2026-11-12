@@ -32,6 +32,7 @@
     {% if room_number %}<tr><td class="label">{% translate "Room / Bed" %}</td><td>{{ room_number }} / {{ bed_number }}</td></tr>{% endif %}
     <tr><td class="label">{% translate "Billing period" %}</td><td>{{ invoice.period_start|date:"d M Y" }} – {{ invoice.period_end|date:"d M Y" }}</td></tr>
     <tr><td class="label">{% translate "Payment mode" %}</td><td>{{ payment_mode_label }}</td></tr>
+    {% if is_advance_adjustment and historical_collection_mode_label %}<tr><td class="label">{% translate "Original collection mode" %}</td><td>{{ historical_collection_mode_label }}</td></tr>{% endif %}
     {% if payment.reference %}<tr><td class="label">{% translate "Reference" %}</td><td>{{ payment.reference }}</td></tr>{% endif %}
   </table>
 

@@ -67,6 +67,7 @@ function ExportRow({ label, onDownload }: ExportRowProps) {
 
 export function ExportsTab({ month, propertyId }: { month: string; propertyId: string | null }) {
   const t = useTranslations("reports.exports");
+  const tReports = useTranslations("reports");
   const property = propertyId ?? undefined;
 
   return (
@@ -88,6 +89,9 @@ export function ExportsTab({ month, propertyId }: { month: string; propertyId: s
       </PermissionGate>
       <PermissionGate allOf={["view_finance", "view_expenses"]}>
         <ExportRow label={t("pnl")} onDownload={(ft) => exportCashFlowStatement(ft, month, property)} />
+        <p role="note" className="rounded-xl border border-border bg-surface-subtle px-3.5 py-2.5 text-xs text-ink-muted">
+          {tReports("refundsLimitationNotice")}
+        </p>
       </PermissionGate>
     </div>
   );

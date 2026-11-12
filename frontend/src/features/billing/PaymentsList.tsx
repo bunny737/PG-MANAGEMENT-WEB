@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Receipt, Search, Trash2 } from "lucide-react";
-import { deletePayment, listPaymentsFiltered, type Payment, type PaymentFilters, type PaymentMode } from "@/lib/api";
+import {
+  ApiError,
+  deletePayment,
+  listPaymentsFiltered,
+  type Payment,
+  type PaymentFilters,
+  type PaymentMode,
+} from "@/lib/api";
 import { MoneyText } from "@/components/shared/MoneyText";
 import { PermissionGate } from "@/components/shared/PermissionGate";
 import { PropertyFilter, useActiveProperty } from "@/components/shared/PropertyFilter";
@@ -48,7 +55,8 @@ export function PaymentsList() {
   });
 
   function handleDelete(payment: Payment) {
-    if (window.confirm(t("deleteConfirmBody"))) deleteMutation.mutate(payment);
+    const confirmMsg = payment.is_advance_adjustment ? t("deleteAdjustmentConfirmBody") : t("deleteConfirmBody");
+    if (window.confirm(confirmMsg)) deleteMutation.mutate(payment);
   }
 
   return (
@@ -72,6 +80,7 @@ export function PaymentsList() {
               {tStatus(m)}
             </option>
           ))}
+          <option value="advance_adjustment">{tStatus("advance_adjustment")}</option>
         </select>
         <div className="relative min-w-[12rem] flex-1">
           <Search className="absolute inset-y-0 left-3 my-auto size-4 text-ink-faint" />
@@ -85,6 +94,11 @@ export function PaymentsList() {
         </div>
       </div>
 
+      {deleteMutation.isError && (
+        <p role="alert" className="rounded-xl border border-status-critical/20 bg-status-critical-soft px-3.5 py-2.5 text-sm text-status-critical">
+          {deleteMutation.error instanceof ApiError ? deleteMutation.error.message : t("errLoadFailed")}
+        </p>
+      )}
       {isLoading && <SectionSkeleton className="h-64" />}
       {isError && <SectionError onRetry={() => refetch()} message={t("errLoadFailed")} />}
 
@@ -116,7 +130,20 @@ export function PaymentsList() {
                 <div className="col-span-2 text-right">
                   <MoneyText value={payment.amount} />
                 </div>
-                <div className="col-span-2 text-ink-muted">{tStatus(payment.payment_mode)}</div>
+                <div className="col-span-2 text-ink-muted">
+                  <span className={payment.is_advance_adjustment ? "font-medium text-accent" : undefined}>
+                    {payment.payment_source === "advance_adjustment"
+                      ? tStatus("advance_adjustment")
+                      : payment.payment_mode
+                      ? tStatus(payment.payment_mode)
+                      : payment.payment_source_label || "—"}
+                  </span>
+                  {payment.historical_collection_mode && (
+                    <p className="text-xs text-ink-faint">
+                      {t("originalMode", { mode: tStatus(payment.historical_collection_mode) })}
+                    </p>
+                  )}
+                </div>
                 <div className="col-span-2 text-ink-muted">{payment.receipt_number ?? "—"}</div>
                 <div className="col-span-1 flex items-center justify-end gap-2">
                   <span className="text-ink-muted">{formatDate(payment.payment_date)}</span>

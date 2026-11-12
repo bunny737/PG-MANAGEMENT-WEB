@@ -20,7 +20,13 @@ from .base import BillingAPITestCase
 
 PERIOD = {'period_start': '2026-07-01', 'period_end': '2026-07-31', 'due_date': '2026-07-10'}
 BILLING_FIELDS = {'contracted_rent', 'billing_mode'}
-DEPOSIT_FIELDS = {'security_deposit_amount', 'advance_amount', 'advance_refundable'}
+DEPOSIT_FIELDS = {
+    'security_deposit_amount',
+    'advance_amount',
+    'advance_applied_amount',
+    'advance_refundable',
+    'first_invoice_advance_settled',
+}
 
 
 class ModuleAccessEnforcementBase(BillingAPITestCase):
@@ -94,6 +100,7 @@ class FinanceEnforcementTests(ModuleAccessEnforcementBase):
             ('patch', reverse('invoice-detail', args=[inv])),
             ('delete', reverse('invoice-detail', args=[inv])),
             ('post', f'/api/v1/invoices/{inv}/issue/'),
+            ('post', f'/api/v1/invoices/{inv}/adjust-advance/'),
             ('post', '/api/v1/invoices/bulk-generate/'),
             ('post', f'/api/v1/invoices/{inv}/line-items/'),
             ('patch', f'/api/v1/invoices/{inv}/line-items/{uuid.uuid4()}/'),

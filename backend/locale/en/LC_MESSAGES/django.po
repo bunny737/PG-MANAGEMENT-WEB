@@ -2533,3 +2533,70 @@ msgid ""
 "A deposit can only be collected from a resident who is Active or on Notice "
 "Period."
 msgstr ""
+
+#: apps/billing/filters.py
+#, python-format
+msgid "Unknown payment mode. Use %(choices)s, or advance_adjustment."
+msgstr ""
+
+#: apps/billing/models.py
+msgid "Advance Adjustment"
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Held advance adjustments can only be made for an Active or Notice Period resident."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Advance can only be adjusted against an issued invoice."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Issue the resident's first invoice before adjusting held advance on another invoice."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Adjustment amount must be greater than zero."
+msgstr ""
+
+#: apps/billing/services.py
+#, python-format
+msgid "Adjustment exceeds the outstanding balance of %(balance)s."
+msgstr ""
+
+#: apps/billing/services.py
+#, python-format
+msgid "Adjustment exceeds the remaining held advance of %(advance)s."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Advance adjustments cannot be reversed after a resident has exited."
+msgstr ""
+
+#: apps/billing/services.py
+msgid "Cannot restore advance adjustment: held advance applied amount is smaller than the payment."
+msgstr ""
+
+#: apps/billing/templates/billing/receipt.html
+msgid "Original collection mode"
+msgstr ""
+
+#: apps/billing/views.py
+msgid "Collected at admission"
+msgstr ""
+
+#: apps/billing/views.py
+msgid "Security deposit"
+msgstr ""
+
+#: apps/reporting/services.py
+msgid "Advance adjustments (non-cash)"
+msgstr ""
+
+#: apps/reporting/services.py
+msgid "Note: Cash collected counts direct payments, admission advances, and security deposits on collection date. Refunds paid is 0.00 (refund payouts untracked), so Net cash flow may overstate cash retained after refunds are paid."
+msgstr ""
+
+#: apps/residents/services.py
+msgid "Advance Adjusted"
+msgstr ""

@@ -26,12 +26,17 @@ Table: payments                                 (RLS enforced, app: apps.billing
   invoice           FK -> invoices.Invoice (PROTECT)
   amount            decimal(12,2)     (always positive)
   payment_date      date
-  payment_mode      upi | cash | bank_transfer | card | cheque
+  payment_mode      upi | cash | bank_transfer | card | cheque, blank
+                    -- holds direct mode, or historical collection mode for
+                    -- legacy/admission advance rows; blank allowed when is_advance_adjustment=True
+  is_advance_adjustment  boolean, default false, indexed
+                    -- true for automatic first-invoice drawdown & explicit "Adjust from advance"
   reference         varchar(255), blank   (txn ref / note, optional)
   recorded_by       FK -> users, null (SET_NULL)
   receipt_number    varchar(20), null  UNIQUE (tenant_id, receipt_number)
   idempotency_key   varchar(100), null UNIQUE (tenant_id, key) WHERE NOT NULL
   created_at / updated_at
+  constraint payment_mode_required_for_direct: CHECK (is_advance_adjustment OR payment_mode <> '')
 
 Table: receipt_counters                         (RLS enforced, 2026-10-16)
   id, tenant_id (UNIQUE), last_number
@@ -46,20 +51,25 @@ Also added this module — computed (never stored) helpers on `Invoice`:
 
 ## API endpoints
 ```
-GET|POST         /api/v1/payments/                record / list payments        manage_payments
-GET|DELETE       /api/v1/payments/{id}/            detail / delete (correction)  manage_payments
-GET              /api/v1/payments/{id}/receipt/    receipt JSON; ?filetype=pdf   view_finance
-GET              /api/v1/invoices/outstanding/     invoices with balance > 0     view_finance
-GET              /api/v1/cash-movements/           payments (+) for a range      view_finance
+GET|POST         /api/v1/payments/                       record / list payments        manage_payments
+GET|DELETE       /api/v1/payments/{id}/                   detail / delete (correction)  manage_payments
+GET              /api/v1/payments/{id}/receipt/           receipt JSON; ?filetype=pdf   view_finance
+POST             /api/v1/invoices/{id}/adjust-advance/    adjust held admission advance manage_payments
+GET              /api/v1/invoices/outstanding/            invoices with balance > 0     view_finance
+GET              /api/v1/cash-movements/                  cash receipts for a range     view_finance
 ```
-`/payments/` list filters (2026-10-16, D3): `?invoice=&resident=&property=
-&payment_mode=&month=YYYY-MM&from=&to=&search=` (`invoice__resident` kept for
-existing clients). Rows carry `receipt_number, resident, resident_name,
-property, property_name, room_number, bed_number, invoice_period_start/end,
-recorded_by_name`. `POST /payments/` accepts an `Idempotency-Key` header.
+`/payments/` list filters (2026-10-16, D3; extended 2026-11-11): `?invoice=&resident=&property=
+&payment_mode=&is_advance_adjustment=&month=YYYY-MM&from=&to=&search=` (`invoice__resident` kept for
+existing clients; `payment_mode=advance_adjustment` filters `is_advance_adjustment=True`, while cash/upi/etc.
+filter `is_advance_adjustment=False`). Rows carry `receipt_number, resident, resident_name,
+property, property_name, room_number, bed_number, invoice_period_start/end, is_advance_adjustment,
+payment_source, payment_source_label, historical_collection_mode, recorded_by_name`. `POST /payments/`
+and `POST /invoices/{id}/adjust-advance/` accept an `Idempotency-Key` header.
 `/cash-movements/?property=&month=|from=&to=` returns `{from, to,
-gross_receipts, refunds_paid, total, count, results[]}` — the drill-down of
-the analytics `cash_collected` figure (Module 21).
+gross_receipts, refunds_paid, advance_adjustments_total, total, count, results[]}` — the drill-down of
+the analytics `cash_collected` figure (Module 21). Each row has `type: payment | admission_advance | deposit`
+plus `source_label` (non-cash `is_advance_adjustment=True` rows are excluded from `results[]`/`gross_receipts`
+and summed separately in `advance_adjustments_total`).
 No `PATCH` on payments — a financial record is corrected by deleting and
 re-recording, matching the "issued invoice is immutable" discipline from
 Module 08.
@@ -194,3 +204,12 @@ Module 08.
   `/cash-movements/`, `Idempotency-Key`, `receipt_number` + `ReceiptCounter`
   (RLS) + backfill migration, PDF receipt, concurrency test. Tests:
   `billing/tests/test_list_filters.py`, `test_payment_integrity.py`.
+- 2026-11-11  Held advance balance adjustments & cash receipts integrity (Milestone 1):
+  - `Payment.is_advance_adjustment` (migration `billing.0011_payment_is_advance_adjustment`) + blankable `payment_mode` (`payment_mode_required_for_direct` CHECK constraint). Never falls back to `'cash'`; exposes `payment_source` (`'advance_adjustment'` or mode), `payment_source_label` (`"Advance Adjustment"`), and `historical_collection_mode` across serializers, receipts (JSON + HTML/PDF), exports, and `PaymentsList`.
+  - Pre-deployment read-only audit command `manage.py audit_historical_cash_ledger` + shared classifier (`apps/billing/historical_audit.py`) with a **hard fail-loud gate** inside `billing.0011` (`GATE_FAILURE` aborts migration instead of guessing/skipping ambiguous historical applied advances; `MANUAL_CONFLICT` rows with `"Advance collected at admission"` failing invariants remain `is_advance_adjustment=False`). Read-only inspection also reports deposit ledger mismatches (`security_deposit_amount != SUM(deposit_payments)`) and missing `advance_collected_date` without synthesizing `DepositPayment` rows.
+  - `POST /api/v1/invoices/{id}/adjust-advance/` (`services.adjust_from_advance`) locks Settings → Resident → Invoice → Admission, requires `Active` or `Notice Period` (`resident_not_current`) and `first_invoice_advance_settled=True` (`first_invoice_not_issued`), atomically increments `advance_applied_amount`, creates `Payment(is_advance_adjustment=True)`, recomputes invoice status, and supports `Idempotency-Key` (`audit` logged).
+  - `delete_payment` checks `is_advance_adjustment=True` (never legacy reference text) to restore `Admission.advance_applied_amount`, blocking reversal after exit (`resident_not_current`).
+  - `CashMovementView` (`/cash-movements/`) sums direct payments (`is_advance_adjustment=False`), admission advances (`COALESCE(advance_collected_date, joining_date)`), and `DepositPayment`s; reports non-cash adjustments separately in `advance_adjustments_total` and keeps `refunds_paid = 0.00` (with explicit limitation notice in UI/exports). Tests: `billing/tests/test_advance_backfill_migration.py`, `billing/tests/test_payment_integrity.py`, `billing/tests/test_invoices.py`, `billing/tests/test_list_filters.py`.
+- 2026-11-12  Review fix (cross-midnight idempotency on advance adjustments):
+  - `InvoiceAdjustAdvanceSerializer` now requires an explicit `adjustment_date` (matching `PaymentWriteSerializer`), eliminating date drift across midnight when HTTP clients retry with an `Idempotency-Key`; `AdjustAdvanceDialog` validates `adjustment_date` (`adjustAdvance.errDateRequired`) and always sends it explicitly.
+  - Direct Python callers of `services.adjust_from_advance(..., adjustment_date=None, idempotency_key=...)` compare replay retries against `timezone.localdate(existing.created_at)` instead of recomputing `local_today()`. Tests: `billing/tests/test_invoices.py`, frontend `InvoiceDetail.advance.test.tsx`.

@@ -179,3 +179,142 @@ class ConcurrentOverpaymentTests(TransactionTestCase):
         self.assertEqual(sorted(outcomes), ['ValidationError', 'ok'])
         with tenant_context(self.tenant.id):
             self.assertEqual(Payment.objects.filter(invoice=self.invoice).count(), 1)
+
+
+@skipUnlessDBFeature('has_select_for_update')
+class ConcurrentAdvanceAdjustmentTests(TransactionTestCase):
+    """Racing explicit advance adjustments on different invoices (or against vacate
+    finalization) must serialize on Resident/Admission locks and never overdraw advance."""
+
+    def _fixture_teardown(self):
+        pass
+
+    def setUp(self):
+        helper = BillingAPITestCase
+        self.tenant = helper.create_tenant('Advance Concurrency Tenant')
+        self.owner = helper.create_owner(self.tenant, email=f'{self._testMethodName}@advconcurrency.example.com')
+        self.prop = helper.create_property(self.tenant)
+        bed = helper.create_bed(helper.create_room(helper.create_floor(self.prop)))
+        self.resident = helper.create_resident(self.prop, status=Resident.Status.RESERVED)
+        helper.check_in(
+            self.resident, bed,
+            advance_amount=Decimal('15000.00'),
+            advance_applied_amount=Decimal('5000.00'),
+            advance_collected_date=date(2026, 7, 1),
+            advance_mode=Admission.AdvanceMode.UPI,
+            security_deposit_amount=Decimal('2000.00'),
+            security_deposit_agreed=Decimal('2000.00'),
+            first_invoice_advance_settled=True,
+        )
+        self.inv_a = helper.create_invoice(self.resident, date(2026, 8, 1), total=Decimal('10000.00'))
+        self.inv_b = helper.create_invoice(self.resident, date(2026, 9, 1), total=Decimal('10000.00'))
+
+    def tearDown(self):
+        from apps.residents.models import Vacate
+
+        with tenant_context(is_super_admin=True):
+            Payment.objects.filter(invoice__resident=self.resident).delete()
+            ReceiptCounter.objects.filter(tenant_id=self.tenant.id).delete()
+            Invoice.objects.filter(resident=self.resident).delete()
+            Vacate.objects.filter(resident=self.resident).delete()
+            Allocation.objects.filter(resident=self.resident).delete()
+            Admission.objects.filter(resident=self.resident).delete()
+            Resident.objects.filter(pk=self.resident.pk).delete()
+            Property.objects.filter(pk=self.prop.pk).delete()
+            AuditLog.objects.filter(tenant_id=self.tenant.id).delete()
+        self.owner.delete()
+        self.tenant.delete()
+
+    def test_two_racing_advance_adjustments_across_invoices_cannot_overdraw_held_balance(self):
+        barrier = threading.Barrier(2)
+        outcomes = []
+
+        def attempt(invoice):
+            try:
+                with tenant_context(self.tenant.id):
+                    barrier.wait(timeout=10)
+                    services.adjust_from_advance(
+                        invoice_id=invoice.id, amount=Decimal('6000.00'),
+                        adjustment_date=date(2026, 9, 5), actor=self.owner,
+                    )
+                outcomes.append('ok')
+            except Exception as exc:  # noqa: BLE001
+                outcomes.append(type(exc).__name__)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=attempt, args=(inv,)) for inv in (self.inv_a, self.inv_b)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(sorted(outcomes), ['ValidationError', 'ok'])
+        with tenant_context(self.tenant.id):
+            adm = Admission.objects.get(resident=self.resident)
+            self.assertEqual(adm.advance_applied_amount, Decimal('11000.00'))
+            self.assertEqual(adm.advance_refundable, Decimal('4000.00'))
+            self.assertEqual(Payment.objects.filter(invoice__resident=self.resident, is_advance_adjustment=True).count(), 1)
+
+    def test_adjust_from_advance_racing_finalize_vacate_never_desyncs_refund(self):
+        from apps.residents import services as res_services
+
+        with tenant_context(self.tenant.id):
+            vacate = res_services.give_notice(
+                resident=self.resident, notice_given_date=date(2026, 8, 15), actor=self.owner,
+            )
+
+        barrier = threading.Barrier(2)
+        outcomes = {}
+
+        def do_adjust():
+            try:
+                with tenant_context(self.tenant.id):
+                    barrier.wait(timeout=10)
+                    services.adjust_from_advance(
+                        invoice_id=self.inv_a.id, amount=Decimal('4000.00'),
+                        adjustment_date=date(2026, 9, 5), actor=self.owner,
+                    )
+                outcomes['adjust'] = 'ok'
+            except Exception as exc:  # noqa: BLE001
+                outcomes['adjust'] = type(exc).__name__
+            finally:
+                connection.close()
+
+        def do_finalize():
+            try:
+                with tenant_context(self.tenant.id):
+                    barrier.wait(timeout=10)
+                    res_services.finalize_vacate(
+                        vacate=vacate, actual_vacate_date=date(2026, 9, 15),
+                        maintenance_deduction=Decimal('0.00'), maintenance_deduction_note='',
+                        refund_date=None, refund_mode='', refund_note='', actor=self.owner,
+                    )
+                outcomes['finalize'] = 'ok'
+            except Exception as exc:  # noqa: BLE001
+                outcomes['finalize'] = type(exc).__name__
+            finally:
+                connection.close()
+
+        t1 = threading.Thread(target=do_adjust)
+        t2 = threading.Thread(target=do_finalize)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        self.assertEqual(outcomes['finalize'], 'ok')
+        with tenant_context(self.tenant.id):
+            adm = Admission.objects.get(resident=self.resident)
+            vacate.refresh_from_db()
+            self.assertEqual(
+                vacate.refund_amount,
+                adm.security_deposit_amount + adm.advance_refundable,
+            )
+            if outcomes['adjust'] == 'ok':
+                self.assertEqual(adm.advance_refundable, Decimal('6000.00'))
+                self.assertEqual(vacate.refund_amount, Decimal('8000.00'))
+            else:
+                self.assertEqual(outcomes['adjust'], 'ValidationError')
+                self.assertEqual(adm.advance_refundable, Decimal('10000.00'))
+                self.assertEqual(vacate.refund_amount, Decimal('12000.00'))

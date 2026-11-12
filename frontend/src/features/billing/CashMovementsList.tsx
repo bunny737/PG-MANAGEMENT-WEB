@@ -41,7 +41,7 @@ export function CashMovementsList() {
 
       {data && (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-border bg-surface-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{t("grossReceipts")}</p>
               <MoneyText value={data.gross_receipts} className="text-xl font-bold text-ink" />
@@ -54,7 +54,15 @@ export function CashMovementsList() {
               <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{t("total")}</p>
               <MoneyText value={data.total} className="text-xl font-bold text-ink" />
             </div>
+            <div className="rounded-2xl border border-border bg-surface-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{t("advanceAdjustmentsTotal")}</p>
+              <MoneyText value={data.advance_adjustments_total} className="text-xl font-bold text-ink-muted" />
+            </div>
           </div>
+
+          <p role="note" className="rounded-xl border border-border bg-surface-subtle px-3.5 py-2.5 text-xs text-ink-muted">
+            {t("refundsLimitationNotice")}
+          </p>
 
           {data.results.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-surface-card p-12 text-center">
@@ -78,11 +86,16 @@ export function CashMovementsList() {
                       <ArrowDownLeft className="size-3.5 text-status-good" />
                       {formatDate(row.date)}
                     </div>
-                    <div className="col-span-4 font-medium text-ink">{row.resident_name}</div>
+                    <div className="col-span-4">
+                      <p className="font-medium text-ink">{row.resident_name}</p>
+                      <p className="text-xs text-ink-muted">{t(`type.${row.type}`)}</p>
+                    </div>
                     <div className="col-span-2 text-right">
                       <MoneyText value={row.amount} />
                     </div>
-                    <div className="col-span-2 text-ink-muted">{tStatus(row.payment_mode)}</div>
+                    <div className="col-span-2 text-ink-muted">
+                      {row.payment_mode ? tStatus(row.payment_mode) : row.source_label || "—"}
+                    </div>
                     <div className="col-span-1 text-ink-muted">{row.receipt_number ?? "—"}</div>
                   </div>
                 ))}

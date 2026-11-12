@@ -85,12 +85,12 @@ a new row and the withdrawn one stays in history. At most one may be *open*.
 - `latest_settled_vacate` — the last **settled** row; what a Vacated resident's
   move-out date must come from, since `latest_vacate` could be a cancelled one.
 
-Also added this module — two fields on `residents.Admission` (Module 05),
-completing the PRD's advance trio alongside the already-existing
-`advance_amount`:
+Also added this module — admission advance & deposit ledger fields on
+`residents.Admission` (Module 05):
 ```
-  advance_collected_date  date, null
-  advance_mode             upi | cash | bank_transfer, blank
+  advance_collected_date         date, null
+  advance_mode                   upi | cash | bank_transfer, blank
+  first_invoice_advance_settled  boolean, default false
 ```
 
 ## API endpoints
@@ -155,7 +155,8 @@ discipline; corrections happen via the dedicated actions (`finalize`,
    `security_deposit_amount` (`deduction_exceeds_deposit`) — zero deduction
    (full refund) is the floor. The deduction never comes out of the advance.
 5. `refund_amount` = `security_deposit_amount - maintenance_deduction +
-   advance_refundable` (advance not consumed by the first invoice), computed on
+   advance_refundable` (unapplied held advance remaining on Admission =
+   `advance_amount - advance_applied_amount`), computed on
    the fly (invariant 5: Decimal, never stored, can't drift).
 5a. **Settlement preview** (`GET /vacates/{id}/settlement-preview/?maintenance_deduction=`,
    owner request 2026-10-26) runs the same math as `finalize` — same
@@ -530,3 +531,10 @@ deposit payment could not be recorded. Now it can.
   `ResidentProfile.kyc.test.tsx` (the deposit block) and `money.test.ts`.
 - Not done: nothing reminds staff of a pending deposit, and it is not shown in the dues list or on
   receipts; a pending deposit is visible on the resident profile only. Ask the owner before adding either.
+
+## Update 2026-11-11 — held advance balance & Milestone 1 exit preview
+- [DECISION] **Held advance may be adjusted against later invoices.** `advance_amount - advance_applied_amount` (`advance_refundable`) decreases whenever the automatic first-invoice application OR an explicit `"Adjust from advance"` payment (`POST /api/v1/invoices/{id}/adjust-advance/`) draws it down, and is restored when an advance-adjustment payment is deleted while the resident is still Active or Notice Period. Only unapplied advance remaining at vacating (`advance_refundable`) is refunded in `Vacate.refund_for()`; advance already applied to rent is never refunded again.
+- **Locking:** `finalize_vacate` locks `Settings -> Resident -> Vacate -> Admission`, and `mark_absconded` locks `Settings -> Resident -> Admission`, preventing races between vacate/abscond settlement and concurrent advance adjustments or payment reversals.
+- **Serializers:** `VacateSerializer` and `GET /vacates/{id}/settlement-preview/` now return `advance_amount` and `advance_applied_amount` alongside `advance_refundable` and `security_deposit_amount` so the UI shows collected advance vs already-applied vs refundable balance (`VacateSettlementPreviewResponseSerializer` updated in `apps/residents/schema.py`).
+- **Refund payout timing limitation:** `Vacate` finalization calculates `refund_amount` due and optionally stores `refund_date` / `refund_mode`, but does not yet represent a verified cash outflow ledger event; analytics/reporting therefore keep `refunds_paid = 0.00` until actual refund payouts are tracked cleanly (Milestone 2 / follow-up).
+- **Web Milestone 1 UI:** Resident Profile renders the Held Advance breakdown and a read-only **Exit Settlement Preview** card for `notice_period` residents (`GET /vacates/?resident=` + `settlement-preview`, keeping `outstanding_dues` separate). Interactive notice/cancel/finalize vacate dialogs remain deferred to Milestone 2 (`FE-10`). Tests: `residents/tests/test_vacates.py`, `billing/tests/test_payment_integrity.py`, frontend `ResidentProfile.kyc.test.tsx`.

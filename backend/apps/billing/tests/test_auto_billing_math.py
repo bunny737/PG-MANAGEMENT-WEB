@@ -57,19 +57,17 @@ class ScheduleTests(SimpleTestCase):
         joining = date(2026, 7, 20)
         common = dict(joining_date=joining, billing_day_rule='admission_date', billing_day_of_month=None)
         self.assertEqual(schedule_for(billing_mode='monthly', **common), Schedule('monthly', anchor_day=20))
-        self.assertEqual(schedule_for(billing_mode='weekly', **common), Schedule('weekly', anchor_date=joining))
+        self.assertIsNone(schedule_for(billing_mode='weekly', **common))
         self.assertIsNone(schedule_for(billing_mode='daily', **common))
         self.assertEqual(
             schedule_for(billing_mode='monthly', joining_date=joining,
                          billing_day_rule='fixed_day', billing_day_of_month=1),
             Schedule('monthly', anchor_day=1),
         )
-        # Weekly residents ignore the property's fixed day.
-        self.assertEqual(
-            schedule_for(billing_mode='weekly', joining_date=joining,
-                         billing_day_rule='fixed_day', billing_day_of_month=1).kind,
-            'weekly',
-        )
+        self.assertIsNone(schedule_for(
+            billing_mode='weekly', joining_date=joining,
+            billing_day_rule='fixed_day', billing_day_of_month=1,
+        ))
 
 
 class CycleTests(SimpleTestCase):

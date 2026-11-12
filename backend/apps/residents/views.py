@@ -1,21 +1,29 @@
+from datetime import timedelta
+import logging
+
 import django_filters
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.fields import SkipField, empty
 from rest_framework.response import Response
 
 from apps.audit import log as audit_log
 from apps.billing.filters import resident_search
+from apps.core.exceptions import ServiceUnavailable
 from apps.core.idempotency import idempotency_key, key_reused
 from apps.core.permissions import require_permission
 from apps.core.redaction import Redactor
+from apps.core.storage import signed_url
+from apps.core.throttles import ScopedRateThrottle
 from apps.properties.models import Bed
 from apps.properties.services import visible_property_ids
 from apps.subscriptions.services import check_resident_limit
@@ -32,7 +40,11 @@ from .models import (
     Transfer,
     Vacate,
 )
-from .schema import ResidentDetailResponseSerializer, VacateSettlementPreviewResponseSerializer
+from .schema import (
+    ResidentDetailResponseSerializer,
+    ResidentDocumentUrlResponseSerializer,
+    VacateSettlementPreviewResponseSerializer,
+)
 from .serializers import (
     bed_admits,
     AbscondedRecordCreateSerializer,
@@ -44,6 +56,7 @@ from .serializers import (
     DepositPaymentSerializer,
     DepositPaymentWriteSerializer,
     DuesWriteOffSerializer,
+    ResidentListSerializer,
     ResidentSerializer,
     ResidentStatusUpdateSerializer,
     TransferCreateSerializer,
@@ -54,6 +67,21 @@ from .serializers import (
     VacateSerializer,
     VacateSettlementPreviewSerializer,
 )
+
+logger = logging.getLogger(__name__)
+
+_signing_errors = [OSError, ValueError, RuntimeError]
+try:
+    from google.api_core.exceptions import GoogleAPIError
+    _signing_errors.append(GoogleAPIError)
+except ImportError:
+    pass
+try:
+    from google.auth.exceptions import GoogleAuthError
+    _signing_errors.append(GoogleAuthError)
+except ImportError:
+    pass
+_SIGNING_ERRORS = tuple(_signing_errors)
 
 
 class ResidentFilter(django_filters.FilterSet):
@@ -90,8 +118,18 @@ class ResidentViewSet(viewsets.ModelViewSet):
     vacate/blacklist via the status lifecycle instead."""
 
     serializer_class = ResidentSerializer
+    throttle_scope = None
     http_method_names = ['get', 'post', 'patch']
     filterset_class = ResidentFilter
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ResidentListSerializer
+        return ResidentSerializer
+
+    @extend_schema(responses=ResidentListSerializer(many=True))
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
     @extend_schema(responses=ResidentDetailResponseSerializer)
     def retrieve(self, request, *args, **kwargs):
@@ -126,13 +164,81 @@ class ResidentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        instance = serializer.save(tenant_id=self.request.user.tenant_id)
-        audit_log.record(
-            action='resident.created', actor=self.request.user, obj=instance,
-            after={'first_name': instance.first_name, 'last_name': instance.last_name,
-                   'status': instance.status, 'property': str(instance.property_id)},
+        serializer.instance = services.create_resident(
+            validated_data=serializer.validated_data,
+            actor=self.request.user,
+            kyc_content_types=getattr(serializer, '_detected_kyc_content_types', {}),
             request=self.request,
         )
+
+    def perform_update(self, serializer):
+        serializer.instance = services.update_resident(
+            resident=serializer.instance,
+            validated_data=serializer.validated_data,
+            actor=self.request.user,
+            kyc_content_types=getattr(serializer, '_detected_kyc_content_types', {}),
+            request=self.request,
+        )
+
+    @extend_schema(
+        methods=['GET'],
+        parameters=[
+            OpenApiParameter(
+                'field', str, OpenApiParameter.PATH,
+                enum=['aadhaar_document', 'pan_document'],
+                description='Which KYC document field to issue a short-lived signed URL for.',
+            ),
+        ],
+        responses={
+            200: ResidentDocumentUrlResponseSerializer,
+            503: OpenApiResponse(
+                description='Document download URL temporarily unavailable (code=DOCUMENT_URL_UNAVAILABLE).',
+            ),
+        },
+    )
+    @action(
+        detail=True, methods=['get'],
+        url_path=r'documents/(?P<field>[^/.]+)', url_name='document-url',
+        throttle_classes=[ScopedRateThrottle], throttle_scope='kyc_document_download',
+    )
+    def documents(self, request, pk=None, field=None):
+        """Issue a fresh short-lived signed download URL for an uploaded KYC
+        document (`aadhaar_document` or `pan_document`). Never wraps GCS signing
+        and the mandatory `resident.kyc_document_url_issued` audit insert in
+        a misleading atomic transaction."""
+        if field not in services.KYC_FILE_FIELDS:
+            raise NotFound(_('Unknown document field.'))
+        resident = self.get_object()
+        document = getattr(resident, field)
+        if not document:
+            raise NotFound(_('This resident has no uploaded document for this field.'))
+
+        ttl = settings.MEDIA_URL_TTL_SECONDS
+        expires_at = timezone.now() + timedelta(seconds=ttl)
+        try:
+            url = signed_url(document, ttl_seconds=ttl)
+        except _SIGNING_ERRORS as exc:
+            logger.error(
+                'kyc_signed_url_failed tenant_id=%s resident_id=%s field=%s error=%s',
+                resident.tenant_id, resident.pk, field, type(exc).__name__,
+            )
+            raise ServiceUnavailable(
+                _('Document download is temporarily unavailable. Please try again.'),
+                code='document_url_unavailable',
+            )
+
+        audit_log.record(
+            action='resident.kyc_document_url_issued',
+            actor=request.user,
+            obj=resident,
+            after={'field': field},
+            request=request,
+        )
+        return Response({
+            'url': request.build_absolute_uri(url),
+            'expires_in': ttl,
+            'expires_at': expires_at.isoformat(),
+        })
 
     # Named change_status, not "status" — see Module 03's PropertySettings
     # write-up on why a method named after a DRF-internal attribute breaks

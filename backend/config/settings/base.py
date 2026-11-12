@@ -180,6 +180,8 @@ REST_FRAMEWORK = {
         'resident_join_code_lookup_ip': '60/hour',
         'resident_link_request': '10/hour',
         'resident_invite_accept': '20/hour',
+        # On-demand KYC signed download URL issuance (keyed on staff user).
+        'kyc_document_download': '60/min',
     },
 }
 
@@ -394,12 +396,29 @@ KYC_DOCUMENT_MAX_BYTES = env.int('KYC_DOCUMENT_MAX_BYTES', default=5 * 1024 * 10
 # SignBlob API (GS_IAM_SIGN_BLOB), which needs that SA to hold
 # iam.serviceAccountTokenCreator on itself.
 GS_BUCKET_NAME = env('GS_BUCKET_NAME', default='')
+GS_KYC_BUCKET_NAME = env('GS_KYC_BUCKET_NAME', default='')
+GS_PROJECT_ID = env('GS_PROJECT_ID', default=None)
+GS_DEFAULT_ACL = None  # uniform bucket-level access; never per-object public ACLs
+GS_QUERYSTRING_AUTH = True
+GS_FILE_OVERWRITE = False
+GS_EXPIRATION = timedelta(seconds=MEDIA_URL_TTL_SECONDS)
+GS_IAM_SIGN_BLOB = env.bool('GS_IAM_SIGN_BLOB', default=True)
+GS_SA_EMAIL = env('GS_SA_EMAIL', default=None)
 if GS_BUCKET_NAME:
-    GS_PROJECT_ID = env('GS_PROJECT_ID', default=None)
-    GS_DEFAULT_ACL = None  # uniform bucket-level access; never per-object public ACLs
-    GS_QUERYSTRING_AUTH = True
-    GS_FILE_OVERWRITE = False
-    GS_EXPIRATION = timedelta(seconds=MEDIA_URL_TTL_SECONDS)
-    GS_IAM_SIGN_BLOB = env.bool('GS_IAM_SIGN_BLOB', default=True)
-    GS_SA_EMAIL = env('GS_SA_EMAIL', default=None)
     STORAGES['default'] = {'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage'}
+if GS_KYC_BUCKET_NAME:
+    # Dedicated non-versioned, 0d soft-delete bucket for resident KYC documents
+    # so Remove/Replace/account deletion hard-delete PII immediately.
+    STORAGES['kyc'] = {
+        'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage',
+        'OPTIONS': {
+            'bucket_name': GS_KYC_BUCKET_NAME,
+            'project_id': GS_PROJECT_ID,
+            'default_acl': GS_DEFAULT_ACL,
+            'querystring_auth': GS_QUERYSTRING_AUTH,
+            'file_overwrite': GS_FILE_OVERWRITE,
+            'expiration': GS_EXPIRATION,
+            'iam_sign_blob': GS_IAM_SIGN_BLOB,
+            'sa_email': GS_SA_EMAIL,
+        },
+    }

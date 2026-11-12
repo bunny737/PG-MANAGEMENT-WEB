@@ -67,11 +67,22 @@ class VacateSettlementPreviewResponseSerializer(serializers.Serializer):
     outstanding_dues = serializers.DecimalField(max_digits=None, decimal_places=2)
 
 
+class ResidentDocumentUrlResponseSerializer(serializers.Serializer):
+    """Response shape for `GET /residents/{id}/documents/{field}/`."""
+
+    url = serializers.URLField()
+    expires_in = serializers.IntegerField()
+    expires_at = serializers.DateTimeField()
+
+
 class ResidentDetailResponseSerializer(ResidentSerializer):
-    """ResidentSerializer's own fields, plus the two the detail view adds."""
+    """ResidentSerializer's own read fields, plus the two the detail view adds."""
 
     finance = ResidentFinanceSerializer(allow_null=True)
     redacted = serializers.ListField(child=serializers.CharField())
 
     class Meta(ResidentSerializer.Meta):
-        fields = ResidentSerializer.Meta.fields + ['finance', 'redacted']
+        fields = [
+            f for f in ResidentSerializer.Meta.fields
+            if f not in ('aadhaar_document', 'pan_document')
+        ] + ['finance', 'redacted']

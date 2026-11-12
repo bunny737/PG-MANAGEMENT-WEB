@@ -1,10 +1,13 @@
 import shutil
 import tempfile
+from unittest import mock
 
+from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 
+from apps.audit.models import AuditLog
 from apps.core.tenancy import tenant_context
 from apps.residents.models import Resident
 
@@ -63,8 +66,10 @@ class KycUploadsEnabledTests(KycTestCase):
                 format='multipart',
             )
             self.assertEqual(response.status_code, 201, response.data)
-            self.assertTrue(response.data['aadhaar_document'])
-            self.assertTrue(response.data['pan_document'])
+            self.assertIs(response.data['has_aadhaar_document'], True)
+            self.assertIs(response.data['has_pan_document'], True)
+            self.assertNotIn('aadhaar_document', response.data)
+            self.assertNotIn('pan_document', response.data)
 
     def test_webp_is_not_in_the_approved_kyc_set(self):
         # apps.core.uploads also backs expenses, which does accept WebP — KYC passes its own
@@ -124,10 +129,16 @@ class KycUploadsEnabledTests(KycTestCase):
 
     def test_a_replacement_is_validated_and_a_bad_one_keeps_the_stored_file(self):
         created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
-        before = created.data['aadhaar_document']
+        with tenant_context(self.tenant.id):
+            before_name = Resident.objects.get(pk=created.data['id']).aadhaar_document.name
         bad = self.patch(created.data['id'], {'aadhaar_document': self.doc('x.pdf', EXECUTABLE)})
         self.assertEqual(bad.status_code, 400)
-        self.assertEqual(self.client.get(reverse('resident-detail', args=[created.data['id']])).data['aadhaar_document'], before)
+        with tenant_context(self.tenant.id):
+            after = Resident.objects.get(pk=created.data['id']).aadhaar_document
+            self.assertEqual(after.name, before_name)
+            self.assertTrue(after.storage.exists(before_name))
+        detail = self.client.get(reverse('resident-detail', args=[created.data['id']]))
+        self.assertIs(detail.data['has_aadhaar_document'], True)
 
     def test_a_resident_of_another_tenant_cannot_be_touched(self):
         created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
@@ -135,6 +146,137 @@ class KycUploadsEnabledTests(KycTestCase):
         self.authenticate(other)
         response = self.patch(created.data['id'], {'pan_document': self.doc('p.pdf', PDF)})
         self.assertEqual(response.status_code, 404)
+
+    def test_kyc_lifecycle_emits_metadata_only_audit_events_with_sniffed_type(self):
+        spoofed_pdf = SimpleUploadedFile('secret_aadhaar_1234.pdf', PDF, content_type='text/plain')
+        created = self.create(aadhaar_number='1234-5678-9012', aadhaar_document=spoofed_pdf)
+        self.assertEqual(created.status_code, 201, created.data)
+        resident_id = created.data['id']
+
+        replaced = self.patch(resident_id, {'aadhaar_document': SimpleUploadedFile('my_pan_scan.png', PNG, content_type='application/octet-stream')})
+        self.assertEqual(replaced.status_code, 200, replaced.data)
+
+        download = self.client.get(reverse('resident-document-url', args=[resident_id, 'aadhaar_document']))
+        self.assertEqual(download.status_code, 200)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            removed = self.patch(resident_id, {'aadhaar_document': None}, format='json')
+        self.assertEqual(removed.status_code, 200)
+        self.assertIs(removed.data['has_aadhaar_document'], False)
+
+        with tenant_context(self.tenant.id):
+            logs = list(
+                AuditLog.objects.filter(object_type='Resident', object_id=str(resident_id))
+                .order_by('created_at')
+            )
+            resident_obj = Resident.objects.get(pk=resident_id)
+
+        by_action = {log.action: log for log in logs}
+        self.assertIn('resident.kyc_document_uploaded', by_action)
+        self.assertIn('resident.kyc_document_replaced', by_action)
+        self.assertIn('resident.kyc_document_url_issued', by_action)
+        self.assertIn('resident.kyc_document_removed', by_action)
+
+        self.assertEqual(
+            by_action['resident.kyc_document_uploaded'].after,
+            {'field': 'aadhaar_document', 'content_type': 'application/pdf'},
+        )
+        self.assertEqual(by_action['resident.kyc_document_replaced'].before, {'field': 'aadhaar_document'})
+        self.assertEqual(
+            by_action['resident.kyc_document_replaced'].after,
+            {'field': 'aadhaar_document', 'content_type': 'image/png'},
+        )
+        self.assertEqual(
+            by_action['resident.kyc_document_url_issued'].after,
+            {'field': 'aadhaar_document'},
+        )
+        self.assertEqual(by_action['resident.kyc_document_removed'].before, {'field': 'aadhaar_document'})
+        self.assertIsNone(by_action['resident.kyc_document_removed'].after)
+
+        # Never record filenames, signed URLs, object keys, or Aadhaar/PAN numbers in audit metadata.
+        serialized = str([(l.action, l.before, l.after) for l in logs])
+        for forbidden in ('secret_aadhaar', 'my_pan_scan', '1234-5678-9012', 'http://', 'https://', str(resident_obj.id)):
+            if forbidden == str(resident_obj.id):
+                # object_id holds the UUID, but `before`/`after` must not hold storage keys/URLs
+                self.assertNotIn(f'residents/{self.tenant.id}', serialized)
+            else:
+                self.assertNotIn(forbidden, serialized)
+
+    def test_storage_save_failure_leaves_no_row_and_preserves_prior_file(self):
+        with mock.patch.object(FileSystemStorage, '_save', side_effect=OSError('gcs upload failed')):
+            with self.assertRaises(OSError):
+                self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        self.assertEqual(self.resident_count(), 0)
+
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        resident_id = created.data['id']
+        with tenant_context(self.tenant.id):
+            orig = Resident.objects.get(pk=resident_id).aadhaar_document
+            orig_storage, orig_name = orig.storage, orig.name
+
+        with mock.patch.object(FileSystemStorage, '_save', side_effect=OSError('gcs upload failed')):
+            with self.assertRaises(OSError):
+                self.patch(resident_id, {'aadhaar_document': self.doc('b.pdf', PDF)})
+        with tenant_context(self.tenant.id):
+            current = Resident.objects.get(pk=resident_id).aadhaar_document.name
+        self.assertEqual(current, orig_name)
+        self.assertTrue(orig_storage.exists(orig_name))
+
+    def test_db_or_audit_failure_after_upload_cleans_up_new_blob_best_effort(self):
+        # 1. Create path: audit failure triggers best-effort delete of written blob
+        saved_names = []
+        orig_save = FileSystemStorage._save
+
+        def tracking_save(storage_self, name, content):
+            saved = orig_save(storage_self, name, content)
+            saved_names.append(saved)
+            return saved
+
+        with mock.patch.object(FileSystemStorage, '_save', autospec=True, side_effect=tracking_save), \
+             mock.patch('apps.residents.services.audit_log.record', side_effect=RuntimeError('audit fail')):
+            with self.assertRaisesRegex(RuntimeError, 'audit fail'):
+                self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        self.assertEqual(self.resident_count(), 0)
+        self.assertEqual(len(saved_names), 1)
+        self.assertFalse(FileSystemStorage(location=_MEDIA_ROOT).exists(saved_names[0]))
+
+        # 2. Update path + cleanup failure: original exception still raised & sanitized error logged
+        saved_names.clear()
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        resident_id = created.data['id']
+        with tenant_context(self.tenant.id):
+            first_name = Resident.objects.get(pk=resident_id).aadhaar_document.name
+
+        with mock.patch.object(FileSystemStorage, '_save', autospec=True, side_effect=tracking_save), \
+             mock.patch('apps.residents.services.audit_log.record', side_effect=RuntimeError('db audit fail')), \
+             mock.patch.object(FileSystemStorage, 'delete', side_effect=OSError('cleanup failed')), \
+             self.assertLogs('apps.residents.services', level='ERROR') as logs:
+            with self.assertRaisesRegex(RuntimeError, 'db audit fail'):
+                self.patch(resident_id, {'aadhaar_document': self.doc('b.pdf', PDF)})
+
+        with tenant_context(self.tenant.id):
+            self.assertEqual(Resident.objects.get(pk=resident_id).aadhaar_document.name, first_name)
+        self.assertTrue(any('kyc_orphan_cleanup_failed' in line for line in logs.output))
+        # Sanitized: never log the object key
+        self.assertFalse(any(saved_names[-1] in line for line in logs.output))
+
+    def test_post_commit_old_blob_delete_failure_is_logged_not_raised(self):
+        created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
+        resident_id = created.data['id']
+        with tenant_context(self.tenant.id):
+            first_name = Resident.objects.get(pk=resident_id).aadhaar_document.name
+
+        with mock.patch.object(FileSystemStorage, 'delete', side_effect=OSError('gcs delete timeout')), \
+             self.assertLogs('apps.core.storage', level='ERROR') as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                resp = self.patch(resident_id, {'aadhaar_document': self.doc('b.pdf', PDF)})
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(any('storage_post_commit_delete_failed' in line for line in logs.output))
+        self.assertFalse(any(first_name in line for line in logs.output))
+        with tenant_context(self.tenant.id):
+            second_name = Resident.objects.get(pk=resident_id).aadhaar_document.name
+        self.assertNotEqual(second_name, first_name)
 
 
 @override_settings(MEDIA_ROOT=_MEDIA_ROOT, KYC_UPLOADS_ENABLED=False)
@@ -149,14 +291,15 @@ class KycUploadsDisabledTests(KycTestCase):
     def test_creating_a_resident_without_documents_still_works(self):
         response = self.create()
         self.assertEqual(response.status_code, 201)
-        self.assertIsNone(response.data['aadhaar_document'])
+        self.assertIs(response.data['has_aadhaar_document'], False)
+        self.assertNotIn('aadhaar_document', response.data)
 
     def test_a_new_document_is_refused_on_update_even_with_a_valid_file(self):
         resident = self.create().data
         response = self.patch(resident['id'], {'pan_document': self.doc('p.pdf', PDF)})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['pan_document'][0].code, 'kyc_uploads_disabled')
-        self.assertIsNone(self.client.get(reverse('resident-detail', args=[resident['id']])).data['pan_document'])
+        self.assertIs(self.client.get(reverse('resident-detail', args=[resident['id']])).data['has_pan_document'], False)
 
     def test_text_fields_can_still_be_edited(self):
         resident = self.create().data
@@ -167,25 +310,27 @@ class KycUploadsDisabledTests(KycTestCase):
     def test_stored_documents_stay_readable_and_can_be_cleared(self):
         with override_settings(KYC_UPLOADS_ENABLED=True):
             created = self.create(aadhaar_document=self.doc('a.pdf', PDF))
-        url = created.data['aadhaar_document']
-        self.assertTrue(url)
+        self.assertIs(created.data['has_aadhaar_document'], True)
         with tenant_context(self.tenant.id):
             stored = Resident.objects.get(pk=created.data['id']).aadhaar_document
             storage, name = stored.storage, stored.name
 
         detail = reverse('resident-detail', args=[created.data['id']])
-        self.assertEqual(self.client.get(detail).data['aadhaar_document'], url)  # still readable
+        download = reverse('resident-document-url', args=[created.data['id'], 'aadhaar_document'])
+        self.assertIs(self.client.get(detail).data['has_aadhaar_document'], True)  # still readable
+        self.assertEqual(self.client.get(download).status_code, 200)
 
         replacement = self.patch(created.data['id'], {'aadhaar_document': self.doc('b.pdf', PDF)})
         self.assertEqual(replacement.status_code, 400)  # but not replaceable
-        self.assertEqual(self.client.get(detail).data['aadhaar_document'], url)
+        self.assertIs(self.client.get(detail).data['has_aadhaar_document'], True)
         self.assertTrue(storage.exists(name))
 
         with self.captureOnCommitCallbacks(execute=True):
             cleared = self.patch(created.data['id'], {'aadhaar_document': None}, format='json')
         self.assertEqual(cleared.status_code, 200, cleared.data)
-        self.assertIsNone(cleared.data['aadhaar_document'])
+        self.assertIs(cleared.data['has_aadhaar_document'], False)
         self.assertFalse(storage.exists(name))  # clearing deletes the file, not just the reference
+        self.assertEqual(self.client.get(download).status_code, 404)
 
     def test_a_resident_of_another_tenant_cannot_be_touched(self):
         resident = self.create().data

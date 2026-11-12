@@ -29,6 +29,7 @@ export API_MAX_INSTANCES="${API_MAX_INSTANCES:-3}"
 export API_CONCURRENCY=8            # = gunicorn 2 workers x 4 threads (backend/gunicorn.conf.py)
 
 export MEDIA_BUCKET="${MEDIA_BUCKET:-$PROJECT-media}"
+export KYC_BUCKET="${KYC_BUCKET:-$PROJECT-kyc}"
 export BACKUP_BUCKET="${BACKUP_BUCKET:-$PROJECT-backups}"
 export AR_REPO="$REGION-docker.pkg.dev/$PROJECT/pglive"
 

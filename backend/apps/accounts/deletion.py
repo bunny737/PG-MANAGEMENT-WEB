@@ -712,31 +712,40 @@ def _redact_tenant_billing(tenant_id):
         )
 
 
-def _iter_storage_files(prefix, heartbeat=lambda objects=1: None):
+def _iter_storage_files(prefix, heartbeat=lambda objects=1: None, storage=default_storage):
     """Every object under `prefix` (works for local storage and GCS), one directory at a time so
     nothing larger than a single listing is held in memory. `heartbeat(0)` runs before and after
     each listing: a slow listing can't outlast the lease unnoticed, and a worker that lost the
     lease stops here rather than after the whole prefix has been enumerated."""
     heartbeat(0)
     try:
-        directories, files = default_storage.listdir(prefix)
+        directories, files = storage.listdir(prefix)
     except (FileNotFoundError, NotADirectoryError):
         return
     heartbeat(0)
     for name in files:
         yield f'{prefix}/{name}'
     for directory in directories:
-        yield from _iter_storage_files(f'{prefix}/{directory}', heartbeat)
+        yield from _iter_storage_files(f'{prefix}/{directory}', heartbeat, storage=storage)
 
 
 def purge_tenant_files(tenant_id, *, heartbeat=lambda objects=1: None):
-    """Deletes a tenant's uploads, streaming list and delete together. Idempotent: a prefix that is
-    already empty is simply done."""
+    """Deletes a tenant's uploads across both default media storage and the dedicated
+    KYC bucket (when configured), streaming list and delete together. Idempotent."""
+    from django.conf import settings
+    from apps.core.storage import kyc_storage
+
     deleted = 0
     for root in STORAGE_PREFIXES:
         prefix = f'{root}/{tenant_id}'
-        for path in _iter_storage_files(prefix, heartbeat):
+        for path in _iter_storage_files(prefix, heartbeat, storage=default_storage):
             default_storage.delete(path)
+            deleted += 1
+            heartbeat()
+    if 'kyc' in settings.STORAGES:
+        prefix = f'residents/{tenant_id}'
+        for path in _iter_storage_files(prefix, heartbeat, storage=kyc_storage):
+            kyc_storage.delete(path)
             deleted += 1
             heartbeat()
     return deleted

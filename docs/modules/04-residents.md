@@ -38,8 +38,8 @@ Table: residents                                (RLS enforced)
   emergency_contact_relation  varchar(100), blank
   emergency_contact_phone     varchar(15), blank
 
-  aadhaar_number        varchar(20), blank      aadhaar_document  file, null
-  pan_number             varchar(20), blank      pan_document      file, null
+  aadhaar_number        varchar(20), blank      aadhaar_document  file (varchar 255), null  (UUID key, kyc storage)
+  pan_number             varchar(20), blank      pan_document      file (varchar 255), null  (UUID key, kyc storage)
   passport_number        varchar(30), blank
   employee_id             varchar(50), blank
   student_id               varchar(50), blank
@@ -52,10 +52,12 @@ documents aren't available until Module 06's Admission step).
 
 ## API endpoints
 ```
-GET|POST         /api/v1/residents/            list/create              view_resident_profile (read) / manage_residents (write)
-GET|PATCH        /api/v1/residents/{id}/       detail/update profile    same (status is read-only here)
-PATCH             /api/v1/residents/{id}/status/  status transition     manage_residents
+GET|POST         /api/v1/residents/                      list/create (`ResidentListSerializer` on GET)    view_resident_profile / manage_residents
+GET|PATCH        /api/v1/residents/{id}/                 detail/update (`aadhaar_document`/`pan_document` write-only)   same (status is read-only here)
+GET              /api/v1/residents/{id}/documents/{field}/ short-lived signed URL `{url, expires_in, expires_at}`   view_resident_profile
+PATCH            /api/v1/residents/{id}/status/          status transition                                manage_residents
 ```
+`aadhaar_document` and `pan_document` are **write-only** on `ResidentSerializer`: list, detail, create, and update responses expose boolean presence flags (`has_aadhaar_document`, `has_pan_document`) with zero eager URL signing (`storage.url()` / IAM `signBlob`). Fresh short-lived signed URLs are issued on demand by `GET /residents/{id}/documents/{field}/` (`kyc_document_download` throttle `60/min`; returns `503` `DOCUMENT_URL_UNAVAILABLE` if signing fails).
 No DELETE — a resident's history is never removed; use the status
 lifecycle (`vacated`/`blacklisted`) instead.
 
@@ -85,13 +87,18 @@ lifecycle (`vacated`/`blacklisted`) instead.
    to (reuses `apps.properties.services.visible_property_ids`); creating a
    resident under an unassigned property is rejected
    (`property_not_assigned`), same pattern as Module 02's Floor/Room/Bed.
-6. Resident create and every status change write an audit log
-   (`resident.created`, `resident.status_changed` with before/after).
+6. Resident create, status changes, and KYC document changes write metadata-only audit log entries:
+   `resident.created`, `resident.status_changed`, `resident.kyc_document_uploaded`,
+   `resident.kyc_document_replaced`, `resident.kyc_document_removed`, and (on signed URL issuance)
+   `resident.kyc_document_url_issued`. KYC audit rows carry only `{field}` (plus magic-byte `content_type`
+   on upload/replace) — never filenames, object keys, signed URLs, or Aadhaar/PAN numbers.
 7. `residents` is RLS-enforced; isolation proven the same way as
    `properties`/`core`.
-8. Aadhaar/PAN uploads are optional `FileField`s; storage backend is GCS in
-   production, local filesystem in dev/test (see Decisions) — no field is
-   required to exist for a resident to be created.
+8. Aadhaar/PAN uploads are optional `FileField`s (`max_length=255`, UUID object keys under
+   `residents/<tenant_id>/<resident_id>/<uuid><ext>`). In production they target a dedicated private hard-delete
+   GCS bucket (`GS_KYC_BUCKET_NAME`, `STORAGES['kyc']` with no versioning and 0d soft delete; local filesystem
+   in dev/test). `services.create_resident` / `update_resident` clean up newly written blobs best-effort if DB
+   or audit writes fail, and delete replaced/cleared objects post-commit via `delete_storage_object_on_commit`.
 
 ## Permissions
 - `view_resident_profile` (Super Admin, Owner, Manager, Receptionist): list/retrieve.
@@ -197,6 +204,19 @@ lifecycle (`vacated`/`blacklisted`) instead.
   until the transaction actually commits.
 
 ## Changelog
+- `2026-11-12` (follow-up hardening):
+  - `services.update_resident` now locks the `Resident` row (`lock_resident`, `select_for_update(of=('self',))`) inside `transaction.atomic()` before reading the prior object key or writing replacement blobs, preventing concurrent replacement races from orphaning blobs (`tests/test_kyc_concurrency.py`).
+  - Added `manage.py backfill_kyc_documents` (idempotent cross-bucket copy with `--dry-run`, generation-aware `--delete-source`, and `--purge-orphaned-legacy` across all live/noncurrent `residents/` generations in `$MEDIA_BUCKET`) and `manage.py check_kyc_storage` (verifies `$KYC_BUCKET` existence, hard-delete settings, UBLA/PAP, IAM object perms, live V4 URL signing, 0 unmigrated docs, and records `legacy_media_{live,noncurrent,soft_deleted}` counts with `--fail-on-legacy-media`), wired as `pglive-backfill-kyc`, `pglive-purge-legacy-kyc` (post-cutover `PURGE_LEGACY_KYC_MEDIA=true`), `pglive-check-kyc`, and the strict post-purge `pglive-check-kyc-strict` in `infra/30-services.sh` / `infra/deploy.sh` (`tests/test_kyc_commands.py`). Any pre-migration objects purged from `$MEDIA_BUCKET` remain subject to GCS's 14-day `--soft-delete-duration=14d` window (new uploads after `0013` go solely to `$KYC_BUCKET` with `--no-versioning --soft-delete-duration=0`).
+  - Frontend download handler (`ResidentProfile.tsx`) opens a blank tab synchronously (`window.open("", "_blank")` + `popup.opener = null`) and navigates it after URL issuance (same-tab fallback if blocked; closes blank tab on error) so browsers do not popup-block async signed URL downloads.
+  - Infra: `infra/10-foundation.sh` idempotently revokes legacy `sa-worker` `TokenCreator` bindings; `infra/20-data.sh` grants `pglive.bucketMetadataReader` (`storage.buckets.get`) on `$KYC_BUCKET` to `sa-api`; `infra/deploy.sh` + `infra/worker/{deploy,create-vm}.sh` forward custom `MEDIA_BUCKET`/`KYC_BUCKET` overrides to the worker VM.
+- 2026-11-12  **GCS KYC rollout (Gate A1 + Gate B1).** Switched KYC uploads to dedicated hard-delete
+  `STORAGES['kyc']` (`GS_KYC_BUCKET_NAME`, no versioning, 0d soft delete) with UUID object keys (`max_length=255`);
+  split `ResidentListSerializer` vs `ResidentSerializer`, made `aadhaar_document`/`pan_document` write-only and
+  exposed `has_aadhaar_document`/`has_pan_document`; added `GET /residents/{id}/documents/{field}/`
+  (`503 DOCUMENT_URL_UNAVAILABLE`, `60/min` throttle, mandatory `resident.kyc_document_url_issued` audit);
+  added `perform_create`/`perform_update` service orchestration (`resident.kyc_document_{uploaded,replaced,removed}`
+  metadata-only audits + best-effort orphan cleanup + hardened `delete_storage_object_on_commit`); updated
+  web UI with tolerant client validation, on-demand Download, and confirmed Remove.
 - 2026-10-22  KYC file replace/clear now deletes the orphaned storage object; KYC uploads restricted to
   JPEG/PNG/PDF (WebP no longer accepted here) — see Decisions.
 - 2026-10-21  KYC upload launch gate + shared upload validation (see Decisions); `/auth/me/` gains

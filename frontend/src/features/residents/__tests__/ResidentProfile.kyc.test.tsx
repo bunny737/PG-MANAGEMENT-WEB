@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   getResident: vi.fn(),
   listComplaints: vi.fn(),
   createDepositPayment: vi.fn(),
+  uploadResidentDocument: vi.fn(),
+  getResidentDocumentUrl: vi.fn(),
+  clearResidentDocument: vi.fn(),
   user: { value: null as { kyc_uploads_enabled?: boolean } | null },
 }));
 
@@ -20,6 +23,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
     getResident: mocks.getResident,
     listComplaints: mocks.listComplaints,
     createDepositPayment: mocks.createDepositPayment,
+    uploadResidentDocument: mocks.uploadResidentDocument,
+    getResidentDocumentUrl: mocks.getResidentDocumentUrl,
+    clearResidentDocument: mocks.clearResidentDocument,
   };
 });
 vi.mock("@/lib/session", () => ({
@@ -35,6 +41,7 @@ vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
+import { ApiError } from "@/lib/api";
 import { ResidentProfile } from "../ResidentProfile";
 
 const RESIDENT = {
@@ -44,8 +51,9 @@ const RESIDENT = {
   phone: "9000000001",
   status: "active",
   aadhaar_number: "1234",
-  aadhaar_document: "https://files.example.test/aadhaar.pdf",
-  pan_document: null,
+  has_aadhaar_document: true,
+  pan_number: "",
+  has_pan_document: false,
 };
 
 async function openDocumentsTab() {
@@ -62,17 +70,71 @@ describe("ResidentProfile → documents tab and the KYC upload gate", () => {
   beforeEach(() => {
     mocks.getResident.mockReset().mockResolvedValue(RESIDENT);
     mocks.listComplaints.mockReset().mockResolvedValue([]);
+    mocks.uploadResidentDocument.mockReset();
+    mocks.getResidentDocumentUrl.mockReset();
+    mocks.clearResidentDocument.mockReset();
   });
 
-  test("uploads off: no file inputs and an explanation, but stored documents stay downloadable", async () => {
+  test("uploads off: no file inputs and an explanation, but stored documents stay downloadable via synchronous tab open", async () => {
     mocks.user.value = { kyc_uploads_enabled: false };
-    await openDocumentsTab();
+    mocks.getResidentDocumentUrl.mockResolvedValue({
+      url: "https://storage.googleapis.com/pglive-prod-kyc/signed-url",
+      expires_in: 300,
+      expires_at: "2026-11-12T14:00:00Z",
+    });
+    const fakePopup = {
+      opener: window,
+      closed: false,
+      location: { href: "about:blank" },
+      close: vi.fn(),
+    } as unknown as Window;
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(fakePopup);
+    try {
+      await openDocumentsTab();
 
-    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
-    expect(screen.getByText(residents.profile.documents.uploadsDisabled)).toBeTruthy();
-    expect(screen.getByRole("link", { name: new RegExp(residents.profile.documents.download) }).getAttribute("href")).toBe(
-      RESIDENT.aadhaar_document
-    );
+      expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
+      expect(screen.getByText(residents.profile.documents.uploadsDisabled)).toBeTruthy();
+      const downloadBtn = screen.getByRole("button", { name: new RegExp(residents.profile.documents.download) });
+      await act(async () => {
+        fireEvent.click(downloadBtn);
+      });
+      expect(openSpy).toHaveBeenCalledWith("", "_blank");
+      expect(fakePopup.opener).toBeNull();
+      expect(mocks.getResidentDocumentUrl).toHaveBeenCalledWith("r1", "aadhaar_document");
+      expect(fakePopup.location.href).toBe("https://storage.googleapis.com/pglive-prod-kyc/signed-url");
+      expect(openSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.getResidentDocumentUrl.mock.invocationCallOrder[0]
+      );
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  test("download falls back to same-tab navigation if browser blocks the blank tab", async () => {
+    mocks.user.value = { kyc_uploads_enabled: true };
+    mocks.getResidentDocumentUrl.mockResolvedValue({
+      url: "https://storage.googleapis.com/pglive-prod-kyc/fallback-url",
+      expires_in: 300,
+      expires_at: "2026-11-12T14:00:00Z",
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    const assignMock = vi.fn();
+    const origLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...origLocation, assign: assignMock },
+    });
+    try {
+      await openDocumentsTab();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: new RegExp(residents.profile.documents.download) }));
+      });
+      expect(openSpy).toHaveBeenCalledWith("", "_blank");
+      expect(assignMock).toHaveBeenCalledWith("https://storage.googleapis.com/pglive-prod-kyc/fallback-url");
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: origLocation });
+      openSpy.mockRestore();
+    }
   });
 
   test("an older cached profile without the flag is treated as off", async () => {
@@ -81,12 +143,94 @@ describe("ResidentProfile → documents tab and the KYC upload gate", () => {
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
   });
 
-  test("uploads on: both document slots can be uploaded to and there is no notice", async () => {
+  test("uploads on: narrowed accept attribute, format hint, and no disabled notice", async () => {
     mocks.user.value = { kyc_uploads_enabled: true };
     await openDocumentsTab();
 
-    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
+    const inputs = document.querySelectorAll('input[type="file"]');
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0].getAttribute("accept")).toBe(".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf");
+    expect(screen.getByText(residents.profile.documents.formatHint)).toBeTruthy();
     expect(screen.queryByText(residents.profile.documents.uploadsDisabled)).toBeNull();
+  });
+
+  test("tolerant client validation rejects >5MB and disallowed MIME, but lets empty/octet-stream through", async () => {
+    mocks.user.value = { kyc_uploads_enabled: true };
+    await openDocumentsTab();
+    const input = document.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+
+    const oversized = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "huge.pdf", { type: "application/pdf" });
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [oversized] } });
+    });
+    expect(screen.getByRole("alert").textContent).toContain(residents.profile.documents.errFileTooLarge);
+    expect(mocks.uploadResidentDocument).not.toHaveBeenCalled();
+
+    const disallowed = new File(["webp"], "pic.webp", { type: "image/webp" });
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [disallowed] } });
+    });
+    expect(screen.getByRole("alert").textContent).toContain(residents.profile.documents.errInvalidFileType);
+    expect(mocks.uploadResidentDocument).not.toHaveBeenCalled();
+
+    for (const mime of ["", "application/octet-stream", "application/pdf"]) {
+      mocks.uploadResidentDocument.mockResolvedValueOnce({ ...RESIDENT, has_aadhaar_document: true });
+      const file = new File(["%PDF-1.4"], "doc.pdf", { type: mime });
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [file] } });
+      });
+      expect(mocks.uploadResidentDocument).toHaveBeenLastCalledWith("r1", "aadhaar_document", file);
+    }
+    expect(mocks.uploadResidentDocument).toHaveBeenCalledTimes(3);
+  });
+
+  test("download error maps 503 DOCUMENT_URL_UNAVAILABLE cleanly and closes the blank tab", async () => {
+    mocks.user.value = { kyc_uploads_enabled: true };
+    mocks.getResidentDocumentUrl.mockRejectedValue(
+      new ApiError(503, { code: "DOCUMENT_URL_UNAVAILABLE", detail: "temporarily unavailable" })
+    );
+    const fakePopup = {
+      opener: window,
+      closed: false,
+      location: { href: "about:blank" },
+      close: vi.fn(),
+    } as unknown as Window;
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(fakePopup);
+    try {
+      await openDocumentsTab();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: new RegExp(residents.profile.documents.download) }));
+      });
+      expect(fakePopup.close).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("alert").textContent).toContain(residents.profile.documents.errDownloadFailed);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  test("remove flow requires confirmation and clears the document", async () => {
+    mocks.user.value = { kyc_uploads_enabled: true };
+    mocks.clearResidentDocument.mockResolvedValue({ ...RESIDENT, has_aadhaar_document: false });
+    await openDocumentsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(residents.profile.documents.remove) }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByText(residents.profile.documents.removeConfirmDesc)).toBeTruthy();
+
+    // Cancel does not call API
+    fireEvent.click(screen.getByRole("button", { name: residents.profile.documents.cancel }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.clearResidentDocument).not.toHaveBeenCalled();
+
+    // Confirm calls clearResidentDocument and updates state
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(residents.profile.documents.remove) }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: residents.profile.documents.removeConfirmButton }));
+    });
+    expect(mocks.clearResidentDocument).toHaveBeenCalledWith("r1", "aadhaar_document");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: new RegExp(residents.profile.documents.download) })).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@ g compute instances create "$WORKER_VM" --zone "${REGION}-a" --machine-type "${W
   --service-account "$(sa sa-worker)" --scopes cloud-platform \
   --image-family debian-12 --image-project debian-cloud --boot-disk-size 20GB --boot-disk-type pd-balanced \
   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
-  --metadata "region=$REGION,sql-connection=$SQL_CONNECTION,enable-oslogin=TRUE" \
+  --metadata "region=$REGION,sql-connection=$SQL_CONNECTION,media-bucket=$MEDIA_BUCKET,kyc-bucket=$KYC_BUCKET,enable-oslogin=TRUE" \
   --metadata-from-file startup-script=<(cat <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail

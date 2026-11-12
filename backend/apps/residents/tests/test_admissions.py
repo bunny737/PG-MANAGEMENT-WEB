@@ -192,6 +192,34 @@ class AdmissionTests(ResidentAPITestCase):
         self.assertEqual(response.data['advance_applied_amount'], '0.00')
         self.assertEqual(response.data['advance_refundable'], '8500.00')
 
+    def test_two_month_advance_and_separate_deposit_allowed_at_admission(self):
+        with tenant_context(self.tenant.id):
+            self.room.rack_rate_with_food = Decimal('10000.00')
+            self.room.save()
+        self.authenticate(self.owner)
+
+        response = self.client.post(
+            reverse('admission-list'),
+            admission_payload(
+                self.resident, self.bed,
+                advance_amount='20000.00',
+                security_deposit_amount='5000.00',
+                security_deposit_agreed='5000.00',
+            ),
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['contracted_rent'], '10000.00')
+        self.assertEqual(response.data['advance_amount'], '20000.00')
+        self.assertEqual(response.data['advance_applied_amount'], '0.00')
+        self.assertEqual(response.data['advance_refundable'], '20000.00')
+        self.assertEqual(response.data['security_deposit_amount'], '5000.00')
+        with tenant_context(self.tenant.id):
+            adm = Admission.objects.get(pk=response.data['id'])
+            self.assertFalse(adm.first_invoice_advance_settled)
+            self.assertEqual(adm.deposit_payments.count(), 1)
+            self.assertEqual(adm.deposit_payments.get().amount, Decimal('5000.00'))
+
     def test_collected_amount_requires_date_and_mode(self):
         self.authenticate(self.owner)
         for prefix in ('advance', 'security_deposit'):

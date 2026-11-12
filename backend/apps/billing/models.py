@@ -340,7 +340,11 @@ class Payment(TenantModelMixin):
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='payments')
     amount = models.DecimalField(max_digits=12, decimal_places=2)  # always positive
     payment_date = models.DateField()
-    payment_mode = models.CharField(max_length=15, choices=Mode.choices)
+    payment_mode = models.CharField(max_length=15, choices=Mode.choices, blank=True)
+    # True when this payment drew down the resident's held admission advance
+    # (either automatically on the first issued invoice or via "Adjust from advance").
+    # Never counted as new cash collected, and deleted corrections restore the held advance.
+    is_advance_adjustment = models.BooleanField(default=False, db_index=True)
     reference = models.CharField(max_length=255, blank=True)  # txn ref / note (optional)
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='payments_recorded'
@@ -365,10 +369,21 @@ class Payment(TenantModelMixin):
                 condition=models.Q(idempotency_key__isnull=False),
                 name='unique_payment_idempotency_key',
             ),
+            models.CheckConstraint(
+                condition=models.Q(is_advance_adjustment=True) | ~models.Q(payment_mode=''),
+                name='payment_mode_required_for_direct',
+            ),
         ]
 
+    @property
+    def payment_source(self):
+        return 'advance_adjustment' if self.is_advance_adjustment else self.payment_mode
+
+    def get_payment_source_display(self):
+        return _('Advance Adjustment') if self.is_advance_adjustment else self.get_payment_mode_display()
+
     def __str__(self):
-        return f'{self.amount} via {self.get_payment_mode_display()} on {self.payment_date}'
+        return f'{self.amount} via {self.get_payment_source_display()} on {self.payment_date}'
 
 
 class ReceiptCounter(TenantModelMixin):

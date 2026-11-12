@@ -9,7 +9,10 @@ import status from "@/messages/en/status.json";
 const mocks = vi.hoisted(() => ({
   getResident: vi.fn(),
   listComplaints: vi.fn(),
+  listVacates: vi.fn(),
+  getVacateSettlementPreview: vi.fn(),
   createDepositPayment: vi.fn(),
+  can: vi.fn(() => true),
   user: { value: null as { kyc_uploads_enabled?: boolean } | null },
 }));
 
@@ -19,11 +22,13 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     getResident: mocks.getResident,
     listComplaints: mocks.listComplaints,
+    listVacates: mocks.listVacates,
+    getVacateSettlementPreview: mocks.getVacateSettlementPreview,
     createDepositPayment: mocks.createDepositPayment,
   };
 });
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ can: () => true, user: mocks.user.value }),
+  useSession: () => ({ can: mocks.can, user: mocks.user.value }),
 }));
 vi.mock("@/components/shared/PermissionGate", () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -155,5 +160,83 @@ describe("ResidentProfile → security deposit paid in parts", () => {
 
     expect(await screen.findByText(residents.profile.depositDialog.success)).toBeTruthy();
     expect(mocks.getResident).toHaveBeenCalledWith("r1");
+  });
+});
+
+describe("ResidentProfile → held advance and notice-period settlement preview", () => {
+  beforeEach(() => {
+    mocks.user.value = {};
+    mocks.can.mockImplementation(() => true);
+    mocks.listComplaints.mockReset().mockResolvedValue([]);
+    mocks.listVacates.mockReset().mockResolvedValue([]);
+    mocks.getVacateSettlementPreview.mockReset();
+  });
+
+  const renderProfile = async (resident: object) => {
+    mocks.getResident.mockReset().mockResolvedValue({ ...RESIDENT, ...resident });
+    render(
+      <NextIntlClientProvider locale="en" messages={{ common, residents, status }}>
+        <ResidentProfile id="r1" />
+      </NextIntlClientProvider>
+    );
+    await act(async () => {});
+  };
+
+  test("shows advance collected, applied, and remaining held balance on overview", async () => {
+    await renderProfile({
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+    });
+
+    expect(screen.getByText(residents.profile.overview.advanceCollected)).toBeTruthy();
+    expect(screen.getByText(residents.profile.overview.advanceApplied)).toBeTruthy();
+    expect(screen.getByText(residents.profile.overview.advanceRemaining)).toBeTruthy();
+    expect(screen.getByText("₹20,000.00")).toBeTruthy();
+    expect(screen.getAllByText("₹10,000.00").length).toBe(2);
+  });
+
+  test("shows read-only settlement preview during notice period with dues shown separately", async () => {
+    mocks.listVacates.mockResolvedValue([
+      { id: "vac-1", resident: "r1", is_open: true, is_cancelled: false, is_settled: false, actual_vacate_date: null },
+    ]);
+    mocks.getVacateSettlementPreview.mockResolvedValue({
+      security_deposit_amount: "5000.00",
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+      maintenance_deduction: "500.00",
+      actual_vacate_date: "2026-11-30",
+      food_holiday_credit: "200.00",
+      food_holiday_clawback_calculated: "0.00",
+      food_holiday_clawback_recovered: "0.00",
+      food_holiday_clawback_unrecovered: "0.00",
+      refund_amount: "14700.00",
+      outstanding_dues: "3000.00",
+    });
+
+    await renderProfile({
+      status: "notice_period",
+      advance_amount: "20000.00",
+      advance_applied_amount: "10000.00",
+      advance_refundable: "10000.00",
+    });
+
+    expect(mocks.listVacates).toHaveBeenCalledWith({ resident: "r1" });
+    expect(mocks.getVacateSettlementPreview).toHaveBeenCalledWith("vac-1");
+    expect(screen.getByText(residents.profile.settlementPreview.title)).toBeTruthy();
+    expect(screen.getByText(residents.profile.settlementPreview.estimatedRefund)).toBeTruthy();
+    expect(screen.getByText("₹14,700.00")).toBeTruthy();
+    expect(screen.getByText(residents.profile.settlementPreview.outstandingDues)).toBeTruthy();
+    expect(screen.getByText("₹3,000.00")).toBeTruthy();
+    expect(screen.getByText(residents.profile.settlementPreview.outstandingSeparateNote)).toBeTruthy();
+  });
+
+  test("hides settlement preview when caller lacks manage_deposits", async () => {
+    mocks.can.mockImplementation((perm?: string) => perm !== "manage_deposits");
+    await renderProfile({ status: "notice_period", advance_amount: "10000.00" });
+
+    expect(mocks.listVacates).not.toHaveBeenCalled();
+    expect(screen.queryByText(residents.profile.settlementPreview.title)).toBeNull();
   });
 });

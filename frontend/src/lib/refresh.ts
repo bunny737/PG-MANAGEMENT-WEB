@@ -15,7 +15,7 @@ function invalidate(...keys: readonly unknown[][]) {
   return Promise.all(keys.map((key) => queryClient.invalidateQueries({ queryKey: key })));
 }
 
-/** Record or delete a payment. */
+/** Record/adjust or delete a payment (including advance adjustments). */
 export function afterPayment(opts: { invoiceId?: string; residentId?: string; propertyId?: string } = {}) {
   const keys: unknown[][] = [
     [...queryKeys.invoices.all],
@@ -23,6 +23,7 @@ export function afterPayment(opts: { invoiceId?: string; residentId?: string; pr
     [...queryKeys.cashMovements.all],
     [...queryKeys.analytics.all],
     [...queryKeys.dashboard.all],
+    [...queryKeys.vacates.all],
   ];
   if (opts.invoiceId) keys.push([...queryKeys.invoices.detail(opts.invoiceId)]);
   if (opts.residentId) keys.push([...queryKeys.residents.detail(opts.residentId)]);
@@ -96,6 +97,7 @@ export function afterVacate(opts: { residentId?: string; propertyId?: string } =
   // Move-out and abscond also settle the resident's food-holiday credits (Module 24).
   const keys: unknown[][] = [
     [...queryKeys.residents.all],
+    [...queryKeys.vacates.all],
     [...queryKeys.dashboard.all],
     [...queryKeys.notices.all],
   ];

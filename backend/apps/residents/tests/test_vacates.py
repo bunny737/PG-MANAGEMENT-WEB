@@ -120,6 +120,8 @@ class VacateFinalizeTests(ResidentAPITestCase):
         response = self._finalize(maintenance_deduction='500.00')
 
         # 1500 deposit - 500 deduction + 3500 unapplied advance
+        self.assertEqual(response.data['advance_amount'], '7000.00')
+        self.assertEqual(response.data['advance_applied_amount'], '3500.00')
         self.assertEqual(response.data['advance_refundable'], '3500.00')
         self.assertEqual(response.data['security_deposit_amount'], '1500.00')
         self.assertEqual(response.data['refund_amount'], '4500.00')
@@ -230,6 +232,8 @@ class VacateSettlementPreviewTests(ResidentAPITestCase):
         preview = self._preview(maintenance_deduction='500.00')
         self.assertEqual(preview.status_code, 200, preview.data)
         self.assertEqual(preview.data['security_deposit_amount'], '1500.00')
+        self.assertEqual(preview.data['advance_amount'], '7000.00')
+        self.assertEqual(preview.data['advance_applied_amount'], '3500.00')
         self.assertEqual(preview.data['advance_refundable'], '3500.00')
         self.assertEqual(preview.data['maintenance_deduction'], '500.00')
         self.assertEqual(preview.data['refund_amount'], '4500.00')  # 1500 - 500 + 3500

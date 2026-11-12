@@ -55,6 +55,8 @@ class VacateSettlementPreviewResponseSerializer(serializers.Serializer):
     types every field as a decimal string either way."""
 
     security_deposit_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
+    advance_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
+    advance_applied_amount = serializers.DecimalField(max_digits=None, decimal_places=2)
     advance_refundable = serializers.DecimalField(max_digits=None, decimal_places=2)
     maintenance_deduction = serializers.DecimalField(max_digits=None, decimal_places=2)
     # Module 24: worked out for this move-out date (default: expected date).

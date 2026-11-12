@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import admissions from "@/messages/en/admissions.json";
@@ -309,16 +309,39 @@ describe("AdmissionWizard collecting only part of the money at admission", () =>
     expect(payload).not.toHaveProperty("advance_collected_date");
   });
 
-  test("paying more than agreed is refused before anything is created", async () => {
+  test("deposit more than agreed is refused before anything is created", async () => {
     await toStep4();
-    setPaid("rent", "12000.01");
     setPaid("deposit", "5001");
     complete();
 
-    expect(await screen.findByText(admissions.step4.errRentExceeds)).toBeInTheDocument();
-    expect(screen.getByText(admissions.step4.errDepositExceeds)).toBeInTheDocument();
+    expect(await screen.findByText(admissions.step4.errDepositExceeds)).toBeInTheDocument();
     expect(api.createResident).not.toHaveBeenCalled();
     expect(api.createAdmission).not.toHaveBeenCalled();
+  });
+
+  test("two-month advance paid at admission shows estimated advance remaining and submits full advance separate from deposit", async () => {
+    await toStep4();
+    setPaid("rent", "24000");
+
+    const estimateNote = screen.getByRole("note");
+    expect(within(estimateNote).getByText(admissions.step4.estimatedAdvanceLabel)).toBeInTheDocument();
+    expect(within(estimateNote).getByText("₹12,000.00")).toBeInTheDocument(); // estimated advance remaining after 1st invoice
+    expect(within(estimateNote).getByText(admissions.step4.estimatedAdvanceNote)).toBeInTheDocument();
+    expect(screen.getByText("₹29,000.00")).toBeInTheDocument(); // 24000 advance + 5000 deposit
+
+    complete();
+
+    await waitFor(() => expect(api.createAdmission).toHaveBeenCalledTimes(1));
+    expect(api.createAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        advance_amount: "24000.00",
+        advance_mode: "upi",
+        advance_collected_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        security_deposit_agreed: "5000.00",
+        security_deposit_amount: "5000.00",
+        security_deposit_mode: "upi",
+      })
+    );
   });
 
   test("an amount that is not a number is refused", async () => {

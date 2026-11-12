@@ -121,6 +121,9 @@
       "depositCollected": "Deposit Collected",
       "depositPending": "Deposit Pending",
       "recordDeposit": "Record deposit payment",
+      "advanceCollected": "Advance Collected",
+      "advanceApplied": "Advance Applied to Rent",
+      "advanceRemaining": "Held Advance Remaining",
       "rentType": "Billing Preference",
       "withFood": "With Food",
       "withoutFood": "Without Food",
@@ -215,6 +218,20 @@
       "errAmount": "Enter a valid amount greater than zero.",
       "errExceeds": "This is more than the pending deposit.",
       "errReused": "This request was already used for a different payment. Close this window and try again."
+    },
+    "settlementPreview": {
+      "title": "Exit Settlement Preview",
+      "subtitle": "Read-only estimate while in notice period",
+      "depositCollected": "Security Deposit Collected",
+      "remainingAdvance": "Remaining Held Advance",
+      "advanceAppliedNote": "{applied} already applied to rent from {collected} collected",
+      "maintenanceDeduction": "Maintenance Deduction",
+      "foodHolidayCredit": "Food Holiday Credit",
+      "clawbackRecovered": "Food Holiday Clawback",
+      "estimatedRefund": "Estimated Exit Refund (before dues)",
+      "outstandingDues": "Outstanding Rent Dues (settled separately)",
+      "outstandingSeparateNote": "Unpaid rent invoices are shown separately and are not silently deducted from the refund above.",
+      "errLoadFailed": "Couldn't load exit settlement preview."
     }
   }
 }

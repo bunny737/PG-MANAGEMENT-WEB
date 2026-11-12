@@ -87,6 +87,7 @@ POST             /api/v1/invoices/{id}/resume-auto-issue/ lift the hold (next da
 POST             /api/v1/invoices/bulk-generate/         generate drafts for a property   manage_invoices
 POST             /api/v1/invoices/{id}/line-items/       add an ad-hoc line (draft only)  manage_invoices
 PATCH|DELETE     /api/v1/invoices/{id}/line-items/{lid}/ edit / remove a line (draft only) manage_invoices
+POST             /api/v1/invoices/{id}/adjust-advance/   apply held admission advance      manage_payments
 ```
 List filters (2026-10-16, UX roadmap D3): `?property=&resident=&billing_mode=
 &period=YYYY-MM&search=&status=` where `status` is a comma list of stored
@@ -408,3 +409,7 @@ takes the Resident lock and checks overlap inside it, so every generation path
   billability under the lock. `ResidentNotBillable` (`resident_not_billable` / `resident_not_allocated`, 400)
   is raised when the resident vacated, absconded or lost their bed while the request waited; bulk
   generation skips such residents.
+- 2026-11-11  Held advance balance & explicit adjustment (Milestone 1):
+  - `apply_advance_to_first_invoice` sets `Admission.first_invoice_advance_settled = True` when a resident's first issued invoice is issued (whether `advance_amount == 0`, `balance_due == 0`, or part/all of `advance_amount` is applied) and records the initial drawdown as `Payment(is_advance_adjustment=True)`.
+  - New `POST /api/v1/invoices/{id}/adjust-advance/` (`manage_payments`, `Idempotency-Key`) lets owners/managers explicitly draw down remaining held advance against issued/partially-paid invoices; blocked until `first_invoice_advance_settled` is true (`first_invoice_not_issued`), protecting first-invoice auto-application.
+  - Lock order includes Settings → Resident → Invoice → Admission; `InvoiceDetail` adds the **Adjust from advance** action (`AdjustAdvanceDialog`) and displays held advance availability and original collection context. Tests: `billing/tests/test_invoices.py`, `billing/tests/test_payment_integrity.py`.

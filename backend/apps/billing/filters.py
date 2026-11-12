@@ -106,13 +106,31 @@ class PaymentFilter(django_filters.FilterSet):
     invoice__resident = django_filters.UUIDFilter(field_name='invoice__resident_id')
     resident = django_filters.UUIDFilter(field_name='invoice__resident_id')
     property = django_filters.UUIDFilter(field_name='invoice__resident__property_id')
-    payment_mode = django_filters.ChoiceFilter(choices=Payment.Mode.choices)
+    payment_mode = django_filters.CharFilter(method='filter_payment_mode')
+    is_advance_adjustment = django_filters.BooleanFilter()
     month = django_filters.CharFilter(method='filter_month')
     search = django_filters.CharFilter(method='filter_search')
 
     class Meta:
         model = Payment
-        fields = ['invoice', 'invoice__resident', 'resident', 'property', 'payment_mode', 'month', 'search']
+        fields = [
+            'invoice', 'invoice__resident', 'resident', 'property',
+            'payment_mode', 'is_advance_adjustment', 'month', 'search',
+        ]
+
+    def filter_payment_mode(self, queryset, name, value):
+        value = (value or '').strip()
+        if not value:
+            return queryset
+        if value == 'advance_adjustment':
+            return queryset.filter(is_advance_adjustment=True)
+        if value in Payment.Mode.values:
+            return queryset.filter(is_advance_adjustment=False, payment_mode=value)
+        raise ValidationError(
+            {'payment_mode': [_('Unknown payment mode. Use %(choices)s, or advance_adjustment.')
+                              % {'choices': ', '.join(Payment.Mode.values)}]},
+            code='invalid_payment_mode',
+        )
 
     def filter_month(self, queryset, name, value):
         first, last = month_range(value, 'month')

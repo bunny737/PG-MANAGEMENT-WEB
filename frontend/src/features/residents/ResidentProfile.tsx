@@ -28,16 +28,19 @@ import { useSession } from "@/lib/session";
 import { getInitials } from "@/lib/utils";
 import {
   getResident,
+  getVacateSettlementPreview,
   listComplaints,
+  listVacates,
   updateResident,
   uploadResidentDocument,
   type Complaint,
   type Resident,
   type ResidentDocumentField,
+  type VacateSettlementPreview,
   ApiError,
 } from "@/lib/api";
 import { formatDate } from "@/lib/date";
-import { compareMoney, ZERO } from "@/lib/money";
+import { compareMoney, formatMoney, ZERO } from "@/lib/money";
 import { StatusPill, getStatusTone } from "@/components/shared/StatusPill";
 import { FinanceCard } from "./FinanceCard";
 import { RecordDepositPaymentDialog } from "./RecordDepositPaymentDialog";
@@ -61,8 +64,11 @@ export function ResidentProfile({ id }: { id: string }) {
   // Billing figures belong to the Finance module: without view_finance the API omits
   // rent/billing fields, so hide the rent block and the Financials tab instead of showing zeros.
   const canSeeFinance = can("view_finance");
+  const canManageDeposits = can("manage_deposits");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [settlementPreview, setSettlementPreview] = useState<VacateSettlementPreview | null>(null);
+  const [settlementPreviewError, setSettlementPreviewError] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"overview" | "financials" | "documents" | "maintenance">(
     "overview"
@@ -121,6 +127,40 @@ export function ResidentProfile({ id }: { id: string }) {
       cancelled = true;
     };
   }, [id, t]);
+
+  useEffect(() => {
+    if (!resident || resident.status !== "notice_period" || !canManageDeposits) {
+      return;
+    }
+    let cancelled = false;
+    listVacates({ resident: resident.id })
+      .then((vacates) => {
+        if (cancelled) return;
+        const openVacate = vacates.find(
+          (v) => v.is_open || (!v.is_cancelled && !v.is_settled && !v.actual_vacate_date)
+        );
+        if (!openVacate) {
+          setSettlementPreview(null);
+          setSettlementPreviewError(false);
+          return;
+        }
+        return getVacateSettlementPreview(openVacate.id).then((preview) => {
+          if (!cancelled) {
+            setSettlementPreview(preview);
+            setSettlementPreviewError(false);
+          }
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSettlementPreview(null);
+          setSettlementPreviewError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resident, canManageDeposits]);
 
   const handleAction = async (type: "transfer" | "vacate" | "edit") => {
     if (type === "edit" && resident) {
@@ -472,6 +512,22 @@ export function ResidentProfile({ id }: { id: string }) {
                     )}
                   </>
                 )}
+                {resident.advance_amount != null && (
+                  <>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceCollected")}</span>
+                      <MoneyText value={resident.advance_amount} className="font-semibold text-ink" />
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceApplied")}</span>
+                      <MoneyText value={resident.advance_applied_amount ?? ZERO} className="font-semibold text-ink" />
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("overview.advanceRemaining")}</span>
+                      <MoneyText value={resident.advance_refundable ?? ZERO} className="font-semibold text-accent" />
+                    </div>
+                  </>
+                )}
                 {resident.food_preference && (
                   <div className="flex justify-between items-center">
                     <span className="text-ink-muted">{t("overview.rentType")}</span>
@@ -482,6 +538,78 @@ export function ResidentProfile({ id }: { id: string }) {
                 )}
               </div>
             </div>
+
+            {/* Read-only Exit Settlement Preview during Notice Period */}
+            {resident.status === "notice_period" && canManageDeposits && (settlementPreview || settlementPreviewError) && (
+              <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="border-b border-border pb-2.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                    {t("settlementPreview.title")}
+                  </h3>
+                  <p className="text-[11px] text-ink-muted mt-0.5">{t("settlementPreview.subtitle")}</p>
+                </div>
+
+                {settlementPreviewError ? (
+                  <p className="text-xs text-status-critical">{t("settlementPreview.errLoadFailed")}</p>
+                ) : settlementPreview && (
+                  <div className="space-y-3 text-xs">
+                    <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                      <span className="text-ink-muted">{t("settlementPreview.depositCollected")}</span>
+                      <MoneyText value={settlementPreview.security_deposit_amount} className="font-semibold text-ink" />
+                    </div>
+                    <div className="space-y-1 pb-2 border-b border-border/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-ink-muted">{t("settlementPreview.remainingAdvance")}</span>
+                        <MoneyText value={settlementPreview.advance_refundable} className="font-semibold text-ink" />
+                      </div>
+                      {compareMoney(settlementPreview.advance_applied_amount, ZERO) === 1 && (
+                        <p className="text-[11px] text-ink-faint">
+                          {t("settlementPreview.advanceAppliedNote", {
+                            applied: formatMoney(settlementPreview.advance_applied_amount),
+                            collected: formatMoney(settlementPreview.advance_amount),
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    {compareMoney(settlementPreview.maintenance_deduction, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.maintenanceDeduction")}</span>
+                        <MoneyText value={settlementPreview.maintenance_deduction} className="font-semibold text-status-critical" />
+                      </div>
+                    )}
+                    {compareMoney(settlementPreview.food_holiday_credit, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.foodHolidayCredit")}</span>
+                        <MoneyText value={settlementPreview.food_holiday_credit} className="font-semibold text-status-good" />
+                      </div>
+                    )}
+                    {compareMoney(settlementPreview.food_holiday_clawback_recovered, ZERO) === 1 && (
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <span className="text-ink-muted">{t("settlementPreview.clawbackRecovered")}</span>
+                        <MoneyText value={settlementPreview.food_holiday_clawback_recovered} className="font-semibold text-status-critical" />
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-1 font-bold text-sm text-ink">
+                      <span>{t("settlementPreview.estimatedRefund")}</span>
+                      <MoneyText value={settlementPreview.refund_amount} className="text-accent" />
+                    </div>
+                    <div className="rounded-xl border border-border bg-surface-page/60 p-3 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-ink">{t("settlementPreview.outstandingDues")}</span>
+                        <MoneyText
+                          value={settlementPreview.outstanding_dues}
+                          attention={compareMoney(settlementPreview.outstanding_dues, ZERO) === 1}
+                          className="font-bold"
+                        />
+                      </div>
+                      <p className="text-[11px] text-ink-muted leading-relaxed">
+                        {t("settlementPreview.outstandingSeparateNote")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* IDs & Org */}
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">

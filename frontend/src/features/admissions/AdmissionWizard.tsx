@@ -269,14 +269,17 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
   };
 
   // What the resident owes: the room rate for the chosen food plan (the server snapshots it as the contracted
-  // rent) and the agreed deposit. What they pay now may be less; see step 4.
+  // rent) and the agreed deposit. Rent paid now may be less (shortfall due on first invoice) or more (e.g.
+  // two months' advance: first invoice uses what it needs and the rest stays as held advance).
   const agreedRent = moneyOrZero(overrideRate);
   const agreedDeposit = moneyOrZero(deposit);
   const rentPaidText = rentPaid ?? agreedRent;
   const depositPaidText = depositPaid ?? agreedDeposit;
   const rentPaidAmount = moneyOrZero(rentPaidText);
   const depositPaidAmount = moneyOrZero(depositPaidText);
-  const rentPending = subtractMoney(agreedRent, rentPaidAmount) ?? ZERO;
+  const isOverRent = compareMoney(rentPaidAmount, agreedRent) === 1;
+  const rentPending = isOverRent ? ZERO : (subtractMoney(agreedRent, rentPaidAmount) ?? ZERO);
+  const estimatedAdvanceAfterFirstInvoice = isOverRent ? (subtractMoney(rentPaidAmount, agreedRent) ?? ZERO) : ZERO;
   const depositPending = subtractMoney(agreedDeposit, depositPaidAmount) ?? ZERO;
   const totalPaidNow = addMoney(rentPaidAmount, depositPaidAmount) ?? ZERO;
   const totalPending = addMoney(rentPending, depositPending) ?? ZERO;
@@ -284,13 +287,14 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
 
   const validateStep4 = () => {
     const errs: { rent?: string; deposit?: string; date?: string } = {};
-    const amountError = (raw: string, agreed: string, exceeds: string) => {
-      if (raw.trim() !== "" && !isMoneyInput(raw.trim())) return t("step4.errInvalidAmount");
-      const over = compareMoney(moneyOrZero(raw), agreed) === 1;
-      return over ? exceeds : undefined;
-    };
-    errs.rent = amountError(rentPaidText, agreedRent, t("step4.errRentExceeds"));
-    errs.deposit = amountError(depositPaidText, agreedDeposit, t("step4.errDepositExceeds"));
+    if (rentPaidText.trim() !== "" && !isMoneyInput(rentPaidText.trim())) {
+      errs.rent = t("step4.errInvalidAmount");
+    }
+    if (depositPaidText.trim() !== "" && !isMoneyInput(depositPaidText.trim())) {
+      errs.deposit = t("step4.errInvalidAmount");
+    } else if (compareMoney(moneyOrZero(depositPaidText), agreedDeposit) === 1) {
+      errs.deposit = t("step4.errDepositExceeds");
+    }
     if (paidSomething && (!collectedOn || collectedOn > todayISO())) errs.date = t("step4.errDate");
     setStep4Errors(errs);
     return !errs.rent && !errs.deposit && !errs.date;
@@ -327,9 +331,10 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
       await updateResidentStatus(residentObj.id, "reserved");
 
       // 4. Create Admission record (checks the resident in)
-      // Rent paid now is the "advance" applied to the first invoice (any shortfall stays due on it); the
-      // deposit is its own amount, with the agreed total so the rest can be recorded later. The API needs a
-      // date and mode whenever an amount is collected, so they are sent only for amounts actually paid.
+      // Rent/advance paid now is applied to the first invoice up to what it needs; any surplus stays held on the
+      // admission for later invoices or exit refund, and any shortfall stays due on it. The deposit is its own
+      // amount, with the agreed total so the rest can be recorded later. The API needs a date and mode whenever
+      // an amount is collected, so they are sent only for amounts actually paid.
       const paidRent = compareMoney(rentPaidAmount, ZERO) === 1;
       const paidDeposit = compareMoney(depositPaidAmount, ZERO) === 1;
       await createAdmission({
@@ -804,6 +809,18 @@ export function AdmissionWizard({ preselect }: AdmissionWizardProps = {}) {
                   <span className="font-mono">{formatMoney(totalPending)}</span>
                 </div>
               </div>
+              {compareMoney(estimatedAdvanceAfterFirstInvoice, ZERO) === 1 && (
+                <div
+                  role="note"
+                  className="rounded-xl border border-accent/25 bg-accent-soft/40 p-3.5 space-y-1 text-xs"
+                >
+                  <div className="flex justify-between items-center gap-3 font-semibold text-ink">
+                    <span>{t("step4.estimatedAdvanceLabel")}</span>
+                    <span className="font-mono text-accent">{formatMoney(estimatedAdvanceAfterFirstInvoice)}</span>
+                  </div>
+                  <p className="text-[11px] text-ink-muted leading-relaxed">{t("step4.estimatedAdvanceNote")}</p>
+                </div>
+              )}
               <p className="text-[11px] text-ink-faint">{t("step4.pendingNote")}</p>
             </div>
 

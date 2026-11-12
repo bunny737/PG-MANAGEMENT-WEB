@@ -38,12 +38,22 @@ export function ReceiptView({ id }: { id: string }) {
   if (isLoading) return <SectionSkeleton className="h-96" />;
   if (isError || !receipt) return <SectionError onRetry={() => refetch()} message={t("errLoadFailed")} />;
 
+  const sourceDisplay =
+    receipt.payment_source === "advance_adjustment"
+      ? tStatus("advance_adjustment")
+      : receipt.payment_mode
+      ? tStatus(receipt.payment_mode)
+      : receipt.payment_source_label || "—";
+
   const rows: [string, React.ReactNode][] = [
     [t("resident"), receipt.resident],
     [t("property"), receipt.property_name],
     [t("roomBed"), receipt.room_number ? `${receipt.room_number} / ${receipt.bed_number}` : "—"],
     [t("period"), `${formatDate(receipt.period_start)} – ${formatDate(receipt.period_end)}`],
-    [t("mode"), tStatus(receipt.payment_mode)],
+    [t("mode"), sourceDisplay],
+    ...(receipt.historical_collection_mode
+      ? ([[t("originalMode"), tStatus(receipt.historical_collection_mode)]] as [string, React.ReactNode][])
+      : []),
     [t("date"), formatDate(receipt.payment_date)],
     [t("reference"), receipt.reference || "—"],
     [t("recordedBy"), receipt.recorded_by_name ?? "—"],
@@ -68,6 +78,11 @@ export function ReceiptView({ id }: { id: string }) {
           </div>
           <MoneyText value={receipt.amount} className="text-2xl font-bold text-ink" />
         </div>
+        {receipt.is_advance_adjustment && (
+          <p role="note" className="mb-4 rounded-xl border border-accent/25 bg-accent-soft/40 px-3 py-2 text-xs text-ink-muted">
+            {t("nonCashNote")}
+          </p>
+        )}
         <dl className="space-y-2 text-sm">
           {rows.map(([label, value]) => (
             <div key={typeof label === "string" ? label : String(value)} className="flex items-center justify-between">

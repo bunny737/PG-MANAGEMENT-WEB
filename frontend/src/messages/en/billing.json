@@ -112,8 +112,38 @@
     "dueDate": "Due date",
     "notes": "Notes",
     "saveDueDate": "Save",
+    "adjustAdvance": "Adjust from advance",
+    "heldAdvanceAvailable": "Held advance available: {amount}",
+    "firstInvoicePendingHint": "Issue the resident's first invoice before adjusting held advance on another invoice.",
+    "originallyCollectedVia": "Originally collected via {mode}",
     "errLoadFailed": "Couldn't load this invoice.",
     "notFound": "Invoice not found."
+  },
+  "adjustAdvance": {
+    "title": "Adjust from advance",
+    "subtitle": "For {resident}, {period}",
+    "heldAdvance": "Held advance",
+    "balance": "Invoice balance",
+    "maxAdjustable": "Max adjustable",
+    "amount": "Adjustment amount",
+    "full": "Max allowed",
+    "custom": "Custom",
+    "date": "Adjustment date",
+    "note": "Note (optional)",
+    "notePlaceholder": "e.g. Final month rent adjustment requested by resident",
+    "nonCashNotice": "This uses advance money already collected at admission — it does not record new cash collected.",
+    "submit": "Apply adjustment",
+    "submitting": "Applying...",
+    "errInvalidAmount": "Enter a valid amount greater than zero.",
+    "errExceedsHeld": "Amount can't exceed the remaining held advance.",
+    "errExceedsBalance": "Amount can't exceed the invoice balance.",
+    "errFirstInvoiceNotIssued": "Issue the resident's first invoice before adjusting held advance on another invoice.",
+    "errReused": "This adjustment was already submitted with different details. Open a new dialog to try again.",
+    "success": "Advance adjustment applied.",
+    "replayed": "This adjustment was already recorded — showing the original.",
+    "viewReceipt": "View receipt",
+    "downloadPdf": "Download PDF",
+    "close": "Close"
   },
   "addLineDialog": {
     "title": "Add a line item",
@@ -167,9 +197,11 @@
       "date": "Date"
     },
     "viewReceipt": "Receipt",
+    "originalMode": "Collected via {mode}",
     "delete": "Delete",
     "deleteConfirmTitle": "Delete this payment?",
     "deleteConfirmBody": "This reverses it as if it never happened. The invoice balance will increase.",
+    "deleteAdjustmentConfirmBody": "This reverses the adjustment, restores the held advance balance on the admission, and increases the invoice balance.",
     "emptyTitle": "No payments match these filters",
     "emptyDesc": "Try a different property, month or mode.",
     "errLoadFailed": "Couldn't load payments."
@@ -183,6 +215,8 @@
     "period": "Billing period",
     "amount": "Amount",
     "mode": "Payment mode",
+    "originalMode": "Original collection mode",
+    "nonCashNote": "Paid from advance held at admission (not new cash collected).",
     "date": "Payment date",
     "reference": "Reference",
     "recordedBy": "Recorded by",
@@ -198,14 +232,21 @@
   },
   "cashMovements": {
     "title": "Cash movements",
-    "subtitle": "Payments (+) and refunds (−) for the selected range — sums to Cash collected on Reports.",
+    "subtitle": "Payments, admission advances, deposits, and refunds for the selected range — sums to Cash collected on Reports.",
     "filters": {
       "property": "Property",
       "allProperties": "All properties"
     },
     "grossReceipts": "Gross receipts",
     "refundsPaid": "Refunds paid",
+    "advanceAdjustmentsTotal": "Advance adjustments (non-cash)",
     "total": "Net total",
+    "refundsLimitationNotice": "Note: Cash receipts include rent payments, admission advances, and security deposits on collection date, and exclude non-cash advance adjustments. Actual refund payouts are not yet recorded as cash outflows (Refunds paid stays ₹0.00), so Net total may overstate cash retained after a resident's refund is paid.",
+    "type": {
+      "payment": "Rent payment",
+      "admission_advance": "Admission advance",
+      "deposit": "Security deposit"
+    },
     "table": {
       "date": "Date",
       "resident": "Resident",

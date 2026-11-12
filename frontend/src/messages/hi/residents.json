@@ -121,6 +121,9 @@
       "depositCollected": "प्राप्त सुरक्षा जमा",
       "depositPending": "बाकी सुरक्षा जमा",
       "recordDeposit": "सुरक्षा जमा का भुगतान दर्ज करें",
+      "advanceCollected": "प्राप्त अग्रिम",
+      "advanceApplied": "किराए में समायोजित अग्रिम",
+      "advanceRemaining": "शेष अग्रिम राशि",
       "rentType": "बिलिंग प्राथमिकता",
       "withFood": "भोजन के साथ",
       "withoutFood": "भोजन के बिना",
@@ -215,6 +218,20 @@
       "errAmount": "शून्य से अधिक सही राशि दर्ज करें।",
       "errExceeds": "यह बाकी सुरक्षा जमा से अधिक है।",
       "errReused": "यह अनुरोध पहले ही किसी दूसरे भुगतान के लिए इस्तेमाल हो चुका है। यह विंडो बंद करके दोबारा कोशिश करें।"
+    },
+    "settlementPreview": {
+      "title": "निकास निपटान पूर्वावलोकन",
+      "subtitle": "नोटिस अवधि के दौरान केवल-पठन अनुमान",
+      "depositCollected": "प्राप्त सुरक्षा जमा",
+      "remainingAdvance": "शेष सुरक्षित अग्रिम",
+      "advanceAppliedNote": "प्राप्त {collected} में से {applied} किराए में पहले ही समायोजित",
+      "maintenanceDeduction": "रखरखाव कटौती",
+      "foodHolidayCredit": "भोजन अवकाश क्रेडिट",
+      "clawbackRecovered": "भोजन अवकाश क्लॉबैक",
+      "estimatedRefund": "अनुमानित निकास रिफंड (बकाया से पहले)",
+      "outstandingDues": "बकाया किराया (अलग से निपटाया जाएगा)",
+      "outstandingSeparateNote": "अदत्त किराया चालान अलग दिखाए जाते हैं और ऊपर के रिफंड से चुपचाप काटे नहीं जाते।",
+      "errLoadFailed": "निकास निपटान पूर्वावलोकन लोड नहीं हो सका।"
     }
   }
 }

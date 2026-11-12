@@ -49,6 +49,12 @@ def receipt_json(data):
         'amount': str(payment.amount),
         'payment_date': payment.payment_date,
         'payment_mode': payment.payment_mode,
+        'is_advance_adjustment': payment.is_advance_adjustment,
+        'payment_source': payment.payment_source,
+        'payment_source_label': str(payment.get_payment_source_display()),
+        'historical_collection_mode': (
+            (payment.payment_mode or None) if payment.is_advance_adjustment else None
+        ),
         'reference': payment.reference,
         'recorded_by': str(payment.recorded_by) if payment.recorded_by else None,
         'recorded_by_name': data['recorded_by_name'],
@@ -65,9 +71,15 @@ def receipt_pdf_response(payment, data):
 
     # Render in the request's active language (LocaleMiddleware); the template
     # carries every label through {% translate %} (invariant 7).
+    historical_mode_label = (
+        payment.get_payment_mode_display()
+        if payment.is_advance_adjustment and payment.payment_mode else ''
+    )
     html = render_to_string('billing/receipt.html', {
         **data,
-        'payment_mode_label': payment.get_payment_mode_display(),
+        'payment_mode_label': payment.get_payment_source_display(),
+        'is_advance_adjustment': payment.is_advance_adjustment,
+        'historical_collection_mode_label': historical_mode_label,
         'language_code': translation.get_language(),
     })
     filename = payment.receipt_number or str(payment.id)

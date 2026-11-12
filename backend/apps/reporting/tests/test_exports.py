@@ -140,6 +140,28 @@ class PaymentExportTests(ExportTestCase):
         amounts = [row[4] for row in rows[1:]]
         self.assertIn('2000.00', amounts)
 
+    def test_payment_export_labels_advance_adjustments_as_source_mode(self):
+        with tenant_context(self.tenant.id):
+            adm = self.resident.admission
+            adm.advance_amount = Decimal('10000.00')
+            adm.advance_mode = 'upi'
+            adm.advance_collected_date = TODAY
+            adm.first_invoice_advance_settled = True
+            adm.save(update_fields=[
+                'advance_amount', 'advance_mode', 'advance_collected_date', 'first_invoice_advance_settled',
+            ])
+        adj = self.client.post(
+            reverse('invoice-adjust-advance', args=[self.invoice_id]),
+            {'amount': '2000.00', 'adjustment_date': TODAY.isoformat()},
+        )
+        self.assertEqual(adj.status_code, 201, adj.data)
+
+        rows = _csv_rows(self.client.get(reverse('export-payments')))
+        adj_rows = [r for r in rows[1:] if r[8] == adj.data['receipt_number']]
+        self.assertEqual(len(adj_rows), 1)
+        self.assertEqual(adj_rows[0][4], '2000.00')
+        self.assertEqual(adj_rows[0][5], 'Advance Adjustment')
+
     def test_receptionist_is_forbidden(self):
         self.authenticate(self.receptionist)
         response = self.client.get(reverse('export-payments'))

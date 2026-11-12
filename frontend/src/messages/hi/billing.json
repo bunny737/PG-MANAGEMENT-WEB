@@ -112,8 +112,38 @@
     "dueDate": "Due date",
     "notes": "Notes",
     "saveDueDate": "Save",
+    "adjustAdvance": "अग्रिम से समायोजित करें",
+    "heldAdvanceAvailable": "उपलब्ध अग्रिम शेष: {amount}",
+    "firstInvoicePendingHint": "किसी अन्य इनवॉइस पर अग्रिम समायोजित करने से पहले निवासी का पहला इनवॉइस जारी करें।",
+    "originallyCollectedVia": "मूल रूप से {mode} के माध्यम से एकत्रित",
     "errLoadFailed": "Couldn't load this invoice.",
     "notFound": "Invoice not found."
+  },
+  "adjustAdvance": {
+    "title": "अग्रिम से समायोजित करें",
+    "subtitle": "{resident} के लिए, {period}",
+    "heldAdvance": "रोका गया अग्रिम",
+    "balance": "इनवॉइस शेष",
+    "maxAdjustable": "अधिकतम समायोज्य",
+    "amount": "समायोजन राशि",
+    "full": "अधिकतम मान्य",
+    "custom": "कस्टम",
+    "date": "समायोजन तिथि",
+    "note": "नोट (वैकल्पिक)",
+    "notePlaceholder": "जैसे निवासी के अनुरोध पर अंतिम माह के किराए का समायोजन",
+    "nonCashNotice": "यह प्रवेश के समय पहले से एकत्रित अग्रिम राशि का उपयोग करता है — इससे नई नकद प्राप्ति दर्ज नहीं होती।",
+    "submit": "समायोजन लागू करें",
+    "submitting": "लागू किया जा रहा है...",
+    "errInvalidAmount": "शून्य से अधिक मान्य राशि दर्ज करें।",
+    "errExceedsHeld": "राशि शेष रोके गए अग्रिम से अधिक नहीं हो सकती।",
+    "errExceedsBalance": "राशि इनवॉइस शेष से अधिक नहीं हो सकती।",
+    "errFirstInvoiceNotIssued": "किसी अन्य इनवॉइस पर अग्रिम समायोजित करने से पहले निवासी का पहला इनवॉइस जारी करें।",
+    "errReused": "यह समायोजन पहले से अलग विवरण के साथ सबमिट किया गया है। फिर से प्रयास करने के लिए नया संवाद खोलें।",
+    "success": "अग्रिम समायोजन लागू किया गया।",
+    "replayed": "यह समायोजन पहले ही दर्ज किया जा चुका है — मूल रिकॉर्ड दिखाया जा रहा है।",
+    "viewReceipt": "रसीद देखें",
+    "downloadPdf": "PDF डाउनलोड करें",
+    "close": "बंद करें"
   },
   "addLineDialog": {
     "title": "Add a line item",
@@ -167,9 +197,11 @@
       "date": "Date"
     },
     "viewReceipt": "Receipt",
+    "originalMode": "{mode} से एकत्रित",
     "delete": "Delete",
     "deleteConfirmTitle": "Delete this payment?",
     "deleteConfirmBody": "This reverses it as if it never happened. The invoice balance will increase.",
+    "deleteAdjustmentConfirmBody": "यह समायोजन को उलट देता है, प्रवेश पर रोके गए अग्रिम शेष को बहाल करता है, और इनवॉइस शेष बढ़ाता है।",
     "emptyTitle": "No payments match these filters",
     "emptyDesc": "Try a different property, month or mode.",
     "errLoadFailed": "Couldn't load payments."
@@ -183,6 +215,8 @@
     "period": "Billing period",
     "amount": "Amount",
     "mode": "Payment mode",
+    "originalMode": "मूल संग्रह माध्यम",
+    "nonCashNote": "प्रवेश के समय रोके गए अग्रिम से भुगतान किया गया (नई नकद प्राप्ति नहीं)।",
     "date": "Payment date",
     "reference": "Reference",
     "recordedBy": "Recorded by",
@@ -198,14 +232,21 @@
   },
   "cashMovements": {
     "title": "Cash movements",
-    "subtitle": "Payments (+) and refunds (−) for the selected range — sums to Cash collected on Reports.",
+    "subtitle": "चुनी गई अवधि के लिए किराया भुगतान, प्रवेश अग्रिम, सुरक्षा जमा और रिफंड — रिपोर्ट में नकद प्राप्ति के बराबर।",
     "filters": {
       "property": "Property",
       "allProperties": "All properties"
     },
     "grossReceipts": "Gross receipts",
     "refundsPaid": "Refunds paid",
+    "advanceAdjustmentsTotal": "अग्रिम समायोजन (गैर-नकद)",
     "total": "Net total",
+    "refundsLimitationNotice": "नोट: नकद प्राप्तियों में किराए के भुगतान, प्रवेश अग्रिम और सुरक्षा जमा संग्रह तिथि पर शामिल हैं, और गैर-नकद अग्रिम समायोजन शामिल नहीं हैं। वास्तविक रिफंड भुगतान अभी नकद बहिर्वाह के रूप में दर्ज नहीं हैं (भुगतान किए गए रिफंड ₹0.00 रहते हैं), इसलिए रिफंड भुगतान के बाद शुद्ध कुल बची हुई नकदी को अधिक दिखा सकता है।",
+    "type": {
+      "payment": "किराया भुगतान",
+      "admission_advance": "प्रवेश अग्रिम",
+      "deposit": "सुरक्षा जमा"
+    },
     "table": {
       "date": "Date",
       "resident": "Resident",

@@ -90,7 +90,9 @@ class ResidentManagementTests(ResidentAPITestCase):
             'billing_mode',
             'security_deposit_amount',
             'advance_amount',
+            'advance_applied_amount',
             'advance_refundable',
+            'first_invoice_advance_settled',
         ]:
             self.assertNotIn(field, response.data)
 
@@ -115,7 +117,9 @@ class ResidentManagementTests(ResidentAPITestCase):
             'billing_mode',
             'security_deposit_amount',
             'advance_amount',
+            'advance_applied_amount',
             'advance_refundable',
+            'first_invoice_advance_settled',
         ]:
             self.assertIn(field, owner_resp.data)
 
@@ -130,7 +134,9 @@ class ResidentManagementTests(ResidentAPITestCase):
             'billing_mode',
             'security_deposit_amount',
             'advance_amount',
+            'advance_applied_amount',
             'advance_refundable',
+            'first_invoice_advance_settled',
         ]:
             self.assertIn(field, mgr_resp.data)
 
@@ -210,7 +216,9 @@ class ResidentMoneyFieldsTests(ResidentAPITestCase):
         self.assertEqual(response.data['joining_date'], '2026-10-04')
         self.assertEqual(response.data['security_deposit_amount'], '1500.00')
         self.assertEqual(response.data['advance_amount'], '7000.00')
+        self.assertEqual(response.data['advance_applied_amount'], '0.00')
         self.assertEqual(response.data['advance_refundable'], '7000.00')
+        self.assertFalse(response.data['first_invoice_advance_settled'])
         self.assertEqual(response.data['room_number'], '101')
         self.assertEqual(response.data['bed_number'], '101-A')
 
@@ -221,8 +229,8 @@ class ResidentMoneyFieldsTests(ResidentAPITestCase):
 
         row = next(r for r in response.data if r['id'] == str(resident.id))
         for field in ('contracted_rent', 'food_preference', 'billing_mode', 'joining_date',
-                      'security_deposit_amount', 'advance_amount', 'advance_refundable',
-                      'room_number', 'bed_number'):
+                      'security_deposit_amount', 'advance_amount', 'advance_applied_amount',
+                      'advance_refundable', 'first_invoice_advance_settled', 'room_number', 'bed_number'):
             self.assertIsNone(row[field], field)
 
     def test_contracted_rent_follows_a_permanent_transfer(self):

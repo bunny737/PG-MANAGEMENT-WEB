@@ -54,5 +54,8 @@
   "bank_transfer": "बैंक ट्रांसफर",
   "cash": "नकद",
   "card": "कार्ड",
-  "cheque": "चेक"
+  "cheque": "चेक",
+  "advance_adjustment": "अग्रिम समायोजन",
+  "admission_advance": "प्रवेश अग्रिम",
+  "deposit": "सुरक्षा जमा"
 }

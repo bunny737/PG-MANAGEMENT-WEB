@@ -479,13 +479,13 @@ BFF proxy skeleton, design tokens, shared components, MSW mock layer, CI
 | FE-02 | Property setup | 🟨 (Add Property form wired to real API incl. images; Module 18 Features page + optional features section wired to real API; `/properties/[id]` is now the D2 bed-grid overview — see Decisions; the floor/room/bed *builder* forms still predate this round) |
 | FE-03 | Property settings | ⬜ (the `/properties/[id]/settings` page is still the mock `PropertySettingsForm`; Settings no longer links real properties to it, 2026-10-21) |
 | FE-04 | Residents | 🟨 (list filters (property/status/search) now server-side; D6 finance card replaces the old dead-field Financials tab; document upload/blacklist warning still from the earlier round) |
-| FE-05 | Admissions | ⬜ |
+| FE-05 | Admissions | 🟨 (4-step admission & check-in wizard wired to `/admissions/`, incl. split deposit & multi-month advance with "Estimated advance remaining after first invoice"; lead/pipeline board not built) |
 | FE-06 | Allocations | ⬜ |
 | FE-D1 | Occupancy dashboard | ✅ (analytics/summary/, per-section state rule) |
 | FE-07 | Discounts | ✅ (report tab on /billing: property/resident/reason/type filters, create, end via valid_until) |
-| FE-08 | Billing | 🟨 (invoice list/detail/line-items/issue/draft-edit/delete, bulk/single generate; invoice PDF and waive-with-note have no backend endpoint yet) |
-| FE-09 | Payments | ✅ (idempotent record-payment dialog, delete-as-reversal, receipt JSON/PDF/share, cash movements; refunds/credits out of scope per owner decision 2026-10-16) |
-| FE-10 | Deposits & exit | ⬜ (when built, the vacate wizard and the absconded view must show the food-holiday credit and clawback rows: `food_holiday_credit`, `food_holiday_clawback_*`, API ready since Module 24; `afterVacate` already refreshes notices) |
+| FE-08 | Billing | 🟨 (invoice list/detail/line-items/issue/draft-edit/delete, bulk/single generate, **Adjust from advance** dialog & held advance hint on issued/partially-paid invoices; invoice PDF and waive-with-note have no backend endpoint yet) |
+| FE-09 | Payments | ✅ (idempotent record-payment dialog, adjust-advance action, delete-as-reversal restoring held advance, Advance Adjustment source filter/labels with original collection mode secondary context, receipt JSON/PDF/share, cash movements including admission advances & deposits + `advance_adjustments_total` + refund limitation note; refunds/credits out of scope per owner decision 2026-10-16) |
+| FE-10 | Deposits & exit | 🟨 (Milestone 1 done: multi-month advance support & "Estimated advance remaining after first invoice" in admission wizard Step 4; held advance breakdown + read-only `notice_period` Exit Settlement Preview on Resident Profile; interactive notice/cancel/finalize vacate dialogs and absconded UI remain Milestone 2 and must also show the `food_holiday_credit` / `food_holiday_clawback_*` rows) |
 | FE-D2 | Financial dashboard | ✅ (analytics/summary/, same per-section rule as FE-D1) |
 | FE-11 | Complaints | ⬜ |
 | FE-12 | Visitors | 🟨 (Visitors log & check-in/out page shipped in (owner)/visitors, gated by manage_visitors; resident requests/approvals V2) |

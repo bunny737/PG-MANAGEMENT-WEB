@@ -869,7 +869,9 @@ export interface Resident {
   security_deposit_agreed?: string | null;
   security_deposit_pending?: string | null;
   advance_amount?: string | null;
-  advance_refundable?: boolean | null;
+  advance_applied_amount?: string | null;
+  advance_refundable?: string | null;
+  first_invoice_advance_settled?: boolean | null;
   room_number?: string | null;
   bed_number?: string | null;
   created_at: string;
@@ -892,6 +894,9 @@ export interface Admission {
   food_preference: "with_food" | "without_food";
   contracted_rent: string;
   advance_amount: string;
+  advance_applied_amount?: string;
+  advance_refundable?: string;
+  first_invoice_advance_settled?: boolean;
   advance_collected_date: string | null;
   advance_mode: string;
   created_at: string;
@@ -1009,7 +1014,7 @@ export interface CreateAdmissionPayload {
   billing_mode: "monthly" | "weekly" | "daily";
   expected_stay_duration?: string;
   food_preference: "with_food" | "without_food";
-  /** Rent paid upfront for the first period, applied to the first invoice. May be "0.00". */
+  /** Rent/advance paid at admission (applied to first invoice; remainder stays held advance). May be "0.00". */
   advance_amount: string;
   advance_collected_date?: string | null;
   advance_mode?: DepositMode;
@@ -1060,6 +1065,64 @@ export async function createDepositPayment(payload: DepositPaymentCreatePayload,
     headers: { "Idempotency-Key": idempotencyKey },
   });
   return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
+export interface Vacate {
+  id: string;
+  resident: string;
+  notice_given_date: string;
+  expected_vacate_date: string;
+  actual_vacate_date: string | null;
+  maintenance_deduction: string;
+  maintenance_deduction_note: string;
+  refund_date: string | null;
+  refund_mode: string;
+  refund_note: string;
+  refund_amount: string | null;
+  is_settled: boolean;
+  security_deposit_amount: string;
+  advance_amount: string;
+  advance_applied_amount: string;
+  advance_refundable: string;
+  food_holiday_credit: string;
+  food_holiday_clawback_calculated: string;
+  food_holiday_clawback_recovered: string;
+  food_holiday_clawback_unrecovered: string;
+  cancelled_date: string | null;
+  cancellation_reason: string;
+  cancelled_by: string | null;
+  is_cancelled: boolean;
+  is_open: boolean;
+  settled_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VacateSettlementPreview {
+  security_deposit_amount: string;
+  advance_amount: string;
+  advance_applied_amount: string;
+  advance_refundable: string;
+  maintenance_deduction: string;
+  actual_vacate_date: string;
+  food_holiday_credit: string;
+  food_holiday_clawback_calculated: string;
+  food_holiday_clawback_recovered: string;
+  food_holiday_clawback_unrecovered: string;
+  refund_amount: string;
+  outstanding_dues: string;
+}
+
+export function listVacates(filters: { resident?: string } = {}) {
+  return apiFetch<Vacate[] | { results: Vacate[] }>(`/api/v1/vacates/${buildQuery(filters)}`).then((data) =>
+    Array.isArray(data) ? data : data.results
+  );
+}
+
+export function getVacateSettlementPreview(vacateId: string, maintenanceDeduction?: string) {
+  return apiFetch<VacateSettlementPreview>(
+    `/api/v1/vacates/${vacateId}/settlement-preview/${buildQuery({ maintenance_deduction: maintenanceDeduction })}`
+  );
 }
 
 export interface StaffUser {
@@ -1400,6 +1463,7 @@ export function updateTenantFiscalYearStart(fiscal_year_start_month: number) {
 
 export type InvoiceStatus = "draft" | "issued" | "partially_paid" | "paid";
 export type PaymentMode = "upi" | "cash" | "bank_transfer" | "card" | "cheque";
+export type PaymentSource = PaymentMode | "advance_adjustment" | "";
 export type LineType =
   | "accommodation"
   | "food"
@@ -1480,7 +1544,11 @@ export interface Payment extends ResidentContext {
   invoice_period_end: string;
   amount: string;
   payment_date: string;
-  payment_mode: PaymentMode;
+  payment_mode: PaymentMode | "";
+  is_advance_adjustment: boolean;
+  payment_source: PaymentSource;
+  payment_source_label: string;
+  historical_collection_mode: PaymentMode | null;
   reference: string;
   recorded_by: string | null;
   recorded_by_name: string | null;
@@ -1626,6 +1694,7 @@ export interface PaymentFilters {
   resident?: string;
   invoice?: string;
   payment_mode?: string;
+  is_advance_adjustment?: string;
   /** YYYY-MM */
   month?: string;
   from?: string;
@@ -1671,6 +1740,29 @@ export function deletePayment(id: string) {
   return apiFetch<void>(`/api/v1/payments/${id}/`, { method: "DELETE" });
 }
 
+export interface AdvanceAdjustmentCreatePayload {
+  amount: string;
+  adjustment_date?: string;
+  note?: string;
+}
+
+/** Explicitly applies part or all of the resident's held advance toward an issued invoice. */
+export async function adjustInvoiceAdvance(
+  invoiceId: string,
+  payload: AdvanceAdjustmentCreatePayload,
+  idempotencyKey: string
+) {
+  const { data, headers } = await apiFetchWithMeta<Payment>(
+    `/api/v1/invoices/${invoiceId}/adjust-advance/`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Idempotency-Key": idempotencyKey },
+    }
+  );
+  return { payment: data, replayed: headers.get("Idempotent-Replayed") === "true" };
+}
+
 export interface Receipt {
   receipt_for: string;
   receipt_number: string | null;
@@ -1685,7 +1777,11 @@ export interface Receipt {
   period_end: string;
   amount: string;
   payment_date: string;
-  payment_mode: PaymentMode;
+  payment_mode: PaymentMode | "";
+  is_advance_adjustment: boolean;
+  payment_source: PaymentSource;
+  payment_source_label: string;
+  historical_collection_mode: PaymentMode | null;
   reference: string;
   recorded_by: string | null;
   recorded_by_name: string | null;
@@ -1705,13 +1801,14 @@ export function downloadReceiptPdf(paymentId: string) {
 }
 
 export interface CashMovementRow {
-  type: "payment";
+  type: "payment" | "admission_advance" | "deposit";
   id: string;
   date: string;
   amount: string;
   receipt_number: string | null;
-  payment_mode: PaymentMode;
-  invoice: string;
+  payment_mode: PaymentMode | "";
+  source_label: string;
+  invoice: string | null;
   resident: string;
   resident_name: string;
   property: string;
@@ -1723,6 +1820,7 @@ export interface CashMovements {
   to: string;
   gross_receipts: string;
   refunds_paid: string;
+  advance_adjustments_total: string;
   total: string;
   count: number;
   results: CashMovementRow[];
@@ -1825,6 +1923,7 @@ export interface AnalyticsFinance {
   gross_receipts: string;
   refunds_paid: string;
   cash_collected: string;
+  advance_adjustments_total: string;
   period_invoiced: string;
   period_collected: string;
   collection_rate: number | null;
@@ -1867,7 +1966,16 @@ export function getAnalyticsSummary(filters: { property?: string; month?: string
 
 export interface AnalyticsTrendPoint {
   month: string;
-  finance: Pick<AnalyticsFinance, "gross_receipts" | "refunds_paid" | "cash_collected" | "period_invoiced" | "period_collected" | "collection_rate"> | null;
+  finance: Pick<
+    AnalyticsFinance,
+    | "gross_receipts"
+    | "refunds_paid"
+    | "cash_collected"
+    | "advance_adjustments_total"
+    | "period_invoiced"
+    | "period_collected"
+    | "collection_rate"
+  > | null;
   expenses: AnalyticsExpenses | null;
   cash_flow: AnalyticsCashFlow | null;
 }

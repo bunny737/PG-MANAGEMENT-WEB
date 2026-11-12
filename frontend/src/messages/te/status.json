@@ -54,5 +54,8 @@
   "bank_transfer": "బ్యాంక్ బదిలీ",
   "cash": "నగదు",
   "card": "కార్డ్",
-  "cheque": "చెక్"
+  "cheque": "చెక్",
+  "advance_adjustment": "అడ్వాన్స్ సర్దుబాటు",
+  "admission_advance": "చేరిక అడ్వాన్స్",
+  "deposit": "సెక్యూరిటీ డిపాజిట్"
 }

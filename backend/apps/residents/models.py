@@ -170,15 +170,20 @@ class Admission(TenantModelMixin):
     food_preference = models.CharField(max_length=15, choices=FoodPreference.choices)
     contracted_rent = models.DecimalField(max_digits=12, decimal_places=2)
 
-    # Advance = rent paid upfront for the first billing period (e.g. 30 days
-    # on a monthly contract). Billing applies it as a payment against the
-    # resident's first issued invoice (billing.services.apply_advance_to_first_invoice).
+    # Advance = upfront rent held by the owner (e.g. 1 or 2 months' rent).
+    # Billing applies up to the first issued invoice's total automatically
+    # (billing.services.apply_advance_to_first_invoice); any remainder stays as a
+    # held advance balance that staff may later apply explicitly to issued
+    # invoices ("Adjust from advance") or refund at vacate.
     advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     advance_collected_date = models.DateField(null=True, blank=True)
     advance_mode = models.CharField(max_length=15, choices=AdvanceMode.choices, blank=True)
-    # Portion of the advance actually paid against the first invoice. Any
-    # remainder (e.g. 2 months paid upfront) is refunded at vacate.
+    # Cumulative advance applied across invoices (first-invoice auto-apply +
+    # explicit adjustments). Any remainder is refunded at vacate.
     advance_applied_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    # True once the first invoice has been issued (so automatic first-invoice
+    # advance application never re-runs after reversals or later invoice issues).
+    first_invoice_advance_settled = models.BooleanField(default=False)
     # Security deposit: separate from rent, never invoiced. Refunded on vacate
     # (minus any maintenance deduction) or forfeited against dues on absconded.
     # `security_deposit_amount` is what has actually been COLLECTED (the running total of the
@@ -210,13 +215,23 @@ class Admission(TenantModelMixin):
 
     class Meta:
         db_table = 'admissions'
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(advance_applied_amount__gte=0),
+                name='admission_advance_applied_non_negative',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(advance_applied_amount__lte=models.F('advance_amount')),
+                name='admission_advance_applied_lte_advance',
+            ),
+        ]
 
     def __str__(self):
         return f'Admission: {self.resident}'
 
     @property
     def advance_refundable(self):
-        """Advance not consumed by the first invoice — refunded at vacate."""
+        """Held advance not consumed by invoice adjustments — refunded at vacate."""
         return self.advance_amount - self.advance_applied_amount
 
     @property

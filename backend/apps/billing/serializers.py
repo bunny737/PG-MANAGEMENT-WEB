@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -130,41 +132,6 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         model = InvoiceLineItem
         fields = ['id', 'line_type', 'label', 'amount', 'order']
         read_only_fields = ['id']
-
-
-def _location(resident):
-    """(room_number, bed_number) of the resident's current allocation."""
-    allocation = getattr(resident, 'allocation', None)
-    if allocation is None:
-        return None, None
-    bed = allocation.allocated_bed
-    return bed.room.room_number, bed.bed_number
-
-
-class ResidentContextMixin(serializers.Serializer):
-    """Who/where columns for finance lists, so a row renders without a
-    second lookup. `_resident(obj)` returns the row's resident."""
-
-    resident_name = serializers.SerializerMethodField()
-    property = serializers.SerializerMethodField()
-    property_name = serializers.SerializerMethodField()
-    room_number = serializers.SerializerMethodField()
-    bed_number = serializers.SerializerMethodField()
-
-    def get_resident_name(self, obj) -> str:
-        return str(self._resident(obj))
-
-    def get_property(self, obj) -> str:
-        return str(self._resident(obj).property_id)
-
-    def get_property_name(self, obj) -> str:
-        return self._resident(obj).property.name
-
-    def get_room_number(self, obj) -> str | None:
-        return _location(self._resident(obj))[0]
-
-    def get_bed_number(self, obj) -> str | None:
-        return _location(self._resident(obj))[1]
 
 
 class InvoiceSerializer(ResidentContextMixin, serializers.ModelSerializer):
@@ -310,13 +277,17 @@ class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):
     recorded_by_name = serializers.SerializerMethodField()
     invoice_period_start = serializers.DateField(source='invoice.period_start', read_only=True)
     invoice_period_end = serializers.DateField(source='invoice.period_end', read_only=True)
+    payment_source = serializers.CharField(read_only=True)
+    payment_source_label = serializers.SerializerMethodField()
+    historical_collection_mode = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = [
             'id', 'receipt_number', 'invoice', 'invoice_period_start', 'invoice_period_end',
             'resident', 'resident_name', 'property', 'property_name', 'room_number', 'bed_number',
-            'amount', 'payment_date', 'payment_mode',
+            'amount', 'payment_date', 'payment_mode', 'is_advance_adjustment',
+            'payment_source', 'payment_source_label', 'historical_collection_mode',
             'reference', 'recorded_by', 'recorded_by_name', 'created_at', 'updated_at',
         ]
         read_only_fields = fields
@@ -328,6 +299,14 @@ class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):
     def get_resident(self, obj) -> str:
         return str(obj.invoice.resident_id)
 
+    def get_payment_source_label(self, obj) -> str:
+        return str(obj.get_payment_source_display())
+
+    def get_historical_collection_mode(self, obj) -> str | None:
+        if not obj.is_advance_adjustment:
+            return None
+        return obj.payment_mode or None
+
     def get_recorded_by_name(self, obj) -> str | None:
         user = obj.recorded_by
         if user is None:
@@ -338,6 +317,8 @@ class PaymentSerializer(ResidentContextMixin, serializers.ModelSerializer):
 class PaymentWriteSerializer(serializers.ModelSerializer):
     """Record a manual payment against an invoice (PRD Module 10). recorded_by
     is stamped from the request user server-side."""
+
+    payment_mode = serializers.ChoiceField(choices=Payment.Mode.choices)
 
     class Meta:
         model = Payment
@@ -383,3 +364,12 @@ class PaymentWriteSerializer(serializers.ModelSerializer):
                 code='overpayment',
             )
         return attrs
+
+
+class InvoiceAdjustAdvanceSerializer(serializers.Serializer):
+    """Input for explicitly applying part or all of a resident's remaining
+    held admission advance toward an issued invoice."""
+
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    adjustment_date = serializers.DateField(required=False, default=local_today)
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')

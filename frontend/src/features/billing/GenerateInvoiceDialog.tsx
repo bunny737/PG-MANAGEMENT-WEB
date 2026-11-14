@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { useTranslations } from "next-intl";
 import { Dialog } from "@/components/ui/Dialog";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { useActiveProperty } from "@/components/shared/PropertyFilter";
 import { ApiError, generateInvoice, type Invoice } from "@/lib/api";
 import { afterInvoiceChange } from "@/lib/refresh";
@@ -43,16 +44,21 @@ export function GenerateInvoiceDialog({
   const propertyId = propertyIdProp ?? activePropertyId;
   const [serverError, setServerError] = useState<string | null>(null);
   const {
-    register,
     handleSubmit,
     setValue,
     watch,
+    control,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     // "" (not undefined) so an untouched picker fails min(1), not invalid_type.
-    defaultValues: { resident: residentId ?? "" },
+    defaultValues: {
+      resident: residentId ?? "",
+      period_start: "",
+      period_end: "",
+      due_date: "",
+    },
   });
 
   async function onSubmit(values: FormValues) {
@@ -63,9 +69,18 @@ export function GenerateInvoiceDialog({
       onCreated(invoice);
     } catch (error) {
       if (error instanceof ApiError) {
-        const field = error.fieldError("resident") || error.fieldError("period_start") || error.fieldError("period_end");
-        if (field) {
-          setError("resident", { message: field });
+        const resErr = error.fieldError("resident");
+        const startErr = error.fieldError("period_start");
+        const endErr = error.fieldError("period_end");
+        const dueErr = error.fieldError("due_date");
+        if (resErr) {
+          setError("resident", { message: resErr });
+        } else if (startErr) {
+          setError("period_start", { message: startErr });
+        } else if (endErr) {
+          setError("period_end", { message: endErr });
+        } else if (dueErr) {
+          setError("due_date", { message: dueErr });
         } else {
           setServerError(error.message);
         }
@@ -104,28 +119,58 @@ export function GenerateInvoiceDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{t("periodStart")}</label>
-            <input
-              type="date"
-              {...register("period_start")}
-              className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+            <Controller
+              control={control}
+              name="period_start"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={!!errors.period_start}
+                  placeholder="DD-MM-YYYY"
+                />
+              )}
             />
+            {errors.period_start && (
+              <p className="text-xs text-status-critical">{errors.period_start.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{t("periodEnd")}</label>
-            <input
-              type="date"
-              {...register("period_end")}
-              className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+            <Controller
+              control={control}
+              name="period_end"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={!!errors.period_end}
+                  placeholder="DD-MM-YYYY"
+                />
+              )}
             />
+            {errors.period_end && (
+              <p className="text-xs text-status-critical">{errors.period_end.message}</p>
+            )}
           </div>
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{t("dueDate")}</label>
-          <input
-            type="date"
-            {...register("due_date")}
-            className="w-full rounded-xl border border-border bg-surface-card px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-4 focus:ring-accent/15"
+          <Controller
+            control={control}
+            name="due_date"
+            render={({ field }) => (
+              <DatePicker
+                value={field.value}
+                onChange={field.onChange}
+                error={!!errors.due_date}
+                placeholder="DD-MM-YYYY"
+              />
+            )}
           />
+          {errors.due_date && (
+            <p className="text-xs text-status-critical">{errors.due_date.message}</p>
+          )}
         </div>
         {serverError && <p className="text-sm text-status-critical">{serverError}</p>}
         <button

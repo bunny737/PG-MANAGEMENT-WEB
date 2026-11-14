@@ -534,9 +534,21 @@ export function ResidentProfile({ id }: { id: string }) {
           {/* Left Column: Personal & Contact Info */}
           <div className="md:col-span-7 space-y-6">
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-2.5">
-                {t("overview.personalInfo")}
-              </h3>
+              <div className="flex items-center justify-between border-b border-border pb-2.5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                  {t("overview.personalInfo")}
+                </h3>
+                <PermissionGate permission="manage_residents">
+                  <button
+                    type="button"
+                    onClick={() => handleAction("edit")}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer"
+                  >
+                    <Edit className="size-3" />
+                    {tCommon("actions.edit")}
+                  </button>
+                </PermissionGate>
+              </div>
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="text-ink-muted">{t("overview.gender")}</span>
@@ -559,9 +571,21 @@ export function ResidentProfile({ id }: { id: string }) {
 
             {/* Emergency Contact */}
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-2.5">
-                {t("overview.emergencyContact")}
-              </h3>
+              <div className="flex items-center justify-between border-b border-border pb-2.5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                  {t("overview.emergencyContact")}
+                </h3>
+                <PermissionGate permission="manage_residents">
+                  <button
+                    type="button"
+                    onClick={() => handleAction("edit")}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer"
+                  >
+                    <Edit className="size-3" />
+                    {tCommon("actions.edit")}
+                  </button>
+                </PermissionGate>
+              </div>
               <div className="grid grid-cols-3 gap-4 text-xs">
                 <div>
                   <span className="text-ink-muted">{t("overview.emergencyName")}</span>
@@ -731,9 +755,21 @@ export function ResidentProfile({ id }: { id: string }) {
 
             {/* IDs & Org */}
             <div className="bg-surface-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-2.5">
-                {t("overview.identification")}
-              </h3>
+              <div className="flex items-center justify-between border-b border-border pb-2.5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-ink-faint">
+                  {t("overview.identification")}
+                </h3>
+                <PermissionGate permission="manage_residents">
+                  <button
+                    type="button"
+                    onClick={() => handleAction("edit")}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer"
+                  >
+                    <Edit className="size-3" />
+                    {tCommon("actions.edit")}
+                  </button>
+                </PermissionGate>
+              </div>
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between items-center pb-2 border-b border-border/40">
                   <span className="text-ink-muted">{t("overview.aadhaar")}</span>
@@ -963,70 +999,170 @@ export function ResidentProfile({ id }: { id: string }) {
               </div>
             )}
 
-            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.firstName")}</label>
-                  <input
-                    type="text"
-                    value={editForm.first_name}
-                    onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
+            <form onSubmit={handleEditSubmit} className="space-y-5 text-xs">
+              {/* Personal Information */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-1">
+                  {t("overview.personalInfo")}
+                </h4>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.firstName")}</label>
+                    <input
+                      type="text"
+                      value={editForm.first_name}
+                      onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.lastName")}</label>
+                    <input
+                      type="text"
+                      value={editForm.last_name}
+                      onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.gender")}</label>
+                    <select
+                      value={editForm.gender}
+                      onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent cursor-pointer"
+                    >
+                      <option value="">{t("editModal.genderUnspecified")}</option>
+                      <option value="male">{t("editModal.genderMale")}</option>
+                      <option value="female">{t("editModal.genderFemale")}</option>
+                      <option value="other">{t("editModal.genderOther")}</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.phone")}</label>
+                    <input
+                      type="text"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.email")}</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.permAddress")}</label>
+                    <input
+                      type="text"
+                      value={editForm.permanent_address}
+                      onChange={(e) => setEditForm({ ...editForm, permanent_address: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.currAddress")}</label>
+                    <input
+                      type="text"
+                      value={editForm.current_address}
+                      onChange={(e) => setEditForm({ ...editForm, current_address: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.lastName")}</label>
-                  <input
-                    type="text"
-                    value={editForm.last_name}
-                    onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
+              </div>
+
+              {/* Emergency Contact */}
+              <div className="space-y-3 pt-1">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-1">
+                  {t("overview.emergencyContact")}
+                </h4>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.emergencyName")}</label>
+                    <input
+                      type="text"
+                      value={editForm.emergency_contact_name}
+                      onChange={(e) => setEditForm({ ...editForm, emergency_contact_name: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.emergencyRelation")}</label>
+                    <input
+                      type="text"
+                      value={editForm.emergency_contact_relation}
+                      onChange={(e) => setEditForm({ ...editForm, emergency_contact_relation: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.emergencyPhone")}</label>
+                    <input
+                      type="text"
+                      value={editForm.emergency_contact_phone}
+                      onChange={(e) => setEditForm({ ...editForm, emergency_contact_phone: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.phone")}</label>
-                  <input
-                    type="text"
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.email")}</label>
-                  <input
-                    type="email"
-                    value={editForm.email}
-                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
-                </div>
-                <div className="col-span-2 space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.permAddress")}</label>
-                  <input
-                    type="text"
-                    value={editForm.permanent_address}
-                    onChange={(e) => setEditForm({ ...editForm, permanent_address: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.aadhaar")}</label>
-                  <input
-                    type="text"
-                    value={editForm.aadhaar_number}
-                    onChange={(e) => setEditForm({ ...editForm, aadhaar_number: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-ink-muted">{t("editModal.pan")}</label>
-                  <input
-                    type="text"
-                    value={editForm.pan_number}
-                    onChange={(e) => setEditForm({ ...editForm, pan_number: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
-                  />
+              </div>
+
+              {/* Identification & Org IDs */}
+              <div className="space-y-3 pt-1">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-ink-faint border-b border-border pb-1">
+                  {t("overview.identification")}
+                </h4>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.aadhaar")}</label>
+                    <input
+                      type="text"
+                      value={editForm.aadhaar_number}
+                      onChange={(e) => setEditForm({ ...editForm, aadhaar_number: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.pan")}</label>
+                    <input
+                      type="text"
+                      value={editForm.pan_number}
+                      onChange={(e) => setEditForm({ ...editForm, pan_number: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.passport")}</label>
+                    <input
+                      type="text"
+                      value={editForm.passport_number}
+                      onChange={(e) => setEditForm({ ...editForm, passport_number: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.employeeId")}</label>
+                    <input
+                      type="text"
+                      value={editForm.employee_id}
+                      onChange={(e) => setEditForm({ ...editForm, employee_id: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="font-semibold text-ink-muted">{t("editModal.studentId")}</label>
+                    <input
+                      type="text"
+                      value={editForm.student_id}
+                      onChange={(e) => setEditForm({ ...editForm, student_id: e.target.value })}
+                      className="w-full rounded-xl border border-border bg-surface-card px-3.5 py-2 text-ink outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
                 </div>
               </div>
 

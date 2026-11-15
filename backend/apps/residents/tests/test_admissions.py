@@ -53,6 +53,7 @@ class AdmissionTests(ResidentAPITestCase):
         self.assertEqual(response.data['contracted_rent'], '7000.00')
         self.assertEqual(response.data['contracted_sharing_type'], 1)
         self.assertEqual(response.data['contracted_room_category'], 'ac')
+        self.assertTrue(response.data['auto_apply_advance_to_first_invoice'])
 
         with tenant_context(self.tenant.id):
             self.bed.refresh_from_db()
